@@ -10,9 +10,9 @@ import argparse
 import pdb
 import pandas as pd
 
-def stitching(file_path, wsi_object, downscale = 64):
+def stitching(file_path, wsi_object, downscale = 64, custom_downsample=1):
 	start = time.time()
-	heatmap = StitchCoords(file_path, wsi_object, downscale=downscale, bg_color=(0,0,0), alpha=-1, draw_grid=False)
+	heatmap = StitchCoords(file_path, wsi_object, downscale=downscale, bg_color=(0,0,0), alpha=-1, draw_grid=False, custom_downsample=custom_downsample)
 	total_time = time.time() - start
 	
 	return heatmap, total_time
@@ -45,7 +45,7 @@ def patching(WSI_object, **kwargs):
 
 
 def seg_and_patch(source, save_dir, patch_save_dir, mask_save_dir, stitch_save_dir, 
-				  patch_size = 256, step_size = 256, 
+				  patch_size = 256, step_size = 256, custom_downsample=1,
 				  seg_params = {'seg_level': -1, 'sthresh': 8, 'mthresh': 7, 'close': 4, 'use_otsu': False,
 				  'keep_ids': 'none', 'exclude_ids': 'none'},
 				  filter_params = {'a_t':100, 'a_h': 16, 'max_n_holes':8}, 
@@ -195,14 +195,14 @@ def seg_and_patch(source, save_dir, patch_save_dir, mask_save_dir, stitch_save_d
 		patch_time_elapsed = -1 # Default time
 		if patch:
 			current_patch_params.update({'patch_level': patch_level, 'patch_size': patch_size, 'step_size': step_size, 
-										 'save_path': patch_save_dir})
+										 'save_path': patch_save_dir, 'custom_downsample': custom_downsample})
 			file_path, patch_time_elapsed = patching(WSI_object = WSI_object,  **current_patch_params,)
 		
 		stitch_time_elapsed = -1
 		if stitch:
 			file_path = os.path.join(patch_save_dir, slide_id+'.h5')
 			if os.path.isfile(file_path):
-				heatmap, stitch_time_elapsed = stitching(file_path, WSI_object, downscale=64)
+				heatmap, stitch_time_elapsed = stitching(file_path, WSI_object, downscale=64, custom_downsample=custom_downsample)
 				stitch_path = os.path.join(stitch_save_dir, slide_id+'.jpg')
 				heatmap.save(stitch_path)
 
@@ -245,6 +245,8 @@ parser.add_argument('--patch_level', type=int, default=0,
 					help='downsample level at which to patch')
 parser.add_argument('--process_list',  type = str, default=None,
 					help='name of list of images to process with parameters (.csv)')
+parser.add_argument('--custom_downsample', type= int, choices=[1,2], default=1, 
+					help='custom downscale when native downsample is not available (only tested w/ 2x downscale)')
 
 if __name__ == '__main__':
 	args = parser.parse_args()
@@ -303,7 +305,8 @@ if __name__ == '__main__':
 	print(parameters)
 
 	seg_times, patch_times = seg_and_patch(**directories, **parameters,
-											patch_size = args.patch_size, step_size=args.step_size, 
+											patch_size = args.patch_size, step_size=args.step_size,
+                                                                                        custom_downsample = args.custom_downsample,
 											seg = args.seg,  use_default_params=False, save_mask = True, 
 											stitch= args.stitch,
 											patch_level=args.patch_level, patch = args.patch,

@@ -368,7 +368,7 @@ class WholeSlideImage(object):
         
         return level_downsamples
 
-    def process_contours(self, save_path, patch_level=0, patch_size=256, step_size=256, **kwargs):
+    def process_contours(self, save_path, patch_level=0, patch_size=256, step_size=256, custom_downsample=1, **kwargs):
         save_path_hdf5 = os.path.join(save_path, str(self.name) + '.h5')
         print("Creating patches for: ", self.name, "...",)
         elapsed = time.time()
@@ -380,7 +380,7 @@ class WholeSlideImage(object):
             if (idx + 1) % fp_chunk_size == fp_chunk_size:
                 print('Processing contour {}/{}'.format(idx, n_contours))
             
-            asset_dict, attr_dict = self.process_contour(cont, self.holes_tissue[idx], patch_level, save_path, patch_size, step_size, **kwargs)
+            asset_dict, attr_dict = self.process_contour(cont, self.holes_tissue[idx], patch_level, save_path, patch_size, step_size, custom_downsample, **kwargs)
             if len(asset_dict) > 0:
                 if init:
                     save_hdf5(save_path_hdf5, asset_dict, attr_dict, mode='w')
@@ -391,11 +391,21 @@ class WholeSlideImage(object):
         return self.hdf5_file
 
 
-    def process_contour(self, cont, contour_holes, patch_level, save_path, patch_size = 256, step_size = 256,
+    def process_contour(self, cont, contour_holes, patch_level, save_path, patch_size = 256, step_size = 256, custom_downsample=1,
         contour_fn='four_pt', use_padding=True, top_left=None, bot_right=None):
+        if custom_downsample != 1:
+            assert cont is not None
+            assert patch_level == 0
+            assert use_padding
+            assert not bot_right
+            assert not top_left
+            assert contour_fn == 'four_pt'
+
         start_x, start_y, w, h = cv2.boundingRect(cont) if cont is not None else (0, 0, self.level_dim[patch_level][0], self.level_dim[patch_level][1])
 
-        patch_downsample = (int(self.level_downsamples[patch_level][0]), int(self.level_downsamples[patch_level][1]))
+        patch_downsample = (int(self.level_downsamples[patch_level][0] * custom_downsample),
+                            int(self.level_downsamples[patch_level][1] * custom_downsample))
+
         ref_patch_size = (patch_size*patch_downsample[0], patch_size*patch_downsample[1])
         
         img_w, img_h = self.level_dim[0]
@@ -465,8 +475,8 @@ class WholeSlideImage(object):
             
             attr = {'patch_size' :            patch_size, # To be considered...
                     'patch_level' :           patch_level,
-                    'downsample':             self.level_downsamples[patch_level],
-                    'downsampled_level_dim' : tuple(np.array(self.level_dim[patch_level])),
+                    'downsample':             self.level_downsamples[patch_level] * custom_downsample,
+                    'downsampled_level_dim' : tuple(np.array(self.level_dim[patch_level]) / custom_downsample),
                     'level_dim':              self.level_dim[patch_level],
                     'name':                   self.name,
                     'save_path':              save_path}
