@@ -32,10 +32,9 @@ def compute_w_loader(file_path, output_path, wsi, model,
 		target_patch_size: custom defined, rescaled image size before embedding
 	"""
 	if target_patch_size != -1:
-            assert custom_downsample == 1
+                assert custom_downsample == 1
 
-        dataset = Whole_Slide_Bag_FP(file_path=file_path, wsi=wsi, pretrained=pretrained, 
-		custom_downsample=custom_downsample, target_patch_size=target_patch_size)
+	dataset = Whole_Slide_Bag_FP(file_path=file_path, wsi=wsi, pretrained=pretrained, custom_downsample=custom_downsample, target_patch_size=target_patch_size)
 	x, y = dataset[0]
 	kwargs = {'num_workers': 4, 'pin_memory': True} if device.type == "cuda" else {}
 	loader = DataLoader(dataset=dataset, batch_size=batch_size, **kwargs, collate_fn=collate_features)
@@ -99,10 +98,12 @@ if __name__ == '__main__':
 	total = len(bags_dataset)
 
 	for bag_candidate_idx in range(total):
-		slide_id = bags_dataset[bag_candidate_idx].split(args.slide_ext)[0]
-		bag_name = slide_id+'.h5'
-		h5_file_path = os.path.join(args.data_h5_dir, 'patches', bag_name)
-		slide_file_path = os.path.join(args.data_slide_dir, slide_id+args.slide_ext)
+		print(bags_dataset[bag_candidate_idx])
+		print(args.slide_ext)
+		slide_id = str(bags_dataset[bag_candidate_idx])#.split(args.slide_ext)[0]
+		bag_name = str(slide_id) + '.h5'
+		h5_file_path = os.path.join(args.data_h5_dir, bag_name)
+		slide_file_path = os.path.join(args.data_slide_dir, str(slide_id) + args.slide_ext)
 		print('\nprogress: {}/{}'.format(bag_candidate_idx, total))
 		print(slide_id)
 

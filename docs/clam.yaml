@@ -1,4 +1,4 @@
-name: deep_learning
+name: clam
 channels:
   - pytorch
   - conda-forge
@@ -41,7 +41,7 @@ dependencies:
   - harfbuzz=2.4.0=h37c48d4_1
   - hdf5=1.10.5=nompi_h3c11f04_1104
   - icu=58.2=h9c2bf20_1
-  - importlib_metadata=1.5.0=py37_0
+  - importlib_metadata
   - intel-openmp=2019.4=243
   - ipykernel=5.1.4=py37h39e3cac_0
   - ipython=7.13.0=py37h5ca1d4c_0
@@ -112,7 +112,6 @@ dependencies:
   - python=3.7.7=hcf32534_0_cpython
   - python-dateutil=2.8.1=py_0
   - python-spams=2.6.1=py37h55324e4_1204
-  - pytorch=1.3.1=py3.7_cuda10.1.243_cudnn7.6.3_0
   - pytz=2019.3=py_0
   - pyzmq=18.1.1=py37he6710b0_0
   - qt=5.9.7=h5867ecd_1
@@ -184,9 +183,9 @@ dependencies:
     - itsdangerous==1.1.0
     - joblib==0.14.0
     - jsonfield2==3.0.3
-    - jsonschema==2.6.0
+    - jsonschema
     - lmdb==0.98
-    - lxml==4.2.1
+    - lxml
     - lz4==2.2.1
     - monotonic==1.5
     - mypy-extensions==0.4.3
@@ -226,7 +225,6 @@ dependencies:
     - tifffile==2020.2.16
     - toml==0.10.0
     - torchsummary==1.5.1
-    - torchvision==0.1.8
     - tox==3.13.2
     - tqdm==4.37.0
     - twisted==19.7.0

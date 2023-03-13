@@ -473,7 +473,7 @@ class WholeSlideImage(object):
         if len(results)>1:
             asset_dict = {'coords' :          results}
             
-            attr = {'patch_size' :            patch_size, # To be considered...
+            attr = {'patch_size' :            ref_patch_size[0], # To be considered...
                     'patch_level' :           patch_level,
                     'downsample':             self.level_downsamples[patch_level] * custom_downsample,
                     'downsampled_level_dim' : tuple(np.array(self.level_dim[patch_level]) / custom_downsample),
