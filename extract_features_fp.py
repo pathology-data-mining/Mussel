@@ -15,7 +15,14 @@ from utils.file_utils import save_hdf5
 from PIL import Image
 import h5py
 import openslide
+import sys
 device = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')
+
+sys.path.append('/gpfs/mskmind_ess/boehmk/python_bin/TransPath')
+
+#sys.path.append('/gpfs/mskmind_ess/boehmk/HIPT/HIPT_4K')
+#from hipt_model_utils import get_vit256
+
 
 def compute_w_loader(file_path, output_path, wsi, model,
  	batch_size = 8, verbose = 0, print_every=20, pretrained=True, 
@@ -36,7 +43,7 @@ def compute_w_loader(file_path, output_path, wsi, model,
 
 	dataset = Whole_Slide_Bag_FP(file_path=file_path, wsi=wsi, pretrained=pretrained, custom_downsample=custom_downsample, target_patch_size=target_patch_size)
 	x, y = dataset[0]
-	kwargs = {'num_workers': 4, 'pin_memory': True} if device.type == "cuda" else {}
+	kwargs = {'num_workers': 32, 'pin_memory': True} if device.type == "cuda" else {}
 	loader = DataLoader(dataset=dataset, batch_size=batch_size, **kwargs, collate_fn=collate_features)
 
 	if verbose > 0:
@@ -61,6 +68,7 @@ def compute_w_loader(file_path, output_path, wsi, model,
 
 parser = argparse.ArgumentParser(description='Feature Extraction')
 parser.add_argument('--data_h5_dir', type=str, default=None)
+parser.add_argument('--model', type=str, default='resnet50')
 parser.add_argument('--data_slide_dir', type=str, default=None)
 parser.add_argument('--slide_ext', type=str, default= '.svs')
 parser.add_argument('--csv_path', type=str, default=None)
@@ -87,7 +95,15 @@ if __name__ == '__main__':
 	dest_files = os.listdir(os.path.join(args.feat_dir, 'pt_files'))
 
 	print('loading model checkpoint')
-	model = resnet50_baseline(pretrained=True)
+	if args.model == 'resnet50':
+		model = resnet50_baseline(pretrained=True)
+		USE_IMAGENET_RGB_DIST = True
+	elif args.model == 'ctranspath':
+		model = torch.load('/gpfs/mskmind_ess/boehmk/python_bin/TransPath/CTransPath_Model.pt')
+		USE_IMAGENET_RGB_DIST = True
+	elif args.model == 'vit16':
+		model = get_vit256(pretrained_weights='/gpfs/mskmind_ess/boehmk/HIPT/HIPT_4K/Checkpoints/vit256_small_dino.pth')
+		USE_IMAGENET_RGB_DIST = False
 	model = model.to(device)
 	
 	# print_network(model)
@@ -116,7 +132,7 @@ if __name__ == '__main__':
 		wsi = openslide.open_slide(slide_file_path)
 		output_file_path = compute_w_loader(h5_file_path, output_path, wsi, 
 		model = model, batch_size = args.batch_size, verbose = 1, print_every = 20, 
-		custom_downsample=args.custom_downsample, target_patch_size=args.target_patch_size)
+		custom_downsample=args.custom_downsample, target_patch_size=args.target_patch_size, pretrained=USE_IMAGENET_RGB_DIST)
 		time_elapsed = time.time() - time_start
 		print('\ncomputing features for {} took {} s'.format(output_file_path, time_elapsed))
 		file = h5py.File(output_file_path, "r")

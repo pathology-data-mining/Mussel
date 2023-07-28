@@ -57,10 +57,12 @@ class Attn_Net_Gated(nn.Module):
         self.attention_c = nn.Linear(D, n_classes)
 
     def forward(self, x):
+        print('x: {}'.format(x.shape))
         a = self.attention_a(x)
         b = self.attention_b(x)
         A = a.mul(b)
         A = self.attention_c(A)  # N x n_classes
+        print('x: {}'.format(x.shape))
         return A, x
 
 """
@@ -146,7 +148,9 @@ class CLAM_SB(nn.Module):
 
     def forward(self, h, label=None, instance_eval=False, return_features=False, attention_only=False):
         device = h.device
+        print(h.shape)
         A, h = self.attention_net(h)  # NxK        
+        print(h.shape)
         A = torch.transpose(A, 1, 0)  # KxN
         if attention_only:
             return A
@@ -177,7 +181,10 @@ class CLAM_SB(nn.Module):
             if self.subtyping:
                 total_inst_loss /= len(self.instance_classifiers)
                 
-        M = torch.mm(A, h) 
+        M = torch.mm(A, h)
+        print('A: {}'.format(A.shape)) 
+        print('h: {}'.format(h.shape)) 
+        print('M: {}'.format(M.shape)) 
         logits = self.classifiers(M)
         Y_hat = torch.topk(logits, 1, dim = 1)[1]
         Y_prob = F.softmax(logits, dim = 1)

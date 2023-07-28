@@ -1,0 +1,11 @@
+python create_patches_fp.py \
+--source /gpfs/mskmind_emc/data_large/pathology/BR_20-226/slides \
+--save_dir /gpfs/mskmind_ess/boehmk/oncotype-from-hne/data/tiles/4096 \
+--patch_size 4096 \
+--step_size 4096 \
+--preset bwh_resection.csv \
+--process_list process_20x.csv \
+--patch_level 0 \
+--seg \
+--stitch \
+--patch
