@@ -113,9 +113,9 @@ class Whole_Slide_Bag_FP(Dataset):
         with h5py.File(self.file_path, "r") as f:
             self.patch_size = f["coords"].attrs["patch_size"]
             self.patch_level = f["coords"].attrs["patch_level"]
-            self.scaled_patch_size = f["coords"].attrs[
-                "patch_size_to_resize_to_for_desired_mpp"
-            ]
+            self.scaled_patch_size = int(
+                f["coords"].attrs["patch_size_to_resize_to_for_desired_mpp"]
+            )
 
         self.roi_transforms = eval_transforms(
             use_imagenet_rgb_dist=use_imagenet_rgb_dist
