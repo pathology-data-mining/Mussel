@@ -12,7 +12,7 @@ import pdb
 import pandas as pd
 
 
-def stitching(file_path, wsi_object, downscale=64, custom_downsample=1):
+def stitching(file_path, wsi_object, downscale=64, mpp=mpp):
     start = time.time()
     heatmap = StitchCoords(
         file_path,
@@ -20,8 +20,8 @@ def stitching(file_path, wsi_object, downscale=64, custom_downsample=1):
         downscale=downscale,
         bg_color=(0, 0, 0),
         alpha=-1,
-        draw_grid=False,
-        custom_downsample=custom_downsample,
+        draw_grid=False,  # TODO: mpp
+        mpp=mpp,
     )
     total_time = time.time() - start
 
@@ -48,7 +48,7 @@ def patching(WSI_object, **kwargs):
     start_time = time.time()
 
     # Patch
-    file_path = WSI_object.process_contours(**kwargs)
+    file_path = WSI_object.process_contours(**kwargs)  # TODO: mpp
 
     ### Stop Patch Timer
     patch_time_elapsed = time.time() - start_time
@@ -63,7 +63,7 @@ def seg_and_patch(
     stitch_save_dir,
     patch_size=256,
     step_size=256,
-    custom_downsample=1,
+    mpp=0.5,
     seg_params={
         "seg_level": -1,
         "sthresh": 8,
@@ -76,14 +76,11 @@ def seg_and_patch(
     filter_params={"a_t": 100, "a_h": 16, "max_n_holes": 8},
     vis_params={"vis_level": -1, "line_thickness": 100},
     patch_params={"use_padding": True, "contour_fn": "four_pt"},
-    patch_level=0,
     use_default_params=True,
     seg=False,
     save_mask=True,
     stitch=False,
     patch=False,
-    auto_skip=True,
-    process_list=None,
 ):
     slide_id = os.path.basename(source).replace(".svs", "")
     # Inialize WSI
@@ -153,11 +150,10 @@ def seg_and_patch(
     if patch:
         current_patch_params.update(
             {
-                "patch_level": patch_level,
+                "mpp": mpp,
                 "patch_size": patch_size,
                 "step_size": step_size,
                 "save_path": patch_save_dir,
-                "custom_downsample": custom_downsample,
             }
         )
         file_path, patch_time_elapsed = patching(
@@ -170,7 +166,7 @@ def seg_and_patch(
         file_path = os.path.join(patch_save_dir, slide_id + ".h5")
         if os.path.isfile(file_path):
             heatmap, stitch_time_elapsed = stitching(
-                file_path, WSI_object, downscale=64, custom_downsample=custom_downsample
+                file_path, WSI_object, downscale=64, mpp=mpp
             )
             stitch_path = os.path.join(stitch_save_dir, slide_id + ".jpg")
             heatmap.save(stitch_path)
@@ -195,15 +191,9 @@ parser.add_argument(
     help="predefined profile of default segmentation and filter parameters (.csv)",
 )
 parser.add_argument(
-    "--patch_level", type=int, default=0, help="downsample level at which to patch"
+    "--mpp", type=int, default=0, help="microns per pixel at which to patch"
 )
-parser.add_argument(
-    "--custom_downsample",
-    type=int,
-    choices=[1, 2],
-    default=1,
-    help="custom downscale when native downsample is not available (only tested w/ 2x downscale)",
-)
+
 
 if __name__ == "__main__":
     args = parser.parse_args()
@@ -271,11 +261,10 @@ if __name__ == "__main__":
         **parameters,
         patch_size=args.patch_size,
         step_size=args.step_size,
-        custom_downsample=args.custom_downsample,
+        mpp=args.mpp,
         seg=args.seg,
         use_default_params=True,
         save_mask=True,
         stitch=args.stitch,
-        patch_level=args.patch_level,
         patch=args.patch,
     )
