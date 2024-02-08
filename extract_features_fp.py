@@ -82,9 +82,9 @@ args = parser.parse_args()
 
 
 if __name__ == "__main__":
-    os.makedirs(args.feat_dir, exist_ok=True)
-    os.makedirs(os.path.join(args.feat_dir, "pt_files"), exist_ok=True)
-    os.makedirs(os.path.join(args.feat_dir, "h5_files"), exist_ok=True)
+    os.makedirs(args.save_dir, exist_ok=True)
+    os.makedirs(os.path.join(args.save_dir, "pt_files"), exist_ok=True)
+    os.makedirs(os.path.join(args.save_dir, "h5_files"), exist_ok=True)
 
     print("loading model checkpoint")
     if args.model == "resnet50":
