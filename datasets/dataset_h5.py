@@ -1,19 +1,9 @@
 from __future__ import print_function, division
-import os
-import torch
-import numpy as np
-import pandas as pd
-import math
-import re
-import pdb
-import pickle
 
-from torch.utils.data import Dataset, DataLoader, sampler
-from torchvision import transforms, utils, models
-import torch.nn.functional as F
-
-from PIL import Image
 import h5py
+from PIL import Image
+from torch.utils.data import Dataset
+from torchvision import transforms
 
 
 def eval_transforms(use_imagenet_rgb_dist=False):
