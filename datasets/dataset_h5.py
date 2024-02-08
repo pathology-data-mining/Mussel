@@ -147,11 +147,8 @@ class Whole_Slide_Bag_FP(Dataset):
             coord, self.patch_level, (self.patch_size, self.patch_size)
         ).convert("RGB")
 
-        # print(img.size)
-        if self.prelim_downsampled_patch_size[0] != self.patch_size:
-            img = img.resize(self.prelim_downsampled_patch_size)
-            # print(img.size)
+        print(img.size)
         img = self.roi_transforms(img).unsqueeze(0)
-        # print(img.shape)
-        # exit()
+        print(img.shape)
+        exit()
         return img, coord
