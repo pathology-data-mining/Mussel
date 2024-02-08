@@ -230,7 +230,7 @@ if __name__ == "__main__":
     }
     filter_params = {"a_t": 100, "a_h": 16, "max_n_holes": 8}
     vis_params = {"vis_level": -1, "line_thickness": 250}
-    patch_params = {"use_padding": True, "contour_fn": "four_pt"}
+    patch_params = {"use_padding": True}
 
     if args.preset:
         preset_df = pd.read_csv(os.path.join("presets", args.preset))
