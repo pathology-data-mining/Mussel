@@ -607,7 +607,7 @@ class WholeSlideImage(object):
         mpp_wsi = float(self.wsi.properties[openslide.PROPERTY_NAME_MPP_X])
 
         # calculate custom downsample
-        scale = mpp_wsi / mpp
+        scale = int(mpp_wsi / mpp)
 
         start_x, start_y, w, h = (
             cv2.boundingRect(cont)
