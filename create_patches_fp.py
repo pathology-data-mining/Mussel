@@ -273,7 +273,7 @@ if __name__ == "__main__":
         step_size=args.step_size,
         custom_downsample=args.custom_downsample,
         seg=args.seg,
-        use_default_params=False,
+        use_default_params=True,
         save_mask=True,
         stitch=args.stitch,
         patch_level=args.patch_level,
