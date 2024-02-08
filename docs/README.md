@@ -3,6 +3,8 @@
 ## setup
 ```conda create --name mussel -c conda-forge openslide-python numpy pandas opencv h5py matplotlib```
 
+## fast-patching
+
 ## License
 © [Mahmood Lab](http://www.mahmoodlab.org) - This code is made available under the GPLv3 License and is available for non-commercial academic purposes.
 
