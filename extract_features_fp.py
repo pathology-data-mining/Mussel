@@ -14,8 +14,6 @@ from models.resnet_custom import resnet50_baseline
 from utils.file_utils import save_hdf5
 from utils.utils import collate_features
 
-device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
-
 sys.path.append("/gpfs/mskmind_ess/boehmk/python_bin/TransPath")
 
 
@@ -45,7 +43,7 @@ def compute_w_loader(
         use_imagenet_rgb_dist=use_imagenet_rgb_dist,
     )
     x, y = dataset[0]
-    kwargs = {"num_workers": 32, "pin_memory": True} if device.type == "cuda" else {}
+    kwargs = {"num_workers": 32, "pin_memory": True}
     loader = DataLoader(
         dataset=dataset,
         batch_size=batch_size,
@@ -86,6 +84,8 @@ parser.add_argument("--batch_size", type=int, default=256)
 parser.add_argument("--gpus", type=list, default=[0])
 args = parser.parse_args()
 
+assert torch.cuda.is_available(), "no cuda available"
+device = torch.device(args.gpus[0])
 
 if __name__ == "__main__":
     os.makedirs(args.save_dir, exist_ok=True)
