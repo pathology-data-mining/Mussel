@@ -677,6 +677,7 @@ class WholeSlideImage(object):
             attr = {
                 "patch_size": native_patch_size,
                 "step_size": native_step_size,
+                "patch_size_to_resize_to_for_desired_mpp": patch_size,
                 "patch_level": 0,
                 "mpp": mpp,
                 "native_mpp": mpp_wsi,
