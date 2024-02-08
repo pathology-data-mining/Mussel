@@ -1,13 +1,14 @@
 # internal imports
-from wsi_core.WholeSlideImage import WholeSlideImage
-from wsi_core.wsi_utils import StitchCoords
-
+import argparse
 # other imports
 import os
-import numpy as np
 import time
-import argparse
+
+import numpy as np
 import pandas as pd
+
+from wsi_core.WholeSlideImage import WholeSlideImage
+from wsi_core.wsi_utils import StitchCoords
 
 
 def stitching(file_path, wsi_object, downscale=64, mpp=0.5):

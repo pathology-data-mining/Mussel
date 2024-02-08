@@ -1,8 +1,9 @@
-import os
 import numpy as np
 from PIL import Image
-import pdb
-import cv2
+import numpy as np
+from PIL import Image
+
+
 class Mosaic_Canvas(object):
 	def __init__(self,patch_size=256, n=100, downscale=4, n_per_row=10, bg_color=(0,0,0), alpha=-1):
 		self.patch_size = patch_size

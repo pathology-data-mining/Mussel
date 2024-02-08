@@ -1,16 +1,18 @@
-import torch
-import torch.nn as nn
-import os
-import time
-from datasets.dataset_h5 import Whole_Slide_Bag_FP
-from torch.utils.data import DataLoader
-from models.resnet_custom import resnet50_baseline
 import argparse
-from utils.utils import collate_features
-from utils.file_utils import save_hdf5
+import os
+import sys
+import time
+
 import h5py
 import openslide
-import sys
+import torch
+import torch.nn as nn
+from torch.utils.data import DataLoader
+
+from datasets.dataset_h5 import Whole_Slide_Bag_FP
+from models.resnet_custom import resnet50_baseline
+from utils.file_utils import save_hdf5
+from utils.utils import collate_features
 
 device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
 
