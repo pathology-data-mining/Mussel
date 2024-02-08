@@ -647,7 +647,7 @@ class WholeSlideImage(object):
             contour=cont, patch_size=native_patch_size, center_shift=0.5
         )
 
-        native_step_size = step_size * scale
+        native_step_size = int(round(step_size * scale))
 
         x_range = np.arange(start_x, stop_x, step=native_step_size)
         y_range = np.arange(start_y, stop_y, step=native_step_size)
@@ -675,8 +675,8 @@ class WholeSlideImage(object):
             asset_dict = {"coords": results}
 
             attr = {
-                "patch_size": patch_size,
-                "native_patch_size": native_patch_size,
+                "patch_size": native_patch_size,
+                "step_size": native_step_size,
                 "patch_level": 0,
                 "mpp": mpp,
                 "native_mpp": mpp_wsi,
