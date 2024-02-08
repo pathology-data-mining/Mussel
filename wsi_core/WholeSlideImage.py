@@ -607,7 +607,8 @@ class WholeSlideImage(object):
         mpp_wsi = float(self.wsi.properties[openslide.PROPERTY_NAME_MPP_X])
 
         # calculate custom downsample
-        scale = int(mpp_wsi / mpp)
+        assert mpp_wsi >= mpp, "mpp of WSI is smaller than desired mpp"
+        scale = int(mpp / mpp_wsi)
         print(f"mpp scale: {scale}")
 
         start_x, start_y, w, h = (
