@@ -136,8 +136,8 @@ class Whole_Slide_Bag_FP(Dataset):
             print(name, value)
 
         print("\nfeature extraction settings")
-        print("target patch size: ", self.target_patch_size)
-        print("pretrained: ", self.pretrained)
+        print("target patch size: ", self.scaled_patch_size)
+        print("use_imagenet_rgb_dist: ", self.use_imagenet_rgb_dist)
         print("transformations: ", self.roi_transforms)
 
     def __getitem__(self, idx):
