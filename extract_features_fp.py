@@ -99,8 +99,8 @@ if __name__ == "__main__":
         raise ValueError("model not recognized")
 
     model = model.to(device)
-    if torch.cuda.device_count() > 1:
-        model = nn.DataParallel(model)
+    if len(args.gpus) > 1:
+        model = nn.DataParallel(model, device_ids=args.gpus)
     model.eval()
 
     # extract features
