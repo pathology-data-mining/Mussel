@@ -43,13 +43,12 @@ def compute_w_loader(
         use_imagenet_rgb_dist=use_imagenet_rgb_dist,
     )
     x, y = dataset[0]
-    kwargs = {"num_workers": 16, "pin_memory": True} if device.type == "cuda" else {}
+    kwargs = {"num_workers": 32, "pin_memory": True} if device.type == "cuda" else {}
     loader = DataLoader(
         dataset=dataset,
         batch_size=batch_size,
         **kwargs,
         collate_fn=collate_features,
-        num_workers=16,
     )
 
     if verbose > 0:
