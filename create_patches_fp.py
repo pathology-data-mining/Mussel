@@ -191,7 +191,7 @@ parser.add_argument(
     help="predefined profile of default segmentation and filter parameters (.csv)",
 )
 parser.add_argument(
-    "--mpp", type=int, default=0, help="microns per pixel at which to patch"
+    "--mpp", type=float, default=0.5, help="microns per pixel at which to patch"
 )
 
 
