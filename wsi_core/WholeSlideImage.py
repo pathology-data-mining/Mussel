@@ -352,7 +352,7 @@ class WholeSlideImage(object):
         patch_size=256,
         step_size=256,
         save_coord=True,
-        **kwargs
+        **kwargs,
     ):
         contours = self.contours_tissue
         contour_holes = self.holes_tissue
@@ -579,7 +579,7 @@ class WholeSlideImage(object):
                 save_path,
                 patch_size,
                 step_size,
-                **kwargs
+                **kwargs,
             )
             if len(asset_dict) > 0:
                 if init:
@@ -608,6 +608,7 @@ class WholeSlideImage(object):
 
         # calculate custom downsample
         scale = int(mpp_wsi / mpp)
+        print(f"mpp scale: {scale}")
 
         start_x, start_y, w, h = (
             cv2.boundingRect(cont)
