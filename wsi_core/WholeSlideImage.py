@@ -662,7 +662,7 @@ class WholeSlideImage(object):
         pool = mp.Pool(num_workers)
 
         iterable = [
-            (coord, contour_holes, native_patch_size[0], cont_check_fn)
+            (coord, contour_holes, native_patch_size, cont_check_fn)
             for coord in coord_candidates
         ]
         results = pool.starmap(WholeSlideImage.process_coord_candidate, iterable)
