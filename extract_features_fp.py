@@ -103,7 +103,7 @@ if __name__ == "__main__":
 
     # extract features
     slide_id = os.path.basename(args.slide_file_path).replace(".svs", "")
-    output_path = os.path.join(args.feat_dir, "h5_files", f"{slide_id}.h5")
+    output_path = os.path.join(args.save_dir, "h5_files", f"{slide_id}.h5")
 
     time_start = time.time()
     wsi = openslide.open_slide(args.slide_file_path)
