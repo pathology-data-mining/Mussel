@@ -152,8 +152,6 @@ parser.add_argument('--preset', default=None, type=str,
 					help='predefined profile of default segmentation and filter parameters (.csv)')
 parser.add_argument('--patch_level', type=int, default=0, 
 					help='downsample level at which to patch')
-parser.add_argument('--process_list',  type = str, default=None,
-					help='name of list of images to process with parameters (.csv)')
 parser.add_argument('--custom_downsample', type= int, choices=[1,2], default=1, 
 					help='custom downscale when native downsample is not available (only tested w/ 2x downscale)')
 
@@ -163,12 +161,6 @@ if __name__ == '__main__':
 	patch_save_dir = os.path.join(args.save_dir, 'patches')
 	mask_save_dir = os.path.join(args.save_dir, 'masks')
 	stitch_save_dir = os.path.join(args.save_dir, 'stitches')
-
-	if args.process_list:
-		process_list = os.path.join(args.save_dir, args.process_list)
-
-	else:
-		process_list = None
 
 	print('wsi_file: ', args.source)
 	print('patch_save_dir: ', patch_save_dir)
