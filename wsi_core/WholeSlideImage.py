@@ -608,7 +608,7 @@ class WholeSlideImage(object):
 
         # calculate custom downsample
         assert mpp >= mpp_wsi, "mpp must be greater than or equal to mpp_wsi"
-        scale = int(mpp / mpp_wsi)
+        scale = int(round(mpp / mpp_wsi))
         print(f"desired_mpp: {mpp:.3f}, mpp_wsi: {mpp_wsi:.3f}, mpp scale: {scale}")
 
         start_x, start_y, w, h = (
