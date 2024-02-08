@@ -12,7 +12,7 @@ import pdb
 import pandas as pd
 
 
-def stitching(file_path, wsi_object, downscale=64, mpp=mpp):
+def stitching(file_path, wsi_object, downscale=64, mpp=0.5):
     start = time.time()
     heatmap = StitchCoords(
         file_path,
