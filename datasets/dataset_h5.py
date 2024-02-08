@@ -57,7 +57,7 @@ class Whole_Slide_Bag(Dataset):
 		if not custom_transforms:
 			self.roi_transforms = eval_transforms(pretrained=pretrained)
 		else:
-			self.roi_transforms = custom_transforms
+			raise NotImplementedError # self.roi_transforms = custom_transforms
 
 		self.file_path = file_path
 
@@ -98,7 +98,7 @@ class Whole_Slide_Bag_FP(Dataset):
 		wsi,
 		pretrained=False,
 		custom_transforms=None,
-		custom_downsample=1,
+		patch_size_20x=1,
 		target_patch_size=-1
 		):
 		"""
@@ -106,31 +106,39 @@ class Whole_Slide_Bag_FP(Dataset):
 			file_path (string): Path to the .h5 file containing patched data.
 			pretrained (bool): Use ImageNet transforms
 			custom_transforms (callable, optional): Optional transform to be applied on a sample
-			custom_downsample (int): Custom defined downscale factor (overruled by target_patch_size)
 			target_patch_size (int): Custom defined image size before embedding
 		"""
 		self.pretrained=pretrained
 		self.wsi = wsi
 		if not custom_transforms:
 			self.roi_transforms = eval_transforms(pretrained=pretrained)
+			self.roi_transforms.transforms.insert(0, transforms.CenterCrop(target_patch_size))
 		else:
-			self.roi_transforms = custom_transforms
+			raise NotImplementedError # self.roi_transforms = custom_transforms
 
 		self.file_path = file_path
 
 		with h5py.File(self.file_path, "r") as f:
 			dset = f['coords']
-			self.patch_level = f['coords'].attrs['patch_level']
-			self.patch_size = f['coords'].attrs['patch_size']
+			
+			try:
+				self.patch_size = f['coords'].attrs['patch_size']
+			except KeyError:
+				file_name = os.path.basename(self.file_path).replace('.h5', '.svs')
+				if file_name in pd.read_csv("/gpfs/mskmind_ess/boehmk/oncotype-from-hne/data/tiles/512/process_20x.csv")['slide_id'].tolist():
+					self.patch_size = patch_size_20x
+				elif file_name in pd.read_csv("/gpfs/mskmind_ess/boehmk/oncotype-from-hne/data/tiles/512/process_40x.csv")['slide_id'].tolist():
+					self.patch_size = patch_size_20x * 2
+				else:
+					raise RuntimeError("Unknown patch size for {}".format(file_name))
+			try:
+				self.patch_level = f['coords'].attrs['patch_level']
+			except KeyError:
+				self.patch_level = 0
 			self.length = len(dset)
-			if target_patch_size == self.patch_size:
-                                self.target_patch_size = None
-			elif target_patch_size > 0:
-				self.target_patch_size = (target_patch_size, ) * 2
-			elif custom_downsample > 1:
-				self.target_patch_size = (self.patch_size // custom_downsample, ) * 2
-			else:
-				self.target_patch_size = None
+			assert target_patch_size > 0
+			self.target_patch_size = target_patch_size
+			self.prelim_downsampled_patch_size = (patch_size_20x,) * 2
 		self.summary()
 			
 	def __len__(self):
@@ -152,9 +160,13 @@ class Whole_Slide_Bag_FP(Dataset):
 			coord = hdf5_file['coords'][idx]
 		img = self.wsi.read_region(coord, self.patch_level, (self.patch_size, self.patch_size)).convert('RGB')
 
-		if self.target_patch_size is not None:
-			img = img.resize(self.target_patch_size)
+		#print(img.size)
+		if self.prelim_downsampled_patch_size[0] != self.patch_size:
+			img = img.resize(self.prelim_downsampled_patch_size)
+			#print(img.size)
 		img = self.roi_transforms(img).unsqueeze(0)
+		#print(img.shape)
+		#exit()
 		return img, coord
 
 class Dataset_All_Bags(Dataset):

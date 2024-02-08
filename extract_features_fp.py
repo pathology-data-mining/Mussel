@@ -26,7 +26,7 @@ sys.path.append('/gpfs/mskmind_ess/boehmk/python_bin/TransPath')
 
 def compute_w_loader(file_path, output_path, wsi, model,
  	batch_size = 8, verbose = 0, print_every=20, pretrained=True, 
-	custom_downsample=1, target_patch_size=-1):
+	patch_size_20x=512, target_patch_size=-1):
 	"""
 	args:
 		file_path: directory of bag (.h5 file)
@@ -35,15 +35,14 @@ def compute_w_loader(file_path, output_path, wsi, model,
 		batch_size: batch_size for computing features in batches
 		verbose: level of feedback
 		pretrained: use weights pretrained on imagenet
-		custom_downsample: custom defined downscale factor of image patches
 		target_patch_size: custom defined, rescaled image size before embedding
 	"""
-	if target_patch_size != -1:
-                assert custom_downsample == 1
+	#if target_patch_size != -1:
+        #        assert custom_downsample == 1
 
-	dataset = Whole_Slide_Bag_FP(file_path=file_path, wsi=wsi, pretrained=pretrained, custom_downsample=custom_downsample, target_patch_size=target_patch_size)
+	dataset = Whole_Slide_Bag_FP(file_path=file_path, wsi=wsi, pretrained=pretrained, patch_size_20x=patch_size_20x, target_patch_size=target_patch_size)
 	x, y = dataset[0]
-	kwargs = {'num_workers': 32, 'pin_memory': True} if device.type == "cuda" else {}
+	kwargs = {'num_workers': 16, 'pin_memory': True} if device.type == "cuda" else {}
 	loader = DataLoader(dataset=dataset, batch_size=batch_size, **kwargs, collate_fn=collate_features)
 
 	if verbose > 0:
@@ -75,7 +74,7 @@ parser.add_argument('--csv_path', type=str, default=None)
 parser.add_argument('--feat_dir', type=str, default=None)
 parser.add_argument('--batch_size', type=int, default=256)
 parser.add_argument('--no_auto_skip', default=False, action='store_true')
-parser.add_argument('--custom_downsample', type=int, default=1)
+parser.add_argument('--patch_size_20x', type=int, default=512)
 parser.add_argument('--target_patch_size', type=int, default=-1)
 args = parser.parse_args()
 
@@ -132,7 +131,7 @@ if __name__ == '__main__':
 		wsi = openslide.open_slide(slide_file_path)
 		output_file_path = compute_w_loader(h5_file_path, output_path, wsi, 
 		model = model, batch_size = args.batch_size, verbose = 1, print_every = 20, 
-		custom_downsample=args.custom_downsample, target_patch_size=args.target_patch_size, pretrained=USE_IMAGENET_RGB_DIST)
+		patch_size_20x=args.patch_size_20x, target_patch_size=args.target_patch_size, pretrained=USE_IMAGENET_RGB_DIST)
 		time_elapsed = time.time() - time_start
 		print('\ncomputing features for {} took {} s'.format(output_file_path, time_elapsed))
 		file = h5py.File(output_file_path, "r")
