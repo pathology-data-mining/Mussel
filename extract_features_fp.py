@@ -49,6 +49,7 @@ def compute_w_loader(
         batch_size=batch_size,
         **kwargs,
         collate_fn=collate_features,
+        shuffle=False,
     )
 
     if verbose > 0:
