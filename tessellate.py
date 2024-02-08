@@ -176,12 +176,9 @@ def seg_and_patch(
 
 
 parser = argparse.ArgumentParser(description="seg and patch")
-parser.add_argument("--source", type=str, help="path to wsi .svs file")
+parser.add_argument("--slide_file_path", type=str, help="path to wsi .svs file")
 parser.add_argument("--step_size", type=int, default=256, help="step_size")
 parser.add_argument("--patch_size", type=int, default=256, help="patch_size")
-parser.add_argument("--patch", default=False, action="store_true")
-parser.add_argument("--seg", default=False, action="store_true")
-parser.add_argument("--stitch", default=False, action="store_true")
 parser.add_argument("--save_dir", type=str, help="directory to save processed data")
 parser.add_argument(
     "--preset",
@@ -201,13 +198,13 @@ if __name__ == "__main__":
     mask_save_dir = os.path.join(args.save_dir, "masks")
     stitch_save_dir = os.path.join(args.save_dir, "stitches")
 
-    print("wsi_file: ", args.source)
+    print("wsi_file: ", args.slide_file_path)
     print("patch_save_dir: ", patch_save_dir)
     print("mask_save_dir: ", mask_save_dir)
     print("stitch_save_dir: ", stitch_save_dir)
 
     directories = {
-        "source": args.source,
+        "source": args.slide_file_path,
         "save_dir": args.save_dir,
         "patch_save_dir": patch_save_dir,
         "mask_save_dir": mask_save_dir,
@@ -261,9 +258,9 @@ if __name__ == "__main__":
         patch_size=args.patch_size,
         step_size=args.step_size,
         mpp=args.mpp,
-        seg=args.seg,
+        seg=True,
         use_default_params=True,
         save_mask=True,
-        stitch=args.stitch,
-        patch=args.patch,
+        stitch=True,
+        patch=True,
     )
