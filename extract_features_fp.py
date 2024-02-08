@@ -76,7 +76,7 @@ parser = argparse.ArgumentParser(description="Feature Extraction")
 parser.add_argument("--model", type=str, default="resnet50")
 parser.add_argument("--slide_file_path", type=str, default=None)
 parser.add_argument("--patch_file_path", type=str, default=None)
-parser.add_argument("--output_feat_dir", type=str, default=None)
+parser.add_argument("--save_dir", type=str, default=None)
 parser.add_argument("--batch_size", type=int, default=256)
 args = parser.parse_args()
 

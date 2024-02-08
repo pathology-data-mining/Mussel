@@ -227,7 +227,7 @@ if __name__ == "__main__":
         "exclude_ids": "none",
     }
     filter_params = {"a_t": 100, "a_h": 16, "max_n_holes": 8}
-    vis_params = {"vis_level": -1, "line_thickness": 250}
+    vis_params = {"vis_level": -1, "line_thickness": 100}
     patch_params = {"use_padding": True}
 
     if args.preset:
