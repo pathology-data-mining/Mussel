@@ -60,6 +60,7 @@ def compute_w_loader(
                         count, len(loader), count * batch_size
                     )
                 )
+            print("batch size: ", batch.shape)
             batch = batch.to(device, non_blocking=True)
 
             features = model(batch)
