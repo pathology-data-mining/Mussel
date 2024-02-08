@@ -116,6 +116,7 @@ class Whole_Slide_Bag_FP(Dataset):
             self.scaled_patch_size = int(
                 f["coords"].attrs["patch_size_to_resize_to_for_desired_mpp"]
             )
+            self.length = len(f["coords"])
 
         self.roi_transforms = eval_transforms(
             use_imagenet_rgb_dist=use_imagenet_rgb_dist
