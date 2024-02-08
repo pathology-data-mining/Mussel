@@ -20,8 +20,7 @@ def stitching(file_path, wsi_object, downscale=64, mpp=0.5):
         downscale=downscale,
         bg_color=(0, 0, 0),
         alpha=-1,
-        draw_grid=False,  # TODO: mpp
-        mpp=mpp,
+        draw_grid=False,
     )
     total_time = time.time() - start
 
@@ -48,7 +47,7 @@ def patching(WSI_object, **kwargs):
     start_time = time.time()
 
     # Patch
-    file_path = WSI_object.process_contours(**kwargs)  # TODO: mpp
+    file_path = WSI_object.process_contours(**kwargs)
 
     ### Stop Patch Timer
     patch_time_elapsed = time.time() - start_time
