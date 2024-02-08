@@ -1,7 +1,11 @@
 # Mussel
 
 ## setup
-```conda create --name mussel -c conda-forge openslide-python numpy pandas opencv h5py matplotlib```
+```
+conda create --name mussel -c conda-forge openslide-python numpy pandas opencv h5py matplotlib
+conda activate mussel
+conda install pytorch torchvision pytorch-cuda=12.1 -c pytorch -c nvidia
+```
 
 ## fast-patching
 
