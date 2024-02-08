@@ -598,7 +598,6 @@ class WholeSlideImage(object):
         save_path,
         patch_size=256,
         step_size=256,
-        contour_fn="four_pt",
         use_padding=True,
         top_left=None,
         bot_right=None,
@@ -606,10 +605,9 @@ class WholeSlideImage(object):
         # get mpp of WSI
         mpp_wsi = float(self.wsi.properties[openslide.PROPERTY_NAME_MPP_X])
 
-        # calculate custom downsample
         assert mpp >= mpp_wsi, "mpp must be greater than or equal to mpp_wsi"
-        scale = int(round(mpp / mpp_wsi))
-        print(f"desired_mpp: {mpp:.3f}, mpp_wsi: {mpp_wsi:.3f}, mpp scale: {scale}")
+        scale = mpp / mpp_wsi
+        print(f"desired_mpp: {mpp:.3f}, mpp_wsi: {mpp_wsi:.3f}, mpp scale: {scale:.3f}")
 
         start_x, start_y, w, h = (
             cv2.boundingRect(cont)
@@ -617,18 +615,15 @@ class WholeSlideImage(object):
             else (0, 0, self.level_dim[0][0], self.level_dim[0][1])
         )
 
-        ref_patch_size = (
-            patch_size * scale,
-            patch_size * scale,
-        )
+        native_patch_size = int(round(patch_size * scale))
 
         img_w, img_h = self.level_dim[0]
         if use_padding:
             stop_y = start_y + h
             stop_x = start_x + w
         else:
-            stop_y = min(start_y + h, img_h - ref_patch_size[1] + 1)
-            stop_x = min(start_x + w, img_w - ref_patch_size[0] + 1)
+            stop_y = min(start_y + h, img_h - native_patch_size + 1)
+            stop_x = min(start_x + w, img_w - native_patch_size + 1)
 
         print("Bounding Box:", start_x, start_y, w, h)
         print("Contour Area:", cv2.contourArea(cont))
@@ -649,14 +644,13 @@ class WholeSlideImage(object):
                 print("Adjusted Bounding Box:", start_x, start_y, w, h)
 
         cont_check_fn = isInContourV3_Easy(
-            contour=cont, patch_size=ref_patch_size[0], center_shift=0.5
+            contour=cont, patch_size=native_patch_size, center_shift=0.5
         )
 
-        step_size_x = step_size * scale
-        step_size_y = step_size * scale
+        native_step_size = step_size * scale
 
-        x_range = np.arange(start_x, stop_x, step=step_size_x)
-        y_range = np.arange(start_y, stop_y, step=step_size_y)
+        x_range = np.arange(start_x, stop_x, step=native_step_size)
+        y_range = np.arange(start_y, stop_y, step=native_step_size)
         x_coords, y_coords = np.meshgrid(x_range, y_range, indexing="ij")
         coord_candidates = np.array(
             [x_coords.flatten(), y_coords.flatten()]
@@ -668,7 +662,7 @@ class WholeSlideImage(object):
         pool = mp.Pool(num_workers)
 
         iterable = [
-            (coord, contour_holes, ref_patch_size[0], cont_check_fn)
+            (coord, contour_holes, native_patch_size[0], cont_check_fn)
             for coord in coord_candidates
         ]
         results = pool.starmap(WholeSlideImage.process_coord_candidate, iterable)
@@ -682,7 +676,7 @@ class WholeSlideImage(object):
 
             attr = {
                 "patch_size": patch_size,
-                "native_patch_size": ref_patch_size[0],
+                "native_patch_size": native_patch_size,
                 "patch_level": 0,
                 "mpp": mpp,
                 "native_mpp": mpp_wsi,
