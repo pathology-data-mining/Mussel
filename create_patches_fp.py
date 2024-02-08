@@ -1,14 +1,12 @@
 # internal imports
 from wsi_core.WholeSlideImage import WholeSlideImage
 from wsi_core.wsi_utils import StitchCoords
-from wsi_core.batch_process_utils import initialize_df
 
 # other imports
 import os
 import numpy as np
 import time
 import argparse
-import pdb
 import pandas as pd
 
 
