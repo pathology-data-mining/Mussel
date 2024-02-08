@@ -25,9 +25,7 @@ def compute_w_loader(
     batch_size=8,
     verbose=0,
     print_every=20,
-    pretrained=True,
-    patch_size_20x=512,
-    target_patch_size=-1,
+    use_imagenet_rgb_dist=True,
 ):
     """
     args:
@@ -37,17 +35,12 @@ def compute_w_loader(
             batch_size: batch_size for computing features in batches
             verbose: level of feedback
             pretrained: use weights pretrained on imagenet
-            target_patch_size: custom defined, rescaled image size before embedding
     """
-    # if target_patch_size != -1:
-    #        assert custom_downsample == 1
 
     dataset = Whole_Slide_Bag_FP(
         file_path=file_path,
         wsi=wsi,
-        pretrained=pretrained,
-        patch_size_20x=patch_size_20x,
-        target_patch_size=target_patch_size,
+        use_imagenet_rgb_dist=use_imagenet_rgb_dist,
     )
     x, y = dataset[0]
     kwargs = {"num_workers": 16, "pin_memory": True} if device.type == "cuda" else {}
@@ -80,97 +73,62 @@ def compute_w_loader(
 
 
 parser = argparse.ArgumentParser(description="Feature Extraction")
-parser.add_argument("--data_h5_dir", type=str, default=None)
 parser.add_argument("--model", type=str, default="resnet50")
-parser.add_argument("--data_slide_dir", type=str, default=None)
-parser.add_argument("--slide_ext", type=str, default=".svs")
-parser.add_argument("--csv_path", type=str, default=None)
-parser.add_argument("--feat_dir", type=str, default=None)
+parser.add_argument("--slide_file_path", type=str, default=None)
+parser.add_argument("--patch_file_path", type=str, default=None)
+parser.add_argument("--output_feat_dir", type=str, default=None)
 parser.add_argument("--batch_size", type=int, default=256)
-parser.add_argument("--no_auto_skip", default=False, action="store_true")
-parser.add_argument("--patch_size_20x", type=int, default=512)
-parser.add_argument("--target_patch_size", type=int, default=-1)
 args = parser.parse_args()
 
 
 if __name__ == "__main__":
-    print("initializing dataset")
-    csv_path = args.csv_path
-    if csv_path is None:
-        raise NotImplementedError
-
-    bags_dataset = Dataset_All_Bags(csv_path)
-
     os.makedirs(args.feat_dir, exist_ok=True)
     os.makedirs(os.path.join(args.feat_dir, "pt_files"), exist_ok=True)
     os.makedirs(os.path.join(args.feat_dir, "h5_files"), exist_ok=True)
-    dest_files = os.listdir(os.path.join(args.feat_dir, "pt_files"))
 
     print("loading model checkpoint")
     if args.model == "resnet50":
         model = resnet50_baseline(pretrained=True)
-        USE_IMAGENET_RGB_DIST = True
     elif args.model == "ctranspath":
         model = torch.load(
             "/gpfs/mskmind_ess/boehmk/python_bin/TransPath/CTransPath_Model.pt"
         )
-        USE_IMAGENET_RGB_DIST = True
-    elif args.model == "vit16":
-        model = get_vit256(
-            pretrained_weights="/gpfs/mskmind_ess/boehmk/HIPT/HIPT_4K/Checkpoints/vit256_small_dino.pth"
-        )
-        USE_IMAGENET_RGB_DIST = False
-    model = model.to(device)
+    else:
+        raise ValueError("model not recognized")
 
-    # print_network(model)
+    model = model.to(device)
     if torch.cuda.device_count() > 1:
         model = nn.DataParallel(model)
-
     model.eval()
-    total = len(bags_dataset)
 
-    for bag_candidate_idx in range(total):
-        print(bags_dataset[bag_candidate_idx])
-        print(args.slide_ext)
-        slide_id = str(bags_dataset[bag_candidate_idx])  # .split(args.slide_ext)[0]
-        bag_name = str(slide_id) + ".h5"
-        h5_file_path = os.path.join(args.data_h5_dir, bag_name)
-        slide_file_path = os.path.join(
-            args.data_slide_dir, str(slide_id) + args.slide_ext
-        )
-        print("\nprogress: {}/{}".format(bag_candidate_idx, total))
-        print(slide_id)
+    # extract features
+    slide_id = os.path.basename(args.slide_file_path).replace(".svs", "")
+    output_path = os.path.join(args.feat_dir, "h5_files", f"{slide_id}.h5")
 
-        if not args.no_auto_skip and slide_id + ".pt" in dest_files:
-            print("skipped {}".format(slide_id))
-            continue
+    time_start = time.time()
+    wsi = openslide.open_slide(args.slide_file_path)
+    output_file_path = compute_w_loader(
+        args.patch_file_path,
+        output_path,
+        wsi,
+        model=model,
+        batch_size=args.batch_size,
+        verbose=1,
+        print_every=20,
+        use_imagenet_rgb_dist=True,
+    )
+    time_elapsed = time.time() - time_start
+    print(
+        "\ncomputing features for {} took {} s".format(output_file_path, time_elapsed)
+    )
 
-        output_path = os.path.join(args.feat_dir, "h5_files", bag_name)
-        time_start = time.time()
-        wsi = openslide.open_slide(slide_file_path)
-        output_file_path = compute_w_loader(
-            h5_file_path,
-            output_path,
-            wsi,
-            model=model,
-            batch_size=args.batch_size,
-            verbose=1,
-            print_every=20,
-            patch_size_20x=args.patch_size_20x,
-            target_patch_size=args.target_patch_size,
-            pretrained=USE_IMAGENET_RGB_DIST,
-        )
-        time_elapsed = time.time() - time_start
-        print(
-            "\ncomputing features for {} took {} s".format(
-                output_file_path, time_elapsed
-            )
-        )
-        file = h5py.File(output_file_path, "r")
+    file = h5py.File(output_file_path, "r")
+    features = file["features"][:]
+    print("features size: ", features.shape)
+    print("coordinates size: ", file["coords"].shape)
+    file.close()
 
-        features = file["features"][:]
-        print("features size: ", features.shape)
-        print("coordinates size: ", file["coords"].shape)
-        features = torch.from_numpy(features)
-        bag_base, _ = os.path.splitext(bag_name)
-        torch.save(features, os.path.join(args.feat_dir, "pt_files", bag_base + ".pt"))
+    features = torch.from_numpy(features)
+    torch.save(
+        features, output_path.replace(".h5", ".pt").replace("h5_files", "pt_files")
+    )
