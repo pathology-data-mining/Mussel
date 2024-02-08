@@ -470,7 +470,7 @@ class WholeSlideImage(object):
         
         print('Extracted {} coordinates'.format(len(results)))
 
-        if len(results)>1:
+        if len(results)>0:
             asset_dict = {'coords' :          results}
             
             attr = {'patch_size' :            ref_patch_size[0], # To be considered...
