@@ -1,7 +1,6 @@
 # Mussel
 
-<img src="mussel.jpg" width="280px" style="float" />
-=====
+<img src="mussel.jpg" width="300px" />
 
 This is a fork of Faisal Mahmood's CLAM repository (GPL v3 license), with the following modifications:
 - Added microns per pixel (mpp) as parameter for tiling, supported regardless of native slide resolution
