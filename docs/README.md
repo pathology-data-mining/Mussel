@@ -21,10 +21,29 @@ conda install pytorch torchvision pytorch-cuda=12.1 \
 -c pytorch -c nvidia
 ```
 
-If you plan to use CTransPath, download modified timm from [here](https://drive.google.com/file/d/1JV7aj9rKqGedXY1TdDfi3dP07022hcgZ/view)
+### If you plan to use CTransPath
+Download modified timm from [here](https://drive.google.com/file/d/1JV7aj9rKqGedXY1TdDfi3dP07022hcgZ/view)
 ```bash
 pip install timm-0.5.4.tar
 ```
+
+### If you plan to use Quilt
+- install open-clip
+```bash
+conda install -c conda-forge sentencepiece
+pip install open-clip-torch
+pip install transformers
+```
+- edit argument name to work with open_clip checkpoint
+  - `vi +180 {conda_path}/envs/mussel/lib/python3.12/site-packages/open_clip/model.py`
+  - add the following lines 180-181:
+```python
+179     if isinstance(text_cfg, dict):
+180         text_cfg['hf_proj_type'] = text_cfg.pop('proj')
+181         text_cfg['hf_pooler_type'] = text_cfg.pop('pooler_type')
+182         text_cfg = CLIPTextCfg(**text_cfg)
+```
+
 
 ## tiling
 Generate .h5 file with coordinates and metadata necessary for downstream steps, using the following arguments

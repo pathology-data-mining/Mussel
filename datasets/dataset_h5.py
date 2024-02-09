@@ -49,11 +49,11 @@ class Whole_Slide_Bag_FP(Dataset):
             )
             self.length = len(f["coords"])
 
-        if self.preprocess is not None:
+        if preprocess is not None:
             assert (
                 use_imagenet_rgb_dist == False
             ), "Cannot use custom preprocess with ImageNet RGB dist"
-            self.roi_transforms = self.preprocess
+            self.roi_transforms = preprocess
         else:
             self.roi_transforms = eval_transforms(
                 use_imagenet_rgb_dist=use_imagenet_rgb_dist
