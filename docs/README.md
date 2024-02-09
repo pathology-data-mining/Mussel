@@ -20,6 +20,7 @@ openslide-python numpy pandas opencv h5py matplotlib
 conda activate mussel
 conda install pytorch torchvision pytorch-cuda=12.1 \
 -c pytorch -c nvidia
+conda install -c conda-forge opencv
 ```
 
 ### If you plan to use CTransPath
@@ -62,7 +63,7 @@ python tessellate.py \
 --step_size 224 \
 --patch_size 224
 ```
-*This takes about one second for an example slide.*
+*This takes about one second for an example slide. Using Condor, tiling 1000 slides takes about two minutes.*
 
 ## feat extraction
 Generate .h5 file and .pt file with embeddings for each tile, using the following arguments
