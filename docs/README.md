@@ -62,7 +62,7 @@ python tessellate.py \
 --step_size 224 \
 --patch_size 224
 ```
-*This takes about one second for an example slide.*
+*This takes about one second for an example slide. Using Condor, tiling 1000 slides takes about 90 seconds.*
 
 ## feat extraction
 Generate .h5 file and .pt file with embeddings for each tile, using the following arguments
@@ -89,7 +89,7 @@ python extract_features.py \
 --patch_file-path {path-to-patch-file}
 ```
 
-*This takes about 30 seconds for an example slide.*
+*This takes about 30 seconds for an example slide. Using Condor, featurizing 1000 slides takes less than an hour.*
 
 ## tile caching
 Generate .pt file for rapid access of tiles during I/O intense operations such as training.
