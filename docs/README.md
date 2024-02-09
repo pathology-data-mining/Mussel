@@ -49,7 +49,7 @@ pip install transformers
 Generate .h5 file with coordinates and metadata necessary for downstream steps, using the following arguments
 - mpp (microns per pixel)
 - step_size (distance between patches)
-- patch_size (edge length of patch, must be 224 for CTransPath)
+- patch_size (edge length of patch, must be 224 for CTransPath or Quilt)
 - save_dir (directory with or in which to create {masks,stitches,patches} subdirectories)
 
 The patches directory contains the actual h5 file with coordinates and metadata required for downstream use. For quality control, masks show the tissue area, stitches show the tiling pattern.
