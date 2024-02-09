@@ -85,7 +85,7 @@ parser.add_argument("--slide_file_path", type=str, default=None)
 parser.add_argument("--patch_file_path", type=str, default=None)
 parser.add_argument("--save_dir", type=str, default=None)
 parser.add_argument("--batch_size", type=int, default=256)
-parser.add_argument("--gpus", type=list, default=[0])
+parser.add_argument("--gpus", nargs="+", type=int, default=[0])
 args = parser.parse_args()
 
 assert torch.cuda.is_available(), "no cuda available"
