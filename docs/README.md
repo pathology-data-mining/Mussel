@@ -42,6 +42,7 @@ python tessellate.py \
 --step_size 224 \
 --patch_size 224
 ```
+*This takes about one second for an example slide.*
 
 ## feat extraction
 Generate .h5 file and .pt file with embeddings for each tile, using the following arguments
@@ -68,6 +69,8 @@ python extract_features.py \
 --patch_file-path {path-to-patch-file}
 ```
 
+*This takes about 30 seconds for an example slide.*
+
 ## tile caching
 Generate .pt file for rapid access of tiles during I/O intense operations such as training.
 ```bash
@@ -76,6 +79,8 @@ python cache_tiles.py \
 --patch_file_path {path-to-patch-file} \
 --output_path {path-to-pt-file}
 ```
+
+*This takes about ten seconds for an example slide.*
 
 ## License
 © [Mahmood Lab](http://www.mahmoodlab.org) - This code is made available under the GPLv3 License and is available for non-commercial academic purposes.
