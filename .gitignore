@@ -1,3 +1,9 @@
 **/.DS_Store
 __pycache__/
 *.log
+/.idea/misc.xml
+/.idea/modules.xml
+/.idea/Mussel.iml
+/.idea/inspectionProfiles/profiles_settings.xml
+/.idea/inspectionProfiles/Project_Default.xml
+/.idea/vcs.xml
