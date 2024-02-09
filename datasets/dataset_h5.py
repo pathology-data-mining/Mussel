@@ -58,9 +58,9 @@ class Whole_Slide_Bag_FP(Dataset):
             self.roi_transforms = eval_transforms(
                 use_imagenet_rgb_dist=use_imagenet_rgb_dist
             )
-        self.roi_transforms.transforms.insert(
-            0, transforms.Resize(self.scaled_patch_size)
-        )
+            self.roi_transforms.transforms.insert(
+                0, transforms.Resize(self.scaled_patch_size)
+            )
 
         self.summary()
 
