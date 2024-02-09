@@ -14,8 +14,6 @@ from models.resnet_custom import resnet50_baseline
 from utils.file_utils import save_hdf5
 from utils.utils import collate_features
 
-sys.path.append("/gpfs/mskmind_ess/boehmk/python_bin/TransPath")
-
 
 def compute_w_loader(
     file_path,
@@ -26,6 +24,7 @@ def compute_w_loader(
     verbose=0,
     print_every=20,
     use_imagenet_rgb_dist=True,
+    preprocess=None,
 ):
     """
     args:
@@ -41,6 +40,7 @@ def compute_w_loader(
         file_path=file_path,
         wsi=wsi,
         use_imagenet_rgb_dist=use_imagenet_rgb_dist,
+        preprocess=preprocess,
     )
     x, y = dataset[0]
     kwargs = {"num_workers": 32, "pin_memory": True}
@@ -96,10 +96,20 @@ if __name__ == "__main__":
     print("loading model checkpoint")
     if args.model == "resnet50":
         model = resnet50_baseline(pretrained=True)
+        preprocessing = None
     elif args.model == "ctranspath":
+        sys.path.append("/gpfs/mskmind_ess/boehmk/python_bin/TransPath")
         model = torch.load(
             "/gpfs/mskmind_ess/boehmk/python_bin/TransPath/CTransPath_Model.pt"
         )
+        preprocessing = None
+    elif args.model == "quilt":
+        import open_clip
+
+        model, _, preprocessing = open_clip.create_model_and_transforms(
+            "hf-hub:wisdomik/QuiltNet-B-16-PMB"
+        )
+        tokenizer = open_clip.get_tokenizer("hf-hub:wisdomik/QuiltNet-B-16-PMB")
     else:
         raise ValueError("model not recognized")
 
@@ -119,10 +129,11 @@ if __name__ == "__main__":
         output_path,
         wsi,
         model=model,
+        preprocess=preprocessing,
         batch_size=args.batch_size,
         verbose=1,
         print_every=20,
-        use_imagenet_rgb_dist=True,
+        use_imagenet_rgb_dist=preprocessing is None,
     )
     time_elapsed = time.time() - time_start
     print(
