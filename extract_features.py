@@ -66,7 +66,10 @@ def compute_w_loader(
                 )
             batch = batch.to(device, non_blocking=True)
 
-            features = model(batch)
+            if args.model == "quilt":
+                features = model.encode_image(batch)
+            else:
+                features = model(batch)
             features = features.cpu().numpy()
 
             asset_dict = {"features": features, "coords": coords}
