@@ -4,7 +4,8 @@
 
 This is a fork of Faisal Mahmood's CLAM repository (GPL v3 license), with the following modifications:
 - Added microns per pixel (mpp) as parameter for tiling, supported regardless of native slide resolution
-- Added CTransPath embeddings (in addition to ResNet50)
+- Added CTransPath embeddings
+- Added Quilt embeddings
 - Added caching of images for inference right on the tiles (rather than on embeddings)
 - Made usable for job submission (one script run, one slide)
 - Removed modeling
