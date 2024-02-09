@@ -2,6 +2,7 @@ import numpy as np
 from PIL import Image
 import numpy as np
 from PIL import Image
+import cv2
 
 
 class Mosaic_Canvas(object):
