@@ -7,7 +7,9 @@ import argparse
 parser = argparse.ArgumentParser(description='Run script in parallel with joblib')
 
 # Add an argument for the input file
+parser.add_argument('script_name', help='Name of the script to run (./feat.sh or ./patch.sh)')
 parser.add_argument('input_file', help='Path to the input file')
+
 
 # Parse the command-line arguments
 args = parser.parse_args()
@@ -19,7 +21,7 @@ with open(args.input_file, 'r') as file:
 # Rest of the code remains the same
 # Function to run the script
 def run_script(arg):
-    subprocess.run(shlex.split(f'./patch.sh {arg}'))
+    subprocess.run(shlex.split(f'{args.script_name} {args.input_file}'))
 
 # Run the script in parallel with joblib
 Parallel(n_jobs=128)(delayed(run_script)(arg) for arg in lines)
