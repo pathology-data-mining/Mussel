@@ -12,6 +12,10 @@ This is a fork of Faisal Mahmood's CLAM repository (GPL v3 license), with the fo
 
 Missing feature: Macenko normalization
 
+Usable using Condor, but suffers from limitations of current Condor system:
+- sporadic data accessibility (e.g. sparky2 cannot access `/gpfs/mskmind_emc/data_large`)
+- uncontrolled usage by non-Condor usage (e.g. user was using most gpus across pll1,2,3 without Condor when I tried to test the featurization using Condor, so mine largely failed due to clashes.)
+
 ## setup
 ```bash
 conda create --name mussel -c conda-forge \
