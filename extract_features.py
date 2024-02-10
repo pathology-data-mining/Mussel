@@ -96,6 +96,12 @@ if __name__ == "__main__":
     os.makedirs(os.path.join(args.save_dir, "pt_files"), exist_ok=True)
     os.makedirs(os.path.join(args.save_dir, "h5_files"), exist_ok=True)
 
+    slide_id = os.path.basename(args.slide_file_path).replace(".svs", "")
+    output_path = os.path.join(args.save_dir, "h5_files", f"{slide_id}.h5")
+    if os.path.exists(output_path):
+        print("features already computed for {}".format(output_path))
+        sys.exit(0)
+
     print("loading model checkpoint")
     if args.model == "resnet50":
         model = resnet50_baseline(pretrained=True)
@@ -122,9 +128,6 @@ if __name__ == "__main__":
     model.eval()
 
     # extract features
-    slide_id = os.path.basename(args.slide_file_path).replace(".svs", "")
-    output_path = os.path.join(args.save_dir, "h5_files", f"{slide_id}.h5")
-
     time_start = time.time()
     wsi = openslide.open_slide(args.slide_file_path)
     output_file_path = compute_w_loader(
