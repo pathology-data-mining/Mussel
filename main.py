@@ -10,7 +10,7 @@ def parse_args():
 
     # Add shared arguments
     parser.add_argument("command", help="tessellate, featurize, annotate, cache")
-    parser.add_argument('--image_id', nargs='+', type=str, help='image id')
+    parser.add_argument('--image_id', nargs='+', type=str, help='image id, multiples, or path to .txt file listing them')
     parser.add_argument('--reef_dir', type=str, help='location of mussel reef', default='/gpfs/mskmind_ess/pdm/reef')
     parser.add_argument('--mpp', type=float, help='microns per pixel', default=1.0)
     parser.add_argument('--patch_size', type=int, help='patch size', default=224)
@@ -32,6 +32,11 @@ def parse_args():
 
     args = parser.parse_args()
     args = vars(args)
+
+    if args['image_id'].contains('.txt'):
+        with open(args['image_id'], 'r') as f:
+            args['image_id'] = f.readlines()
+
     return args
 
 
