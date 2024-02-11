@@ -51,5 +51,5 @@ DF = pd.DataFrame(COS_SIM.numpy(), columns=[CLASS_DICT[i] for i in range(len(CLA
 print(DF)
 DF.to_csv(ARGS.output_path, index=False)
 
-DF['class'] = DF.idxmax(axis=1).map(CLASS_DICT)
+DF['class'] = DF.idxmax(axis=1)
 print(DF['class'].value_counts())
