@@ -25,9 +25,9 @@ else:
         with torch.no_grad():
             text_features = quilt["model"].encode_text(text)
         embs.append((class_id, text_features))
-    embs.sort(key=lambda x: x[0])
+    embs.sort(key=lambda x: int(x[0]))
     print(embs)
     embs = [x[1] for x in embs]
-    CLASS_EMB = torch.stack(embs)
+    CLASS_EMB = torch.stack(embs).squeeze(1)
     print(CLASS_EMB.shape)
     torch.save(CLASS_EMB, CLASS_EMB_PATH)
