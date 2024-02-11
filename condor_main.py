@@ -21,10 +21,11 @@ def submit_condor_jobs(mussel_params, n_jobs):
 
 if __name__ == "__main__":
     all_args = parse_args()
-    assert len(all_args['image_id'] > 1), "use main.py for single image_id"
+    print(all_args)
+    assert len(all_args['image_id']) > 1, "use main.py for single image_id"
     for image_id in all_args['image_id']:
         args = all_args.copy()
-        args['image_id'] = [image_id]
+        args['image_id'] = image_id
         main(args)
 
     # cluster_id = submit_condor_jobs(MUSSEL_PARAMS, len(SLIDES_TO_CACHE))
