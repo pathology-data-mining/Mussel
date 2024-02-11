@@ -59,9 +59,9 @@ def submit_condor_jobs(all_args):
     sub = htcondor.Submit({
         'executable': 'condor_mussel.sh',
         'universe': 'vanilla',
-        'request_gpus': 0,
-        'request_memory': '10GB',
-        'request_cpus': 8,
+        'request_gpus': 1 if all_args['command'] == 'featurize' else 0,
+        'request_memory': '30GB' if all_args['command'] == 'featurize' else '15GB',
+        'request_cpus': 32 if all_args['command'] == 'featurize' else 16,
         'output': 'scratch/condor_output.out',
         'log': 'scratch/condor_log.log',
         'error': 'scratch/condor_err.err',
