@@ -43,9 +43,13 @@ parser.add_argument('--step_size', type=int, help='step size', default=896)
 subparsers = parser.add_subparsers()
 parser_tessellate = subparsers.add_parser('tessellate')
 args = parser.parse_args()
+paths = get_paths(args)
 
 if args.command == 'tessellate':
-    tessellate.main(args)
+    tessellate.main(in_path_wsi=paths['slide_path'],
+                    out_path_patch=paths['patch_path'],
+                    out_path_mask=paths['mask_path'],
+                    out_path_stitch=paths['stitch_path'])
 
 
 # Create a parser for the 'tessellate' command
@@ -63,7 +67,6 @@ parser_cache.set_defaults(func=cache.main)
 # Parse the arguments
 args = parser.parse_args()
 
-paths = get_paths(args)
 
 # Run the function associated with the chosen subparser
 args.func(args)
