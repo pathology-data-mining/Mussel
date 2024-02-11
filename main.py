@@ -61,12 +61,16 @@ if args.command == 'tessellate':
                     step_size=args.step_size,
                     mpp=args.mpp)
 
-elif args.subcomcommandands == 'featurize':
-    extract_features.main(in_path=paths['patch_path'],
-                          out_path=paths['cache_path'],
-                          model_name=args.model_name,
-                          gpus=args.gpus,
-                          batch_size=args.batch_size,)
+elif args.command == 'featurize':
+    extract_features.main(
+        h5_feats_path=paths['h5_feats_path'],
+        pt_feats_path=paths['pt_feats_path'],
+        patch_path=paths['patch_path'],
+        slide_path=paths['slide_path'],
+        model_name=args.model_name,
+        batch_size=args.batch_size,
+        gpus=args.gpus,
+)
 
 
 # Create a parser for the 'tessellate' command
