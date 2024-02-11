@@ -67,7 +67,7 @@ def submit_condor_jobs(all_args):
     executable = condor_mussel.sh
     arguments = $(SlideID) {command} --image_id {image_ids_formatted} --reef_dir {reef_dir} --mpp {mpp} --patch_size {patch_size} --step_size {step_size} --model_name {model_name} --gpus {gpus} --batch_size {batch_size} --interrogate {interrogate} --limit_to_class {limit_to_class}
     queue SlideID from slide_ids.txt
-""")
+""".format(**all_args))
     schedd = htcondor.Schedd()
     with schedd.transaction() as txn:
         result = sub.queue(txn)
