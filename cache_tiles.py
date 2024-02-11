@@ -10,15 +10,24 @@ from datasets.dataset_h5 import Whole_Slide_Bag_FP
 from utils.utils import collate_features
 import openslide
 import time
+import pandas as pd
+import json
 
 
-def main(slide_file_path, patch_file_path, output_path):
+def main(slide_file_path, patch_file_path, output_path, limit_to_class=None, annot_path=None, cache_tile_indices_path=None):
     time_start = time.time()
+    if limit_to_class is not None:
+        annot = pd.read_csv(annot_path)
+        annot['class'] = annot.idxmax(axis=1)
+        indices = annot[annot['class'] == limit_to_class].index.tolist()
+        print(f"limiting to class {limit_to_class} with {len(indices)} tiles")
+    
     wsi = openslide.open_slide(slide_file_path)
     dataset = Whole_Slide_Bag_FP(
         file_path=patch_file_path,
         wsi=wsi,
         use_imagenet_rgb_dist=True,
+        limit_to_indices=indices if limit_to_class else None,
     )
     kwargs = {"num_workers": 8, "pin_memory": True}
     loader = DataLoader(
@@ -44,6 +53,9 @@ def main(slide_file_path, patch_file_path, output_path):
     print(f"all_tiles shape: {all_tiles.shape}")
     torch.save(all_tiles, output_path)
     print(f"saved to {output_path}")
+    # save indices as json
+    with open(cache_tile_indices_path, "w") as f:
+        json.dump(indices, f)
 
 
 if __name__ == "__main__":
@@ -51,5 +63,8 @@ if __name__ == "__main__":
     PARSER.add_argument("--slide_file_path", type=str, default=None)
     PARSER.add_argument("--patch_file_path", type=str, default=None)
     PARSER.add_argument("--output_path", type=str, default=None)
+    PARSER.add_argument("--limit_to_class", type=str, default=None)
+    PARSER.add_argument("--annot_path", type=str, default=None)
+    PARSER.add_argument("--cache_tile_indices_path", type=str, default=None)
     ARGS = PARSER.parse_args()
-    main(ARGS.slide_file_path, ARGS.patch_file_path, ARGS.output_path)
+    main(ARGS.slide_file_path, ARGS.patch_file_path, ARGS.output_path, ARGS.limit_to_class, ARGS.annot_path, ARGS.cache_tile_indices_path)

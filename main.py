@@ -18,6 +18,7 @@ def get_paths(args):
     paths['mask_path'] = os.path.join(sub_reef_dir, 'masks', f"{args.image_id}.jpg")
 
     paths['cache_path'] = os.path.join(sub_reef_dir, 'cache', f"{args.image_id}.pt")
+    paths['cache_tile_indices_path'] = os.path.join(sub_reef_dir, 'cache_tile_indices', f"{args.image_id}.json")
     paths['annot_path'] = os.path.join(sub_reef_dir, 'annot', f"{args.image_id}.csv")
     paths['annot_class_report_path'] = os.path.join(sub_reef_dir, 'annot_class_reports', f"{args.image_id}.html")
 
@@ -25,6 +26,7 @@ def get_paths(args):
         paths['pt_feats_path'] = os.path.join(sub_reef_dir, 'feats', args.model_name, 'pt', f"{args.image_id}.pt")
         paths['h5_feats_path'] = os.path.join(sub_reef_dir, 'feats', args.model_name, 'h5', f"{args.image_id}.h5")
         paths['class_json_path'] = os.path.join(sub_reef_dir, 'classes.json')
+        paths['class_emb_path'] = os.path.join(sub_reef_dir, 'classes.pt')
     
     return paths
 
@@ -32,7 +34,7 @@ def get_paths(args):
 # Create the parser
 parser = argparse.ArgumentParser(description='select a command')
 
-# Add the arguments
+# Add shared arguments
 parser.add_argument("command", help="tesellate, featurize, annotate, cache")
 parser.add_argument('image_id', type=str, help='image id')
 parser.add_argument('--reef_dir', type=str, help='location of mussel reef', default='/gpfs/mskmind_ess/pdm/reef')
@@ -40,15 +42,19 @@ parser.add_argument('--mpp', type=float, help='microns per pixel', default=1.0)
 parser.add_argument('--patch_size', type=int, help='patch size', default=224)
 parser.add_argument('--step_size', type=int, help='step size', default=896)
 
-tessellate_group = parser.add_argument_group('tessellate', 'tessellate options')
-
+# Add featurize arguments
 featurize_group = parser.add_argument_group('featurize', 'featurize options')
 featurize_group.add_argument('--model_name', type=str, help='model', default='quilt')
 featurize_group.add_argument('--gpus', nargs="+", type=int, default=[0])
 featurize_group.add_argument('--batch_size', type=int, default=64)
 
+# Add annotate arguments
 annotate_group = parser.add_argument_group('annotate', 'annotate options')
 annotate_group.add_argument('--interrogate', action='store_true', help='interrogate')
+
+# Add cache arguments
+cache_group = parser.add_argument_group('cache', 'cache options')
+cache_group.add_argument("--limit_to_class", type=str, default=None, help="limit to class")
 
 args = parser.parse_args()
 paths = get_paths(args)
@@ -94,8 +100,12 @@ elif args.command == 'cache':
     import cache_tiles
     assert os.path.exists(paths['slide_path']), f"slide_path {paths['slide_path']} does not exist"
     assert os.path.exists(paths['patch_path']), f"patch_path {paths['patch_path']} does not exist"
+    if args.limit_to_class:
+        assert os.path.exists(paths['annot_path']), f"annot_path {paths['annot_path']} does not exist"
     cache_tiles.main(
         slide_file_path=paths['slide_path'],
         patch_file_path=paths['patch_path'],
-        output_path=paths['cache_path']
-    )
+        output_path=paths['cache_path'],
+        limit_to_class=args.limit_to_class,
+        annot_path=paths['annot_path'],
+        cache_tile_indices=paths['cache_tile_indices_path'])
