@@ -33,7 +33,7 @@ def parse_args():
     args = parser.parse_args()
     args = vars(args)
 
-    if len(args['image_id']) == 1 and args['image_id'][0].contains('.txt'):
+    if len(args['image_id']) == 1 and args['image_id'][0][-4:] == '.txt':
         with open(args['image_id'], 'r') as f:
             args['image_id'] = f.readlines()
 
