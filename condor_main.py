@@ -1,6 +1,31 @@
 import htcondor
 import time
 from main import parse_args, main
+from reef_helpers import check_reef_status
+
+def filter_to_pending(all_args):
+    if all_args['command'] == 'tessellate':
+        field_to_check = 'patch_exists'
+    elif all_args['command'] == 'featurize':
+        field_to_check = 'pt_feats_exists'
+    elif all_args['command'] == 'annotate':
+        field_to_check = 'annot_exists'
+    elif all_args['command'] == 'cache':
+        field_to_check = 'cache_exists'
+
+    # check status of each slide
+    image_ids_to_process = []
+    for image_id in all_args['image_id']:
+        status = check_reef_status(image_id)
+        if status[field_to_check]:
+            print(f"{image_id} has already undergone {all_args['command']} in reef")
+        else:
+            image_ids_to_process.append(image_id)
+    all_args['image_id'] = image_ids_to_process
+    if len(all_args['image_id']) == 0:
+        print(f"No images to process for {all_args['command']}")
+        exit()
+    return all_args
 
 def submit_condor_jobs(mussel_params, n_jobs):
     job = htcondor.Submit({"executable": "data/patch_and_cache.sh",
@@ -21,8 +46,8 @@ def submit_condor_jobs(mussel_params, n_jobs):
 
 if __name__ == "__main__":
     all_args = parse_args()
-    print(all_args)
     assert len(all_args['image_id']) > 1, "use main.py for single image_id"
+    all_args = filter_to_pending(all_args)
     for image_id in all_args['image_id']:
         args = all_args.copy()
         args['image_id'] = image_id
