@@ -61,9 +61,6 @@ def home():
                 form { display: flex; justify-content: center; align-items: center; }
                 input[type="text"] { padding: 10px; font-size: 1.5em; }
             </style>
-            <div class="image-container">
-                <img src="{{ url_for('static', filename='msk.png') }}">
-            </div>
             <div class="container">
                 <h1>Welcome to Memorial Sloan Kettering's H&E image search</h1>
                 <form method="POST">
