@@ -7,3 +7,9 @@ __pycache__/
 /.idea/inspectionProfiles/profiles_settings.xml
 /.idea/inspectionProfiles/Project_Default.xml
 /.idea/vcs.xml
+*.sub
+*.txt
+condor_logs/
+*.out
+test_*sh
+*temp*
