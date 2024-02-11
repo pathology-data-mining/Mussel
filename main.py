@@ -36,7 +36,9 @@ def parse_args():
 
 
 def main(args):
-    assert isinstance(args['image_id'], str), "only one image_id is supported for main.py; use condor_main.py for multiple"
+    if isinstance(args['image_id'], list):
+        assert len(args['image_id']) == 1, "only one image_id is supported for main.py; use condor_main.py for multiple"
+        args['image_id'] = str(args['image_id'][0])
     paths = get_paths(args)
 
     # run command
