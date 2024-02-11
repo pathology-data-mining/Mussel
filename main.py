@@ -23,8 +23,8 @@ def get_paths(args):
     paths['annot_class_report_path'] = os.path.join(sub_reef_dir, 'annot_class_reports', f"{args.image_id}.csv")
 
     if args.command != 'tessellate':
-        paths['pt_feats_path'] = os.path.join(sub_reef_dir, args.model_name, 'pt', f"{args.image_id}.pt")
-        paths['h5_feats_path'] = os.path.join(sub_reef_dir, args.model_name, 'h5', f"{args.image_id}.h5")
+        paths['pt_feats_path'] = os.path.join(sub_reef_dir, 'feats', args.model_name, 'pt', f"{args.image_id}.pt")
+        paths['h5_feats_path'] = os.path.join(sub_reef_dir, 'feats', args.model_name, 'h5', f"{args.image_id}.h5")
     
     return paths
 
@@ -52,6 +52,10 @@ paths = get_paths(args)
 
 # run command
 if args.command == 'tessellate':
+    assert os.path.exists(paths['slide_path']), f"slide_path {paths['slide_path']} does not exist"
+    if os.path.exists(paths['patch_path']):
+        print(f"patch_path {paths['patch_path']} already exists")
+        exit()
     tessellate.main(in_path_wsi=paths['slide_path'],
                     out_path_patch=paths['patch_path'],
                     out_path_mask=paths['mask_path'],
@@ -61,15 +65,20 @@ if args.command == 'tessellate':
                     mpp=args.mpp)
 
 elif args.command == 'featurize':
-    extract_features.main(
-        h5_feats_path=paths['h5_feats_path'],
-        pt_feats_path=paths['pt_feats_path'],
-        patch_path=paths['patch_path'],
-        slide_path=paths['slide_path'],
-        model_name=args.model_name,
-        batch_size=args.batch_size,
-        gpus=args.gpus,
-)
+    assert os.path.exists(paths['patch_path']), f"patch_path {paths['patch_path']} does not exist"
+    if os.path.exists(paths['pt_feats_path']):
+        print(f"pt_feats_path {paths['pt_feats_path']} already exists")
+        exit()
+    else:
+        extract_features.main(
+            h5_feats_path=paths['h5_feats_path'],
+            pt_feats_path=paths['pt_feats_path'],
+            patch_path=paths['patch_path'],
+            slide_path=paths['slide_path'],
+            model_name=args.model_name,
+            batch_size=args.batch_size,
+            gpus=args.gpus,
+    )
 
 
 # Create a parser for the 'tessellate' command
