@@ -1,5 +1,5 @@
 """
-Inputs: slide_file_path, patch_file_path
+Inputs: slide_file_path, patch_file_path, annot_path
 Results in .pt file with N_tiles x 3 x img_size x img_size tensor
 """
 
@@ -11,17 +11,12 @@ from utils.utils import collate_features
 import openslide
 import time
 
-parser = argparse.ArgumentParser(description="store actual images")
-parser.add_argument("--slide_file_path", type=str, default=None)
-parser.add_argument("--patch_file_path", type=str, default=None)
-parser.add_argument("--output_path", type=str, default=None)
-args = parser.parse_args()
 
-if __name__ == "__main__":
+def main(slide_file_path, patch_file_path, output_path):
     time_start = time.time()
-    wsi = openslide.open_slide(args.slide_file_path)
+    wsi = openslide.open_slide(slide_file_path)
     dataset = Whole_Slide_Bag_FP(
-        file_path=args.patch_file_path,
+        file_path=patch_file_path,
         wsi=wsi,
         use_imagenet_rgb_dist=True,
     )
@@ -45,7 +40,16 @@ if __name__ == "__main__":
             batch_list.append(batch)
         all_tiles = torch.cat(batch_list, dim=0)
     time_elapsed = time.time() - time_start
-    print("\ncaching tiles for {} took {} s".format(args.output_path, time_elapsed))
+    print("\ncaching tiles for {} took {} s".format(output_path, time_elapsed))
     print(f"all_tiles shape: {all_tiles.shape}")
-    torch.save(all_tiles, args.output_path)
-    print(f"saved to {args.output_path}")
+    torch.save(all_tiles, output_path)
+    print(f"saved to {output_path}")
+
+
+if __name__ == "__main__":
+    PARSER = argparse.ArgumentParser(description="store actual images")
+    PARSER.add_argument("--slide_file_path", type=str, default=None)
+    PARSER.add_argument("--patch_file_path", type=str, default=None)
+    PARSER.add_argument("--output_path", type=str, default=None)
+    ARGS = PARSER.parse_args()
+    main(ARGS.slide_file_path, ARGS.patch_file_path, ARGS.output_path)

@@ -1,5 +1,4 @@
 import argparse
-import tessellate, extract_features, annotate #, cache_tiles, , annotate
 import pandas as pd
 import os
 
@@ -56,6 +55,7 @@ paths = get_paths(args)
 
 # run command
 if args.command == 'tessellate':
+    import tessellate
     assert os.path.exists(paths['slide_path']), f"slide_path {paths['slide_path']} does not exist"
     tessellate.main(in_path_wsi=paths['slide_path'],
                     out_path_patch=paths['patch_path'],
@@ -66,6 +66,7 @@ if args.command == 'tessellate':
                     mpp=args.mpp)
 
 elif args.command == 'featurize':
+    import extract_features
     assert os.path.exists(paths['patch_path']), f"patch_path {paths['patch_path']} does not exist"
     extract_features.main(
             h5_feats_path=paths['h5_feats_path'],
@@ -74,10 +75,10 @@ elif args.command == 'featurize':
             slide_path=paths['slide_path'],
             model_name=args.model_name,
             batch_size=args.batch_size,
-            gpus=args.gpus,
-    )
+            gpus=args.gpus)
 
 elif args.command == 'annotate':
+    import annotate
     assert os.path.exists(paths['pt_feats_path']), f"pt_feats_path {paths['pt_feats_path']} does not exist"
     assert os.path.exists(paths['class_json_path']), f"class_json_path {paths['class_json_path']} does not exist"
     annotate.main(
@@ -88,23 +89,13 @@ elif args.command == 'annotate':
         svs_path=paths['slide_path'],
         patch_path=paths['patch_path'],
         interrogation_report_path=paths['annot_class_report_path'])
-    
 
-# Create a parser for the 'tessellate' command
-# Add arguments to the 'tessellate' parser here
-# For example: parser_tessellate.add_argument('--option', help='Option for tessellate')
-parser_tessellate.set_defaults(func=tessellate.main)
-
-# Create a parser for the 'cache' command
-parser_cache = subparsers.add_parser('featurize')
-# Add arguments to the 'cache' parser here
-# For example: parser_cache.add_argument('--option', help='Option for cache')
-parser.add_argument('--model', type=str, help='model', default='quilt')
-parser_cache.set_defaults(func=cache.main)
-
-# Parse the arguments
-args = parser.parse_args()
-
-
-# Run the function associated with the chosen subparser
-args.func(args)
+elif args.command == 'cache':
+    import cache_tiles
+    assert os.path.exists(paths['slide_path']), f"slide_path {paths['slide_path']} does not exist"
+    assert os.path.exists(paths['patch_path']), f"patch_path {paths['patch_path']} does not exist"
+    cache_tiles.main(
+        slide_file_path=paths['slide_path'],
+        patch_file_path=paths['patch_path'],
+        output_path=paths['cache_path']
+    )
