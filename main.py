@@ -1,5 +1,5 @@
 import argparse
-import tessellate #, cache_tiles, extract_features, annotate
+import tessellate, extract_features #, cache_tiles, , annotate
 import pandas as pd
 import os
 
@@ -43,9 +43,15 @@ parser.add_argument('--step_size', type=int, help='step size', default=896)
 # Add subparsers
 subparsers = parser.add_subparsers()
 parser_tessellate = subparsers.add_parser('tessellate')
+parser_featurize = subparsers.add_parser('featurize')
+parser_featurize.add_argument('--model', type=str, help='model', default='quilt')
+
+
 args = parser.parse_args()
 paths = get_paths(args)
 
+
+# run command
 if args.command == 'tessellate':
     tessellate.main(in_path_wsi=paths['slide_path'],
                     out_path_patch=paths['patch_path'],
@@ -54,6 +60,14 @@ if args.command == 'tessellate':
                     patch_size=args.patch_size,
                     step_size=args.step_size,
                     mpp=args.mpp)
+
+elif args.command == 'featurize':
+    extract_features.main(in_path=paths['patch_path'],
+                          out_path=paths['cache_path'],
+                          model=args.model,
+                          mpp=args.mpp,
+                          patch_size=args.patch_size,
+                          step_size=args.step_size)
 
 
 # Create a parser for the 'tessellate' command
