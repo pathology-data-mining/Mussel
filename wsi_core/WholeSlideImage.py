@@ -551,7 +551,7 @@ class WholeSlideImage(object):
     def process_contours(
         self, save_path, patch_size=256, step_size=256, mpp=0.5, **kwargs
     ):
-        save_path_hdf5 = os.path.join(save_path, str(self.name) + ".h5")
+        save_path_hdf5 = save_path
         print(
             "Creating patches for: ",
             self.name,
