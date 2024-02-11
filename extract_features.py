@@ -79,64 +79,44 @@ def compute_w_loader(
     return output_path
 
 
-parser = argparse.ArgumentParser(description="Feature Extraction")
-parser.add_argument("--model", type=str, default="resnet50")
-parser.add_argument("--slide_file_path", type=str, default=None)
-parser.add_argument("--patch_file_path", type=str, default=None)
-parser.add_argument("--save_dir", type=str, default=None)
-parser.add_argument("--batch_size", type=int, default=256)
-parser.add_argument("--gpus", nargs="+", type=int, default=[0])
-args = parser.parse_args()
-
-assert torch.cuda.is_available(), "no cuda available"
-device = torch.device(args.gpus[0])
-
-if __name__ == "__main__":
-    os.makedirs(args.save_dir, exist_ok=True)
-    os.makedirs(os.path.join(args.save_dir, "pt_files"), exist_ok=True)
-    os.makedirs(os.path.join(args.save_dir, "h5_files"), exist_ok=True)
-
-    slide_id = os.path.basename(args.slide_file_path).replace(".svs", "")
-    output_path = os.path.join(args.save_dir, "h5_files", f"{slide_id}.h5")
-    if os.path.exists(output_path):
-        print("features already computed for {}".format(output_path))
-        sys.exit(0)
-
+def main(h5_feats_path, pt_feats_path, patch_path, slide_path, model_name, batch_size, gpus):
+    assert torch.cuda.is_available(), "no cuda available"
+    device = torch.device(gpus[0])
+    
     print("loading model checkpoint")
-    if args.model == "resnet50":
+    if model_name == "resnet50":
         model = resnet50_baseline(pretrained=True)
         preprocessing = None
-    elif args.model == "ctranspath":
+    elif model_name == "ctranspath":
         sys.path.append("/gpfs/mskmind_ess/boehmk/python_bin/TransPath")
         model = torch.load(
             "/gpfs/mskmind_ess/boehmk/python_bin/TransPath/CTransPath_Model.pt"
         )
         preprocessing = None
-    elif args.model == "quilt":
+    elif model_name == "quilt":
         import open_clip
 
         model, _, preprocessing = open_clip.create_model_and_transforms(
             "hf-hub:wisdomik/QuiltNet-B-16-PMB"
         )
-        tokenizer = open_clip.get_tokenizer("hf-hub:wisdomik/QuiltNet-B-16-PMB")
     else:
         raise ValueError("model not recognized")
 
     model = model.to(device)
-    if len(args.gpus) > 1:
-        model = nn.DataParallel(model, device_ids=args.gpus)
+    if len(gpus) > 1:
+        model = nn.DataParallel(model, device_ids=gpus)
     model.eval()
 
     # extract features
     time_start = time.time()
-    wsi = openslide.open_slide(args.slide_file_path)
+    wsi = openslide.open_slide(slide_path)
     output_file_path = compute_w_loader(
-        args.patch_file_path,
-        output_path,
+        patch_path,
+        h5_feats_path,
         wsi,
         model=model,
         preprocess=preprocessing,
-        batch_size=args.batch_size,
+        batch_size=batch_size,
         verbose=1,
         print_every=20,
         use_imagenet_rgb_dist=preprocessing is None,
@@ -154,5 +134,28 @@ if __name__ == "__main__":
 
     features = torch.from_numpy(features)
     torch.save(
-        features, output_path.replace(".h5", ".pt").replace("h5_files", "pt_files")
+        features, pt_feats_path
     )
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="Feature Extraction")
+    parser.add_argument("--h5_feats_path", type=str, default=None)
+    parser.add_argument("--pt_feats_path", type=str, default=None)
+    parser.add_argument("--patch_path", type=str, default=None)
+    parser.add_argument("--slide_path", type=str, default=None)
+    parser.add_argument("--model_name", type=str, default="resnet50")
+    parser.add_argument("--batch_size", type=int, default=8)
+    parser.add_argument("--gpus", nargs="+", type=int, default=[0])
+    args = parser.parse_args()
+
+    main(
+        args.h5_feats_path,
+        args.pt_feats_path,
+        args.patch_path,
+        args.slide_path,
+        args.model_name,
+        args.batch_size,
+        args.gpus,
+    )
+
+
