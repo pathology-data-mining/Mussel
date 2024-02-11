@@ -81,6 +81,7 @@ def submit_condor_jobs(all_args):
 
 if __name__ == "__main__":
     ALL_ARGS = parse_args()
+    print(ALL_ARGS)
     assert len(ALL_ARGS['image_id']) > 1, "use main.py for single image_id"
     ALL_ARGS, N_JOBS = filter_to_pending(ALL_ARGS)
     CLUSTER_ID = submit_condor_jobs(ALL_ARGS)
