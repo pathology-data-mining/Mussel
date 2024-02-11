@@ -33,19 +33,18 @@ def get_paths(args):
 parser = argparse.ArgumentParser(description='select a command')
 
 # Add the arguments
-parser.add_argument('command', type=str, help='tessellate, featurize, annotate, or cache_tiles')
-parser.add_argument('image_id', type=str, help='image id')
+subparsers = parser.add_subparsers()
+parser_tessellate = subparsers.add_parser('tessellate')
+parser_featurize = subparsers.add_parser('featurize')
+
+parser.add_argument('--image_id', type=str, help='image id')
 parser.add_argument('--reef_dir', type=str, help='location of mussel reef', default='/gpfs/mskmind_ess/pdm/reef')
 parser.add_argument('--mpp', type=float, help='microns per pixel', default=1.0)
 parser.add_argument('--patch_size', type=int, help='patch size', default=224)
 parser.add_argument('--step_size', type=int, help='step size', default=896)
 
 # Add subparsers
-subparsers = parser.add_subparsers()
 
-parser_tessellate = subparsers.add_parser('tessellate')
-
-parser_featurize = subparsers.add_parser('featurize')
 parser_featurize.add_argument('--model_name', type=str, help='model', default='quilt')
 parser_featurize.add_argument('--gpus', nargs="+", type=int, default=[0])
 parser_featurize.add_argument('--batch_size', type=int, default=64)
