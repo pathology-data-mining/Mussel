@@ -217,16 +217,15 @@ def main(in_path_wsi, out_path_patch, out_path_mask, out_path_stitch, preset=Non
 
     print(parameters)
 
-    directories = {
-        "source": args.slide_file_path,
-        "save_dir": args.save_dir,
-        "patch_save_dir": patch_save_dir,
-        "mask_save_dir": mask_save_dir,
-        "stitch_save_dir": stitch_save_dir,
+    paths = {
+        "slide_file_path": in_path_wsi,
+        "patch_save_path": out_path_patch,
+        "mask_save_path": out_path_mask,
+        "stitch_save_path": out_path_stitch,
     }
 
     seg_and_patch(
-        **directories,
+        **paths,
         **parameters,
         patch_size=args.patch_size,
         step_size=args.step_size,
