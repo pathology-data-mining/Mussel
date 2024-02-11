@@ -56,25 +56,24 @@ def format_args(all_args):
 
 def submit_condor_jobs(all_args):
     all_args['image_ids_formatted'] = " ".join(all_args['image_id'])
-    sub = htcondor.Submit()
-    sub['executable'] = 'condor_mussel.sh'
-    sub['universe'] = 'vanilla'
-    sub['request_gpus'] = 0
-    sub['request_memory'] = '10GB'
-    sub['request_cpus'] = 8
-    sub['output'] = 'scratch/condor_output.out'
-    sub['log'] = 'scratch/condor_log.log'
-    sub['error'] = 'scratch/condor_err.err'
-    arguments = []
-    for image_id in all_args['image_id']:
-        temp_args = all_args.copy()
-        temp_args['image_id'] = image_id
-        arguments.append({"Arguments": f"{temp_args['command']} --image_id {image_id} --reef_dir {temp_args['reef_dir']} --mpp {temp_args['mpp']} --patch_size {temp_args['patch_size']} --step_size {temp_args['step_size']} --model_name {temp_args['model_name']} --gpus {temp_args['gpus']} --batch_size {temp_args['batch_size']} --interrogate {temp_args['interrogate']} --limit_to_class {temp_args['limit_to_class']}"})
+    sub = htcondor.Submit("""
+    universe = vanilla
+    request_gpus = 0
+    request_memory = 10GB
+    request_cpus = 8
+    output = scratch/condor_output.out
+    log = scratch/condor_log.log
+    error = scratch/condor_err.err
+    executable = condor_mussel.sh
+    arguments = $(SlideID) {command} --image_id {image_ids_formatted} --reef_dir {reef_dir} --mpp {mpp} --patch_size {patch_size} --step_size {step_size} --model_name {model_name} --gpus {gpus} --batch_size {batch_size} --interrogate {interrogate} --limit_to_class {limit_to_class}
+    queue SlideID from slide_ids.txt
+""")
     schedd = htcondor.Schedd()
-    result = schedd.submit(sub, count=N_JOBS, itemdata=arguments)
-    cluster_id = result.cluster()
-    print(f"Submitted HTCondor cluster with ID: {cluster_id}")
-    return cluster_id    
+    with schedd.transaction() as txn:
+        result = sub.queue(txn)
+    print(f"Submitted HTCondor cluster with ID: {result}")
+    exit()
+    return result    
 
 
 if __name__ == "__main__":
