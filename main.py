@@ -14,17 +14,17 @@ def get_paths(args):
     sub_reef_dir = os.path.join(args.reef_dir, f"{args.mpp}_{args.patch_size}_{args.step_size}_None")
     assert os.path.exists(sub_reef_dir), f"sub_reef_dir {sub_reef_dir} does not exist"
 
-    paths['patch_path'] = os.path.join(paths['sub_reef_dir'], 'patches', f"{args.image_id}.h5")
-    paths['stitch_path'] = os.path.join(paths['sub_reef_dir'], 'stitches', f"{args.image_id}.jpg")
-    paths['mask_path'] = os.path.join(paths['sub_reef_dir'], 'masks', f"{args.image_id}.jpg")
+    paths['patch_path'] = os.path.join(sub_reef_dir, 'patches', f"{args.image_id}.h5")
+    paths['stitch_path'] = os.path.join(sub_reef_dir, 'stitches', f"{args.image_id}.jpg")
+    paths['mask_path'] = os.path.join(sub_reef_dir, 'masks', f"{args.image_id}.jpg")
 
-    paths['cache_path'] = os.path.join(paths['sub_reef_dir'], 'cache', f"{args.image_id}.pt")
-    paths['annot_path'] = os.path.join(paths['sub_reef_dir'], 'annot', f"{args.image_id}.csv")
-    paths['annot_class_report_path'] = os.path.join(paths['sub_reef_dir'], 'annot_class_reports', f"{args.image_id}.csv")
+    paths['cache_path'] = os.path.join(sub_reef_dir, 'cache', f"{args.image_id}.pt")
+    paths['annot_path'] = os.path.join(sub_reef_dir, 'annot', f"{args.image_id}.csv")
+    paths['annot_class_report_path'] = os.path.join(sub_reef_dir, 'annot_class_reports', f"{args.image_id}.csv")
 
     if 'model' in args:
-        paths['pt_feats_path'] = os.path.join(paths['sub_reef_dir'], {args.model}, 'pt', f"{args.image_id}.pt")
-        paths['h5_feats_path'] = os.path.join(paths['sub_reef_dir'], {args.model}, 'h5', f"{args.image_id}.h5")
+        paths['pt_feats_path'] = os.path.join(sub_reef_dir, {args.model}, 'pt', f"{args.image_id}.pt")
+        paths['h5_feats_path'] = os.path.join(sub_reef_dir, {args.model}, 'h5', f"{args.image_id}.h5")
     
     return paths
 
