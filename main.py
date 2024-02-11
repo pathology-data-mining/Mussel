@@ -9,7 +9,7 @@ def parse_args():
     parser = argparse.ArgumentParser(description='select a command')
 
     # Add shared arguments
-    parser.add_argument("command", help="tesellate, featurize, annotate, cache")
+    parser.add_argument("command", help="tessellate, featurize, annotate, cache")
     parser.add_argument('--image_id', nargs='+', type=str, help='image id')
     parser.add_argument('--reef_dir', type=str, help='location of mussel reef', default='/gpfs/mskmind_ess/pdm/reef')
     parser.add_argument('--mpp', type=float, help='microns per pixel', default=1.0)
