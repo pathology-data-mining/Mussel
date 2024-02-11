@@ -54,8 +54,12 @@ def main(slide_file_path, patch_file_path, output_path, limit_to_class=None, ann
     torch.save(all_tiles, output_path)
     print(f"saved to {output_path}")
     # save indices as json
-    with open(cache_tile_indices_path, "w") as f:
-        json.dump(indices, f)
+    if limit_to_class:
+        with open(cache_tile_indices_path, "w") as f:
+            json.dump(indices, f)
+    else:
+        with open(cache_tile_indices_path, "w") as f:
+            json.dump(list(range(len(dataset))), f)
 
 
 if __name__ == "__main__":
