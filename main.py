@@ -50,7 +50,10 @@ if args.command == 'tessellate':
     tessellate.main(in_path_wsi=paths['slide_path'],
                     out_path_patch=paths['patch_path'],
                     out_path_mask=paths['mask_path'],
-                    out_path_stitch=paths['stitch_path'])
+                    out_path_stitch=paths['stitch_path'],
+                    patch_size=args.patch_size,
+                    step_size=args.step_size,
+                    mpp=args.mpp)
 
 
 # Create a parser for the 'tessellate' command
