@@ -42,10 +42,13 @@ parser.add_argument('--step_size', type=int, help='step size', default=896)
 
 # Add subparsers
 subparsers = parser.add_subparsers()
-parser_tessellate = subparsers.add_parser('tessellate')
-parser_featurize = subparsers.add_parser('featurize')
-parser_featurize.add_argument('--model', type=str, help='model', default='quilt')
 
+parser_tessellate = subparsers.add_parser('tessellate')
+
+parser_featurize = subparsers.add_parser('featurize')
+parser_featurize.add_argument('--model_name', type=str, help='model', default='quilt')
+parser_featurize.add_argument('--gpus', nargs="+", type=int, default=[0])
+parser_featurize.add_argument('--batch_size', type=int, default=64)
 
 args = parser.parse_args()
 paths = get_paths(args)
@@ -64,10 +67,9 @@ if args.command == 'tessellate':
 elif args.command == 'featurize':
     extract_features.main(in_path=paths['patch_path'],
                           out_path=paths['cache_path'],
-                          model=args.model,
-                          mpp=args.mpp,
-                          patch_size=args.patch_size,
-                          step_size=args.step_size)
+                          model_name=args.model_name,
+                          gpus=args.gpus,
+                          batch_size=args.batch_size,)
 
 
 # Create a parser for the 'tessellate' command
