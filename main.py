@@ -1,34 +1,7 @@
 import argparse
 import pandas as pd
 import os
-
-
-def get_paths(args):
-    paths = {}
-    
-    slide_inventory = pd.read_csv(os.path.join(args.reef_dir, 'slide_directory.csv'))
-    slide_inventory['image_id'] = slide_inventory['image_id'].astype(str)
-    paths['slide_path'] = slide_inventory[slide_inventory['image_id'] == str(args.image_id)]['slide_file'].values[0]
-
-    sub_reef_dir = os.path.join(args.reef_dir, f"{args.mpp}_{args.patch_size}_{args.step_size}_None")
-    assert os.path.exists(sub_reef_dir), f"sub_reef_dir {sub_reef_dir} does not exist"
-
-    paths['patch_path'] = os.path.join(sub_reef_dir, 'patches', f"{args.image_id}.h5")
-    paths['stitch_path'] = os.path.join(sub_reef_dir, 'stitches', f"{args.image_id}.jpg")
-    paths['mask_path'] = os.path.join(sub_reef_dir, 'masks', f"{args.image_id}.jpg")
-
-    paths['cache_path'] = os.path.join(sub_reef_dir, 'cache', f"{args.image_id}.pt")
-    paths['cache_tile_indices_path'] = os.path.join(sub_reef_dir, 'cache_tile_indices', f"{args.image_id}.json")
-    paths['annot_path'] = os.path.join(sub_reef_dir, 'annot', f"{args.image_id}.csv")
-    paths['annot_class_report_path'] = os.path.join(sub_reef_dir, 'annot_class_reports', f"{args.image_id}.html")
-
-    if args.command != 'tessellate':
-        paths['pt_feats_path'] = os.path.join(sub_reef_dir, 'feats', args.model_name, 'pt', f"{args.image_id}.pt")
-        paths['h5_feats_path'] = os.path.join(sub_reef_dir, 'feats', args.model_name, 'h5', f"{args.image_id}.h5")
-        paths['class_json_path'] = os.path.join(sub_reef_dir, 'classes.json')
-        paths['class_emb_path'] = os.path.join(sub_reef_dir, 'classes.pt')
-    
-    return paths
+from reef_helpers import get_paths
 
 
 # Create the parser
@@ -57,21 +30,22 @@ cache_group = parser.add_argument_group('cache', 'cache options')
 cache_group.add_argument("--limit_to_class", type=str, default=None, help="limit to class")
 
 args = parser.parse_args()
+args = vars(args)
 paths = get_paths(args)
 
 # run command
-if args.command == 'tessellate':
+if args['command'] == 'tessellate':
     import tessellate
     assert os.path.exists(paths['slide_path']), f"slide_path {paths['slide_path']} does not exist"
     tessellate.main(in_path_wsi=paths['slide_path'],
                     out_path_patch=paths['patch_path'],
                     out_path_mask=paths['mask_path'],
                     out_path_stitch=paths['stitch_path'],
-                    patch_size=args.patch_size,
-                    step_size=args.step_size,
-                    mpp=args.mpp)
+                    patch_size=args['patch_size'],
+                    step_size=args['step_size'],
+                    mpp=args['mpp'])
 
-elif args.command == 'featurize':
+elif args['command'] == 'featurize':
     import extract_features
     assert os.path.exists(paths['patch_path']), f"patch_path {paths['patch_path']} does not exist"
     extract_features.main(
@@ -79,11 +53,11 @@ elif args.command == 'featurize':
             pt_feats_path=paths['pt_feats_path'],
             patch_path=paths['patch_path'],
             slide_path=paths['slide_path'],
-            model_name=args.model_name,
-            batch_size=args.batch_size,
-            gpus=args.gpus)
+            model_name=args['model_name'],
+            batch_size=args['batch_size'],
+            gpus=args['gpus'])
 
-elif args.command == 'annotate':
+elif args['command'] == 'annotate':
     import annotate
     assert os.path.exists(paths['pt_feats_path']), f"pt_feats_path {paths['pt_feats_path']} does not exist"
     assert os.path.exists(paths['class_json_path']), f"class_json_path {paths['class_json_path']} does not exist"
@@ -91,21 +65,21 @@ elif args.command == 'annotate':
         slide_emb_path=paths['pt_feats_path'],
         class_json_path=paths['class_json_path'],
         output_path=paths['annot_path'],
-        interrogate=args.interrogate,
+        interrogate=args['interrogate'],
         svs_path=paths['slide_path'],
         patch_path=paths['patch_path'],
         interrogation_report_path=paths['annot_class_report_path'])
 
-elif args.command == 'cache':
+elif args['command'] == 'cache':
     import cache_tiles
     assert os.path.exists(paths['slide_path']), f"slide_path {paths['slide_path']} does not exist"
     assert os.path.exists(paths['patch_path']), f"patch_path {paths['patch_path']} does not exist"
-    if args.limit_to_class:
+    if args['limit_to_class']:
         assert os.path.exists(paths['annot_path']), f"annot_path {paths['annot_path']} does not exist"
     cache_tiles.main(
         slide_file_path=paths['slide_path'],
         patch_file_path=paths['patch_path'],
         output_path=paths['cache_path'],
-        limit_to_class=args.limit_to_class,
+        limit_to_class=args['limit_to_class'],
         annot_path=paths['annot_path'],
         cache_tile_indices_path=paths['cache_tile_indices_path'])
