@@ -113,9 +113,10 @@ Browse the slides previously processe by Mussel, using text-to-image search.
 python foundational_inference/app.py {device}
 ```
 
-Open the displayed IP address in your browser. Search for anything.
+Open the displayed IP address in your browser. Search for anything using natural language.
 
 <img src="example-browse.png" width="600px" />
+<img src="example-browse2.png" width="600px" />
 
 Currently limited to about 2,000 slides with breast cancer. Works best on a GPU.
 
