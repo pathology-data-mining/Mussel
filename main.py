@@ -23,8 +23,8 @@ def get_paths(args):
     paths['annot_class_report_path'] = os.path.join(sub_reef_dir, 'annot_class_reports', f"{args.image_id}.csv")
 
     if args.command != 'tessellate':
-        paths['pt_feats_path'] = os.path.join(sub_reef_dir, {args.model_name}, 'pt', f"{args.image_id}.pt")
-        paths['h5_feats_path'] = os.path.join(sub_reef_dir, {args.model_name}, 'h5', f"{args.image_id}.h5")
+        paths['pt_feats_path'] = os.path.join(sub_reef_dir, args.model_name, 'pt', f"{args.image_id}.pt")
+        paths['h5_feats_path'] = os.path.join(sub_reef_dir, args.model_name, 'h5', f"{args.image_id}.h5")
     
     return paths
 
