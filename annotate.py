@@ -37,7 +37,7 @@ def load_class_embs(class_json_path):
     return class_emb
 
 
-def interrogate(svs_path, patch_path, interrogation_report_path, df):
+def interrogate_function(svs_path, patch_path, interrogation_report_path, df):
     slide = openslide.OpenSlide(svs_path)
     
     with h5py.File(patch_path, "r") as f:
@@ -95,7 +95,7 @@ def main(slide_emb_path, class_json_path, output_path, interrogate=False, svs_pa
     print(DF['class'].value_counts())
 
     if interrogate:
-        interrogate(svs_path, patch_path, interrogation_report_path, DF)
+        interrogate_function(svs_path, patch_path, interrogation_report_path, DF)
 
 
 if __name__ == "__main__":
