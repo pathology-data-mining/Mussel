@@ -71,6 +71,8 @@ def submit_condor_jobs(all_args):
     for image_id in all_args['image_id']:
         temp_args = all_args.copy()
         temp_args['image_id'] = image_id
+        print(temp_args['image_id'])
+        assert isinstance(temp_args['image_id'], str)
         whether_to_interrogate = '--interrogate' if temp_args['interrogate'] else ''
         arguments.append({"Arguments": f"{temp_args['command']} --image_id {image_id} --reef_dir {temp_args['reef_dir']} --mpp {temp_args['mpp']} --patch_size {temp_args['patch_size']} --step_size {temp_args['step_size']} --model_name {temp_args['model_name']} --gpus {' '.join([str(x) for x in temp_args['gpus']])} --batch_size {temp_args['batch_size']} {whether_to_interrogate} --limit_to_class {temp_args['limit_to_class']}"})
     schedd = htcondor.Schedd()
