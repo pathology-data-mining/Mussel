@@ -170,7 +170,7 @@ def seg_and_patch(
     print("stitching took {} seconds".format(stitch_time_elapsed))
 
 
-def main(in_path_wsi, out_path_patch, out_path_mask, out_path_stitch):
+def main(in_path_wsi, out_path_patch, out_path_mask, out_path_stitch, preset=None):
     # check that slide file exists
     assert os.path.exists(in_path_wsi), f"file {in_path_wsi} does not exist"
 
@@ -194,7 +194,7 @@ def main(in_path_wsi, out_path_patch, out_path_mask, out_path_stitch):
     vis_params = {"vis_level": -1, "line_thickness": 100}
     patch_params = {"use_padding": True}
 
-    if args.preset:
+    if preset:
         preset_df = pd.read_csv(os.path.join("presets", args.preset))
         for key in seg_params.keys():
             seg_params[key] = preset_df.loc[0, key]
