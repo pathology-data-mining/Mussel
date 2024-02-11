@@ -120,6 +120,21 @@ Open the displayed IP address in your browser. Search for anything using natural
 
 Currently limited to about 2,000 slides with breast cancer. Works best on a GPU.
 
+## annotate tiles with tissue types (beta feature)
+Current classes are 
+```
+{"0": "benign epithelium", "1": "carcinoma in situ", "2": "invasive carcinoma", "3": "connective tissue", "4": "adipose", "5": "vessel", "6": "necrosis", "7": "marking pen"}
+```
+
+Try your own classes! Any natural language works, and no training is required. Generate interrogation reports to eval your prompt engineering.
+```bash
+python annotate.py --slide_emb_path ../../pdm/mussel_bed/quilt_1.0_224_896_None/pt_files/{slide_id}.pt --class_json_path ../../pdm/mussel_bed/quilt_1.0_224_896_None/classes.json --output_path ../../pdm/mussel_bed/quilt_1.0_224_896_None/annot/{slide_id}.csv --svs_path /gpfs/mskmind_emc/data_large/pathology/BR_20-226/slides/{slide_id}.svs --patch_path ../../pdm/mussel_bed/quilt_1.0_224_896_None/patches/{slide_id}.h5 --interrogation_report_path ../../pdm/mussel_bed/quilt_1.0_224_896_None/class_reports/{slide_id}.html  --interrogate
+```
+
+<img src="example-interrog.png" width="600px" />
+
+When you're satsified, run `annotate.py` without the interrogation options on your cohort at scale.
+
 ## License
 This code is made available under the GPLv3 License and is available for non-commercial academic purposes.
 Forked from CLAM, © [Mahmood Lab](http://www.mahmoodlab.org).
