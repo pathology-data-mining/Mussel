@@ -43,9 +43,9 @@ parser.add_argument('--step_size', type=int, help='step size', default=896)
 # Add subparsers
 subparsers = parser.add_subparsers()
 
-parser_tessellate = subparsers.add_parser('tessellate', parents=[parser])
+parser_tessellate = subparsers.add_parser('tessellate')
 
-parser_featurize = subparsers.add_parser('featurize', parents=[parser])
+parser_featurize = subparsers.add_parser('featurize')
 parser_featurize.add_argument('--model_name', type=str, help='model', default='quilt')
 parser_featurize.add_argument('--gpus', nargs="+", type=int, default=[0])
 parser_featurize.add_argument('--batch_size', type=int, default=64)
