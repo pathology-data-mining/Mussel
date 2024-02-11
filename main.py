@@ -8,7 +8,8 @@ def get_paths(args):
     paths = {}
     
     slide_inventory = pd.read_csv(os.path.join(args.reef_dir, 'slide_directory.csv'))
-    paths['slide_path'] = slide_inventory[slide_inventory['image_id'] == args.image_id]['slide_file'].values[0]
+    slide_inventory['image_id'] = slide_inventory['image_id'].astype(str)
+    paths['slide_path'] = slide_inventory[slide_inventory['image_id'] == str(args.image_id)]['slide_file'].values[0]
 
     sub_reef_dir = os.path.join(args.reef_dir, f"{args.mpp}_{args.patch_size}_{args.step_size}_None")
     assert os.path.exists(sub_reef_dir), f"sub_reef_dir {sub_reef_dir} does not exist"
