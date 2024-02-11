@@ -13,3 +13,4 @@ condor_logs/
 *.out
 test_*sh
 *temp*
+scratch/

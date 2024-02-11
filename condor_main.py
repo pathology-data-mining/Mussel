@@ -71,7 +71,7 @@ def submit_condor_jobs(all_args):
         temp_args['image_id'] = image_id
         arguments.append(f"{temp_args['command']} --image_id {image_id} --reef_dir {temp_args['reef_dir']} --mpp {temp_args['mpp']} --patch_size {temp_args['patch_size']} --step_size {temp_args['step_size']} --model_name {temp_args['model_name']} --gpus {temp_args['gpus']} --batch_size {temp_args['batch_size']} --interrogate {temp_args['interrogate']} --limit_to_class {temp_args['limit_to_class']}")
     schedd = htcondor.Schedd()
-    schedd.submit(sub, count=N_JOBS, itemdata=arguments)
+    result = schedd.submit(sub, count=N_JOBS, itemdata=arguments)
     cluster_id = result.cluster()
     print(f"Submitted HTCondor cluster with ID: {cluster_id}")
     return cluster_id    
