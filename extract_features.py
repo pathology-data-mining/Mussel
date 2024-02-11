@@ -144,7 +144,7 @@ if __name__ == "__main__":
     parser.add_argument("--patch_path", type=str, default=None)
     parser.add_argument("--slide_path", type=str, default=None)
     parser.add_argument("--model_name", type=str, default="resnet50")
-    parser.add_argument("--batch_size", type=int, default=8)
+    parser.add_argument("--batch_size", type=int, default=64)
     parser.add_argument("--gpus", nargs="+", type=int, default=[0])
     args = parser.parse_args()
 
