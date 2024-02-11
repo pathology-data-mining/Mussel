@@ -16,7 +16,9 @@ def filter_to_pending(all_args):
     # check status of each slide
     image_ids_to_process = []
     for image_id in all_args['image_id']:
-        status = check_reef_status(image_id)
+        temp_args = all_args.copy()
+        temp_args['image_id'] = image_id
+        status = check_reef_status(temp_args)
         if status[field_to_check]:
             print(f"{image_id} has already undergone {all_args['command']} in reef")
         else:
