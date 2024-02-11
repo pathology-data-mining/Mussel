@@ -25,7 +25,7 @@ if __name__ == "__main__":
         wsi=wsi,
         use_imagenet_rgb_dist=True,
     )
-    kwargs = {"num_workers": 32, "pin_memory": True}
+    kwargs = {"num_workers": 8, "pin_memory": True}
     loader = DataLoader(
         dataset=dataset,
         batch_size=32,
