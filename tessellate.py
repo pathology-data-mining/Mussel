@@ -47,19 +47,18 @@ def patching(WSI_object, **kwargs):
     start_time = time.time()
 
     # Patch
-    file_path = WSI_object.process_contours(**kwargs)
+    _ = WSI_object.process_contours(**kwargs)
 
     ### Stop Patch Timer
     patch_time_elapsed = time.time() - start_time
-    return file_path, patch_time_elapsed
+    return patch_time_elapsed
 
 
 def seg_and_patch(
-    source,
-    save_dir,
-    patch_save_dir,
-    mask_save_dir,
-    stitch_save_dir,
+    slide_file_path,
+    patch_save_path,
+    mask_save_path,
+    stitch_save_path,
     patch_size=256,
     step_size=256,
     mpp=0.5,
@@ -81,9 +80,8 @@ def seg_and_patch(
     stitch=False,
     patch=False,
 ):
-    slide_id = os.path.basename(source).replace(".svs", "")
     # Inialize WSI
-    WSI_object = WholeSlideImage(source)
+    WSI_object = WholeSlideImage(slide_file_path)
 
     if use_default_params:
         current_vis_params = vis_params.copy()
@@ -142,8 +140,7 @@ def seg_and_patch(
 
     if save_mask:
         mask = WSI_object.visWSI(**current_vis_params)
-        mask_path = os.path.join(mask_save_dir, slide_id + ".jpg")
-        mask.save(mask_path)
+        mask.save(mask_save_path)
 
     patch_time_elapsed = -1  # Default time
     if patch:
@@ -152,69 +149,36 @@ def seg_and_patch(
                 "mpp": mpp,
                 "patch_size": patch_size,
                 "step_size": step_size,
-                "save_path": patch_save_dir,
+                "save_path": patch_save_path,
             }
         )
-        file_path, patch_time_elapsed = patching(
+        patch_time_elapsed = patching(
             WSI_object=WSI_object,
             **current_patch_params,
         )
 
     stitch_time_elapsed = -1
     if stitch:
-        file_path = os.path.join(patch_save_dir, slide_id + ".h5")
-        if os.path.isfile(file_path):
-            heatmap, stitch_time_elapsed = stitching(
-                file_path, WSI_object, downscale=64, mpp=mpp
-            )
-            stitch_path = os.path.join(stitch_save_dir, slide_id + ".jpg")
-            heatmap.save(stitch_path)
+        heatmap, stitch_time_elapsed = stitching(
+            patch_save_path, WSI_object, downscale=64, mpp=mpp
+        )
+        heatmap.save(stitch_save_path)
+
 
     print("segmentation took {} seconds".format(seg_time_elapsed))
     print("patching took {} seconds".format(patch_time_elapsed))
     print("stitching took {} seconds".format(stitch_time_elapsed))
 
 
-parser = argparse.ArgumentParser(description="seg and patch")
-parser.add_argument("--slide_file_path", type=str, help="path to wsi .svs file")
-parser.add_argument("--step_size", type=int, default=256, help="step_size")
-parser.add_argument("--patch_size", type=int, default=256, help="patch_size")
-parser.add_argument("--save_dir", type=str, help="directory to save processed data")
-parser.add_argument(
-    "--preset",
-    default=None,
-    type=str,
-    help="predefined profile of default segmentation and filter parameters (.csv)",
-)
-parser.add_argument(
-    "--mpp", type=float, default=0.5, help="microns per pixel at which to patch"
-)
+def main(in_path_wsi, out_path_patch, out_path_mask, out_path_stitch):
+    # check that slide file exists
+    assert os.path.exists(in_path_wsi), f"file {in_path_wsi} does not exist"
 
-
-if __name__ == "__main__":
-    args = parser.parse_args()
-
-    patch_save_dir = os.path.join(args.save_dir, "patches")
-    mask_save_dir = os.path.join(args.save_dir, "masks")
-    stitch_save_dir = os.path.join(args.save_dir, "stitches")
-
-    print("wsi_file: ", args.slide_file_path)
-    print("patch_save_dir: ", patch_save_dir)
-    print("mask_save_dir: ", mask_save_dir)
-    print("stitch_save_dir: ", stitch_save_dir)
-
-    directories = {
-        "source": args.slide_file_path,
-        "save_dir": args.save_dir,
-        "patch_save_dir": patch_save_dir,
-        "mask_save_dir": mask_save_dir,
-        "stitch_save_dir": stitch_save_dir,
-    }
-
-    for key, val in directories.items():
-        print("{} : {}".format(key, val))
-        if key not in ["source"]:
-            os.makedirs(val, exist_ok=True)
+    # check file extensions
+    assert in_path_wsi.endswith('.svs'), f"file {in_path_wsi} is not a .svs file"
+    assert out_path_patch.endswith('.h5'), f"file {out_path_patch} is not a .h5 file"
+    assert out_path_mask.endswith('.jpg'), f"file {out_path_mask} is not a .jpg file"
+    assert out_path_stitch.endswith('.jpg'), f"file {out_path_stitch} is not a .jpg file"
 
     seg_params = {
         "seg_level": -1,
@@ -225,6 +189,7 @@ if __name__ == "__main__":
         "keep_ids": "none",
         "exclude_ids": "none",
     }
+
     filter_params = {"a_t": 100, "a_h": 16, "max_n_holes": 8}
     vis_params = {"vis_level": -1, "line_thickness": 100}
     patch_params = {"use_padding": True}
@@ -252,6 +217,14 @@ if __name__ == "__main__":
 
     print(parameters)
 
+    directories = {
+        "source": args.slide_file_path,
+        "save_dir": args.save_dir,
+        "patch_save_dir": patch_save_dir,
+        "mask_save_dir": mask_save_dir,
+        "stitch_save_dir": stitch_save_dir,
+    }
+
     seg_and_patch(
         **directories,
         **parameters,
@@ -264,3 +237,36 @@ if __name__ == "__main__":
         stitch=True,
         patch=True,
     )
+
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "slide_file_path",
+        type=str,
+        help="Path to the slide file",
+    )
+    parser.add_argument(
+        "out_path_patch",
+        type=str,
+        help="Path to save the patching",
+    )
+    parser.add_argument(
+        "out_path_mask",
+        type=str,
+        help="Path to save the mask",
+    )
+    parser.add_argument(
+        "out_path_stitch",
+        type=str,
+        help="Path to save the stitched image",
+    )
+
+    args = parser.parse_args()
+    args = vars(args)
+    main(**args)
+
+
+
+
+   
