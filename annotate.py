@@ -3,6 +3,10 @@ import os
 import json
 import torch
 import pandas as pd
+from io import BytesIO
+import base64
+import h5py
+import openslide
 
 
 def load_classes(class_json_path):
@@ -33,10 +37,10 @@ def load_class_embs(class_json_path):
     return class_emb
 
 
-def interrogate(args, df):
-    slide = openslide.OpenSlide(args.svs_path)
+def interrogate(svs_path, patch_path, interrogation_report_path, df):
+    slide = openslide.OpenSlide(svs_path)
     
-    with h5py.File(ARGS.patch_path, "r") as f:
+    with h5py.File(patch_path, "r") as f:
         patch_size = f["coords"].attrs["patch_size"]
         patch_level = f["coords"].attrs["patch_level"]
         print(len(f['coords']))
@@ -70,43 +74,39 @@ def interrogate(args, df):
     </html>
     """
 
-    with open(args.interrogation_report_path, "w") as f:
+    with open(interrogation_report_path, "w") as f:
         f.write(html_document)
 
-PARSER = ArgumentParser()
-PARSER.add_argument("--slide_emb_path", type=str)
-PARSER.add_argument("--class_json_path", type=str)
-PARSER.add_argument("--output_path", type=str)
-PARSER.add_argument("--interrogate", action="store_true", help='if true, will prepare zsl report')
-PARSER.add_argument("--svs_path", type=str, help='only used for interrogation')
-PARSER.add_argument('--patch_path', type=str, help='only used for interrogation')
-PARSER.add_argument('--interrogation_report_path', type=str, help='only used for interrogation')
-ARGS = PARSER.parse_args()
 
-if ARGS.interrogate:
-    import cv2
-    from PIL import Image
-    from io import BytesIO
-    import base64
-    import h5py
-    import openslide
-    assert ARGS.svs_path is not None
-    assert ARGS.patch_path is not None
+def main(slide_emb_path, class_json_path, output_path, interrogate=False, svs_path=None, patch_path=None, interrogation_report_path=None):
+    # load precomputed embeddings
+    CLASS_DICT = load_classes(class_json_path)
+    CLASS_EMB = load_class_embs(class_json_path)  # N_classes 512
 
-# load precomputed embeddings
-CLASS_DICT = load_classes(ARGS.class_json_path)
-CLASS_EMB = load_class_embs(ARGS.class_json_path)  # N_classes 512
+    SLIDE_EMB = torch.load(slide_emb_path)  # N_tiles 512
 
-SLIDE_EMB = torch.load(ARGS.slide_emb_path)  # N_tiles 512
+    # zero-shot classification
+    COS_SIM = torch.nn.functional.cosine_similarity(SLIDE_EMB.unsqueeze(1), CLASS_EMB.unsqueeze(0), dim=2)  # N_tiles N_classes
+    DF = pd.DataFrame(COS_SIM.numpy(), columns=[CLASS_DICT[i] for i in range(len(CLASS_DICT))])
+    print(DF)
+    DF.to_csv(output_path, index=False)
 
-# zero-shot classification
-COS_SIM = torch.nn.functional.cosine_similarity(SLIDE_EMB.unsqueeze(1), CLASS_EMB.unsqueeze(0), dim=2)  # N_tiles N_classes
-DF = pd.DataFrame(COS_SIM.numpy(), columns=[CLASS_DICT[i] for i in range(len(CLASS_DICT))])
-print(DF)
-DF.to_csv(ARGS.output_path, index=False)
+    DF['class'] = DF.idxmax(axis=1)
+    print(DF['class'].value_counts())
 
-DF['class'] = DF.idxmax(axis=1)
-print(DF['class'].value_counts())
+    if interrogate:
+        interrogate(svs_path, patch_path, interrogation_report_path, DF)
 
-if ARGS.interrogate:
-    interrogate(ARGS, DF)
+
+if __name__ == "__main__":
+    PARSER = ArgumentParser()
+    PARSER.add_argument("--slide_emb_path", type=str)
+    PARSER.add_argument("--class_json_path", type=str)
+    PARSER.add_argument("--output_path", type=str)
+    PARSER.add_argument("--interrogate", action="store_true", help='if true, will prepare zsl report')
+    PARSER.add_argument("--svs_path", type=str, help='only used for interrogation')
+    PARSER.add_argument('--patch_path', type=str, help='only used for interrogation')
+    PARSER.add_argument('--interrogation_report_path', type=str, help='only used for interrogation')
+    ARGS = PARSER.parse_args()
+    ARGS = vars(ARGS)
+    main(**ARGS)
