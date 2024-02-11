@@ -108,4 +108,4 @@ elif args.command == 'cache':
         output_path=paths['cache_path'],
         limit_to_class=args.limit_to_class,
         annot_path=paths['annot_path'],
-        cache_tile_indices=paths['cache_tile_indices_path'])
+        cache_tile_indices_path=paths['cache_tile_indices_path'])
