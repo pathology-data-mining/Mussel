@@ -1,4 +1,4 @@
-from flask import Flask, request, render_template_string
+from flask import Flask, request, render_template
 from foundational_inference.cached_search import CachedSearch
 import matplotlib.pyplot as plt
 import io
