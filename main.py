@@ -48,7 +48,6 @@ featurize_group.add_argument('--gpus', nargs="+", type=int, default=[0])
 featurize_group.add_argument('--batch_size', type=int, default=64)
 
 args = parser.parse_args()
-print(args)
 paths = get_paths(args)
 
 # run command
