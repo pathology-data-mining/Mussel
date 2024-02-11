@@ -1,9 +1,9 @@
 from flask import Flask, request, render_template_string
-from cached_search import CachedSearch
+from foundational_inference.cached_search import CachedSearch
 import matplotlib.pyplot as plt
 import io
 import urllib, base64
-from utils import load_quilt
+from foundational_inference.utils import load_quilt
 import argparse
 
 
