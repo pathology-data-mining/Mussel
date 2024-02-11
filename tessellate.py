@@ -170,7 +170,7 @@ def seg_and_patch(
     print("stitching took {} seconds".format(stitch_time_elapsed))
 
 
-def main(in_path_wsi, out_path_patch, out_path_mask, out_path_stitch, preset=None):
+def main(in_path_wsi, out_path_patch, out_path_mask, out_path_stitch, patch_size, step_size, mpp, preset=None):
     # check that slide file exists
     assert os.path.exists(in_path_wsi), f"file {in_path_wsi} does not exist"
 
@@ -227,9 +227,9 @@ def main(in_path_wsi, out_path_patch, out_path_mask, out_path_stitch, preset=Non
     seg_and_patch(
         **paths,
         **parameters,
-        patch_size=args.patch_size,
-        step_size=args.step_size,
-        mpp=args.mpp,
+        patch_size=patch_size,
+        step_size=step_size,
+        mpp=mpp,
         seg=True,
         use_default_params=True,
         save_mask=True,
@@ -260,6 +260,10 @@ if __name__ == "__main__":
         type=str,
         help="Path to save the stitched image",
     )
+    parser.add_argument( "--patch_size", type=int, default=224, help="Size of each patch")
+    parser.add_argument( "--step_size", type=int, default=224, help="Step size between patches")
+    parser.add_argument( "--mpp", type=float, default=0.5, help="Microns per pixel")
+    
 
     args = parser.parse_args()
     args = vars(args)
