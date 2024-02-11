@@ -20,6 +20,7 @@ def compute_w_loader(
     output_path,
     wsi,
     model,
+    model_name,
     device,
     batch_size=8,
     verbose=0,
@@ -67,7 +68,7 @@ def compute_w_loader(
                 )
             batch = batch.to(device, non_blocking=True)
 
-            if args.model == "quilt":
+            if model_name == "quilt":
                 features = model.encode_image(batch)
             else:
                 features = model(batch)
@@ -116,6 +117,7 @@ def main(h5_feats_path, pt_feats_path, patch_path, slide_path, model_name, batch
         h5_feats_path,
         wsi,
         model=model,
+        model_name=model_name,
         preprocess=preprocessing,
         device=device,
         batch_size=batch_size,
