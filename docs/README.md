@@ -107,8 +107,21 @@ python cache_tiles.py \
 
 *This takes about ten seconds for an example slide.*
 
+## image search (beta feature)
+Browse the slides previously processe by Mussel, using text-to-image search.
+```bash
+python foundational_inference/app.py {device}
+```
+
+Open the displayed IP address in your browser. Search for anything.
+
+<img src="example-browse.png" width="600px" />
+
+Currently limited to about 2,000 slides with breast cancer. Works best on a GPU.
+
 ## License
-© [Mahmood Lab](http://www.mahmoodlab.org) - This code is made available under the GPLv3 License and is available for non-commercial academic purposes.
+This code is made available under the GPLv3 License and is available for non-commercial academic purposes.
+Forked from CLAM, © [Mahmood Lab](http://www.mahmoodlab.org).
 
 ## Reference
 
