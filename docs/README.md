@@ -3,18 +3,17 @@
 <img src="mussel.jpg" width="300px" />
 
 This is a fork of Faisal Mahmood's CLAM repository (GPL v3 license), with the following modifications:
-- Added microns per pixel (mpp) as parameter for tiling, supported regardless of native slide resolution
-- Added CTransPath embeddings
-- Added Quilt embeddings
+- Added CTransPath and Quilt embeddings
+- Added zero-shot tissue-type annotation of tiles
+- Added browser for text-to-image AI search of MSK pathology data
 - Added caching of images for inference right on the tiles (rather than on embeddings)
+- Added microns per pixel (mpp) as parameter for tiling, supported regardless of native slide resolution
 - Made usable for job submission (one script run, one slide)
 - Removed modeling
 
-Missing feature: Macenko normalization
-
 Usable using Condor, but suffers from limitations of current Condor system:
 - sporadic data accessibility (e.g. sparky2 cannot access `/gpfs/mskmind_emc/data_large`)
-- uncontrolled usage by non-Condor usage (e.g. user was using most gpus across pll1,2,3 without Condor when I tried to test the featurization using Condor, so mine largely failed due to clashes.)
+- uncontrolled GPU usage by non-Condor usage (e.g. user was using most gpus across pll1,2,3 without Condor when I tried to test the featurization using Condor, so mine largely failed due to clashes.)
 
 ## setup
 ```bash
@@ -50,8 +49,14 @@ pip install transformers
 182         text_cfg = CLIPTextCfg(**text_cfg)
 ```
 
+### ask the PDM team to enroll your images to the reef
+The reef is the centralized repository for slides and their location on disk. This dramatically reduces the burden of taking care of paths and co-registering the downstream files. Mussel handles it all consistently and, given a list of slides of interest to you, avoids duplicate calculations if someone else has already examined the same slide.
 
-## tiling
+If your images are not enrolled in the reef or you are outside MSK, there are separate files for each command (e.g. `tessellate.py` instead of `main.py tessellate`) where you can manually specify exact file paths for input and output.
+
+
+## foreground detection and tiling
+<img src="example-mask.jpg" width="600px" />
 Generate .h5 file with coordinates and metadata necessary for downstream steps, using the following arguments
 - mpp (microns per pixel)
 - step_size (distance between patches)
@@ -60,9 +65,8 @@ Generate .h5 file with coordinates and metadata necessary for downstream steps, 
 
 The patches directory contains the actual h5 file with coordinates and metadata required for downstream use. For quality control, masks show the tissue area, stitches show the tiling pattern.
 ```bash
-python tessellate.py \
---save_dir {save-dir} \
---slide_file_path {path-to-svs} \
+python main.py tessellate 
+--image_id {image-id} \
 --mpp 1.0 \
 --step_size 224 \
 --patch_size 224
@@ -76,49 +80,18 @@ Generate .h5 file and .pt file with embeddings for each tile, using the followin
 
 The h5_files directory contains the h5 file with embeddings (N_tiles x 768 or 1024), the pt_files directory contains the pt file with embeddings.
 
-### resnet50
 ```bash
-python extract_features.py \
---model resnet50 \
---save_dir {save-dir} \
---slide_file_path {path-to-svs} \
---patch_file-path {path-to-patch-file}
-```
-
-### ctranspath
-```bash
-python extract_features.py \
---model ctranspath \
---save_dir {save-dir} \
---slide_file_path {path-to-svs} \
---patch_file-path {path-to-patch-file}
+python main.py featurize \
+--image_id {image-id} \
+--model_name {quilt,resnet50,ctranspath} \
+--gpus 0 \
+--batch_size 128 \
+--mpp 1.0 \
+--step_size 224 \
+--patch_size 224
 ```
 
 *This takes about 30 seconds for an example slide.*
-
-## tile caching
-Generate .pt file for rapid access of tiles during I/O intense operations such as training.
-```bash
-python cache_tiles.py \
---slide_file_path {path-to-svs} \
---patch_file_path {path-to-patch-file} \
---output_path {path-to-pt-file}
-```
-
-*This takes about ten seconds for an example slide.*
-
-## image search (beta feature)
-Browse the slides previously processe by Mussel, using text-to-image search.
-```bash
-python foundational_inference/app.py {device}
-```
-
-Open the displayed IP address in your browser. Search for anything using natural language.
-
-<img src="example-browse.png" width="600px" />
-<img src="example-browse2.png" width="600px" />
-
-Currently limited to about 2,000 slides with breast cancer. Works best on a GPU.
 
 ## annotate tiles with tissue types (beta feature)
 Current classes are 
@@ -128,12 +101,43 @@ Current classes are
 
 Try your own classes! Any natural language works, and no training is required. Generate interrogation reports to eval your prompt engineering.
 ```bash
-python annotate.py --slide_emb_path ../../pdm/mussel_bed/quilt_1.0_224_896_None/pt_files/{slide_id}.pt --class_json_path ../../pdm/mussel_bed/quilt_1.0_224_896_None/classes.json --output_path ../../pdm/mussel_bed/quilt_1.0_224_896_None/annot/{slide_id}.csv --svs_path /gpfs/mskmind_emc/data_large/pathology/BR_20-226/slides/{slide_id}.svs --patch_path ../../pdm/mussel_bed/quilt_1.0_224_896_None/patches/{slide_id}.h5 --interrogation_report_path ../../pdm/mussel_bed/quilt_1.0_224_896_None/class_reports/{slide_id}.html  --interrogate
+python main.py annotate \
+--image_id {image-id} \
+--mpp 1.0 \
+--step_size 224 \
+--patch_size 224
+--interrogate # this flag is slow; for spot checks
 ```
 
 <img src="example-interrog.png" width="600px" />
 
 When you're satsified, run `annotate.py` without the interrogation options on your cohort at scale.
+
+## tile caching
+Generate .pt file for rapid access of tiles during I/O intense operations such as training. This can be conditioned on tissue types: e.g. cache only the tiles containing invasive carcinoma.
+```bash
+python main.py cache \
+--image_id {image-id} \
+--mpp 1.0 \
+--step_size 224 \
+--patch_size 224
+--limit_to_class "adipose"
+```
+
+*This takes about ten seconds for an example slide.*
+
+## image search (beta feature)
+Browse the slides in the Mussel reef, using text-to-image search.
+```bash
+python foundational_inference/app.py {device}
+```
+
+Open the displayed IP address in your browser. Search for anything using natural language.
+
+<img src="example-browse.png" width="600px" />
+<img src="example-browse2.png" width="600px" />
+
+Currently limited to about 1,000 slides with breast cancer. Works best on a GPU.
 
 ## License
 This code is made available under the GPLv3 License and is available for non-commercial academic purposes.
