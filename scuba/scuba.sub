@@ -1,0 +1,11 @@
+universe = vanilla
+
+request_gpus = 1
+request_cpus = 32
+request_memory = 64GB
+
+executable = scuba/run_app.sh
+
+log = scratch/scuba.log
+err = scratch/scuba.err
+out = scratch/scuba.out
