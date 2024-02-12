@@ -61,7 +61,7 @@ def home():
                     font-family: Arial, sans-serif;
                     margin: 0;
                     padding: 0;
-                    background-image: url("reef.jpg");
+                    background-image: url_for('static', filename='reef.jpg');
                     background-repeat: no-repeat;
                     background-size: cover;
                     color: black;
