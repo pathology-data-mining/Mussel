@@ -14,8 +14,8 @@ ARGS = PARSER.parse_args()
 app = Flask(__name__)
 
 QUILT = load_quilt()
-IMG_EMB_DIR = "/gpfs/mskmind_ess/pdm/mussel_bed/quilt_1.0_224_896_None/pt_files"
-PATCH_DIR = "/gpfs/mskmind_ess/pdm/mussel_bed/quilt_1.0_224_896_None/patches"
+IMG_EMB_DIR = "/gpfs/mskmind_ess/pdm/reef/1.0_224_896_None/feats/quilt/pt"
+PATCH_DIR = "/gpfs/mskmind_ess/pdm/reef/1.0_224_896_None/patches"
 SLIDE_DIR = "/gpfs/mskmind_emc/data_large/pathology/BR_20-226/slides"
 OUTPUT_DIR = "/gpfs/mskmind_ess/boehmk/scratch/queries"
 
