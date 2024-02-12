@@ -11,7 +11,7 @@ from datetime import datetime
 import heapq
 import numpy as np
 import sys
-sys.path.append("..")
+sys.path.append("/gpfs/mskmind_ess/boehmk/mussel")
 import reef_helpers
 
 
