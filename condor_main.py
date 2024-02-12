@@ -18,7 +18,11 @@ def filter_to_pending(all_args):
     for image_id in all_args['image_id']:
         temp_args = all_args.copy()
         temp_args['image_id'] = image_id
-        status, _ = check_reef_status(temp_args)
+        status, _ = check_reef_status(temp_args['image_id'],
+                                      model_name=temp_args['model_name'],
+                                      mpp=temp_args['mpp'],
+                                      patch_size=temp_args['patch_size'],
+                                      step_size=temp_args['step_size'])
         if status[field_to_check]:
             print(f"{image_id} has already undergone {all_args['command']} in reef")
         elif not status['slide_exists']:
