@@ -45,7 +45,7 @@ def home():
                 .image-container img { margin: 10px; }
             </style>
             <form method="POST">
-                <input name="query" type="text" placeholder="Enter your query here" autofocus>
+                <input name="query" type="text" placeholder="Search" autofocus>
             </form>
             <h1> {{ query }} </h1>
             <div class="image-container">
@@ -57,14 +57,26 @@ def home():
     else:
         return '''
             <style>
-                body { font-family: Arial, sans-serif; margin: 0; padding: 0; background: white; color: black; display: flex; justify-content: center; align-items: center; height: 100vh; }
+                body {
+                    font-family: Arial, sans-serif;
+                    margin: 0;
+                    padding: 0;
+                    background-image: url("reef.jpg");
+                    background-repeat: no-repeat;
+                    background-size: cover;
+                    color: black;
+                    display: flex;
+                    justify-content: center;
+                    align-items: center;
+                    height: 100vh;
+                }
                 form { display: flex; justify-content: center; align-items: center; }
                 input[type="text"] { padding: 10px; font-size: 1.5em; }
             </style>
             <div class="container">
-                <h1>Welcome to Memorial Sloan Kettering's H&E image search</h1>
+                <h1>Reef</h1>
                 <form method="POST">
-                    <input name="query" type="text" placeholder="What are you looking for?" autofocus>
+                    <input name="query" type="text" placeholder="Search" autofocus>
                 </form>
             </div>
         '''
