@@ -121,7 +121,7 @@ python main.py cache \
 --mpp 1.0 \
 --step_size 224 \
 --patch_size 224
---limit_to_class "adipose"
+--limit_to_class "adipose"  # replace spaces by _ for condor_main.py
 ```
 
 *This takes about ten seconds for an example slide.*

@@ -17,6 +17,7 @@ import json
 def main(slide_file_path, patch_file_path, output_path, limit_to_class=None, annot_path=None, cache_tile_indices_path=None):
     time_start = time.time()
     if limit_to_class is not None:
+        limit_to_class = limit_to_class.replace("_", " ")
         annot = pd.read_csv(annot_path)
         annot['class'] = annot.idxmax(axis=1)
         indices = annot[annot['class'] == limit_to_class].index.tolist()
