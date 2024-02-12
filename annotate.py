@@ -22,7 +22,7 @@ def load_class_embs(class_json_path):
     if os.path.exists(class_emb_path):
         class_emb = torch.load(class_emb_path)
     else:
-        from foundational_inference.utils import load_quilt
+        from scuba.utils import load_quilt
         quilt = load_quilt()
         embs = []
         for class_id, class_text in CLASS_DICT.items():
