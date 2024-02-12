@@ -10,6 +10,7 @@ import matplotlib.pyplot as plt
 from datetime import datetime
 import heapq
 import numpy as np
+from reef_helpers import get_paths
 
 
 class CachedImageEmbeddingDataset(Dataset):
@@ -115,7 +116,7 @@ class CachedSearch():
             patch_level = f["coords"].attrs["patch_level"]
             coord = f["coords"][tile_index]
 
-        slide_file = os.path.join(self.slide_dir, f"{image_id}.svs")
+        slide_file = get_paths({"slide_id": image_id})["slide_path"]
         try:
             wsi = openslide.OpenSlide(slide_file)
         except:
