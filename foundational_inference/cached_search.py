@@ -10,9 +10,6 @@ import matplotlib.pyplot as plt
 from datetime import datetime
 import heapq
 import numpy as np
-import sys
-sys.path.append("/gpfs/mskmind_ess/boehmk/mussel")
-import reef_helpers
 
 
 class CachedImageEmbeddingDataset(Dataset):
@@ -118,8 +115,9 @@ class CachedSearch():
             patch_level = f["coords"].attrs["patch_level"]
             coord = f["coords"][tile_index]
 
-        slide_file = reef_helpers.get_paths({"slide_id": image_id})["slide_path"]
+        slide_list = pd.read_csv("/gpfs/mskmind_ess/pdm/reef/slide_directory.csv")
         try:
+            slide_file = slide_list[slide_list['image_id'].astype(str) == str(image_id)]['slide_path'].values[0]
             wsi = openslide.OpenSlide(slide_file)
         except:
             print(f"Could not open {slide_file}")
