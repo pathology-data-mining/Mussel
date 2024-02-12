@@ -56,29 +56,24 @@ def home():
         ''', image_data_urls=image_data_urls, query=query)
     else:
         return '''
+            background-image: url({{ url_for('static', filename='reef.jpg') }})
             <style>
                 body {
                     font-family: Arial, sans-serif;
                     margin: 0;
                     padding: 0;
-                    background-image: url_for('static', filename='reef.jpg');
-                    background-repeat: no-repeat;
-                    background-size: cover;
                     color: black;
                     display: flex;
                     justify-content: center;
                     align-items: center;
-                    height: 100vh;
                 }
                 form { display: flex; justify-content: center; align-items: center; }
                 input[type="text"] { padding: 10px; font-size: 1.5em; }
             </style>
-            <div class="body">
             <div class="container">
                 <form method="POST">
                     <input name="query" type="text" placeholder="Search" autofocus>
                 </form>
-            </div>
             </div>
         '''
 
