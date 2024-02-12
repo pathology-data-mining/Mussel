@@ -31,7 +31,8 @@ def get_paths(args):
 
 def check_reef_status(slide_id, model_name='quilt', mpp=1.0, patch_size=224, step_size=896, reef_dir="/gpfs/mskmind_ess/pdm/reef"):
     status = {}
-    paths = get_paths(slide_id)
+    args = {'image_id': slide_id, 'model_name': model_name, 'mpp': mpp, 'patch_size': patch_size, 'step_size': step_size, 'reef_dir': reef_dir}
+    paths = get_paths(args)
     status['slide_exists'] = os.path.exists(paths['slide_path'])
     status['patch_exists'] = os.path.exists(paths['patch_path'])
     status['stitch_exists'] = os.path.exists(paths['stitch_path'])
@@ -40,4 +41,4 @@ def check_reef_status(slide_id, model_name='quilt', mpp=1.0, patch_size=224, ste
     status['annot_exists'] = os.path.exists(paths['annot_path'])
     status['pt_feats_exists'] = os.path.exists(paths['pt_feats_path'])
     status['h5_feats_exists'] = os.path.exists(paths['h5_feats_path'])
-    return status
+    return status, paths
