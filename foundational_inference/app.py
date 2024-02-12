@@ -73,11 +73,12 @@ def home():
                 form { display: flex; justify-content: center; align-items: center; }
                 input[type="text"] { padding: 10px; font-size: 1.5em; }
             </style>
+            <div class="body">
             <div class="container">
-                <h1>Reef</h1>
                 <form method="POST">
                     <input name="query" type="text" placeholder="Search" autofocus>
                 </form>
+            </div>
             </div>
         '''
 
