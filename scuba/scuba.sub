@@ -7,5 +7,7 @@ request_memory = 64GB
 executable = scuba/run_app.sh
 
 log = scratch/scuba.log
-err = scratch/scuba.err
-out = scratch/scuba.out
+error = scratch/scuba.err
+output = scratch/scuba.out
+
+queue 1
