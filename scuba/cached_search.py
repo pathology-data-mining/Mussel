@@ -21,7 +21,7 @@ class CachedImageEmbeddingDataset(Dataset):
         if prototype:
             self.data_paths = self.data_paths[:10]
         if image_id_exclude_regex:
-            self.data_paths = [p for p in self.data_paths if not re.search(image_id_exclude_regex, p)]
+            self.data_paths = [p for p in self.data_paths if not re.match(image_id_exclude_regex, os.path.basename(p))]
         self.image_ids = [os.path.basename(_path).replace(".pt", "") for _path in self.data_paths]
         self.n_tiles = n_tiles
 
