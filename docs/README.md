@@ -49,7 +49,18 @@ pip install transformers
 182         text_cfg = CLIPTextCfg(**text_cfg)
 ```
 
-### ask the PDM team to enroll your images to the reef
+### enroll your images to the reef
+- build a CSV file like so:
+```
+image_id,slide_file
+001,/my/path/to/001.svs
+002,/my/path/to/002.svs
+...
+```
+- run 
+```
+python enroll.py csv_file.csv
+```
 The reef is the centralized repository for slides and their location on disk. This dramatically reduces the burden of taking care of paths and co-registering the downstream files. Mussel handles it all consistently and, given a list of slides of interest to you, avoids duplicate calculations if someone else has already examined the same slide.
 
 If your images are not enrolled in the reef or you are outside MSK, there are separate files for each command (e.g. `tessellate.py` instead of `main.py tessellate`) where you can manually specify exact file paths for input and output.
