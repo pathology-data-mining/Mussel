@@ -11,14 +11,17 @@ from datetime import datetime
 import heapq
 import numpy as np
 import pandas as pd
+import re
 
 
 class CachedImageEmbeddingDataset(Dataset):
-    def __init__(self, _quilt, _img_emb_dir, n_tiles, prototype=False):
+    def __init__(self, _quilt, _img_emb_dir, n_tiles, prototype=False, image_id_exclude_regex=""):
         self.txt_tokenizer = _quilt['tokenizer']
         self.data_paths = glob.glob(os.path.join(_img_emb_dir, "*.pt"))
         if prototype:
             self.data_paths = self.data_paths[:10]
+        if image_id_exclude_regex:
+            self.data_paths = [p for p in self.data_paths if not re.search(image_id_exclude_regex, p)]
         self.image_ids = [os.path.basename(_path).replace(".pt", "") for _path in self.data_paths]
         self.n_tiles = n_tiles
 
@@ -63,12 +66,14 @@ class QueryEmbedder(torch.nn.Module):
 
 
 class CachedSearch():
-    def __init__(self, _quilt, _img_emb_dir, _patch_dir, _slide_dir, _output_dir, _device_str, prototype=False):
+    def __init__(self, _quilt, _img_emb_dir, _patch_dir, _slide_dir, _output_dir, _device_str, prototype=False,
+                 image_id_exclude_regex=""):
         self.patch_dir = _patch_dir
         self.slide_dir = _slide_dir
         self.output_dir = _output_dir
         self.n_tiles_per_slide = 10
-        self.img_emb_dataset = CachedImageEmbeddingDataset(_quilt, _img_emb_dir, self.n_tiles_per_slide, prototype=prototype)
+        self.img_emb_dataset = CachedImageEmbeddingDataset(_quilt, _img_emb_dir, self.n_tiles_per_slide, prototype=prototype,
+                                                           image_id_exclude_regex=image_id_exclude_regex)
         self.len = len(self.img_emb_dataset)
         self.img_emb_loader = torch.utils.data.DataLoader(self.img_emb_dataset,
                                                           batch_size=256,
