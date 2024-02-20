@@ -19,7 +19,7 @@ PATCH_DIR = "/gpfs/mskmind_ess/pdm/reef/1.0_224_896_None/patches"
 SLIDE_DIR = "/gpfs/mskmind_emc/data_large/pathology/BR_20-226/slides"
 OUTPUT_DIR = "/gpfs/mskmind_ess/boehmk/scratch/queries"
 
-CS = CachedSearch(QUILT, IMG_EMB_DIR, PATCH_DIR, SLIDE_DIR, OUTPUT_DIR, ARGS.device)
+CS = CachedSearch(QUILT, IMG_EMB_DIR, PATCH_DIR, SLIDE_DIR, OUTPUT_DIR, ARGS.device, image_id_exclude_regex='TCGA')
 
 @app.route('/', methods=['GET', 'POST'])
 def home():
