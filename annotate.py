@@ -17,7 +17,7 @@ def load_classes(class_json_path):
     return class_dict
 
 
-def load_class_embs(class_json_path):
+def load_class_embs(class_json_path, class_dict):
     class_emb_path = class_json_path.replace(".json", ".pt")
     if os.path.exists(class_emb_path):
         class_emb = torch.load(class_emb_path)
@@ -25,7 +25,7 @@ def load_class_embs(class_json_path):
         from scuba.utils import load_quilt
         quilt = load_quilt()
         embs = []
-        for class_id, class_text in CLASS_DICT.items():
+        for class_id, class_text in class_dict.items():
             text = quilt["tokenizer"](class_text)
             with torch.no_grad():
                 text_features = quilt["model"].encode_text(text)
@@ -81,7 +81,7 @@ def interrogate_function(svs_path, patch_path, interrogation_report_path, df):
 def main(slide_emb_path, class_json_path, output_path, interrogate=False, svs_path=None, patch_path=None, interrogation_report_path=None):
     # load precomputed embeddings
     CLASS_DICT = load_classes(class_json_path)
-    CLASS_EMB = load_class_embs(class_json_path)  # N_classes 512
+    CLASS_EMB = load_class_embs(class_json_path, CLASS_DICT)  # N_classes 512
 
     SLIDE_EMB = torch.load(slide_emb_path)  # N_tiles 512
 

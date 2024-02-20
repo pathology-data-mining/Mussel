@@ -23,6 +23,8 @@ def filter_to_pending(all_args):
                                       mpp=temp_args['mpp'],
                                       patch_size=temp_args['patch_size'],
                                       step_size=temp_args['step_size'])
+        if status is None:
+            raise RuntimeError(f"check_reef_status threw error for {image_id}")
         if status[field_to_check]:
             print(f"{image_id} has already undergone {all_args['command']} in reef")
         elif not status['slide_exists']:

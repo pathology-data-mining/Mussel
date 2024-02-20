@@ -7,7 +7,10 @@ def get_paths(args):
     
     slide_inventory = pd.read_csv(os.path.join(args['reef_dir'], 'slide_directory.csv'))
     slide_inventory['image_id'] = slide_inventory['image_id'].astype(str)
-    paths['slide_path'] = slide_inventory[slide_inventory['image_id'] == str(args['image_id'])]['slide_file'].values[0]
+    try:
+        paths['slide_path'] = slide_inventory[slide_inventory['image_id'] == str(args['image_id'])]['slide_file'].values[0]
+    except IndexError:
+        return None
 
     sub_reef_dir = os.path.join(args['reef_dir'], f"{args['mpp']}_{args['patch_size']}_{args['step_size']}_None")
     assert os.path.exists(sub_reef_dir), f"sub_reef_dir {sub_reef_dir} does not exist"
@@ -33,6 +36,8 @@ def check_reef_status(slide_id, model_name='quilt', mpp=1.0, patch_size=224, ste
     status = {}
     args = {'image_id': slide_id, 'model_name': model_name, 'mpp': mpp, 'patch_size': patch_size, 'step_size': step_size, 'reef_dir': reef_dir}
     paths = get_paths(args)
+    if not paths:
+        return None, None
     status['slide_exists'] = os.path.exists(paths['slide_path'])
     status['patch_exists'] = os.path.exists(paths['patch_path'])
     status['stitch_exists'] = os.path.exists(paths['stitch_path'])
