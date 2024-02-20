@@ -1,0 +1,34 @@
+<html>
+    <head>
+        <title>Scuba Slide Search</title>
+        <link rel="stylesheet" href="{{ url_for('static', filename='styles/main.css') }}">
+        <script src="https://kit.fontawesome.com/72ab956c71.js" crossorigin="anonymous"></script>
+    </head>
+    <body>
+        <div class="logo-container">
+            <div class="logo-text">Scuba</div>
+        </div>
+
+        <div class="search-wrapper">
+            <form method="POST">
+                <input name="query" type="text" value="{{ query }}" placeholder="Search {{ num_slides }} slides...">
+                <button type="submit">
+                    <i class="fa fa-search" aria-hidden="true"></i>
+                </button>
+            </form>
+        </div>
+
+        {% if image_data_urls %}
+        <div class="wrapper">
+            <div class="gallery">
+                <ul>
+                    {% for image_data_url in image_data_urls %}
+                    <li><img src="{{ image_data_url }}"></li>
+                    {% endfor %}
+                </ul>
+            </div>
+        </div>
+        {% endif %}
+    </body>
+</html>
+
