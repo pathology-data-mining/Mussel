@@ -559,6 +559,9 @@ class WholeSlideImage(object):
         )
         elapsed = time.time()
         n_contours = len(self.contours_tissue)
+        if n_contours == 0:
+            print("0 contours, exiting")
+            exit()
         print("Total number of contours to process: ", n_contours)
         fp_chunk_size = math.ceil(n_contours * 0.05)
         init = True
