@@ -21,6 +21,11 @@ OUTPUT_DIR = "/gpfs/mskmind_ess/boehmk/scratch/queries"
 
 CS = CachedSearch(QUILT, IMG_EMB_DIR, PATCH_DIR, SLIDE_DIR, OUTPUT_DIR, ARGS.device, image_id_exclude_regex='TCGA')
 
+@app.route('/favicon.ico')
+def favicon():
+    return send_from_directory(os.path.join(app.root_path, 'static'),
+                               'favicon.ico', mimetype='image/vnd.microsoft.icon')
+
 @app.route('/', methods=['GET', 'POST'])
 def home():
     image_data_urls = []
