@@ -39,15 +39,6 @@ conda install -c conda-forge sentencepiece
 pip install open-clip-torch
 pip install transformers
 ```
-- edit argument name to work with open_clip checkpoint
-  - `vi +180 {conda_path}/envs/mussel/lib/python3.12/site-packages/open_clip/model.py`
-  - add the following lines 180-181:
-```python
-179     if isinstance(text_cfg, dict):
-180         text_cfg['hf_proj_type'] = text_cfg.pop('proj')
-181         text_cfg['hf_pooler_type'] = text_cfg.pop('pooler_type')
-182         text_cfg = CLIPTextCfg(**text_cfg)
-```
 
 ### enroll your images to the reef
 - build a CSV file like so:
