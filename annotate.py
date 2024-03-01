@@ -22,13 +22,14 @@ def load_class_embs(class_json_path, class_dict):
     if os.path.exists(class_emb_path):
         class_emb = torch.load(class_emb_path)
     else:
-        from scuba.utils import load_quilt
-        quilt = load_quilt()
+        import open_clip
+        model, _, _ = open_clip.create_model_and_transforms('hf-hub:wisdomik/QuiltNet-B-16-PMB')
+        tokenizer = open_clip.get_tokenizer('hf-hub:wisdomik/QuiltNet-B-16-PMB')
         embs = []
         for class_id, class_text in class_dict.items():
-            text = quilt["tokenizer"](class_text)
+            text = tokenizer(class_text)
             with torch.no_grad():
-                text_features = quilt["model"].encode_text(text)
+                text_features = model.encode_text(text)
             embs.append((class_id, text_features))
         embs.sort(key=lambda x: int(x[0]))
         embs = [x[1] for x in embs]
