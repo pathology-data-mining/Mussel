@@ -128,19 +128,6 @@ python main.py cache \
 
 *This takes about ten seconds for an example slide.*
 
-## image search (beta feature)
-Browse the slides in the Mussel reef, using text-to-image search.
-```bash
-python foundational_inference/app.py {device}
-```
-
-Open the displayed IP address in your browser. Search for anything using natural language.
-
-<img src="example-browse.png" width="600px" />
-<img src="example-browse2.png" width="600px" />
-
-Currently limited to about 1,000 slides with breast cancer. Works best on a GPU.
-
 ## License
 This code is made available under the GPLv3 License and is available for non-commercial academic purposes.
 Forked from CLAM, © [Mahmood Lab](http://www.mahmoodlab.org).
