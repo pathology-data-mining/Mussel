@@ -190,7 +190,7 @@ def main(in_path_wsi, out_path_patch, out_path_mask, out_path_stitch, patch_size
         "exclude_ids": "none",
     }
 
-    filter_params = {"a_t": 100, "a_h": 16, "max_n_holes": 8}
+    filter_params = {"a_t": 10, "a_h": 16, "max_n_holes": 8}
     vis_params = {"vis_level": -1, "line_thickness": 100}
     patch_params = {"use_padding": True}
 
