@@ -8,8 +8,8 @@ import time
 import numpy as np
 import pandas as pd
 
-from wsi_core.WholeSlideImage import WholeSlideImage
-from wsi_core.wsi_utils import StitchCoords
+from mussel.WholeSlideImage import WholeSlideImage
+from mussel.utils.wsi import StitchCoords
 
 
 def stitching(file_path, wsi_object, downscale=64, mpp=0.5):
@@ -170,7 +170,15 @@ def seg_and_patch(
     print("stitching took {} seconds".format(stitch_time_elapsed))
 
 
-def main(in_path_wsi, out_path_patch, out_path_mask, out_path_stitch, patch_size, step_size, mpp, preset=None):
+def main(in_path_wsi,
+         out_path_patch,
+         out_path_mask,
+         out_path_stitch,
+         patch_size,
+         step_size,
+         mpp,
+
+         preset=None):
     # check that slide file exists
     assert os.path.exists(in_path_wsi), f"file {in_path_wsi} does not exist"
 
@@ -263,13 +271,7 @@ if __name__ == "__main__":
     parser.add_argument( "--patch_size", type=int, default=224, help="Size of each patch")
     parser.add_argument( "--step_size", type=int, default=224, help="Step size between patches")
     parser.add_argument( "--mpp", type=float, default=0.5, help="Microns per pixel")
-    
 
     args = parser.parse_args()
     args = vars(args)
     main(**args)
-
-
-
-
-   

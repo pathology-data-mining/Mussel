@@ -6,15 +6,20 @@ Results in .pt file with N_tiles x 3 x img_size x img_size tensor
 import argparse
 from torch.utils.data import DataLoader
 import torch
-from datasets.dataset_h5 import Whole_Slide_Bag_FP
-from utils.utils import collate_features
+from mussel.utils.ml import collate_features
 import openslide
 import time
 import pandas as pd
 import json
 
+from mussel.datasets.h5 import Whole_Slide_Bag_FP
 
-def main(slide_file_path, patch_file_path, output_path, limit_to_class=None, annot_path=None, cache_tile_indices_path=None):
+def main(slide_file_path,
+         patch_file_path,
+         output_path,
+         limit_to_class=None,
+         annot_path=None,
+         cache_tile_indices_path=None):
     time_start = time.time()
     if limit_to_class is not None:
         limit_to_class = limit_to_class.replace("_", " ")
@@ -64,12 +69,4 @@ def main(slide_file_path, patch_file_path, output_path, limit_to_class=None, ann
 
 
 if __name__ == "__main__":
-    PARSER = argparse.ArgumentParser(description="store actual images")
-    PARSER.add_argument("--slide_file_path", type=str, default=None)
-    PARSER.add_argument("--patch_file_path", type=str, default=None)
-    PARSER.add_argument("--output_path", type=str, default=None)
-    PARSER.add_argument("--limit_to_class", type=str, default=None)
-    PARSER.add_argument("--annot_path", type=str, default=None)
-    PARSER.add_argument("--cache_tile_indices_path", type=str, default=None)
-    ARGS = PARSER.parse_args()
-    main(ARGS.slide_file_path, ARGS.patch_file_path, ARGS.output_path, ARGS.limit_to_class, ARGS.annot_path, ARGS.cache_tile_indices_path)
+    fire.Fire(main)

@@ -5,16 +5,20 @@ import time
 
 import h5py
 import openslide
+import open_clip
 import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader
+import fire
 
-from datasets.dataset_h5 import Whole_Slide_Bag_FP
-from models.resnet_custom import resnet50_baseline
-from utils.file_utils import save_hdf5
-from utils.utils import collate_features
+from mussel.datasets.h5 import Whole_Slide_Bag_FP
+from mussel.models.resnet_custom import resnet50_baseline
+from mussel.utils.file import save_hdf5
+from mussel.utils.ml import collate_features
+from mussel.utils.timer import timed
 
 
+@timed
 def compute_w_loader(
     file_path,
     output_path,
@@ -81,36 +85,48 @@ def compute_w_loader(
     return output_path
 
 
-def main(h5_feats_path, pt_feats_path, patch_path, slide_path, model_name, batch_size, gpus):
-    assert torch.cuda.is_available(), "no cuda available"
-    device = torch.device(gpus[0])
-    
-    print("loading model checkpoint")
+def main(h5_feats_path: str,
+         pt_feats_path: str,
+         patch_path: str,
+         slide_path: str,
+         transpath_path: Optional[str] = None,
+         model_name: str = "resnet50",
+         model_path: Optional[str] = None,
+         batch_size: int = 64,
+         use_gpu: bool = True,
+         gpu_device_ids: List[int] = [0]):
+
+    device = torch.device("cpu")
+    if use_gpu:
+        if torch.cuda.is_available():
+            device = torch.device("cuda")
+        else:
+            logger.warn("cuda not available, using cpu")
+    logger.info("loading model checkpoint")
     if model_name == "resnet50":
         model = resnet50_baseline(pretrained=True)
         preprocessing = None
     elif model_name == "ctranspath":
-        sys.path.append("/gpfs/mskmind_ess/boehmk/python_bin/TransPath")
-        model = torch.load(
-            "/gpfs/mskmind_ess/boehmk/python_bin/TransPath/CTransPath_Model.pt"
-        )
+        sys.path.append(transpath_path)
+        model = torch.load(model_path)
         preprocessing = None
     elif model_name == "quilt":
-        import open_clip
-
         model, _, preprocessing = open_clip.create_model_and_transforms(
             "hf-hub:wisdomik/QuiltNet-B-16-PMB"
+        )
+    elif model_name == "open_clip":
+        model, _, preprocessing = open_clip.create_model_and_transforms(
+            model_path
         )
     else:
         raise ValueError("model not recognized")
 
     model = model.to(device)
-    if len(gpus) > 1:
-        model = nn.DataParallel(model, device_ids=gpus)
+    if len(gpu_device_ids) > 1:
+        model = nn.DataParallel(model, device_ids=gpu_device_ids)
     model.eval()
 
     # extract features
-    time_start = time.time()
     wsi = openslide.open_slide(slide_path)
     output_file_path = compute_w_loader(
         patch_path,
@@ -125,10 +141,6 @@ def main(h5_feats_path, pt_feats_path, patch_path, slide_path, model_name, batch
         print_every=20,
         use_imagenet_rgb_dist=preprocessing is None,
     )
-    time_elapsed = time.time() - time_start
-    print(
-        "\ncomputing features for {} took {} s".format(output_file_path, time_elapsed)
-    )
 
     file = h5py.File(output_file_path, "r")
     features = file["features"][:]
@@ -142,24 +154,4 @@ def main(h5_feats_path, pt_feats_path, patch_path, slide_path, model_name, batch
     )
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Feature Extraction")
-    parser.add_argument("--h5_feats_path", type=str, default=None)
-    parser.add_argument("--pt_feats_path", type=str, default=None)
-    parser.add_argument("--patch_path", type=str, default=None)
-    parser.add_argument("--slide_path", type=str, default=None)
-    parser.add_argument("--model_name", type=str, default="resnet50")
-    parser.add_argument("--batch_size", type=int, default=64)
-    parser.add_argument("--gpus", nargs="+", type=int, default=[0])
-    args = parser.parse_args()
-
-    main(
-        args.h5_feats_path,
-        args.pt_feats_path,
-        args.patch_path,
-        args.slide_path,
-        args.model_name,
-        args.batch_size,
-        args.gpus,
-    )
-
-
+    fire.Fire(main)
