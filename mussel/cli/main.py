@@ -1,7 +1,8 @@
 import argparse
 import pandas as pd
 import os
-from reef_helpers import get_paths
+
+from mussel.utils.reef import get_paths
 
 
 def parse_args():

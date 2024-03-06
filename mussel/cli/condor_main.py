@@ -1,7 +1,7 @@
 import htcondor
 import time
-from main import parse_args, main
-from reef_helpers import check_reef_status
+from mussel.cli.main import parse_args, main
+from mussel.utils.reef import check_reef_status
 
 def filter_to_pending(all_args):
     if all_args['command'] == 'tessellate':

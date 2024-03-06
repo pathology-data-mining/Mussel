@@ -6,7 +6,7 @@ import h5py
 import numpy as np
 from PIL import Image
 
-from wsi_core.util_classes import Mosaic_Canvas
+from mussel.utils.wsi_classes import Mosaic_Canvas
 
 
 def isWhitePatch(patch, satThresh=5):

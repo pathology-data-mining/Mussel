@@ -79,7 +79,19 @@ def interrogate_function(svs_path, patch_path, interrogation_report_path, df):
         f.write(html_document)
 
 
-def main(slide_emb_path, class_json_path, output_path, interrogate=False, svs_path=None, patch_path=None, interrogation_report_path=None):
+def main(slide_emb_path,
+         class_json_path,
+         output_path,
+         interrogate=False,
+         svs_path=None,
+         patch_path=None,
+         interrogation_report_path=None):
+    """Do zero shot classification on specified classes
+
+    Keyword arguments:
+
+
+    """
     # load precomputed embeddings
     CLASS_DICT = load_classes(class_json_path)
     CLASS_EMB = load_class_embs(class_json_path, CLASS_DICT)  # N_classes 512
