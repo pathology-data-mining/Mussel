@@ -11,15 +11,22 @@ import openslide
 import time
 import pandas as pd
 import json
+from typing import Optional
+from dataclasses import dataclass
 
 from mussel.datasets.h5 import Whole_Slide_Bag_FP
 
-def main(slide_file_path,
-         patch_file_path,
-         output_path,
-         limit_to_class=None,
-         annot_path=None,
-         cache_tile_indices_path=None):
+@dataclass
+class CacheTilesConfig:
+    slide_path: str
+    patch_path: str
+    output_path: str
+    limit_to_class: Optional[str] = None
+    annot_path: Optional[str] = None
+    cache_tile_indices_path: Optional[str] = None
+
+@hydra.main(config_path=".", config_name="cache_tiles_config")
+def main(cfg: CacheTilesConfig):
     time_start = time.time()
     if limit_to_class is not None:
         limit_to_class = limit_to_class.replace("_", " ")
@@ -28,9 +35,9 @@ def main(slide_file_path,
         indices = annot[annot['class'] == limit_to_class].index.tolist()
         print(f"limiting to class {limit_to_class} with {len(indices)} tiles")
     
-    wsi = openslide.open_slide(slide_file_path)
+    wsi = openslide.open_slide(cfg.slide_path)
     dataset = Whole_Slide_Bag_FP(
-        file_path=patch_file_path,
+        file_path=cfg.patch_path,
         wsi=wsi,
         use_imagenet_rgb_dist=True,
         limit_to_indices=indices if limit_to_class else None,
@@ -55,10 +62,10 @@ def main(slide_file_path,
             batch_list.append(batch)
         all_tiles = torch.cat(batch_list, dim=0)
     time_elapsed = time.time() - time_start
-    print("\ncaching tiles for {} took {} s".format(output_path, time_elapsed))
+    print("\ncaching tiles for {} took {} s".format(cfg.output_path, time_elapsed))
     print(f"all_tiles shape: {all_tiles.shape}")
-    torch.save(all_tiles, output_path)
-    print(f"saved to {output_path}")
+    torch.save(all_tiles, cfg.output_path)
+    print(f"saved to {cfg.output_path}")
     # save indices as json
     if limit_to_class:
         with open(cache_tile_indices_path, "w") as f:
@@ -69,4 +76,4 @@ def main(slide_file_path,
 
 
 if __name__ == "__main__":
-    fire.Fire(main)
+    main()

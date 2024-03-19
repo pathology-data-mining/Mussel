@@ -10,12 +10,34 @@ import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader
 import fire
+from omegaconf import DictConfig, OmegaConf
+from dataclasses import dataclass, field
+from pathlib import Path
 
 from mussel.datasets.h5 import Whole_Slide_Bag_FP
 from mussel.models.resnet_custom import resnet50_baseline
 from mussel.utils.file import save_hdf5
 from mussel.utils.ml import collate_features
 from mussel.utils.timer import timed
+from mussel.utils.config import ExtractFeaturesConfig, Model
+
+class Model(Enum):
+    RESNET50 = 'resnet50'
+    CTRANSPATH = 'ctranspath'
+    QUILTNET = 'quiltnet'
+    OPENCLIP = 'openclip'
+
+@dataclass
+class ExtractFeaturesConfig:
+    patch_path: str
+    output_path: str
+    slide_path: str
+    transpath_dir: Optional[str] = None
+    model: Model = Model.QUILTNET #y
+    model_path: str = "hf-hub:wisdomik/QuiltNet-B-16-PMB"
+    batch_size: int = 64
+    use_gpu: bool = True
+    gpu_device_ids: List[int] = field(default_factory=list)
 
 
 @timed
@@ -23,8 +45,8 @@ def compute_w_loader(
     file_path,
     output_path,
     wsi,
-    model,
-    model_name,
+    model_obj,
+    model: Model,
     device,
     batch_size=8,
     verbose=0,
@@ -35,7 +57,7 @@ def compute_w_loader(
     """
     args:
             file_path: directory of bag (.h5 file)
-            output_path: directory to save computed features (.h5 file)
+            output_path: file path to save computed features (.h5 file)
             model: pytorch model
             batch_size: batch_size for computing features in batches
             verbose: level of feedback
@@ -72,7 +94,7 @@ def compute_w_loader(
                 )
             batch = batch.to(device, non_blocking=True)
 
-            if model_name == "quilt":
+            if model == Model.QUILTNET:
                 features = model.encode_image(batch)
             else:
                 features = model(batch)
@@ -85,55 +107,47 @@ def compute_w_loader(
     return output_path
 
 
-def main(h5_feats_path: str,
-         pt_feats_path: str,
-         patch_path: str,
-         slide_path: str,
-         transpath_path: Optional[str] = None,
-         model_name: str = "resnet50",
-         model_path: Optional[str] = None,
-         batch_size: int = 64,
-         use_gpu: bool = True,
-         gpu_device_ids: List[int] = [0]):
+@hydra.main(config_path=".", config_name="extract_features_config")
+def extract_features(cfg: ExtractFeaturesConfig):
 
     device = torch.device("cpu")
-    if use_gpu:
+    if cfg.use_gpu:
         if torch.cuda.is_available():
             device = torch.device("cuda")
         else:
             logger.warn("cuda not available, using cpu")
     logger.info("loading model checkpoint")
-    if model_name == "resnet50":
+    if cfg.model == Model.RESNET50:
         model = resnet50_baseline(pretrained=True)
         preprocessing = None
-    elif model_name == "ctranspath":
-        sys.path.append(transpath_path)
-        model = torch.load(model_path)
+    elif cfg.model == Model.CTRANSPATH:
+        sys.path.append(cfg.transpath_path)
+        model = torch.load(cfg.model_path)
         preprocessing = None
-    elif model_name == "quilt":
+    elif cfg.model == Model.QUILTNET:
         model, _, preprocessing = open_clip.create_model_and_transforms(
-            "hf-hub:wisdomik/QuiltNet-B-16-PMB"
+            cfg.model_path,
         )
-    elif model_name == "open_clip":
+    elif cfg.model == Model.OPENCLIP:
         model, _, preprocessing = open_clip.create_model_and_transforms(
-            model_path
+            cfg.model_path,
         )
     else:
         raise ValueError("model not recognized")
 
     model = model.to(device)
     if len(gpu_device_ids) > 1:
-        model = nn.DataParallel(model, device_ids=gpu_device_ids)
+        model = nn.DataParallel(model, device_ids=cfg.gpu_device_ids)
     model.eval()
 
     # extract features
-    wsi = openslide.open_slide(slide_path)
+    wsi = openslide.open_slide(cfg.slide_path)
     output_file_path = compute_w_loader(
-        patch_path,
-        h5_feats_path,
+        cfg.patch_path,
+        cfg.output_path,
         wsi,
-        model=model,
-        model_name=model_name,
+        model_obj=model,
+        model=cfg.model,
         preprocess=preprocessing,
         device=device,
         batch_size=batch_size,
@@ -154,4 +168,4 @@ def main(h5_feats_path: str,
     )
 
 if __name__ == "__main__":
-    fire.Fire(main)
+    extract_features()
