@@ -1,0 +1,9 @@
+$schema: "https://json-schema.org/draft-06/schema#"
+description: an entry in the slide sheet
+properties:
+  image_id:
+    type: string
+    description: image ID
+
+required:
+  - image_id

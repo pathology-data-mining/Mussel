@@ -3,6 +3,7 @@ import multiprocessing as mp
 import os
 import time
 from xml.dom import minidom
+from typing import List
 
 import cv2
 import matplotlib.pyplot as plt
@@ -118,22 +119,31 @@ class WholeSlideImage(object):
 
     def segmentTissue(
         self,
-        seg_level=0,
-        sthresh=20,
-        sthresh_up=255,
-        mthresh=7,
-        close=0,
-        use_otsu=False,
-        filter_params={"a_t": 100},
-        ref_patch_size=512,
-        exclude_ids=[],
-        keep_ids=[],
+        seg_level: int = 0,
+        segment_threshold: int = 20,
+        segment_max_value: int = 255,
+        median_blur_ksize: int = 7,
+        morphology_ex_kernel: int = 0,
+        use_otsu: bool = False,
+        filter_contours: bool = True,
+        tissue_area_threshold: int = 100,
+        hole_area_threshold: int = 16,
+        max_num_holes: int = 10,
+        ref_patch_size: int = 512,
+        exclude_ids: List[int] = [],
+        keep_ids: List[int] = [],
     ):
         """
         Segment the tissue via HSV -> Median thresholding -> Binary threshold
         """
 
-        def _filter_contours(contours, hierarchy, filter_params):
+        def _filter_contours(contours,
+                             hierarchy
+                             tissue_area_threshold: int
+                             hole_area_threshold: int
+                             max_num_holes: int
+        ):
+
             """
             Filter contours by: area.
             """
@@ -157,7 +167,7 @@ class WholeSlideImage(object):
                 a = a - np.array(hole_areas).sum()
                 if a == 0:
                     continue
-                if tuple((filter_params["a_t"],)) < tuple((a,)):
+                if tuple((tissue_area_threshold,)) < tuple((a,)):
                     filtered.append(cont_idx)
                     all_holes.append(holes)
 
@@ -171,12 +181,12 @@ class WholeSlideImage(object):
                     unfiltered_holes, key=cv2.contourArea, reverse=True
                 )
                 # take max_n_holes largest holes by area
-                unfilered_holes = unfilered_holes[: filter_params["max_n_holes"]]
+                unfilered_holes = unfilered_holes[: max_num_holes]
                 filtered_holes = []
 
                 # filter these holes
                 for hole in unfilered_holes:
-                    if cv2.contourArea(hole) > filter_params["a_h"]:
+                    if cv2.contourArea(hole) > hole_area_threshold:
                         filtered_holes.append(hole)
 
                 hole_contours.append(filtered_holes)
@@ -187,35 +197,34 @@ class WholeSlideImage(object):
             self.wsi.read_region((0, 0), seg_level, self.level_dim[seg_level])
         )
         img_hsv = cv2.cvtColor(img, cv2.COLOR_RGB2HSV)  # Convert to HSV space
-        img_med = cv2.medianBlur(img_hsv[:, :, 1], mthresh)  # Apply median blurring
+        img_med = cv2.medianBlur(img_hsv[:, :, 1], median_blur_ksize)  # Apply median blurring
 
         # Thresholding
         if use_otsu:
             _, img_otsu = cv2.threshold(
-                img_med, 0, sthresh_up, cv2.THRESH_OTSU + cv2.THRESH_BINARY
+                img_med, 0, segment_max_value, cv2.THRESH_OTSU + cv2.THRESH_BINARY
             )
         else:
-            _, img_otsu = cv2.threshold(img_med, sthresh, sthresh_up, cv2.THRESH_BINARY)
+            _, img_otsu = cv2.threshold(img_med, segment_threshold, segment_max_value, cv2.THRESH_BINARY)
 
         # Morphological closing
-        if close > 0:
-            kernel = np.ones((close, close), np.uint8)
+        if morphology_ex_kernel > 0:
+            kernel = np.ones((morphology_ex_kernel, close), np.uint8)
             img_otsu = cv2.morphologyEx(img_otsu, cv2.MORPH_CLOSE, kernel)
 
         scale = self.level_downsamples[seg_level]
         scaled_ref_patch_area = int(ref_patch_size**2 / (scale[0] * scale[1]))
-        filter_params = filter_params.copy()
-        filter_params["a_t"] = filter_params["a_t"] * scaled_ref_patch_area
-        filter_params["a_h"] = filter_params["a_h"] * scaled_ref_patch_area
+        tissue_area_threshold *= scaled_ref_patch_area
+        hole_area_threshold *= scaled_ref_patch_area
 
         # Find and filter contours
         contours, hierarchy = cv2.findContours(
             img_otsu, cv2.RETR_CCOMP, cv2.CHAIN_APPROX_NONE
         )  # Find contours
         hierarchy = np.squeeze(hierarchy, axis=(0,))[:, 2:]
-        if filter_params:
+        if filter_contours:
             foreground_contours, hole_contours = _filter_contours(
-                contours, hierarchy, filter_params
+                contours, hierarchy, tissue_area_threshold, hole_area_threshold, max_num_holes
             )  # Necessary for filtering out artifacts
 
         self.contours_tissue = self.scaleContourDim(foreground_contours, scale)
