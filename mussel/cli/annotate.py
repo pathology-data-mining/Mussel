@@ -1,20 +1,22 @@
-from argparse import ArgumentParser
-import os
-import json
-import torch
-import pandas as pd
-from io import BytesIO
 import base64
+import json
+import os
+from argparse import ArgumentParser
+from dataclasses import dataclass
+from io import BytesIO
+from typing import Optional
+
 import h5py
 import openslide
-from typing import Optional
-from dataclasses import dataclass
+import pandas as pd
+import torch
 
 from mussel.config import AnnotateConfig
 
+
 @dataclass
 class AnnotateConfig:
-    slide_emb_path: str
+    features_pt_path: str
     class_json_path: str
     output_path: str
     interrogate: bool = False
@@ -92,7 +94,10 @@ def interrogate_function(slide_path, patch_path, interrogation_report_path, df):
     with open(interrogation_report_path, "w") as f:
         f.write(html_document)
 
-@hydra.main(config_path=".", config_name="annotate_config")
+cs = ConfigStore.instance()
+cs.store(name="annotate_config", node=AnnotateConfig)
+
+@hydra.main(config_path=".", config_name="annotate_config", version_base=None)
 def main(cfg: AnnotateConfig):
     """Do zero shot classification on specified classes
 
@@ -104,7 +109,7 @@ def main(cfg: AnnotateConfig):
     CLASS_DICT = load_classes(cfg.class_json_path)
     CLASS_EMB = load_class_embs(cfg.class_json_path, CLASS_DICT)  # N_classes 512
 
-    SLIDE_EMB = torch.load(cfg.slide_emb_path)  # N_tiles 512
+    SLIDE_EMB = torch.load(cfg.features_pt_path)  # N_tiles 512
 
     # zero-shot classification
     COS_SIM = torch.nn.functional.cosine_similarity(SLIDE_EMB.unsqueeze(1), CLASS_EMB.unsqueeze(0), dim=2)  # N_tiles N_classes

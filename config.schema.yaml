@@ -1,8 +1,6 @@
-$schema: "https://json-schema.org/draft-06/schema#"
+$schema: "https://json-schema.org/draft/2020-12/schema"
 description: snakemake configuration
 properties:
-  parameters:
-    $ref: "file://params.schema.yaml#/properties"
   slide_directory_file:
     type: string
     default: slide_directory.csv
@@ -13,7 +11,7 @@ properties:
   batch_size:
     type: integer
     default: 8
-    description: batch size 
+    description: batch size
   transpath_dir:
     type: string
     description: CTransPath dir
@@ -21,8 +19,14 @@ properties:
     type: boolean
     default: true
     description: Use GPU
-
-
-
-
-
+  test:
+    type: boolean
+    default: false
+    description: test mode
+  quiltnet_model_path:
+    type: string
+    description: Path to quiltnet model
+    default: "hf-hub:wisdomik/QuiltNet-B-16-PMB"
+  transpath_model_path:
+    type: string
+    description: Path to CTransPath model
