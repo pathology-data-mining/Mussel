@@ -6,8 +6,8 @@ import h5py
 import numpy as np
 from PIL import Image
 
-from mussel.utils.wsi_classes import Mosaic_Canvas
 from mussel.utils.timer import timed
+from mussel.utils.wsi_classes import Mosaic_Canvas
 
 
 def isWhitePatch(patch, satThresh=5):

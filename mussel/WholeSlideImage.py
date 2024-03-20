@@ -2,8 +2,8 @@ import math
 import multiprocessing as mp
 import os
 import time
-from xml.dom import minidom
 from typing import List
+from xml.dom import minidom
 
 import cv2
 import matplotlib.pyplot as plt
@@ -12,22 +12,12 @@ import openslide
 from PIL import Image
 
 from mussel.utils.file import load_pkl, save_pkl
-from mussel.utils.wsi_classes import (
-    isInContourV1,
-    isInContourV2,
-    isInContourV3_Easy,
-    isInContourV3_Hard,
-    Contour_Checking_fn,
-)
-from mussels.utils.wsi import (
-    savePatchIter_bag_hdf5,
-    initialize_hdf5_bag,
-    save_hdf5,
-    screen_coords,
-    isBlackPatch,
-    isWhitePatch,
-    to_percentiles,
-)
+from mussel.utils.wsi import (initialize_hdf5_bag, isBlackPatch, isWhitePatch,
+                              save_hdf5, savePatchIter_bag_hdf5, screen_coords,
+                              to_percentiles)
+from mussel.utils.wsi_classes import (Contour_Checking_fn, isInContourV1,
+                                      isInContourV2, isInContourV3_Easy,
+                                      isInContourV3_Hard)
 
 Image.MAX_IMAGE_PIXELS = 933120000
 
@@ -138,11 +128,11 @@ class WholeSlideImage(object):
         """
 
         def _filter_contours(contours,
-                             hierarchy
-                             tissue_area_threshold: int
-                             hole_area_threshold: int
-                             max_num_holes: int
-        ):
+                             hierarchy,
+                             tissue_area_threshold: int,
+                             hole_area_threshold: int,
+                             max_num_holes: int,
+                             ):
 
             """
             Filter contours by: area.
@@ -611,7 +601,7 @@ class WholeSlideImage(object):
         # get mpp of WSI
         mpp_wsi = float(self.wsi.properties[openslide.PROPERTY_NAME_MPP_X])
 
-        assert mpp >= mpp_wsi, "mpp must be greater than or equal to mpp_wsi"
+        assert abs(mpp - mpp_wsi) <= 0.01, "mpp must be greater than or equal to mpp_wsi"
         scale = mpp / mpp_wsi
         print(f"desired_mpp: {mpp:.3f}, mpp_wsi: {mpp_wsi:.3f}, mpp scale: {scale:.3f}")
 

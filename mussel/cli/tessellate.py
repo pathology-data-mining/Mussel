@@ -1,25 +1,27 @@
-import hydra
-from omegaconf import DictConfig, OmegaConf
 import os
 import time
-from loguru import logger
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Optional, List
+from typing import List, Optional
 
+import hydra
 import numpy as np
 import pandas as pd
+from hydra.core.config_store import ConfigStore
+from loguru import logger
+from omegaconf import MISSING, DictConfig, OmegaConf
 
-from mussel.WholeSlideImage import WholeSlideImage
-from mussel.utils.wsi import StitchCoords
 from mussel.utils.timer import timed
+from mussel.utils.wsi import StitchCoords
+from mussel.WholeSlideImage import WholeSlideImage
+
 
 @dataclass
 class PatchConfig:
     use_padding: bool = True
-    patch_size: int = 256 #y
-    step_size: int = 256 #y
-    mpp: float = 0.5 #y
+    patch_size: int = 256
+    step_size: int = 256
+    mpp: float = 0.5
 
 @dataclass
 class VisConfig:
@@ -39,15 +41,15 @@ class SegConfig:
     exclude_ids: List[int] = field(default_factory=list)
 
 @dataclass
-class FilterParams:
-    tissue_area_threshold: int = 100 #y
+class FilterConfig:
+    tissue_area_threshold: int = 100
     hole_area_threshold: int = 16
     max_num_holes: int = 8
 
 @dataclass
 class TessellateConfig:
-    slide_path: str
-    output_path: str
+    slide_path: str = MISSING
+    output_path: str = MISSING
     stitch_path: Optional[str] = None
     mask_path: Optional[str] = None
     seg_config: SegConfig = field(default_factory=SegConfig)
@@ -56,10 +58,10 @@ class TessellateConfig:
     patch_config: PatchConfig = field(default_factory=PatchConfig)
 
 cs = ConfigStore.instance()
-cs.store(name="base_config", node=TessellateConfig)
+cs.store(name="tessellate_config", node=TessellateConfig)
 
 @hydra.main(version_base=None, config_path=".", config_name="tessellate_config")
-def seg_and_patch(
+def main(
     cfg: TessellateConfig,
 ):
     # Inialize WSI
@@ -97,7 +99,7 @@ def seg_and_patch(
     WSI_object.segmentTissue(**OmegaConf.to_container(cfg.seg_config),
                                 **OmegaConf.to_container(cfg.filter_config))
 
-    if mask_path:
+    if cfg.mask_path:
         mask = WSI_object.visWSI(**OmegaConf.to_container(cfg.vis_config))
         mask.save(cfg.mask_path)
 
@@ -118,4 +120,4 @@ def seg_and_patch(
 
 
 if __name__ == "__main__":
-    seg_and_patch()
+    main()

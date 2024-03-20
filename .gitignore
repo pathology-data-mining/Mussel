@@ -16,3 +16,5 @@ test_*sh
 !*templ*
 scratch/
 .venv/
+reef/
+.snakemake/

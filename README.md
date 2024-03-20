@@ -1,6 +1,6 @@
 # Mussel
 
-<img src="mussel.jpg" width="300px" />
+<img src="docs/mussel.jpg" width="300px" />
 
 This is a fork of Faisal Mahmood's CLAM repository (GPL v3 license), with the following modifications:
 - Added CTransPath and Quilt embeddings
@@ -58,7 +58,7 @@ If your images are not enrolled in the reef or you are outside MSK, there are se
 
 
 ## foreground detection and tiling
-<img src="example-mask.jpg" width="600px" />
+<img src="docs/example-mask.jpg" width="600px" />
 Generate .h5 file with coordinates and metadata necessary for downstream steps, using the following arguments
 - mpp (microns per pixel)
 - step_size (distance between patches)
@@ -111,7 +111,7 @@ python main.py annotate \
 --interrogate # this flag is slow; for spot checks
 ```
 
-<img src="example-interrog.png" width="600px" />
+<img src="docs/example-interrog.png" width="600px" />
 
 When you're satsified, run `annotate.py` without the interrogation options on your cohort at scale.
 

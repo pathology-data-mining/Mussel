@@ -1,5 +1,8 @@
+import time
 from functools import wraps
+
 from loguru import logger
+
 
 def timed(func):
     """This decorator prints the execution time for the decorated function."""

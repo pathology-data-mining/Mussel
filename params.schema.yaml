@@ -1,4 +1,4 @@
-$schema: "https://json-schema.org/draft-06/schema#"
+$schema: https://json-schema.org/draft/2020-12/schema
 description: parameters schema
 properties:
     patch_size:
@@ -10,7 +10,7 @@ properties:
         default: 256
         description: step size
     mpp:
-        type: float
+        type: number
         default: 0.5
         description: microns per pixel
     tissue_area_threshold:
@@ -21,11 +21,7 @@ properties:
         description: feature extraction model
         default: quiltnet
         enum:
-        - resnet50
-        - ctranspath
-        - quiltnet
-        - openclip
-    model_path:
-        type: string
-        description: path to model
-        default: hf-hub:wisdomik/QuiltNet-B-16-PMB
+          - resnet50
+          - ctranspath
+          - quiltnet
+          - openclip

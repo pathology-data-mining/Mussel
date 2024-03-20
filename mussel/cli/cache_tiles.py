@@ -4,28 +4,35 @@ Results in .pt file with N_tiles x 3 x img_size x img_size tensor
 """
 
 import argparse
-from torch.utils.data import DataLoader
-import torch
-from mussel.utils.ml import collate_features
-import openslide
-import time
-import pandas as pd
 import json
-from typing import Optional
+import time
 from dataclasses import dataclass
+from typing import Optional
+
+import openslide
+import pandas as pd
+import torch
+from hydra.core.config_store import ConfigStore
+from omegaconf import MISSING
+from torch.utils.data import DataLoader
 
 from mussel.datasets.h5 import Whole_Slide_Bag_FP
+from mussel.utils.ml import collate_features
+
 
 @dataclass
 class CacheTilesConfig:
-    slide_path: str
-    patch_path: str
-    output_path: str
+    slide_path: str = MISSING
+    patch_path: str = MISSING
+    output_path: str = MISSING
     limit_to_class: Optional[str] = None
     annot_path: Optional[str] = None
     cache_tile_indices_path: Optional[str] = None
 
-@hydra.main(config_path=".", config_name="cache_tiles_config")
+cs = ConfigStore.instance()
+cs.store(name="cache_tiles_config", node=CacheTilesConfig)
+
+@hydra.main(config_path=".", config_name="cache_tiles_config", version_base=None)
 def main(cfg: CacheTilesConfig):
     time_start = time.time()
     if limit_to_class is not None:
