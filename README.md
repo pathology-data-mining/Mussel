@@ -64,7 +64,7 @@ snakemake --cores {number of jobs}
 
 *This takes about 30 seconds for an example slide.*
 
-## annotate tiles with tissue types (beta feature)
+## annotate tiles with tissue types (QuiltNet only)
 Current classes are:
 ```
 {"0": "benign epithelium", "1": "carcinoma in situ", "2": "invasive carcinoma", "3": "connective tissue", "4": "adipose", "5": "vessel", "6": "necrosis", "7": "marking pen"}
