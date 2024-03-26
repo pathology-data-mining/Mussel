@@ -17,113 +17,77 @@ Usable using Condor, but suffers from limitations of current Condor system:
 
 ## setup
 ```bash
-conda create --name mussel -c conda-forge \
-openslide-python numpy pandas opencv h5py matplotlib
-
-conda activate mussel
-conda install pytorch torchvision pytorch-cuda=12.1 \
--c pytorch -c nvidia
-conda install -c conda-forge opencv
+mamba env create -p .venv/ -f environment.yaml
+mamba activate .venv/
+poetry install
 ```
+
+### Configuration
+
+Create a `config/config.yaml` file that conforms to the specification in
+`config/config.schema.yaml`. `slide_list_path` must be set to a file containing the
+list of image IDs that you wish to analyze. The image IDs must exist in the
+`slide_directory_path`. If you set a `parameters_path` to override defaults,
+make sure that conforms to the `config/params.schema.yaml` in .csv format (i.e.
+columns are parameters and rows are the parameter values).
 
 ### If you plan to use CTransPath
-Download modified timm from [here](https://drive.google.com/file/d/1JV7aj9rKqGedXY1TdDfi3dP07022hcgZ/view)
+
+Install CTransPath somewhere and reference the path in the config yaml as
+`transpath_dir`. Reference to the CTransPath model with `transpath_model_path`.
+
+### Using HT-Condor for job submission
+
+Install the [HT-Condor profile](https://github.com/msk-mind/snakemake-htcondor)
+using [cookiecutter](https://github.com/cookiecutter/cookiecutter). After the
+profile is installed, you can use it with:
+
 ```bash
-pip install timm-0.5.4.tar
+snakemake --profile {name of htcondor profile}
 ```
-
-### If you plan to use Quilt
-- install open-clip
-```bash
-conda install -c conda-forge sentencepiece
-pip install open-clip-torch
-pip install transformers
-```
-
-### enroll your images to the reef
-- build a CSV file like so:
-```
-image_id,slide_file
-001,/my/path/to/001.svs
-002,/my/path/to/002.svs
-...
-```
-- run 
-```
-python enroll.py csv_file.csv
-```
-The reef is the centralized repository for slides and their location on disk. This dramatically reduces the burden of taking care of paths and co-registering the downstream files. Mussel handles it all consistently and, given a list of slides of interest to you, avoids duplicate calculations if someone else has already examined the same slide.
-
-If your images are not enrolled in the reef or you are outside MSK, there are separate files for each command (e.g. `tessellate.py` instead of `main.py tessellate`) where you can manually specify exact file paths for input and output.
-
 
 ## foreground detection and tiling
 <img src="docs/example-mask.jpg" width="600px" />
-Generate .h5 file with coordinates and metadata necessary for downstream steps, using the following arguments
-- mpp (microns per pixel)
-- step_size (distance between patches)
-- patch_size (edge length of patch, must be 224 for CTransPath or Quilt)
-- save_dir (directory with or in which to create {masks,stitches,patches} subdirectories)
+Generate `.h5` file with coordinates and metadata necessary for downstream steps in the `reef_dir`.
 
-The patches directory contains the actual h5 file with coordinates and metadata required for downstream use. For quality control, masks show the tissue area, stitches show the tiling pattern.
 ```bash
-python main.py tessellate 
---image_id {image-id} \
---mpp 1.0 \
---step_size 224 \
---patch_size 224
+snakemake --cores {number of jobs} tiles
 ```
 *This takes about one second for an example slide. Using Condor, tiling 1000 slides takes about two minutes.*
 
 ## feat extraction
-Generate .h5 file and .pt file with embeddings for each tile, using the following arguments
-- model (resnet50 or ctranspath)
-- save_dir (directory with or in which to create {h5_files,pt_files} subdirectories)
-
-The h5_files directory contains the h5 file with embeddings (N_tiles x 768 or 1024), the pt_files directory contains the pt file with embeddings.
+Generate .h5 file and .pt file with embeddings for each tile in the `reef_dir`. (This is the default snakemake target.)
 
 ```bash
-python main.py featurize \
---image_id {image-id} \
---model_name {quilt,resnet50,ctranspath} \
---gpus 0 \
---batch_size 128 \
---mpp 1.0 \
---step_size 224 \
---patch_size 224
+snakemake --cores {number of jobs}
 ```
 
 *This takes about 30 seconds for an example slide.*
 
 ## annotate tiles with tissue types (beta feature)
-Current classes are 
+Current classes are:
 ```
 {"0": "benign epithelium", "1": "carcinoma in situ", "2": "invasive carcinoma", "3": "connective tissue", "4": "adipose", "5": "vessel", "6": "necrosis", "7": "marking pen"}
 ```
 
-Try your own classes! Any natural language works, and no training is required. Generate interrogation reports to eval your prompt engineering.
+Try your own classes! Any natural language works, and no training is required.
+Generate interrogation reports to eval your prompt engineering. Set
+`annotation_class_json_path` to a custom json file.
+
 ```bash
-python main.py annotate \
---image_id {image-id} \
---mpp 1.0 \
---step_size 224 \
---patch_size 224
---interrogate # this flag is slow; for spot checks
+snakemake --cores {number of cores} annotations
 ```
 
 <img src="docs/example-interrog.png" width="600px" />
 
-When you're satsified, run `annotate.py` without the interrogation options on your cohort at scale.
-
 ## tile caching
-Generate .pt file for rapid access of tiles during I/O intense operations such as training. This can be conditioned on tissue types: e.g. cache only the tiles containing invasive carcinoma.
+
+Generate .pt file for rapid access of tiles during I/O intense operations such
+as training. This can be conditioned on tissue types: e.g. cache only the tiles
+containing invasive carcinoma by setting `cache_limit_to_cass` in the `config/config.yaml` file.
+
 ```bash
-python main.py cache \
---image_id {image-id} \
---mpp 1.0 \
---step_size 224 \
---patch_size 224
---limit_to_class "adipose"  # replace spaces by _ for condor_main.py
+snakemake --cores {number of cores} cached_tiles
 ```
 
 *This takes about ten seconds for an example slide.*

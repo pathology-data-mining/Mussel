@@ -1,0 +1,149 @@
+import dacite
+import mussel.cli.annotate
+import mussel.cli.cache_tiles
+import mussel.cli.extract_features
+import mussel.cli.tessellate
+import numpy as np
+import pandas as pd
+from dacite import from_dict
+from mussel.cli.annotate import AnnotateConfig
+from mussel.cli.cache_tiles import CacheTilesConfig
+from mussel.cli.extract_features import ExtractFeaturesConfig, Model
+from mussel.cli.tessellate import (FilterConfig, PatchConfig, SegConfig,
+                                   TessellateConfig, VisConfig)
+from omegaconf import OmegaConf
+from snakemake.utils import Paramspace, validate
+
+configfile: "config/config.yaml"
+validate(config, "../config/config.schema.yaml")
+
+slide_df = pd.read_csv(config['slide_directory_path'])
+validate(slide_df, "../config/slides.schema.yaml")
+slide_df.set_index("image_id", inplace=True, drop=False)
+
+slides = [line.strip() for line in open(config['slide_list_path'], 'r')]
+
+if config['test']:
+  slides = slides[0:5]
+
+parameters = dict()
+if config.get('parameters_file'):
+  parameters = pd.read_csv(config['parameters_path'])
+validate(parameters, "../config/params.schema.yaml")
+
+ # sort the parameters for consistent paramspace patterns
+if type(parameters) == dict:
+  df = pd.DataFrame([parameters])
+  df = df.reindex(sorted(df.columns), axis=1)
+  paramspace = Paramspace(df)
+else:
+  parameters = parameters.reindex(sorted(parameters.columns), axis=1)
+  paramspace = Paramspace(parameters)
+
+def create_config(config_class, wildcards, **kwargs):
+  # convert np types to native python types
+  instance = { k:val.item() if type(val).__module__ == np.__name__ else val for k, val in paramspace.instance(wildcards).items() }
+  instance.update(**kwargs)
+  return from_dict(data_class=config_class, data=instance, config=dacite.Config(cast=[Model]))
+
+
+def get_slide(wildcards):
+  return slide_df.loc[wildcards.slide_id, "slide_file"]
+
+rule all:
+  input:
+    expand(f"{config['reef_dir']}/{{params}}/features/pt/{{slide_id}}.pt", params=paramspace.instance_patterns, slide_id=slides)
+
+rule tiles:
+  input:
+    expand(f"{config['reef_dir']}/{{params}}/patches/{{slide_id}}.h5", params=paramspace.instance_patterns, slide_id=slides)
+
+rule annotations:
+  input:
+    expand(f"{config['output_dir']}/{{params}}/annotations/{{slide_id}}.csv", params=paramspace.instance_patterns, slide_id=slides)
+
+rule cached_tiles:
+  input:
+    expand(f"{config['output_dir']}/{{params}}/cache_tiles/pt/{{slide_id}}.pt", params=paramspace.instance_patterns, slide_id=slides)
+
+rule tessellate:
+  input:
+    get_slide
+  output:
+    patch_path=protected(f"{config['reef_dir']}/{paramspace.wildcard_pattern}/patches/{{slide_id}}.h5"),
+    stitch_path=protected(f"{config['reef_dir']}/{paramspace.wildcard_pattern}/stitches/{{slide_id}}.jpg"),
+  resources:
+    mem_mb=30000
+  run:
+    cfg = create_config(TessellateConfig,
+                        wildcards,
+                        slide_path=input[0],
+                        output_path=output.patch_path,
+                        stitch_path=output.stitch_path,
+                        seg_config=create_config(SegConfig, wildcards),
+                        patch_config=create_config(PatchConfig, wildcards),
+                        filter_config=create_config(FilterConfig, wildcards),
+                        vis_config=create_config(VisConfig, wildcards),
+                        )
+    mussel.cli.tessellate.main(OmegaConf.create(cfg))
+
+
+rule featurize:
+  input:
+    patch_path=f"{config['reef_dir']}/{paramspace.wildcard_pattern}/patches/{{slide_id}}.h5",
+    slide_path=get_slide
+  output:
+    pt=protected(f"{config['reef_dir']}/{paramspace.wildcard_pattern}/features/pt/{{slide_id}}.pt"),
+    h5=protected(f"{config['reef_dir']}/{paramspace.wildcard_pattern}/features/h5/{{slide_id}}.h5"),
+  threads: 32
+  resources:
+    mem_mb=30000,
+    request_gpus=1
+  run:
+    cfg = create_config(ExtractFeaturesConfig,
+                  wildcards,
+                  patch_path=input.patch_path,
+                  output_h5_path=output.h5,
+                  output_pt_path=output.pt,
+                  slide_path=input.slide_path,
+                  num_workers=threads,
+                  )
+    mussel.cli.extract_features.main(OmegaConf.create(cfg))
+
+rule annotate:
+  input:
+    features=f"{config['reef_dir']}/{paramspace.wildcard_pattern}/features/pt/{{slide_id}}.pt",
+    class_json=config['annotation_class_json_path'] if 'annotation_class_json_path' in config else [],
+  output:
+    f"{config['output_dir']}/{paramspace.wildcard_pattern}/annotations/{{slide_id}}.csv"
+  run:
+    cfg = create_config(
+        AnnotateConfig,
+        wildcards,
+        features_pt_path=input.features,
+        class_json_path=input.class_json,
+        output_path=output[0],
+        )
+    mussel.cli.annotate.main(OmegaConf.create(cfg))
+
+rule cache_tiles:
+  input:
+    slide_path=get_slide,
+    patches_h5=f"{config['reef_dir']}/{paramspace.wildcard_pattern}/patches/{{slide_id}}.h5",
+    annotation_csv=f"{config['output_dir']}/{paramspace.wildcard_pattern}/annotations/{{slide_id}}.csv" if 'annotation_class_json_path' in config else [],
+  output:
+    pt=f"{config['output_dir']}/{paramspace.wildcard_pattern}/cache_tiles/pt/{{slide_id}}.pt",
+    indices=f"{config['output_dir']}/{paramspace.wildcard_pattern}/cache_tiles/indices/{{slide_id}}.json",
+  run:
+    cfg = create_config(
+        CacheTilesConfig,
+        wildcards,
+        patches_h5_path=input.patches_h5,
+        slide_path=input.slide_path,
+        num_workers=threads,
+        annotation_path=input.annotation_csv if input.annotation_csv else None,
+        limit_to_class=config['cache_limit_to_class'] if 'cache_limit_to_class' in config else [],
+        indices_path=output.indices,
+        output_path=output.pt,
+        )
+    mussel.cli.cache_tiles.main(OmegaConf.create(cfg))

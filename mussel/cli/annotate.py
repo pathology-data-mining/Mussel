@@ -7,11 +7,11 @@ from io import BytesIO
 from typing import Optional
 
 import h5py
+import hydra
 import openslide
 import pandas as pd
 import torch
-
-from mussel.config import AnnotateConfig
+from hydra.core.config_store import ConfigStore
 
 
 @dataclass
@@ -120,7 +120,7 @@ def main(cfg: AnnotateConfig):
     DF['class'] = DF.idxmax(axis=1)
     print(DF['class'].value_counts())
 
-    if interrogate:
+    if cfg.interrogate:
         interrogate_function(cfg.slide_path, cfg.patch_path, cfg.interrogation_report_path, DF)
 
 
