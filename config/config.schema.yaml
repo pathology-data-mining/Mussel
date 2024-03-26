@@ -1,0 +1,53 @@
+$schema: "https://json-schema.org/draft/2020-12/schema"
+description: Mussel snakemake configuration
+properties:
+  reef_dir:
+    type: string
+    default: "reef"
+    description: reef directory to store tessellation outputs and extracted features
+  output_dir:
+    type: string
+    default: "results"
+    description: output directory
+  slide_directory_path:
+    type: string
+    default: slide_directory.csv
+    description: slide directory csv
+  slide_list_path:
+    type: string
+    default: slides.txt
+    desription: list of slide IDs
+  parameters_path:
+    type: string
+    description: parameter space csv, columns must conform to
+      parameters.schema.yaml, rows are parameter values
+  batch_size:
+    type: integer
+    default: 8
+    description: batch size
+  transpath_dir:
+    type: string
+    description: CTransPath dir
+  use_gpu:
+    type: boolean
+    default: true
+    description: Use GPU
+  test:
+    type: boolean
+    default: false
+    description: test mode
+  quiltnet_model_path:
+    type: string
+    description: Path to quiltnet model
+    default: "hf-hub:wisdomik/QuiltNet-B-16-PMB"
+  transpath_model_path:
+    type: string
+    description: Path to CTransPath model
+  annotation_class_json_path:
+    type: string
+    description: Path to annotation class json
+  cache_limit_to_class:
+    type: array
+    description: limit caching to these classes
+    items:
+      type: string
