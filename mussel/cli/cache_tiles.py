@@ -14,13 +14,14 @@ import openslide
 import pandas as pd
 import torch
 from hydra.core.config_store import ConfigStore
-from loguru import logger
+import logging
 from omegaconf import MISSING
 from torch.utils.data import DataLoader
 
 from mussel.datasets.h5 import Whole_Slide_Bag_FP
 from mussel.utils.ml import collate_features
 
+log = logging.getLogger(__name__)
 
 @dataclass
 class CacheTilesConfig:
@@ -31,7 +32,7 @@ class CacheTilesConfig:
     num_workers: int = 16
     limit_to_class: List[str] = field(default_factory=list)
     annotation_path: Optional[str] = None
-    indices_path: Optional[str] = None
+    output_indices_path: Optional[str] = None
 
 cs = ConfigStore.instance()
 cs.store(name="cache_tiles_config", node=CacheTilesConfig)
@@ -43,7 +44,7 @@ def main(cfg: CacheTilesConfig):
         annot = pd.read_csv(cfg.annotation_path)
         annot['class'] = annot.idxmax(axis=1)
         indices = annot[annot['class'] in cfg.limit_to_class].index.tolist()
-        logger.info(f"limiting to class {limit_to_class} with {len(indices)} tiles")
+        log.info(f"limiting to class {limit_to_class} with {len(indices)} tiles")
     
     wsi = openslide.open_slide(cfg.slide_path)
     dataset = Whole_Slide_Bag_FP(
@@ -64,7 +65,7 @@ def main(cfg: CacheTilesConfig):
         batch_list = []
         for count, (batch, coords) in enumerate(loader):
             if count % 100 == 0:
-                logger.info(
+                log.info(
                     "batch {}/{}, {} files processed".format(
                         count, len(loader), count * 32
                     )
@@ -72,13 +73,13 @@ def main(cfg: CacheTilesConfig):
             batch_list.append(batch)
         all_tiles = torch.cat(batch_list, dim=0)
     time_elapsed = time.time() - time_start
-    logger.info("\ncaching tiles for {} took {} s".format(cfg.output_path, time_elapsed))
-    logger.info(f"all_tiles shape: {all_tiles.shape}")
+    log.info("\ncaching tiles for {} took {} s".format(cfg.output_path, time_elapsed))
+    log.info(f"all_tiles shape: {all_tiles.shape}")
     torch.save(all_tiles, cfg.output_path)
-    logger.info(f"saved to {cfg.output_path}")
+    log.info(f"saved to {cfg.output_path}")
     # save indices as json
-    if cfg.indices_path:
-        with open(cfg.indices_path, "w") as f:
+    if cfg.output_indices_path:
+        with open(cfg.output_indices_path, "w") as f:
             if cfg.limit_to_class:
                     json.dump(indices, f)
             else:

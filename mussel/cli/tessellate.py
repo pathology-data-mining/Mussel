@@ -8,13 +8,14 @@ import hydra
 import numpy as np
 import pandas as pd
 from hydra.core.config_store import ConfigStore
-from loguru import logger
+import logging
 from omegaconf import MISSING, DictConfig, OmegaConf
 
 from mussel.utils.timer import timed
 from mussel.utils.wsi import StitchCoords
 from mussel.WholeSlideImage import WholeSlideImage
 
+log = logging.getLogger(__name__)
 
 @dataclass
 class PatchConfig:
@@ -88,7 +89,7 @@ def main(
 
     w, h = WSI_object.level_dim[cfg.seg_config.seg_level]
     if w * h > 1e8:
-        logger.error(
+        log.error(
             "level_dim {} x {} is likely too large for successful segmentation, aborting".format(
                 w, h
             )

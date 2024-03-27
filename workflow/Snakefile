@@ -148,7 +148,7 @@ rule cache_tiles:
         num_workers=threads,
         annotation_path=input.annotation_csv if input.annotation_csv else None,
         limit_to_class=config['cache_limit_to_class'] if 'cache_limit_to_class' in config else [],
-        indices_path=output.indices,
+        output_indices_path=output.indices,
         output_path=output.pt,
         )
     mussel.cli.cache_tiles.main(OmegaConf.create(cfg))
