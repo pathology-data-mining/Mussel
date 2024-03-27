@@ -1,18 +1,21 @@
+import os
+
 import dacite
+import numpy as np
+import pandas as pd
+from dacite import from_dict
+from omegaconf import OmegaConf
+from snakemake.utils import Paramspace, validate
+
 import mussel.cli.annotate
 import mussel.cli.cache_tiles
 import mussel.cli.extract_features
 import mussel.cli.tessellate
-import numpy as np
-import pandas as pd
-from dacite import from_dict
 from mussel.cli.annotate import AnnotateConfig
 from mussel.cli.cache_tiles import CacheTilesConfig
 from mussel.cli.extract_features import ExtractFeaturesConfig, Model
 from mussel.cli.tessellate import (FilterConfig, PatchConfig, SegConfig,
                                    TessellateConfig, VisConfig)
-from omegaconf import OmegaConf
-from snakemake.utils import Paramspace, validate
 
 configfile: "config/config.yaml"
 validate(config, "../config/config.schema.yaml")
@@ -75,6 +78,7 @@ rule tessellate:
   resources:
     mem_mb=30000
   run:
+    os.umask (0o000)
     cfg = create_config(TessellateConfig,
                         wildcards,
                         slide_path=input[0],
@@ -100,6 +104,7 @@ rule featurize:
     mem_mb=30000,
     request_gpus=1
   run:
+    os.umask (0o000)
     cfg = create_config(ExtractFeaturesConfig,
                   wildcards,
                   patch_path=input.patch_path,
