@@ -8,11 +8,13 @@ from typing import Optional
 
 import h5py
 import hydra
+import logging
 import openslide
 import pandas as pd
 import torch
 from hydra.core.config_store import ConfigStore
 
+log = logging.getLogger(__name__)
 
 @dataclass
 class AnnotateConfig:
@@ -60,8 +62,8 @@ def interrogate_function(slide_path, patch_path, interrogation_report_path, df):
     with h5py.File(patch_path, "r") as f:
         patch_size = f["coords"].attrs["patch_size"]
         patch_level = f["coords"].attrs["patch_level"]
-        print(len(f['coords']))
-        assert len(f["coords"]) == len(df), print(f"{len(f['coords'])} vs {len(df)} tiles, aborting")
+        log.info(len(f['coords']))
+        assert len(f["coords"]) == len(df), log.info(f"{len(f['coords'])} vs {len(df)} tiles, aborting")
         coords = f['coords'][:]
     
     df['tile_index'] = df.index
@@ -114,11 +116,11 @@ def main(cfg: AnnotateConfig):
     # zero-shot classification
     COS_SIM = torch.nn.functional.cosine_similarity(SLIDE_EMB.unsqueeze(1), CLASS_EMB.unsqueeze(0), dim=2)  # N_tiles N_classes
     DF = pd.DataFrame(COS_SIM.numpy(), columns=[CLASS_DICT[i] for i in range(len(CLASS_DICT))])
-    print(DF)
+    log.info(DF)
     DF.to_csv(cfg.output_path, index=False)
 
     DF['class'] = DF.idxmax(axis=1)
-    print(DF['class'].value_counts())
+    log.info(DF['class'].value_counts())
 
     if cfg.interrogate:
         interrogate_function(cfg.slide_path, cfg.patch_path, cfg.interrogation_report_path, DF)

@@ -14,7 +14,7 @@ import openslide
 import torch
 import torch.nn as nn
 from hydra.core.config_store import ConfigStore
-from loguru import logger
+import logging
 from omegaconf import MISSING
 from torch.utils.data import DataLoader
 
@@ -24,6 +24,8 @@ from mussel.utils.file import save_hdf5
 from mussel.utils.ml import collate_features
 from mussel.utils.timer import timed
 
+
+log = logging.getLogger(__name__)
 
 class Model(Enum):
     RESNET50 = 'resnet50'
@@ -125,8 +127,8 @@ def main(cfg: ExtractFeaturesConfig):
         if torch.cuda.is_available():
             device = torch.device("cuda")
         else:
-            logger.warn("cuda not available, using cpu")
-    logger.info("loading model checkpoint")
+            log.warn("cuda not available, using cpu")
+    log.info("loading model checkpoint")
     if cfg.model == Model.RESNET50:
         model = resnet50_baseline(pretrained=True)
         preprocessing = None

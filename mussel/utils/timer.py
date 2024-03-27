@@ -1,8 +1,9 @@
 import time
 from functools import wraps
 
-from loguru import logger
+import logging
 
+log = logging.getLogger(__name__)
 
 def timed(func):
     """This decorator prints the execution time for the decorated function."""
@@ -12,7 +13,7 @@ def timed(func):
         start = time.time()
         result = func(*args, **kwargs)
         end = time.time()
-        logger.debug("{} ran in {}s".format(func.__name__, round(end - start, 2)))
+        log.debug("{} ran in {}s".format(func.__name__, round(end - start, 2)))
         return result
 
     return wrapper
