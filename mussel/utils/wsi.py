@@ -1,3 +1,4 @@
+import logging
 import math
 import os
 
@@ -9,6 +10,7 @@ from PIL import Image
 from mussel.utils.timer import timed
 from mussel.utils.wsi_classes import Mosaic_Canvas
 
+log = logging.getLogger(__name__)
 
 def isWhitePatch(patch, satThresh=5):
     patch_hsv = cv2.cvtColor(patch, cv2.COLOR_RGB2HSV)
@@ -254,12 +256,12 @@ def DrawMap(
     total = len(indices)
     if verbose > 0:
         ten_percent_chunk = math.ceil(total * 0.1)
-        print("start stitching {}".format(patch_dset.attrs["wsi_name"]))
+        log.info("start stitching {}".format(patch_dset.attrs["wsi_name"]))
 
     for idx in range(total):
         if verbose > 0:
             if idx % ten_percent_chunk == 0:
-                print("progress: {}/{} stitched".format(idx, total))
+                log.info("progress: {}/{} stitched".format(idx, total))
 
         patch_id = indices[idx]
         patch = patch_dset[patch_id]
@@ -297,12 +299,12 @@ def DrawMapFromCoords(
     patch_size = tuple(
         np.ceil((np.array(patch_size) / np.array(downsamples))).astype(np.int32)
     )
-    print("downscaled patch size: {}x{}".format(patch_size[0], patch_size[1]))
+    log.info("downscaled patch size: {}x{}".format(patch_size[0], patch_size[1]))
 
     for idx in range(total):
         if verbose > 0:
             if idx % ten_percent_chunk == 0:
-                print("progress: {}/{} stitched".format(idx, total))
+                log.info("progress: {}/{} stitched".format(idx, total))
 
         patch_id = indices[idx]
         coord = coords[patch_id]
@@ -334,14 +336,14 @@ def StitchPatches(
         w, h = dset.attrs["downsampled_level_dim"]
     else:
         w, h = dset.attrs["level_dim"]
-    print("original size: {} x {}".format(w, h))
+    log.info("original size: {} x {}".format(w, h))
     w = w // downscale
     h = h // downscale
     coords = (coords / downscale).astype(np.int32)
-    print("downscaled size for stiching: {} x {}".format(w, h))
-    print("number of patches: {}".format(len(dset)))
+    log.info("downscaled size for stiching: {} x {}".format(w, h))
+    log.info("number of patches: {}".format(len(dset)))
     img_shape = dset[0].shape
-    print("patch shape: {}".format(img_shape))
+    log.info("patch shape: {}".format(img_shape))
     downscaled_shape = (img_shape[1] // downscale, img_shape[0] // downscale)
 
     if w * h > Image.MAX_IMAGE_PIXELS:
@@ -380,16 +382,16 @@ def StitchCoords(
     dset = file["coords"]
     coords = dset[:]
 
-    print("start stitching {}".format(dset.attrs["name"]))
+    log.info("start stitching {}".format(dset.attrs["name"]))
 
     w, h = wsi.level_dimensions[vis_level]
 
-    print("downscaled size for stiching: {} x {}".format(w, h))
-    print("number of patches: {}".format(len(coords)))
+    log.info("downscaled size for stiching: {} x {}".format(w, h))
+    log.info("number of patches: {}".format(len(coords)))
 
     patch_size = dset.attrs["patch_size"]
     patch_level = dset.attrs["patch_level"]
-    print(
+    log.info(
         "patch size: {}x{} patch level: {}".format(patch_size, patch_size, patch_level)
     )
     patch_size = tuple(
@@ -397,7 +399,7 @@ def StitchCoords(
             np.array((patch_size, patch_size)) * wsi.level_downsamples[patch_level]
         ).astype(np.int32)
     )
-    print("ref patch size: {}x{}".format(patch_size, patch_size))
+    log.info("ref patch size: {}x{}".format(patch_size, patch_size))
 
     if w * h > Image.MAX_IMAGE_PIXELS:
         raise Image.DecompressionBombError(
@@ -447,8 +449,8 @@ def SamplePatches(
     h5_patch_level = dset.attrs["patch_level"]
 
     if verbose > 0:
-        print("in .h5 file: total number of patches: {}".format(len(coords)))
-        print(
+        log.info("in .h5 file: total number of patches: {}".format(len(coords)))
+        log.info(
             "in .h5 file: patch size: {}x{} patch level: {}".format(
                 h5_patch_size, h5_patch_size, h5_patch_level
             )

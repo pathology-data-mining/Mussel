@@ -1,3 +1,4 @@
+import logging
 import os
 import time
 from dataclasses import dataclass, field
@@ -8,7 +9,6 @@ import hydra
 import numpy as np
 import pandas as pd
 from hydra.core.config_store import ConfigStore
-import logging
 from omegaconf import MISSING, DictConfig, OmegaConf
 
 from mussel.utils.timer import timed
@@ -50,8 +50,8 @@ class FilterConfig:
 @dataclass
 class TessellateConfig:
     slide_path: str = MISSING
-    output_path: str = MISSING
-    stitch_path: Optional[str] = None
+    output_h5_path: str = MISSING
+    stitch_jpeg_path: Optional[str] = None
     mask_path: Optional[str] = None
     seg_config: SegConfig = field(default_factory=SegConfig)
     filter_config: FilterConfig = field(default_factory=FilterConfig)
@@ -105,19 +105,19 @@ def main(
         mask.save(cfg.mask_path)
 
     WSI_object.process_contours(
-        save_path=cfg.output_path,
+        save_path=cfg.output_h5_path,
         **OmegaConf.to_container(cfg.patch_config))
 
-    if cfg.stitch_path:
+    if cfg.stitch_jpeg_path:
         heatmap = StitchCoords(
-            cfg.output_path,
+            cfg.output_h5_path,
             WSI_object,
             downscale=64,
             bg_color=(0, 0, 0),
             alpha=-1,
             draw_grid=False,
         )
-        heatmap.save(cfg.stitch_path)
+        heatmap.save(cfg.stitch_jpeg_path)
 
 
 if __name__ == "__main__":

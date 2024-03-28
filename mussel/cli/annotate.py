@@ -1,5 +1,6 @@
 import base64
 import json
+import logging
 import os
 from argparse import ArgumentParser
 from dataclasses import dataclass
@@ -8,7 +9,6 @@ from typing import Optional
 
 import h5py
 import hydra
-import logging
 import openslide
 import pandas as pd
 import torch
@@ -20,7 +20,7 @@ log = logging.getLogger(__name__)
 class AnnotateConfig:
     features_pt_path: str
     class_json_path: str
-    output_path: str
+    output_csv_path: str
     interrogate: bool = False
     slide_path: Optional[str] = None
     patch_path: Optional[str] = None
@@ -108,22 +108,22 @@ def main(cfg: AnnotateConfig):
 
     """
     # load precomputed embeddings
-    CLASS_DICT = load_classes(cfg.class_json_path)
-    CLASS_EMB = load_class_embs(cfg.class_json_path, CLASS_DICT)  # N_classes 512
+    class_dict = load_classes(cfg.class_json_path)
+    class_emb = load_class_embs(cfg.class_json_path, class_dict)  # N_classes 512
 
-    SLIDE_EMB = torch.load(cfg.features_pt_path)  # N_tiles 512
+    slide_emb = torch.load(cfg.features_pt_path)  # N_tiles 512
 
     # zero-shot classification
-    COS_SIM = torch.nn.functional.cosine_similarity(SLIDE_EMB.unsqueeze(1), CLASS_EMB.unsqueeze(0), dim=2)  # N_tiles N_classes
-    DF = pd.DataFrame(COS_SIM.numpy(), columns=[CLASS_DICT[i] for i in range(len(CLASS_DICT))])
-    log.info(DF)
-    DF.to_csv(cfg.output_path, index=False)
+    cos_sim = torch.nn.functional.cosine_similarity(slide_emb.unsqueeze(1), class_emb.unsqueeze(0), dim=2)  # N_tiles N_classes
+    df = pd.DataFrame(cos_sim.numpy(), columns=[class_dict[i] for i in range(len(class_dict))])
+    log.info(df)
+    df.to_csv(cfg.output_csv_path, index=False)
 
-    DF['class'] = DF.idxmax(axis=1)
-    log.info(DF['class'].value_counts())
+    df['class'] = df.idxmax(axis=1)
+    log.info(df['class'].value_counts())
 
     if cfg.interrogate:
-        interrogate_function(cfg.slide_path, cfg.patch_path, cfg.interrogation_report_path, DF)
+        interrogate_function(cfg.slide_path, cfg.patch_path, cfg.interrogation_report_path, df)
 
 
 if __name__ == "__main__":

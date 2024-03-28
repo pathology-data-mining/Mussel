@@ -1,4 +1,5 @@
 import argparse
+import logging
 import os
 import sys
 import time
@@ -14,7 +15,6 @@ import openslide
 import torch
 import torch.nn as nn
 from hydra.core.config_store import ConfigStore
-import logging
 from omegaconf import MISSING
 from torch.utils.data import DataLoader
 
@@ -23,7 +23,6 @@ from mussel.models.resnet_custom import resnet50_baseline
 from mussel.utils.file import save_hdf5
 from mussel.utils.ml import collate_features
 from mussel.utils.timer import timed
-
 
 log = logging.getLogger(__name__)
 
@@ -35,7 +34,7 @@ class Model(Enum):
 
 @dataclass
 class ExtractFeaturesConfig:
-    patch_path: str = MISSING
+    patch_h5_path: str = MISSING
     slide_path: str = MISSING
     output_h5_path: str = MISSING
     output_pt_path: str = MISSING
@@ -91,13 +90,13 @@ def compute_w_loader(
     )
 
     if verbose > 0:
-        print("processing {}: total of {} batches".format(file_path, len(loader)))
+        log.info("processing {}: total of {} batches".format(file_path, len(loader)))
 
     mode = "w"
     for count, (batch, coords) in enumerate(loader):
         with torch.no_grad():
             if count % print_every == 0:
-                print(
+                log.info(
                     "batch {}/{}, {} files processed".format(
                         count, len(loader), count * batch_size
                     )
@@ -151,7 +150,7 @@ def main(cfg: ExtractFeaturesConfig):
     # extract features
     wsi = openslide.open_slide(cfg.slide_path)
     output_file_path = compute_w_loader(
-        cfg.patch_path,
+        cfg.patch_h5_path,
         cfg.output_h5_path,
         wsi,
         model_obj=model,
@@ -167,8 +166,8 @@ def main(cfg: ExtractFeaturesConfig):
 
     file = h5py.File(output_file_path, "r")
     features = file["features"][:]
-    print("features size: ", features.shape)
-    print("coordinates size: ", file["coords"].shape)
+    log.info(f"features size: {features.shape} ")
+    log.info(f"coordinates size: {file["coords"].shape}")
     file.close()
 
     features = torch.from_numpy(features)
