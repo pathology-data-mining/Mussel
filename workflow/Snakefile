@@ -106,13 +106,16 @@ rule featurize:
   run:
     os.umask(0o000)
     cfg = create_config(ExtractFeaturesConfig,
-                  wildcards,
-                  patch_h5_path=input.patch_h5_path,
-                  output_h5_path=output.h5,
-                  output_pt_path=output.pt,
-                  slide_path=input.slide_path,
-                  num_workers=threads,
-                  )
+                        wildcards,
+                        patch_h5_path=input.patch_h5_path,
+                        output_h5_path=output.h5,
+                        output_pt_path=output.pt,
+                        slide_path=input.slide_path,
+                        num_workers=threads,
+                        transpath_dir=config.get('transpath_dir'),
+                        quiltnet_model_path=config.get('quiltnet_model_path'),
+                        batch_size=config['batch_size'],
+                        )
     mussel.cli.extract_features.main(OmegaConf.create(cfg))
 
 rule annotate:
@@ -127,7 +130,7 @@ rule annotate:
         wildcards,
         features_pt_path=input.features,
         class_json_path=input.class_json,
-        output_path=output[0],
+        output_csv_path=output[0],
         )
     mussel.cli.annotate.main(OmegaConf.create(cfg))
 

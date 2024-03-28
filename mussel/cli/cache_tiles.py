@@ -5,7 +5,6 @@ Results in .pt file with N_tiles x 3 x img_size x img_size tensor
 
 import argparse
 import json
-import logging
 import time
 from dataclasses import dataclass, field
 from typing import List, Optional
@@ -15,13 +14,13 @@ import openslide
 import pandas as pd
 import torch
 from hydra.core.config_store import ConfigStore
+from loguru import logger
 from omegaconf import MISSING
 from torch.utils.data import DataLoader
 
 from mussel.datasets.h5 import Whole_Slide_Bag_FP
 from mussel.utils.ml import collate_features
 
-log = logging.getLogger(__name__)
 
 @dataclass
 class CacheTilesConfig:
@@ -44,7 +43,7 @@ def main(cfg: CacheTilesConfig):
         annot = pd.read_csv(cfg.annotation_csv_path)
         annot['class'] = annot.idxmax(axis=1)
         indices = annot[annot['class'] in cfg.limit_to_class].index.tolist()
-        log.info(f"limiting to class {limit_to_class} with {len(indices)} tiles")
+        logger.info(f"limiting to class {limit_to_class} with {len(indices)} tiles")
     
     wsi = openslide.open_slide(cfg.slide_path)
     dataset = Whole_Slide_Bag_FP(
@@ -65,7 +64,7 @@ def main(cfg: CacheTilesConfig):
         batch_list = []
         for count, (batch, coords) in enumerate(loader):
             if count % 100 == 0:
-                log.info(
+                logger.info(
                     "batch {}/{}, {} files processed".format(
                         count, len(loader), count * 32
                     )
@@ -73,10 +72,10 @@ def main(cfg: CacheTilesConfig):
             batch_list.append(batch)
         all_tiles = torch.cat(batch_list, dim=0)
     time_elapsed = time.time() - time_start
-    log.info("\ncaching tiles for {} took {} s".format(cfg.output_pt_path, time_elapsed))
-    log.info(f"all_tiles shape: {all_tiles.shape}")
+    logger.info("\ncaching tiles for {} took {} s".format(cfg.output_pt_path, time_elapsed))
+    logger.info(f"all_tiles shape: {all_tiles.shape}")
     torch.save(all_tiles, cfg.output_pt_path)
-    log.info(f"saved to {cfg.output_pt_path}")
+    logger.info(f"saved to {cfg.output_pt_path}")
     # save indices as json
     if cfg.output_indices_json_path:
         with open(cfg.output_indices_json_path, "w") as f:

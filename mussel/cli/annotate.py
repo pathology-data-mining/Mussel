@@ -1,6 +1,5 @@
 import base64
 import json
-import logging
 import os
 from argparse import ArgumentParser
 from dataclasses import dataclass
@@ -13,8 +12,8 @@ import openslide
 import pandas as pd
 import torch
 from hydra.core.config_store import ConfigStore
+from loguru import logger
 
-log = logging.getLogger(__name__)
 
 @dataclass
 class AnnotateConfig:
@@ -62,8 +61,8 @@ def interrogate_function(slide_path, patch_path, interrogation_report_path, df):
     with h5py.File(patch_path, "r") as f:
         patch_size = f["coords"].attrs["patch_size"]
         patch_level = f["coords"].attrs["patch_level"]
-        log.info(len(f['coords']))
-        assert len(f["coords"]) == len(df), log.info(f"{len(f['coords'])} vs {len(df)} tiles, aborting")
+        logger.info(len(f['coords']))
+        assert len(f["coords"]) == len(df), logger.info(f"{len(f['coords'])} vs {len(df)} tiles, aborting")
         coords = f['coords'][:]
     
     df['tile_index'] = df.index
@@ -116,11 +115,11 @@ def main(cfg: AnnotateConfig):
     # zero-shot classification
     cos_sim = torch.nn.functional.cosine_similarity(slide_emb.unsqueeze(1), class_emb.unsqueeze(0), dim=2)  # N_tiles N_classes
     df = pd.DataFrame(cos_sim.numpy(), columns=[class_dict[i] for i in range(len(class_dict))])
-    log.info(df)
+    logger.info(df)
     df.to_csv(cfg.output_csv_path, index=False)
 
     df['class'] = df.idxmax(axis=1)
-    log.info(df['class'].value_counts())
+    logger.info(df['class'].value_counts())
 
     if cfg.interrogate:
         interrogate_function(cfg.slide_path, cfg.patch_path, cfg.interrogation_report_path, df)
