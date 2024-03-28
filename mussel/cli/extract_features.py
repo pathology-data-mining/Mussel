@@ -1,5 +1,4 @@
 import argparse
-import logging
 import os
 import sys
 import time
@@ -15,6 +14,7 @@ import openslide
 import torch
 import torch.nn as nn
 from hydra.core.config_store import ConfigStore
+from loguru import logger
 from omegaconf import MISSING
 from torch.utils.data import DataLoader
 
@@ -24,7 +24,6 @@ from mussel.utils.file import save_hdf5
 from mussel.utils.ml import collate_features
 from mussel.utils.timer import timed
 
-log = logging.getLogger(__name__)
 
 class Model(Enum):
     RESNET50 = 'resnet50'
@@ -90,13 +89,13 @@ def compute_w_loader(
     )
 
     if verbose > 0:
-        log.info("processing {}: total of {} batches".format(file_path, len(loader)))
+        logger.info("processing {}: total of {} batches".format(file_path, len(loader)))
 
     mode = "w"
     for count, (batch, coords) in enumerate(loader):
         with torch.no_grad():
             if count % print_every == 0:
-                log.info(
+                logger.info(
                     "batch {}/{}, {} files processed".format(
                         count, len(loader), count * batch_size
                     )
@@ -126,8 +125,8 @@ def main(cfg: ExtractFeaturesConfig):
         if torch.cuda.is_available():
             device = torch.device("cuda")
         else:
-            log.warn("cuda not available, using cpu")
-    log.info("loading model checkpoint")
+            logger.warn("cuda not available, using cpu")
+    logger.info("loading model checkpoint")
     if cfg.model == Model.RESNET50:
         model = resnet50_baseline(pretrained=True)
         preprocessing = None
@@ -150,9 +149,9 @@ def main(cfg: ExtractFeaturesConfig):
     # extract features
     wsi = openslide.open_slide(cfg.slide_path)
     output_file_path = compute_w_loader(
-        cfg.patch_h5_path,
-        cfg.output_h5_path,
-        wsi,
+        file_path=cfg.patch_h5_path,
+        output_h5_path=cfg.output_h5_path,
+        wsi=wsi,
         model_obj=model,
         model=cfg.model,
         preprocess=preprocessing,
@@ -166,8 +165,8 @@ def main(cfg: ExtractFeaturesConfig):
 
     file = h5py.File(output_file_path, "r")
     features = file["features"][:]
-    log.info(f"features size: {features.shape} ")
-    log.info(f"coordinates size: {file["coords"].shape}")
+    logger.info(f"features size: {features.shape} ")
+    logger.info(f"coordinates size: {file["coords"].shape}")
     file.close()
 
     features = torch.from_numpy(features)
