@@ -1,10 +1,11 @@
 """
-Inputs: slide_file_path, patch_file_path, annotation_path
+Inputs: slide_file_path, patch_file_path, annotation_csv_path
 Results in .pt file with N_tiles x 3 x img_size x img_size tensor
 """
 
 import argparse
 import json
+import logging
 import time
 from dataclasses import dataclass, field
 from typing import List, Optional
@@ -14,7 +15,6 @@ import openslide
 import pandas as pd
 import torch
 from hydra.core.config_store import ConfigStore
-import logging
 from omegaconf import MISSING
 from torch.utils.data import DataLoader
 
@@ -26,13 +26,13 @@ log = logging.getLogger(__name__)
 @dataclass
 class CacheTilesConfig:
     slide_path: str = MISSING
-    patches_h5_path: str = MISSING
-    output_path: str = MISSING
+    patch_h5_path: str = MISSING
+    output_pt_path: str = MISSING
     batch_size: int = 32
     num_workers: int = 16
     limit_to_class: List[str] = field(default_factory=list)
-    annotation_path: Optional[str] = None
-    output_indices_path: Optional[str] = None
+    annotation_csv_path: Optional[str] = None
+    output_indices_json_path: Optional[str] = None
 
 cs = ConfigStore.instance()
 cs.store(name="cache_tiles_config", node=CacheTilesConfig)
@@ -40,15 +40,15 @@ cs.store(name="cache_tiles_config", node=CacheTilesConfig)
 @hydra.main(config_path=".", config_name="cache_tiles_config", version_base=None)
 def main(cfg: CacheTilesConfig):
     time_start = time.time()
-    if cfg.limit_to_class and cfg.annotation_path:
-        annot = pd.read_csv(cfg.annotation_path)
+    if cfg.limit_to_class and cfg.annotation_csv_path:
+        annot = pd.read_csv(cfg.annotation_csv_path)
         annot['class'] = annot.idxmax(axis=1)
         indices = annot[annot['class'] in cfg.limit_to_class].index.tolist()
         log.info(f"limiting to class {limit_to_class} with {len(indices)} tiles")
     
     wsi = openslide.open_slide(cfg.slide_path)
     dataset = Whole_Slide_Bag_FP(
-        file_path=cfg.patches_h5_path,
+        file_path=cfg.patch_h5_path,
         wsi=wsi,
         use_imagenet_rgb_dist=True,
         limit_to_indices=indices if cfg.limit_to_class else None,
@@ -73,13 +73,13 @@ def main(cfg: CacheTilesConfig):
             batch_list.append(batch)
         all_tiles = torch.cat(batch_list, dim=0)
     time_elapsed = time.time() - time_start
-    log.info("\ncaching tiles for {} took {} s".format(cfg.output_path, time_elapsed))
+    log.info("\ncaching tiles for {} took {} s".format(cfg.output_pt_path, time_elapsed))
     log.info(f"all_tiles shape: {all_tiles.shape}")
-    torch.save(all_tiles, cfg.output_path)
-    log.info(f"saved to {cfg.output_path}")
+    torch.save(all_tiles, cfg.output_pt_path)
+    log.info(f"saved to {cfg.output_pt_path}")
     # save indices as json
-    if cfg.output_indices_path:
-        with open(cfg.output_indices_path, "w") as f:
+    if cfg.output_indices_json_path:
+        with open(cfg.output_indices_json_path, "w") as f:
             if cfg.limit_to_class:
                     json.dump(indices, f)
             else:

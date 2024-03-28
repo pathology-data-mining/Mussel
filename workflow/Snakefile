@@ -73,17 +73,17 @@ rule tessellate:
   input:
     get_slide
   output:
-    patch_path=protected(f"{config['reef_dir']}/{paramspace.wildcard_pattern}/patches/{{slide_id}}.h5"),
+    patch_h5_path=protected(f"{config['reef_dir']}/{paramspace.wildcard_pattern}/patches/{{slide_id}}.h5"),
     stitch_path=protected(f"{config['reef_dir']}/{paramspace.wildcard_pattern}/stitches/{{slide_id}}.jpg"),
   resources:
     mem_mb=30000
   run:
-    os.umask (0o000)
+    os.umask(0o000)
     cfg = create_config(TessellateConfig,
                         wildcards,
                         slide_path=input[0],
-                        output_path=output.patch_path,
-                        stitch_path=output.stitch_path,
+                        output_h5_path=output.patch_h5_path,
+                        stitch_jpeg_path=output.stitch_path,
                         seg_config=create_config(SegConfig, wildcards),
                         patch_config=create_config(PatchConfig, wildcards),
                         filter_config=create_config(FilterConfig, wildcards),
@@ -94,7 +94,7 @@ rule tessellate:
 
 rule featurize:
   input:
-    patch_path=f"{config['reef_dir']}/{paramspace.wildcard_pattern}/patches/{{slide_id}}.h5",
+    patch_h5_path=f"{config['reef_dir']}/{paramspace.wildcard_pattern}/patches/{{slide_id}}.h5",
     slide_path=get_slide
   output:
     pt=protected(f"{config['reef_dir']}/{paramspace.wildcard_pattern}/features/pt/{{slide_id}}.pt"),
@@ -104,10 +104,10 @@ rule featurize:
     mem_mb=30000,
     request_gpus=1
   run:
-    os.umask (0o000)
+    os.umask(0o000)
     cfg = create_config(ExtractFeaturesConfig,
                   wildcards,
-                  patch_path=input.patch_path,
+                  patch_h5_path=input.patch_h5_path,
                   output_h5_path=output.h5,
                   output_pt_path=output.pt,
                   slide_path=input.slide_path,
@@ -134,7 +134,7 @@ rule annotate:
 rule cache_tiles:
   input:
     slide_path=get_slide,
-    patches_h5=f"{config['reef_dir']}/{paramspace.wildcard_pattern}/patches/{{slide_id}}.h5",
+    patch_h5=f"{config['reef_dir']}/{paramspace.wildcard_pattern}/patches/{{slide_id}}.h5",
     annotation_csv=f"{config['output_dir']}/{paramspace.wildcard_pattern}/annotations/{{slide_id}}.csv" if 'annotation_class_json_path' in config else [],
   output:
     pt=f"{config['output_dir']}/{paramspace.wildcard_pattern}/cache_tiles/pt/{{slide_id}}.pt",
@@ -143,12 +143,12 @@ rule cache_tiles:
     cfg = create_config(
         CacheTilesConfig,
         wildcards,
-        patches_h5_path=input.patches_h5,
+        patch_h5_path=input.patch_h5,
         slide_path=input.slide_path,
         num_workers=threads,
-        annotation_path=input.annotation_csv if input.annotation_csv else None,
+        annotation_csv_path=input.annotation_csv if input.annotation_csv else None,
         limit_to_class=config['cache_limit_to_class'] if 'cache_limit_to_class' in config else [],
-        output_indices_path=output.indices,
-        output_path=output.pt,
+        output_indices_json_path=output.indices,
+        output_pt_path=output.pt,
         )
     mussel.cli.cache_tiles.main(OmegaConf.create(cfg))

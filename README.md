@@ -40,7 +40,7 @@ Generate `.h5` file with coordinates and metadata. Optionally generate stitch an
 
 Example command (see defaults with `tessellate --help`):
 ```bash
-tessellate slide_path=[slide path] output_path=[output path] seg_config.use_otsu=true
+tessellate slide_path=[slide path] output_h5_path=[output path] seg_config.use_otsu=true
 ```
 
 ### feature extraction
@@ -48,7 +48,7 @@ Generate .h5 file and .pt file with embeddings for each tile.
 
 Example command (see defaults with `extract_features --help`):
 ```bash
-extract_features slide_path=[slide path] patch_path=[patch path] output_h5_path=[output h5 path] output_pt_path=[output pt path]
+extract_features slide_path=[slide path] patch_h5_path=[patch path] output_h5_path=[output h5 path] output_pt_path=[output pt path]
 ```
 
 ### annotate tiles with tissue types (QuiltNet only)
@@ -62,7 +62,7 @@ Generate interrogation reports to eval your prompt engineering by setting `iterr
 
 Example command (see defaults with `annotate --help`):
 ```bash
-annotate features_pt_path=[features pt path] output_path=[output csv path] class_json_path=[custom class json file]
+annotate features_pt_path=[features pt path] output_csv_path=[output csv path] class_json_path=[custom class json file]
 ```
 
 <img src="docs/example-interrog.png" width="600px" />
@@ -75,7 +75,7 @@ containing invasive carcinoma by setting `limit_to_class`. `patches_h5_path` is
 the output from `tessellate`.
 
 ```bash
-cache_tiles slide_path=[slide path] patches_h5_path=[patches h5 path] output_path=[output pt path] 'limit_to_class=[adipose,invasive carcinoma]' output_indices_path=[output indices json]
+cache_tiles slide_path=[slide path] patches_h5_path=[patches h5 path] output_pt_path=[output pt path] 'limit_to_class=[adipose,invasive carcinoma]' output_indices_json_path=[output indices json]
 ```
 
 *This takes about ten seconds for an example slide.*
