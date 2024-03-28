@@ -38,7 +38,7 @@ validate(parameters, "../config/params.schema.yaml")
 if type(parameters) == dict:
   df = pd.DataFrame([parameters])
   df = df.reindex(sorted(df.columns), axis=1)
-  paramspace = Paramspace(df)
+  paramspace = Paramspace(df, param_sep='--')
 else:
   parameters = parameters.reindex(sorted(parameters.columns), axis=1)
   paramspace = Paramspace(parameters)
