@@ -2305,18 +2305,19 @@ pep = ["eido", "peppy"]
 reports = ["pygments"]
 
 [[package]]
-name = "snakemake-executor-plugin-cluster-generic"
-version = "1.0.9"
-description = ""
+name = "snakemake-executor-plugin-htcondor"
+version = "0.1.2"
+description = "A Snakemake executor plugin for submitting jobs to a HTCondor cluster."
 optional = false
-python-versions = ">=3.11,<4.0"
+python-versions = "<4.0,>=3.11"
 files = [
-    {file = "snakemake_executor_plugin_cluster_generic-1.0.9-py3-none-any.whl", hash = "sha256:39a9af6fe16d8be5e6150cbffca40e6cfe76f42b3834874da3372ea0e5be3458"},
-    {file = "snakemake_executor_plugin_cluster_generic-1.0.9.tar.gz", hash = "sha256:ad0dc2d8bde7d4f336364bebe11a3b2209653c481ce8fbb0ae8bec81016a9a14"},
+    {file = "snakemake_executor_plugin_htcondor-0.1.2-py3-none-any.whl", hash = "sha256:6efa9a6107a01f68f07b34e70161e6ba266f3db77af9d928148f01d2f36d43e0"},
+    {file = "snakemake_executor_plugin_htcondor-0.1.2.tar.gz", hash = "sha256:c5268807ecb6810d1852cbf7ccde0b54394e1a824eb64baa55538ccf55328f45"},
 ]
 
 [package.dependencies]
-snakemake-interface-common = ">=1.13.0,<2.0.0"
+htcondor = ">=23.4.0,<24.0.0"
+snakemake-interface-common = ">=1.17.1,<2.0.0"
 snakemake-interface-executor-plugins = ">=9.0.0,<10.0.0"
 
 [[package]]
@@ -2953,4 +2954,4 @@ pyyaml = ">=6.0,<7.0"
 [metadata]
 lock-version = "2.0"
 python-versions = "^3.12"
-content-hash = "bcdb5363a0b29d1d5ac1008583719d342a3ba05361bd7b6e36a29e53dbb3116a"
+content-hash = "cb271317f020de15ed15b83c8acee87bcf719d80189b8b4b601c393cc6c791d8"

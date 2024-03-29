@@ -22,9 +22,9 @@ dacite = "^1.8.1"
 open-clip-torch = "^2.24.0"
 transformers = "^4.38.2"
 htcondor = "^23.5.2"
-snakemake-executor-plugin-cluster-generic = "^1.0.9"
 sentencepiece = "^0.2.0"
 loguru = "^0.7.2"
+snakemake-executor-plugin-htcondor = "^0.1.2"
 
 
 [tool.poetry.group.dev.dependencies]
