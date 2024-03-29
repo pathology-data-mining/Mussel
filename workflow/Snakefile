@@ -75,8 +75,9 @@ rule tessellate:
   output:
     patch_h5_path=protected(f"{config['reef_dir']}/{paramspace.wildcard_pattern}/patches/{{slide_id}}.h5"),
     stitch_path=protected(f"{config['reef_dir']}/{paramspace.wildcard_pattern}/stitches/{{slide_id}}.jpg"),
+  log: f"logs/{paramspace.wildcard_pattern}/tessellate/{{slide_id}}.log"
   resources:
-    mem_mb=30000
+    request_memory="30GB"
   run:
     os.umask(0o000)
     cfg = create_config(TessellateConfig,
@@ -99,9 +100,10 @@ rule featurize:
   output:
     pt=protected(f"{config['reef_dir']}/{paramspace.wildcard_pattern}/features/pt/{{slide_id}}.pt"),
     h5=protected(f"{config['reef_dir']}/{paramspace.wildcard_pattern}/features/h5/{{slide_id}}.h5"),
+  log: f"logs/{paramspace.wildcard_pattern}/featurize/{{slide_id}}.log"
   threads: 32
   resources:
-    mem_mb=30000,
+    request_memory="30GB",
     request_gpus=1
   run:
     os.umask(0o000)
@@ -127,6 +129,9 @@ rule annotate:
     class_json=config['annotation_class_json_path'] if 'annotation_class_json_path' in config else [],
   output:
     f"{config['output_dir']}/{paramspace.wildcard_pattern}/annotations/{{slide_id}}.csv"
+  log: f"logs/{paramspace.wildcard_pattern}/annotate/{{slide_id}}.log"
+  resources:
+    request_memory="12GB"
   run:
     os.umask(0o022)
     cfg = create_config(
@@ -146,6 +151,9 @@ rule cache_tiles:
   output:
     pt=f"{config['output_dir']}/{paramspace.wildcard_pattern}/cache_tiles/pt/{{slide_id}}.pt",
     indices=f"{config['output_dir']}/{paramspace.wildcard_pattern}/cache_tiles/indices/{{slide_id}}.json",
+  log: f"logs/{paramspace.wildcard_pattern}/cache_tiles/{{slide_id}}.log"
+  resources:
+    request_memory="24GB"
   run:
     os.umask(0o022)
     cfg = create_config(

@@ -108,7 +108,8 @@ format (i.e. columns are parameters and rows are the parameter values).
 ### Using HT-Condor for job submission
 
 Install the [HT-Condor profile](https://github.com/msk-mind/snakemake-htcondor)
-using [cookiecutter](https://github.com/cookiecutter/cookiecutter). After the
+using [cookiecutter](https://github.com/cookiecutter/cookiecutter). Note that
+the condor job directory must be in a network-shared location. After the
 profile is installed, you can use it with:
 
 ```bash
