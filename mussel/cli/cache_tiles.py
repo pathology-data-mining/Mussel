@@ -29,7 +29,7 @@ class CacheTilesConfig:
     output_pt_path: str = MISSING
     batch_size: int = 32
     num_workers: int = 16
-    limit_to_class: List[str] = field(default_factory=list)
+    limit_to_class: Optional[List[str]] = field(default_factory=list)
     annotation_csv_path: Optional[str] = None
     output_indices_json_path: Optional[str] = None
 
@@ -42,8 +42,8 @@ def main(cfg: CacheTilesConfig):
     if cfg.limit_to_class and cfg.annotation_csv_path:
         annot = pd.read_csv(cfg.annotation_csv_path)
         annot['class'] = annot.idxmax(axis=1)
-        indices = annot[annot['class'] in cfg.limit_to_class].index.tolist()
-        logger.info(f"limiting to class {limit_to_class} with {len(indices)} tiles")
+        indices = annot[annot['class'].isin(cfg.limit_to_class)].index.tolist()
+        logger.info(f"limiting to class {cfg.limit_to_class} with {len(indices)} tiles")
     
     wsi = openslide.open_slide(cfg.slide_path)
     dataset = Whole_Slide_Bag_FP(

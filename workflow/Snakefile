@@ -20,7 +20,7 @@ from mussel.cli.tessellate import (FilterConfig, PatchConfig, SegConfig,
 configfile: "config/config.yaml"
 validate(config, "../config/config.schema.yaml")
 
-slide_df = pd.read_csv(config['slide_directory_path'])
+slide_df = pd.read_csv(config['slide_directory_csv_path'])
 validate(slide_df, "../config/slides.schema.yaml")
 slide_df.set_index("image_id", inplace=True, drop=False)
 
@@ -113,8 +113,11 @@ rule featurize:
                         slide_path=input.slide_path,
                         num_workers=threads,
                         transpath_dir=config.get('transpath_dir'),
+                        transpath_model_path=config.get('transpath_model_path'),
                         quiltnet_model_path=config.get('quiltnet_model_path'),
                         batch_size=config['batch_size'],
+                        use_gpu=config['use_gpu'],
+                        gpu_device_ids=config.get('gpu_device_ids'),
                         )
     mussel.cli.extract_features.main(OmegaConf.create(cfg))
 
@@ -125,6 +128,7 @@ rule annotate:
   output:
     f"{config['output_dir']}/{paramspace.wildcard_pattern}/annotations/{{slide_id}}.csv"
   run:
+    os.umask(0o022)
     cfg = create_config(
         AnnotateConfig,
         wildcards,
@@ -143,6 +147,7 @@ rule cache_tiles:
     pt=f"{config['output_dir']}/{paramspace.wildcard_pattern}/cache_tiles/pt/{{slide_id}}.pt",
     indices=f"{config['output_dir']}/{paramspace.wildcard_pattern}/cache_tiles/indices/{{slide_id}}.json",
   run:
+    os.umask(0o022)
     cfg = create_config(
         CacheTilesConfig,
         wildcards,
@@ -150,7 +155,7 @@ rule cache_tiles:
         slide_path=input.slide_path,
         num_workers=threads,
         annotation_csv_path=input.annotation_csv if input.annotation_csv else None,
-        limit_to_class=config['cache_limit_to_class'] if 'cache_limit_to_class' in config else [],
+        limit_to_class=config.get('cache_limit_to_class'),
         output_indices_json_path=output.indices,
         output_pt_path=output.pt,
         )

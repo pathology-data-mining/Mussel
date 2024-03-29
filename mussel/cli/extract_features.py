@@ -43,7 +43,7 @@ class ExtractFeaturesConfig:
     transpath_model_path: Optional[str] = None
     batch_size: int = 64
     use_gpu: bool = True
-    gpu_device_ids: List[int] = field(default_factory=list)
+    gpu_device_ids: Optional[List[int]] = field(default_factory=list)
     num_workers: int = 32
 
 
@@ -142,7 +142,7 @@ def main(cfg: ExtractFeaturesConfig):
         raise ValueError("model not recognized")
 
     model = model.to(device)
-    if len(cfg.gpu_device_ids) > 1:
+    if cfg.gpu_device_ids and len(cfg.gpu_device_ids) > 1:
         model = nn.DataParallel(model, device_ids=cfg.gpu_device_ids)
     model.eval()
 

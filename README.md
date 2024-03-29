@@ -15,7 +15,16 @@ Usable using Condor, but suffers from limitations of current Condor system:
 - sporadic data accessibility (e.g. sparky2 cannot access `/gpfs/mskmind_emc/data_large`)
 - uncontrolled GPU usage by non-Condor usage (e.g. user was using most gpus across pll1,2,3 without Condor when I tried to test the featurization using Condor, so mine largely failed due to clashes.)
 
-## setup
+## Installation
+
+### Pre-requisites
+
+-   [mamba](https://mamba.readthedocs.io/en/latest/installation.html):
+    Follow the instructions for installing
+    [Mambaforge](https://github.com/conda-forge/miniforge#mambaforge)
+
+### Create virtual environment and install packages
+
 ```bash
 mamba env create -p .venv/ -f environment.yaml
 mamba activate .venv/
@@ -25,7 +34,8 @@ poetry install
 ### If you plan to use CTransPath
 
 Install CTransPath somewhere and reference the path in the config yaml as
-`transpath_dir`. Reference to the CTransPath model with `transpath_model_path`.
+`transpath_dir`. Reference to the CTransPath model (.pth file) with
+`transpath_model_path`.
 
 ## CLI
 
@@ -82,14 +92,18 @@ cache_tiles slide_path=[slide path] patches_h5_path=[patches h5 path] output_pt_
 
 ## SnakeMake Pipeline
 
+Run the snakemake pipeline on a set of slides to build a shareable 'reef' of
+slide patches and extracted features.
+
 ### Configuration
 
 Create a `config/config.yaml` file that conforms to the specification in
-`config/config.schema.yaml`. `slide_list_path` must be set to a file containing the
-list of image IDs that you wish to analyze. The image IDs must exist in the
-`slide_directory_path`. If you set a `parameters_path` to override defaults,
-make sure that conforms to the `config/params.schema.yaml` in .csv format (i.e.
-columns are parameters and rows are the parameter values).
+`config/config.schema.yaml`. `slide_list_path` must be set to a file containing
+the list of image IDs that you wish to analyze. The image IDs must exist in the
+`slide_directory_csv_path`, which is a csv file that must conform to
+`config/slides.schema.yaml`. If you set a `parameters_path` to override
+defaults, make sure that conforms to the `config/params.schema.yaml` in .csv
+format (i.e. columns are parameters and rows are the parameter values).
 
 ### Using HT-Condor for job submission
 
@@ -121,7 +135,7 @@ snakemake --cores {number of jobs}
 
 ### annotate tiles with tissue types (QuiltNet only)
 
-Set `annotation_class_json_path` to a custom json file.
+Set `annotation_class_json_path` to a custom json file. Annotations will be created in a subdirectory of `output_dir`.
 
 ```bash
 snakemake --cores {number of cores} annotations
@@ -131,10 +145,78 @@ snakemake --cores {number of cores} annotations
 
 Generate .pt file for rapid access of tiles during I/O intense operations such
 as training. This can be conditioned on tissue types: e.g. cache only the tiles
-containing invasive carcinoma by setting `cache_limit_to_cass` in the `config/config.yaml` file.
+containing invasive carcinoma by setting `cache_limit_to_class` in the `config/config.yaml` file.
 
 ```bash
 snakemake --cores {number of cores} cached_tiles
+```
+
+### output files
+
+Slide tiling and extracted features are output to the `reef_dir`:
+
+```
+reef
+└── model--quiltnet
+    └── mpp--0.5
+        └── patch_size--256
+            └── step_size--256
+                └── tissue_area_threshold--100
+                    ├── features
+                    │   ├── h5
+                    │   │   ├── 1051151.h5
+                    │   │   ├── 1064170.h5
+                    │   │   ├── 759112.h5
+                    │   │   ├── 979373.h5
+                    │   │   └── 980143.h5
+                    │   └── pt
+                    │       ├── 1051151.pt
+                    │       ├── 1064170.pt
+                    │       ├── 759112.pt
+                    │       ├── 979373.pt
+                    │       └── 980143.pt
+                    ├── patches
+                    │   ├── 1051151.h5
+                    │   ├── 1064170.h5
+                    │   ├── 759112.h5
+                    │   ├── 979373.h5
+                    │   └── 980143.h5
+                    └── stitches
+                        ├── 1051151.jpg
+                        ├── 1064170.jpg
+                        ├── 759112.jpg
+                        ├── 979373.jpg
+                        └── 980143.jpg
+```
+
+Annotations and cached tiles output to the `output_dir`:
+
+```
+results
+└── model--quiltnet
+    └── mpp--0.5
+        └── patch_size--256
+            └── step_size--256
+                └── tissue_area_threshold--100
+                    ├── annotations
+                    │   ├── 1051151.csv
+                    │   ├── 1064170.csv
+                    │   ├── 759112.csv
+                    │   ├── 979373.csv
+                    │   └── 980143.csv
+                    └── cache_tiles
+                        ├── indices
+                        │   ├── 1051151.json
+                        │   ├── 1064170.json
+                        │   ├── 759112.json
+                        │   ├── 979373.json
+                        │   └── 980143.json
+                        └── pt
+                            ├── 1051151.pt
+                            ├── 1064170.pt
+                            ├── 759112.pt
+                            ├── 979373.pt
+                            └── 980143.pt
 ```
 
 ## License
