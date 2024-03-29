@@ -1,13 +1,9 @@
-from __future__ import division, log.info_function
-
-import logging
-
 import h5py
+from loguru import logger
 from PIL import Image
 from torch.utils.data import Dataset
 from torchvision import transforms
 
-log = logging.getLogger(__name__)
 
 def eval_transforms(use_imagenet_rgb_dist=False):
     if use_imagenet_rgb_dist:
@@ -75,14 +71,14 @@ class Whole_Slide_Bag_FP(Dataset):
         hdf5_file = h5py.File(self.file_path, "r")
         dset = hdf5_file["coords"]
         for name, value in dset.attrs.items():
-            log.info(f"{name} {value}")
+            logger.info(f"{name} {value}")
         
         hdf5_file.close()
 
-        log.info("\nfeature extraction settings")
-        log.info("target patch size: " + str(self.scaled_patch_size))
-        log.info("use_imagenet_rgb_dist: " +  str(self.use_imagenet_rgb_dist))
-        log.info("transformations: " + str(self.roi_transforms))
+        logger.info("\nfeature extraction settings")
+        logger.info("target patch size: " + str(self.scaled_patch_size))
+        logger.info("use_imagenet_rgb_dist: " +  str(self.use_imagenet_rgb_dist))
+        logger.info("transformations: " + str(self.roi_transforms))
 
     def __getitem__(self, idx_):
         if self.limit_to_indices:

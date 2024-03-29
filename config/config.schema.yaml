@@ -9,7 +9,7 @@ properties:
     type: string
     default: "results"
     description: output directory
-  slide_directory_path:
+  slide_directory_csv_path:
     type: string
     default: slide_directory.csv
     description: slide directory csv
@@ -27,11 +27,19 @@ properties:
     description: batch size
   transpath_dir:
     type: string
-    description: CTransPath dir
+    description: CTransPath dir (https://github.com/Xiyue-Wang/TransPath)
+  transpath_model_path:
+    type: string
+    description: CTranspath model (.pth file)
   use_gpu:
     type: boolean
     default: true
     description: Use GPU
+  gpu_device_ids:
+    type: array
+    description: GPU device IDs as integers
+    items:
+      type: integer
   test:
     type: boolean
     default: false
@@ -49,5 +57,7 @@ properties:
   cache_limit_to_class:
     type: array
     description: limit caching to these classes
+    default:
+      - tumor
     items:
       type: string
