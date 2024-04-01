@@ -48,9 +48,6 @@ properties:
     type: string
     description: Path to quiltnet model
     default: "hf-hub:wisdomik/QuiltNet-B-16-PMB"
-  transpath_model_path:
-    type: string
-    description: Path to CTransPath model
   annotation_class_json_path:
     type: string
     description: Path to annotation class json
