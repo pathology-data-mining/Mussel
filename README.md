@@ -15,19 +15,49 @@ Usable using Condor, but suffers from limitations of current Condor system:
 - sporadic data accessibility (e.g. sparky2 cannot access `/gpfs/mskmind_emc/data_large`)
 - uncontrolled GPU usage by non-Condor usage (e.g. user was using most gpus across pll1,2,3 without Condor when I tried to test the featurization using Condor, so mine largely failed due to clashes.)
 
+## Using the installed Mussel on the MSK-MIND servers
+
+Mussel is installed in `/gpfs/mskmind_ess/mussel`. If you have `conda` already
+installed, you can activate the Mussel virtual environment with:
+
+```bash
+conda activate /gpfs/mskmind_ess/mussel/venv
+```
+
+If `conda` is not installed, either install it or first run:
+```bash
+ . "/gpfs/mskmind_ess/limr/mambaforge/etc/profile.d/conda.sh"
+```
+
+With the virtual environment activated, you can now run all the CLI and
+snakemake commands (run snakemake commands in `/gpfs/mskmind_ess/mussel`). When
+running snakemake, you may want to override some of the configuration options
+using the `--config` option, e.g.
+```bash
+snakemake --config output_dir=/gpfs/mskmind_ess/my_username/results test=True slide_list_path=my_slides.txt annotation_class_json_path=my_annotations.json cached_tiles
+```
+Alternativly, specify one or more yaml files using `--configfile`.
+
+To submit to HTCondor, use the pre-installed `htcondor` snakemake profile with
+the `--profile` option, e.g. `snakemake --profile htcondor`.
+
+By default, reef files (patch and feature files) will be written to
+`/gpfs/mskmind_ess/mussel/reef` and results (annotations and cached tiles) to
+`/gpfs/mskmind_ess/mussel/results`.
+
 ## Installation
 
 ### Pre-requisites
 
 -   [mamba](https://mamba.readthedocs.io/en/latest/installation.html):
-    Follow the instructions for installing
+    Follow the instructions for installingj
     [Mambaforge](https://github.com/conda-forge/miniforge#mambaforge)
 
 ### Create virtual environment and install packages
 
 ```bash
 mamba env create -p .venv/ -f environment.yaml
-mamba activate .venv/
+mamba activate .venv/j
 poetry install
 ```
 
@@ -107,7 +137,9 @@ format (i.e. columns are parameters and rows are the parameter values).
 
 ### Using HT-Condor for job submission
 
-Install the [HT-Condor profile](https://github.com/msk-mind/snakemake-htcondor)
+On the MSK-MIND servers, the htcondor profile has been installed and can be
+used with `snakemake --profile htcondor`. Elsewhere, you can install the
+[HT-Condor profile](https://github.com/msk-mind/snakemake-htcondor)
 using [cookiecutter](https://github.com/cookiecutter/cookiecutter). Note that
 the condor job directory must be in a network-shared location. After the
 profile is installed, you can use it with:
@@ -155,7 +187,7 @@ snakemake --cores {number of cores} cached_tiles
 ### output files
 
 Slide tiling and extracted features are output to the `reef_dir`:
-
+j
 ```
 reef
 └── model--quiltnet
@@ -178,7 +210,7 @@ reef
                     │       └── 980143.pt
                     ├── patches
                     │   ├── 1051151.h5
-                    │   ├── 1064170.h5
+                    │   ├── 1064170.h5j
                     │   ├── 759112.h5
                     │   ├── 979373.h5
                     │   └── 980143.h5
@@ -229,7 +261,7 @@ Forked from CLAM, © [Mahmood Lab](http://www.mahmoodlab.org).
 Please cite the original CLAM [paper](https://www.nature.com/articles/s41551-020-00682-w):
 
 Lu, M.Y., Williamson, D.F.K., Chen, T.Y. et al. Data-efficient and weakly supervised computational pathology on whole-slide images. Nat Biomed Eng 5, 555–570 (2021). https://doi.org/10.1038/s41551-020-00682-w
-
+j
 ```
 @article{lu2021data,
   title={Data-efficient and weakly supervised computational pathology on whole-slide images},

@@ -17,6 +17,8 @@ from mussel.cli.extract_features import ExtractFeaturesConfig, Model
 from mussel.cli.tessellate import (FilterConfig, PatchConfig, SegConfig,
                                    TessellateConfig, VisConfig)
 
+os.umask(0o000)
+
 configfile: "config/config.yaml"
 validate(config, "../config/config.schema.yaml")
 
