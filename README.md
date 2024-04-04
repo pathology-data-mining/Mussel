@@ -148,6 +148,17 @@ profile is installed, you can use it with:
 snakemake --profile {name of htcondor profile}
 ```
 
+### generate slide manifest from dremio
+
+Create a `config/dremio_config.yaml` file that adheres to
+`config/dremio_config.schema.yaml`. Set environment variables for
+`DREMIO_USERNAME` and `DREMIO_PASSWORD`. Run the slide manifest workflow to
+generate a `slide_manifest.csv`.
+
+```bash
+snakemake --cores 1 --snakefile slide_manifest_workflow/Snakefile
+```
+
 ### foreground detection and tiling
 
 Generate `.h5` files with coordinates and metadata in the `reef_dir`.
@@ -168,33 +179,78 @@ snakemake --cores {number of jobs}
 
 ### annotate tiles with tissue types (QuiltNet only)
 
-Set `annotation_class_json_path` to a custom json file. Annotations will be created in a subdirectory of `output_dir`.
+Create an `annotation_class.csv` with rows that adhere to the
+`config/annotation.schema.yaml`, i.e. map oncotree codes to annotation classes.
+If the `annotation_class.csv` is absent or unspecified for a particular
+oncotree code, the `default_annotation_classes` array in the config file is used.
 
 ```bash
 snakemake --cores {number of cores} annotations
 ```
 
+#### Use a custom JSON file
+
+Set `annotation_class_json_path` to a custom json file. Annotations will be created in a subdirectory of `output_dir`.
+
+```bash
+snakemake --cores {number of cores} custom_annotations
+```
+
 ### tile caching
 
-Generate .pt file for rapid access of tiles during I/O intense operations such
+Generate `.pt` file for rapid access of tiles during I/O intense operations such
 as training. This can be conditioned on tissue types: e.g. cache only the tiles
-containing invasive carcinoma by setting `cache_limit_to_class` in the `config/config.yaml` file.
+containing invasive carcinoma by setting `annotation_class_to_cache_json` to
+the appropriate JSON string in the `annotation_class.csv`.
+If the `annotation_class.csv` is absent or unspecified for a particular
+oncotree code, the `default_annotation_classes_to_cache` array in the config
+file is used.
 
 ```bash
 snakemake --cores {number of cores} cached_tiles
 ```
 
+#### Use a custom JSON file
+
+Set `annotation_class_to_cache_json_path` to a custom json file. Cache files will be created in a subdirectory of `output_dir`.
+
+```bash
+snakemake --cores {number of cores} custom_cached_tiles
+```
+
 ### output files
 
-Slide tiling and extracted features are output to the `reef_dir`:
-j
+Results are output to the `reef_dir`:
 ```
 reef
+├── class_embeddings
+│   └── IDC.pt
 └── model--quiltnet
     └── mpp--0.5
         └── patch_size--256
             └── step_size--256
                 └── tissue_area_threshold--100
+                    ├── annotations
+                    │   └── IDC
+                    │       ├── 1051151.csv
+                    │       ├── 1064170.csv
+                    │       ├── 759112.csv
+                    │       ├── 979373.csv
+                    │       └── 980143.csv
+                    ├── cache_tiles
+                    │   └── IDC
+                    │       ├── indices
+                    │       │   ├── 1051151.json
+                    │       │   ├── 1064170.json
+                    │       │   ├── 759112.json
+                    │       │   ├── 979373.json
+                    │       │   └── 980143.json
+                    │       └── pt
+                    │           ├── 1051151.pt
+                    │           ├── 1064170.pt
+                    │           ├── 759112.pt
+                    │           ├── 979373.pt
+                    │           └── 980143.pt
                     ├── features
                     │   ├── h5
                     │   │   ├── 1051151.h5
@@ -210,7 +266,7 @@ reef
                     │       └── 980143.pt
                     ├── patches
                     │   ├── 1051151.h5
-                    │   ├── 1064170.h5j
+                    │   ├── 1064170.h5
                     │   ├── 759112.h5
                     │   ├── 979373.h5
                     │   └── 980143.h5
@@ -222,7 +278,9 @@ reef
                         └── 980143.jpg
 ```
 
-Annotations and cached tiles output to the `output_dir`:
+If you define `annotation_class_json_path` (with optionally
+`annotation_class_to_cache_json_path`) and build `custom_cache_tiles` or
+`custom_annotations`, the results are stored in `output_dir`:
 
 ```
 results

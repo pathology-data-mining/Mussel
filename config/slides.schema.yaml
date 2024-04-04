@@ -4,6 +4,14 @@ properties:
   image_id:
     type: string
     description: image ID
+  url:
+    type: string
+    description: image file url
+  oncotree_code:
+    type: string
+    description: oncotree code
 
 required:
   - image_id
+  - url
+  - oncotree_code
