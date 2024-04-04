@@ -29,7 +29,7 @@ class CacheTilesConfig:
     output_pt_path: str = MISSING
     batch_size: int = 32
     num_workers: int = 16
-    limit_to_class: Optional[List[str]] = field(default_factory=list)
+    limit_to_class: Optional[List[str]] = None
     annotation_csv_path: Optional[str] = None
     output_indices_json_path: Optional[str] = None
 
@@ -80,9 +80,9 @@ def main(cfg: CacheTilesConfig):
     if cfg.output_indices_json_path:
         with open(cfg.output_indices_json_path, "w") as f:
             if cfg.limit_to_class:
-                    json.dump(indices, f)
+                json.dump(indices, f)
             else:
-                    json.dump(list(range(len(dataset))), f)
+                json.dump(list(range(len(dataset))), f)
 
 
 if __name__ == "__main__":

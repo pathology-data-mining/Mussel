@@ -25,6 +25,7 @@ htcondor = "^23.5.2"
 sentencepiece = "^0.2.0"
 loguru = "^0.7.2"
 snakemake-executor-plugin-htcondor = "^0.1.2"
+pyarrow = "^15.0.2"
 
 
 [tool.poetry.group.dev.dependencies]
@@ -39,3 +40,4 @@ annotate = 'mussel.cli.annotate:main'
 cache_tiles = 'mussel.cli.cache_tiles:main'
 extract_features = 'mussel.cli.extract_features:main'
 tessellate = 'mussel.cli.tessellate:main'
+create_class_embeddings = 'mussel.cli.create_class_embeddings:main'

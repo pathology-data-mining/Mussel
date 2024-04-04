@@ -9,14 +9,10 @@ properties:
     type: string
     default: "results"
     description: output directory
-  slide_directory_csv_path:
-    type: string
-    default: slide_directory.csv
-    description: slide directory csv
   slide_list_path:
     type: string
     default: slides.txt
-    desription: list of slide IDs
+    description: list of slide IDs
   parameters_path:
     type: string
     description: parameter space csv, columns must conform to
@@ -48,13 +44,52 @@ properties:
     type: string
     description: Path to quiltnet model
     default: "hf-hub:wisdomik/QuiltNet-B-16-PMB"
+  annotation_class_csv:
+    type: string
+    description: annotation class csv
   annotation_class_json_path:
     type: string
     description: Path to annotation class json
-  cache_limit_to_class:
+  annotation_class_to_cache_json_path:
+    type: string
+    description: Path to annotation classes to cache json
+  default_annotation_classes:
+    type: array
+    description: annotation classes to use if not explicitly defined
+    items:
+      type: string
+    default:
+      - carcinoma in situ
+      - invasive carcinoma
+      - collagenous stroma
+      - adipose
+      - vessel
+      - necrosis
+      - invasive adenocarcinoma
+      - sarcoma
+  default_annotation_classes_to_cache:
     type: array
     description: limit caching to these classes
     default:
-      - tumor
+      - invasive carcinoma
+      - invasive adenocarcinoma
+      - sarcoma
     items:
       type: string
+  dremio:
+    type: object
+    properties:
+      scheme:
+        type: string
+        default: "grpc+tcp"
+      hostname:
+        type: string
+      port:
+        type: integer
+        default: 32010
+      space:
+        type: string
+        default: '"pathology-data-mining".mussel'
+      table:
+        type: string
+        default: "slide_directory"
