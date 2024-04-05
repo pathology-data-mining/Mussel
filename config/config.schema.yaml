@@ -36,6 +36,10 @@ properties:
     description: GPU device IDs as integers
     items:
       type: integer
+  all_slides:
+    type: boolean
+    default: false
+    description: run all slides in slide manifest
   test:
     type: boolean
     default: false

@@ -4,8 +4,7 @@ import os
 from argparse import ArgumentParser
 from dataclasses import dataclass
 from io import BytesIO
-from typing import Optional, List
-from omegaconf import MISSING
+from typing import List, Optional
 
 import h5py
 import hydra
@@ -14,6 +13,7 @@ import pandas as pd
 import torch
 from hydra.core.config_store import ConfigStore
 from loguru import logger
+from omegaconf import MISSING
 
 
 @dataclass

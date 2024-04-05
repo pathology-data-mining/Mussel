@@ -1,4 +1,6 @@
+import json
 import os
+from pathlib import Path
 
 import dacite
 import numpy as np
@@ -6,20 +8,18 @@ import pandas as pd
 from dacite import from_dict
 from omegaconf import OmegaConf
 from snakemake.utils import Paramspace, validate
-import json
-from pathlib import Path
 
 import mussel.cli.annotate
 import mussel.cli.cache_tiles
+import mussel.cli.create_class_embeddings
 import mussel.cli.extract_features
 import mussel.cli.tessellate
-import mussel.cli.create_class_embeddings
 from mussel.cli.annotate import AnnotateConfig
 from mussel.cli.cache_tiles import CacheTilesConfig
+from mussel.cli.create_class_embeddings import ClassEmbeddingConfig
 from mussel.cli.extract_features import ExtractFeaturesConfig, Model
 from mussel.cli.tessellate import (FilterConfig, PatchConfig, SegConfig,
                                    TessellateConfig, VisConfig)
-from mussel.cli.create_class_embeddings import ClassEmbeddingConfig
 
 os.umask(0o000)
 
@@ -35,12 +35,14 @@ if config.get("annotation_class_csv"):
   validate(annotation_df, "../config/annotation.schema.yaml")
   slide_df = slide_df.merge(annotation_df, on='oncotree_code', how='left')
 
-slides = [line.strip() for line in open(config['slide_list_path'], 'r')]
+if not config['all_slides']:
+  slides = [line.strip() for line in open(config['slide_list_path'], 'r')]
+else:
+  slides = slide_df.image_id
 
 if config['test']:
   slides = slides[0:5]
-
-slide_oncotree = slide_df.loc[slides, ['image_id', 'oncotree_code']]
+slide_df = slide_df.loc[slides, :]
 
 parameters = dict()
 if config.get('parameters_file'):
@@ -160,18 +162,18 @@ if sum(quiltnet_mask) > 0:
 
   rule annotations:
     input:
-      expand(f"{config['reef_dir']}/{{params}}/annotations/{{s.oncotree_code}}/{{s.image_id}}.csv", params=quiltnet_paramspace.instance_patterns, s=list(slide_oncotree.itertuples()))
+      expand(f"{config['reef_dir']}/{{params}}/annotations/{{s.oncotree_code}}/{{s.image_id}}.csv", params=quiltnet_paramspace.instance_patterns, s=list(slide_df.itertuples()))
 
   rule stacked_annotations:
     input:
       expand(f"{config['reef_dir']}/{{params}}/stacked_annotations/{{oncotree_code}}.csv",
              params=quiltnet_paramspace.instance_patterns,
-             oncotree_code=slide_oncotree['oncotree_code'].unique())
+             oncotree_code=slide_df['oncotree_code'].unique())
 
   rule stack_oncotree_code_annotations:
     input:
       expand(f"{config['reef_dir']}/{quiltnet_paramspace.wildcard_pattern}/annotations/{{oncotree_code}}/{{sample.image_id}}.csv",
-             sample=lookup(query="oncotree_code == '{oncotree_code}'", within=slide_oncotree), allow_missing=True)
+             sample=lookup(query="oncotree_code == '{oncotree_code}'", within=slide_df), allow_missing=True)
     output:
       f"{config['reef_dir']}/{quiltnet_paramspace.wildcard_pattern}/stacked_annotations/{{oncotree_code}}.csv"
     run:
@@ -187,7 +189,7 @@ if sum(quiltnet_mask) > 0:
 
   rule cached_tiles:
     input:
-      expand(f"{config['reef_dir']}/{{params}}/cache_tiles/{{s.oncotree_code}}/pt/{{s.image_id}}.pt", params=quiltnet_paramspace.instance_patterns, s=list(slide_oncotree.itertuples()))
+      expand(f"{config['reef_dir']}/{{params}}/cache_tiles/{{s.oncotree_code}}/pt/{{s.image_id}}.pt", params=quiltnet_paramspace.instance_patterns, s=list(slide_df.itertuples()))
 
   rule annotate:
     input:
