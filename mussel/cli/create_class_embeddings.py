@@ -1,10 +1,12 @@
-import open_clip
 from dataclasses import dataclass
 from typing import List, Optional
-import torch
-from omegaconf import MISSING
-from hydra.core.config_store import ConfigStore
+
 import hydra
+import open_clip
+import torch
+from hydra.core.config_store import ConfigStore
+from omegaconf import MISSING
+
 
 @dataclass
 class ClassEmbeddingConfig:

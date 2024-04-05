@@ -1,2 +1,2 @@
-test: true
+all_slides: true
 annotation_class_json_path: annotations.json
