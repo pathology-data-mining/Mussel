@@ -7,6 +7,7 @@ from dacite import from_dict
 from omegaconf import OmegaConf
 from snakemake.utils import Paramspace, validate
 import json
+from pathlib import Path
 
 import mussel.cli.annotate
 import mussel.cli.cache_tiles
@@ -54,8 +55,6 @@ if type(parameters) == dict:
 else:
   parameters = parameters.reindex(sorted(parameters.columns), axis=1)
   paramspace = Paramspace(parameters)
-
-print(paramspace.query('model == "quiltnet"').to_csv())
 
 def create_config(config_class, wildcards, **kwargs):
   # convert np types to native python types
@@ -163,6 +162,29 @@ if sum(quiltnet_mask) > 0:
     input:
       expand(f"{config['reef_dir']}/{{params}}/annotations/{{s.oncotree_code}}/{{s.image_id}}.csv", params=quiltnet_paramspace.instance_patterns, s=list(slide_oncotree.itertuples()))
 
+  rule stacked_annotations:
+    input:
+      expand(f"{config['reef_dir']}/{{params}}/stacked_annotations/{{oncotree_code}}.csv",
+             params=quiltnet_paramspace.instance_patterns,
+             oncotree_code=slide_oncotree['oncotree_code'].unique())
+
+  rule stack_oncotree_code_annotations:
+    input:
+      expand(f"{config['reef_dir']}/{quiltnet_paramspace.wildcard_pattern}/annotations/{{oncotree_code}}/{{sample.image_id}}.csv",
+             sample=lookup(query="oncotree_code == '{oncotree_code}'", within=slide_oncotree), allow_missing=True)
+    output:
+      f"{config['reef_dir']}/{quiltnet_paramspace.wildcard_pattern}/stacked_annotations/{{oncotree_code}}.csv"
+    run:
+      li = []
+      for filename in input:
+        slide_id = Path(filename).stem
+        df = pd.read_csv(filename, index_col=None, header=0)
+        df.insert(loc=0, column='slide_id', value=slide_id)
+        li.append(df)
+
+      frame = pd.concat(li, axis=0, ignore_index=True)
+      frame.to_csv(output[0], index=False)
+
   rule cached_tiles:
     input:
       expand(f"{config['reef_dir']}/{{params}}/cache_tiles/{{s.oncotree_code}}/pt/{{s.image_id}}.pt", params=quiltnet_paramspace.instance_patterns, s=list(slide_oncotree.itertuples()))
@@ -238,6 +260,27 @@ if sum(quiltnet_mask) > 0:
                                                     quiltnet_model_path=config['quiltnet_model_path'],
                                                     output_pt_path=output[0]))
         mussel.cli.create_class_embeddings.main(cfg)
+
+    rule custom_stacked_annotations:
+      input:
+        expand(f"{config['output_dir']}/{{params}}/stacked_annotations.csv",
+              params=quiltnet_paramspace.instance_patterns)
+
+    rule custom_stack_oncotree_code_annotations:
+      input:
+        expand(f"{config['output_dir']}/{{params}}/annotations/{{slide_id}}.csv", params=quiltnet_paramspace.instance_patterns, slide_id=slides)
+      output:
+        f"{config['reef_dir']}/{quiltnet_paramspace.wildcard_pattern}/stacked_annotations.csv"
+      run:
+        li = []
+        for filename in input:
+          slide_id = Path(filename).stem
+          df = pd.read_csv(filename, index_col=None, header=0)
+          df.insert(loc=0, column='slide_id', value=slide_id)
+          li.append(df)
+
+        frame = pd.concat(li, axis=0, ignore_index=True)
+        frame.to_csv(output[0], index=False)
 
 
     rule custom_annotate:
