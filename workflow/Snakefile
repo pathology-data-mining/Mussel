@@ -41,7 +41,7 @@ else:
   slides = slide_df.image_id
 
 if config['test']:
-  slides = slides[0:5]
+  slides = slides[0:2]
 slide_df = slide_df.loc[slides, :]
 
 parameters = dict()
@@ -93,12 +93,12 @@ rule all:
 
 rule tiles:
   input:
-    expand(f"{config['reef_dir']}/{{params}}/patches/{{slide_id}}.h5", params=paramspace.instance_patterns, slide_id=slides)
+    expand(f"{config['reef_dir']}/{{params}}/tessellate/h5/{{slide_id}}.h5", params=paramspace.instance_patterns, slide_id=slides)
 
 rule tessellate:
   output:
-    patch_h5_path=protected(f"{config['reef_dir']}/{paramspace.wildcard_pattern}/patches/{{slide_id}}.h5"),
-    stitch_path=protected(f"{config['reef_dir']}/{paramspace.wildcard_pattern}/stitches/{{slide_id}}.jpg"),
+    patch_h5_path=protected(f"{config['reef_dir']}/{paramspace.wildcard_pattern}/tessellate/h5/{{slide_id}}.h5"),
+    stitch_path=protected(f"{config['reef_dir']}/{paramspace.wildcard_pattern}/tessellate/stitches/{{slide_id}}.jpg"),
   log: f"logs/{paramspace.wildcard_pattern}/tessellate/{{slide_id}}.log"
   resources:
     request_memory="30GB"
@@ -119,7 +119,7 @@ rule tessellate:
 
 rule featurize:
   input:
-    patch_h5_path=f"{config['reef_dir']}/{paramspace.wildcard_pattern}/patches/{{slide_id}}.h5",
+    patch_h5_path=f"{config['reef_dir']}/{paramspace.wildcard_pattern}/tessellate/h5/{{slide_id}}.h5",
   output:
     pt=protected(f"{config['reef_dir']}/{paramspace.wildcard_pattern}/features/pt/{{slide_id}}.pt"),
     h5=protected(f"{config['reef_dir']}/{paramspace.wildcard_pattern}/features/h5/{{slide_id}}.h5"),
@@ -176,7 +176,7 @@ if sum(quiltnet_mask) > 0:
       expand(f"{config['reef_dir']}/{quiltnet_paramspace.wildcard_pattern}/annotations/{{oncotree_code}}/{{sample.image_id}}.csv",
              sample=lookup(query="oncotree_code == '{oncotree_code}'", within=slide_df), allow_missing=True)
     output:
-      f"{config['reef_dir']}/{quiltnet_paramspace.wildcard_pattern}/stacked_annotations/{{oncotree_code}}.csv"
+      f"{config['output_dir']}/{quiltnet_paramspace.wildcard_pattern}/stacked_annotations/{{oncotree_code}}.csv"
     run:
       li = []
       for filename in input:
@@ -215,7 +215,7 @@ if sum(quiltnet_mask) > 0:
 
   rule cache_tiles:
     input:
-      patch_h5=f"{config['reef_dir']}/{quiltnet_paramspace.wildcard_pattern}/patches/{{slide_id}}.h5",
+      patch_h5=f"{config['reef_dir']}/{quiltnet_paramspace.wildcard_pattern}/tessellate/h5/{{slide_id}}.h5",
       annotation_csv=f"{config['reef_dir']}/{quiltnet_paramspace.wildcard_pattern}/annotations/{{oncotree_code}}/{{slide_id}}.csv",
     output:
       pt=f"{config['reef_dir']}/{quiltnet_paramspace.wildcard_pattern}/cache_tiles/{{oncotree_code}}/pt/{{slide_id}}.pt",
@@ -273,7 +273,7 @@ if sum(quiltnet_mask) > 0:
       input:
         expand(f"{config['output_dir']}/{{params}}/annotations/{{slide_id}}.csv", params=quiltnet_paramspace.instance_patterns, slide_id=slides)
       output:
-        f"{config['reef_dir']}/{quiltnet_paramspace.wildcard_pattern}/stacked_annotations.csv"
+        f"{config['output_dir']}/{quiltnet_paramspace.wildcard_pattern}/stacked_annotations.csv"
       run:
         li = []
         for filename in input:
@@ -312,7 +312,7 @@ if sum(quiltnet_mask) > 0:
 
     rule custom_cache_tiles:
       input:
-        patch_h5=f"{config['reef_dir']}/{quiltnet_paramspace.wildcard_pattern}/patches/{{slide_id}}.h5",
+        patch_h5=f"{config['reef_dir']}/{quiltnet_paramspace.wildcard_pattern}/tessellate/h5/{{slide_id}}.h5",
         annotation_csv=f"{config['output_dir']}/{quiltnet_paramspace.wildcard_pattern}/annotations/{{slide_id}}.csv",
       output:
         pt=f"{config['output_dir']}/{quiltnet_paramspace.wildcard_pattern}/cache_tiles/pt/{{slide_id}}.pt",
