@@ -56,7 +56,7 @@ if type(parameters) == dict:
   paramspace = Paramspace(df, param_sep='--')
 else:
   parameters = parameters.reindex(sorted(parameters.columns), axis=1)
-  paramspace = Paramspace(parameters)
+  paramspace = Paramspace(parameters, param_sep='--')
 
 
 def create_config(config_class, wildcards, **kwargs):
