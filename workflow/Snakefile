@@ -101,7 +101,6 @@ rule tessellate:
   resources:
     request_memory="30GB"
   run:
-    os.umask(0o000)
     slide_path = get_slide(wildcards)
     cfg = create_config(TessellateConfig,
                         wildcards,
@@ -128,7 +127,6 @@ rule featurize:
     request_memory="30GB",
     request_gpus=1
   run:
-    os.umask(0o000)
     slide_path = get_slide(wildcards)
     cfg = create_config(ExtractFeaturesConfig,
                         wildcards,
@@ -151,7 +149,6 @@ rule class_embedding:
   output:
     f"{config['reef_dir']}/class_embeddings/{{oncotree_code}}.pt"
   run:
-    os.umask(0o000)
     classes = get_annotation_classes(wildcards)
     cfg = OmegaConf.create(ClassEmbeddingConfig(classes=classes,
                                                 quiltnet_model_path=config['quiltnet_model_path'],
@@ -180,7 +177,6 @@ if sum(quiltnet_mask) > 0:
     resources:
       request_memory="12GB"
     run:
-      os.umask(0o022)
       classes = get_annotation_classes(wildcards)
       cfg = create_config(
           AnnotateConfig,
@@ -203,7 +199,6 @@ if sum(quiltnet_mask) > 0:
     resources:
       request_memory="24GB"
     run:
-      os.umask(0o022)
       slide_path = get_slide(wildcards)
       limit_to_class = get_annotation_classes_to_cache(wildcards)
       cfg = create_config(
