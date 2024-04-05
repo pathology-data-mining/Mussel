@@ -45,8 +45,8 @@ if config['test']:
 slide_df = slide_df.loc[slides, :]
 
 parameters = dict()
-if config.get('parameters_file'):
-  parameters = pd.read_csv(config['parameters_path'])
+if config.get('parameters_csv_path'):
+  parameters = pd.read_csv(config['parameters_csv_path'])
 validate(parameters, "../config/params.schema.yaml")
 
  # sort the parameters for consistent paramspace patterns
@@ -57,6 +57,7 @@ if type(parameters) == dict:
 else:
   parameters = parameters.reindex(sorted(parameters.columns), axis=1)
   paramspace = Paramspace(parameters)
+
 
 def create_config(config_class, wildcards, **kwargs):
   # convert np types to native python types

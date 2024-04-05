@@ -2,6 +2,7 @@ import logging
 import math
 import multiprocessing as mp
 import os
+import sys
 import time
 from typing import List
 from xml.dom import minidom
@@ -555,7 +556,7 @@ class WholeSlideImage(object):
         n_contours = len(self.contours_tissue)
         if n_contours == 0:
             logger.info("0 contours, exiting")
-            exit()
+            sys.exit(0)
         logger.info(f"Total number of contours to process: {n_contours}")
         fp_chunk_size = math.ceil(n_contours * 0.05)
         init = True
