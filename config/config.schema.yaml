@@ -13,7 +13,7 @@ properties:
     type: string
     default: slides.txt
     description: list of slide IDs
-  parameters_path:
+  parameters_csv_path:
     type: string
     description: parameter space csv, columns must conform to
       parameters.schema.yaml, rows are parameter values
