@@ -131,7 +131,7 @@ def main(cfg: ExtractFeaturesConfig):
         model = resnet50_baseline(pretrained=True)
         preprocessing = None
     elif cfg.model == Model.CTRANSPATH:
-        sys.path.append(cfg.transpath_path)
+        sys.path.append(cfg.transpath_dir)
         model = torch.load(cfg.transpath_model_path)
         preprocessing = None
     elif cfg.model == Model.QUILTNET:
