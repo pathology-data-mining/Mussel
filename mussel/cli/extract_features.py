@@ -1,0 +1,178 @@
+import argparse
+import os
+import sys
+import time
+from dataclasses import dataclass, field
+from enum import Enum
+from pathlib import Path
+from typing import List, Optional
+
+import h5py
+import hydra
+import open_clip
+import openslide
+import torch
+import torch.nn as nn
+from hydra.core.config_store import ConfigStore
+from loguru import logger
+from omegaconf import MISSING
+from torch.utils.data import DataLoader
+
+from mussel.datasets.h5 import Whole_Slide_Bag_FP
+from mussel.models.resnet_custom import resnet50_baseline
+from mussel.utils.file import save_hdf5
+from mussel.utils.ml import collate_features
+from mussel.utils.timer import timed
+
+
+class Model(Enum):
+    RESNET50 = 'resnet50'
+    CTRANSPATH = 'ctranspath'
+    QUILTNET = 'quiltnet'
+
+
+@dataclass
+class ExtractFeaturesConfig:
+    patch_h5_path: str = MISSING
+    slide_path: str = MISSING
+    output_h5_path: str = MISSING
+    output_pt_path: str = MISSING
+    transpath_dir: Optional[str] = None
+    model: Model = Model.QUILTNET
+    quiltnet_model_path: Optional[str] = "hf-hub:wisdomik/QuiltNet-B-16-PMB"
+    transpath_model_path: Optional[str] = None
+    batch_size: int = 64
+    use_gpu: bool = True
+    gpu_device_ids: Optional[List[int]] = field(default_factory=list)
+    num_workers: int = 32
+
+
+@timed
+def compute_w_loader(
+    file_path,
+    output_h5_path,
+    wsi,
+    model_obj,
+    model: Model,
+    device,
+    batch_size=8,
+    verbose=0,
+    print_every=20,
+    use_imagenet_rgb_dist=True,
+    preprocess=None,
+    num_workers=32,
+):
+    """
+    args:
+            file_path: directory of bag (.h5 file)
+            output_h5_path: file path to save computed features (.h5 file)
+            model: pytorch model
+            batch_size: batch_size for computing features in batches
+            verbose: level of feedback
+            pretrained: use weights pretrained on imagenet
+    """
+
+    dataset = Whole_Slide_Bag_FP(
+        file_path=file_path,
+        wsi=wsi,
+        use_imagenet_rgb_dist=use_imagenet_rgb_dist,
+        preprocess=preprocess,
+    )
+    x, y = dataset[0]
+    kwargs = {"num_workers": num_workers, "pin_memory": True}
+    loader = DataLoader(
+        dataset=dataset,
+        batch_size=batch_size,
+        **kwargs,
+        collate_fn=collate_features,
+        shuffle=False,
+    )
+
+    if verbose > 0:
+        logger.info("processing {}: total of {} batches".format(file_path, len(loader)))
+
+    mode = "w"
+    for count, (batch, coords) in enumerate(loader):
+        with torch.no_grad():
+            if count % print_every == 0:
+                logger.info(
+                    "batch {}/{}, {} files processed".format(
+                        count, len(loader), count * batch_size
+                    )
+                )
+            batch = batch.to(device, non_blocking=True)
+
+            if model == Model.QUILTNET:
+                features = model_obj.encode_image(batch)
+            else:
+                features = model_obj(batch)
+            features = features.cpu().numpy()
+
+            asset_dict = {"features": features, "coords": coords}
+            save_hdf5(output_h5_path, asset_dict, attr_dict=None, mode=mode)
+            mode = "a"
+
+    return output_h5_path
+
+cs = ConfigStore.instance()
+cs.store(name="extract_features_config", node=ExtractFeaturesConfig)
+
+@hydra.main(version_base=None, config_path=".", config_name="extract_features_config")
+def main(cfg: ExtractFeaturesConfig):
+
+    device = torch.device("cpu")
+    if cfg.use_gpu:
+        if torch.cuda.is_available():
+            device = torch.device("cuda")
+        else:
+            logger.warn("cuda not available, using cpu")
+    logger.info("loading model checkpoint")
+    if cfg.model == Model.RESNET50:
+        model = resnet50_baseline(pretrained=True)
+        preprocessing = None
+    elif cfg.model == Model.CTRANSPATH:
+        sys.path.append(cfg.transpath_dir)
+        model = torch.load(cfg.transpath_model_path)
+        preprocessing = None
+    elif cfg.model == Model.QUILTNET:
+        model, _, preprocessing = open_clip.create_model_and_transforms(
+            cfg.quiltnet_model_path,
+        )
+    else:
+        raise ValueError("model not recognized")
+
+    model = model.to(device)
+    if cfg.gpu_device_ids and len(cfg.gpu_device_ids) > 1:
+        model = nn.DataParallel(model, device_ids=cfg.gpu_device_ids)
+    model.eval()
+
+    # extract features
+    wsi = openslide.open_slide(cfg.slide_path)
+    output_file_path = compute_w_loader(
+        file_path=cfg.patch_h5_path,
+        output_h5_path=cfg.output_h5_path,
+        wsi=wsi,
+        model_obj=model,
+        model=cfg.model,
+        preprocess=preprocessing,
+        device=device,
+        batch_size=cfg.batch_size,
+        verbose=1,
+        print_every=20,
+        use_imagenet_rgb_dist=preprocessing is None,
+        num_workers=cfg.num_workers,
+    )
+
+    file = h5py.File(output_file_path, "r")
+    features = file["features"][:]
+    logger.info(f"features size: {features.shape} ")
+    logger.info(f"coordinates size: {file["coords"].shape}")
+    file.close()
+
+    features = torch.from_numpy(features)
+    torch.save(
+        features, cfg.output_pt_path
+    )
+
+if __name__ == "__main__":
+    main()

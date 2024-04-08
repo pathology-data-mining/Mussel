@@ -15,3 +15,8 @@ test_*sh
 *temp*
 !*templ*
 scratch/
+.venv/
+venv/
+reef/
+.snakemake/
+config/config.yaml

@@ -6,14 +6,9 @@ import numpy as np
 import torch
 import torch.nn as nn
 import torch.optim as optim
-from torch.utils.data import (
-    DataLoader,
-    Sampler,
-    WeightedRandomSampler,
-    RandomSampler,
-    SequentialSampler,
-    sampler,
-)
+from torch.utils.data import (DataLoader, RandomSampler, Sampler,
+                              SequentialSampler, WeightedRandomSampler,
+                              sampler)
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -133,7 +128,7 @@ def get_optim(model, args):
 def print_network(net):
     num_params = 0
     num_params_train = 0
-    print(net)
+    logger.info(net)
 
     for param in net.parameters():
         n = param.numel()
@@ -141,8 +136,8 @@ def print_network(net):
         if param.requires_grad:
             num_params_train += n
 
-    print("Total number of parameters: %d" % num_params)
-    print("Total number of trainable parameters: %d" % num_params_train)
+    logger.info("Total number of parameters: %d" % num_params)
+    logger.info("Total number of trainable parameters: %d" % num_params_train)
 
 
 def generate_split(
