@@ -1,34 +1,29 @@
+import logging
 import math
 import multiprocessing as mp
 import os
+import sys
 import time
+from typing import List
 from xml.dom import minidom
 
 import cv2
 import matplotlib.pyplot as plt
 import numpy as np
 import openslide
+from loguru import logger
 from PIL import Image
 
-from utils.file_utils import load_pkl, save_pkl
-from wsi_core.util_classes import (
-    isInContourV1,
-    isInContourV2,
-    isInContourV3_Easy,
-    isInContourV3_Hard,
-    Contour_Checking_fn,
-)
-from wsi_core.wsi_utils import (
-    savePatchIter_bag_hdf5,
-    initialize_hdf5_bag,
-    save_hdf5,
-    screen_coords,
-    isBlackPatch,
-    isWhitePatch,
-    to_percentiles,
-)
+from mussel.utils.file import load_pkl, save_pkl
+from mussel.utils.wsi import (initialize_hdf5_bag, isBlackPatch, isWhitePatch,
+                              save_hdf5, savePatchIter_bag_hdf5, screen_coords,
+                              to_percentiles)
+from mussel.utils.wsi_classes import (Contour_Checking_fn, isInContourV1,
+                                      isInContourV2, isInContourV3_Easy,
+                                      isInContourV3_Hard)
 
 Image.MAX_IMAGE_PIXELS = 933120000
+
 
 
 class WholeSlideImage(object):
@@ -118,22 +113,31 @@ class WholeSlideImage(object):
 
     def segmentTissue(
         self,
-        seg_level=0,
-        sthresh=20,
-        sthresh_up=255,
-        mthresh=7,
-        close=0,
-        use_otsu=False,
-        filter_params={"a_t": 100},
-        ref_patch_size=512,
-        exclude_ids=[],
-        keep_ids=[],
+        seg_level: int = 0,
+        segment_threshold: int = 20,
+        segment_max_value: int = 255,
+        median_blur_ksize: int = 7,
+        morphology_ex_kernel: int = 0,
+        use_otsu: bool = False,
+        filter_contours: bool = True,
+        tissue_area_threshold: int = 100,
+        hole_area_threshold: int = 16,
+        max_num_holes: int = 10,
+        ref_patch_size: int = 512,
+        exclude_ids: List[int] = [],
+        keep_ids: List[int] = [],
     ):
         """
         Segment the tissue via HSV -> Median thresholding -> Binary threshold
         """
 
-        def _filter_contours(contours, hierarchy, filter_params):
+        def _filter_contours(contours,
+                             hierarchy,
+                             tissue_area_threshold: int,
+                             hole_area_threshold: int,
+                             max_num_holes: int,
+                             ):
+
             """
             Filter contours by: area.
             """
@@ -157,7 +161,7 @@ class WholeSlideImage(object):
                 a = a - np.array(hole_areas).sum()
                 if a == 0:
                     continue
-                if tuple((filter_params["a_t"],)) < tuple((a,)):
+                if tuple((tissue_area_threshold,)) < tuple((a,)):
                     filtered.append(cont_idx)
                     all_holes.append(holes)
 
@@ -171,12 +175,12 @@ class WholeSlideImage(object):
                     unfiltered_holes, key=cv2.contourArea, reverse=True
                 )
                 # take max_n_holes largest holes by area
-                unfilered_holes = unfilered_holes[: filter_params["max_n_holes"]]
+                unfilered_holes = unfilered_holes[: max_num_holes]
                 filtered_holes = []
 
                 # filter these holes
                 for hole in unfilered_holes:
-                    if cv2.contourArea(hole) > filter_params["a_h"]:
+                    if cv2.contourArea(hole) > hole_area_threshold:
                         filtered_holes.append(hole)
 
                 hole_contours.append(filtered_holes)
@@ -187,35 +191,34 @@ class WholeSlideImage(object):
             self.wsi.read_region((0, 0), seg_level, self.level_dim[seg_level])
         )
         img_hsv = cv2.cvtColor(img, cv2.COLOR_RGB2HSV)  # Convert to HSV space
-        img_med = cv2.medianBlur(img_hsv[:, :, 1], mthresh)  # Apply median blurring
+        img_med = cv2.medianBlur(img_hsv[:, :, 1], median_blur_ksize)  # Apply median blurring
 
         # Thresholding
         if use_otsu:
             _, img_otsu = cv2.threshold(
-                img_med, 0, sthresh_up, cv2.THRESH_OTSU + cv2.THRESH_BINARY
+                img_med, 0, segment_max_value, cv2.THRESH_OTSU + cv2.THRESH_BINARY
             )
         else:
-            _, img_otsu = cv2.threshold(img_med, sthresh, sthresh_up, cv2.THRESH_BINARY)
+            _, img_otsu = cv2.threshold(img_med, segment_threshold, segment_max_value, cv2.THRESH_BINARY)
 
         # Morphological closing
-        if close > 0:
-            kernel = np.ones((close, close), np.uint8)
+        if morphology_ex_kernel > 0:
+            kernel = np.ones((morphology_ex_kernel, close), np.uint8)
             img_otsu = cv2.morphologyEx(img_otsu, cv2.MORPH_CLOSE, kernel)
 
         scale = self.level_downsamples[seg_level]
         scaled_ref_patch_area = int(ref_patch_size**2 / (scale[0] * scale[1]))
-        filter_params = filter_params.copy()
-        filter_params["a_t"] = filter_params["a_t"] * scaled_ref_patch_area
-        filter_params["a_h"] = filter_params["a_h"] * scaled_ref_patch_area
+        tissue_area_threshold *= scaled_ref_patch_area
+        hole_area_threshold *= scaled_ref_patch_area
 
         # Find and filter contours
         contours, hierarchy = cv2.findContours(
             img_otsu, cv2.RETR_CCOMP, cv2.CHAIN_APPROX_NONE
         )  # Find contours
         hierarchy = np.squeeze(hierarchy, axis=(0,))[:, 2:]
-        if filter_params:
+        if filter_contours:
             foreground_contours, hole_contours = _filter_contours(
-                contours, hierarchy, filter_params
+                contours, hierarchy, tissue_area_threshold, hole_area_threshold, max_num_holes
             )  # Necessary for filtering out artifacts
 
         self.contours_tissue = self.scaleContourDim(foreground_contours, scale)
@@ -351,11 +354,7 @@ class WholeSlideImage(object):
         contours = self.contours_tissue
         contour_holes = self.holes_tissue
 
-        print(
-            "Creating patches for: ",
-            self.name,
-            "...",
-        )
+        logger.info(f"Creating patches for: {self.name} ...")
         elapsed = time.time()
         for idx, cont in enumerate(contours):
             patch_gen = self._getPatchGenerator(
@@ -398,15 +397,15 @@ class WholeSlideImage(object):
             if cont is not None
             else (0, 0, self.level_dim[patch_level][0], self.level_dim[patch_level][1])
         )
-        print("Bounding Box:", start_x, start_y, w, h)
-        print("Contour Area:", cv2.contourArea(cont))
+        logger.info(f"Bounding Box: {start_x} {start_y} {w} {h}")
+        logger.info(f"Contour Area: {cv2.contourArea(cont)}")
 
         if custom_downsample > 1:
             assert custom_downsample == 2
             target_patch_size = patch_size
             patch_size = target_patch_size * 2
             step_size = step_size * 2
-            print(
+            logger.info(
                 "Custom Downsample: {}, Patching at {} x {}, But Final Patch Size is {} x {}".format(
                     custom_downsample,
                     patch_size,
@@ -498,7 +497,7 @@ class WholeSlideImage(object):
 
                 yield patch_info
 
-        print("patches extracted: {}".format(count))
+        logger.info("patches extracted: {}".format(count))
 
     @staticmethod
     def isInHoles(holes, pt, patch_size):
@@ -552,22 +551,18 @@ class WholeSlideImage(object):
         self, save_path, patch_size=256, step_size=256, mpp=0.5, **kwargs
     ):
         save_path_hdf5 = save_path
-        print(
-            "Creating patches for: ",
-            self.name,
-            "...",
-        )
+        logger.info(f"Creating patches for: {self.name} ...")
         elapsed = time.time()
         n_contours = len(self.contours_tissue)
         if n_contours == 0:
-            print("0 contours, exiting")
-            exit()
-        print("Total number of contours to process: ", n_contours)
+            logger.info("0 contours, exiting")
+            sys.exit(0)
+        logger.info(f"Total number of contours to process: {n_contours}")
         fp_chunk_size = math.ceil(n_contours * 0.05)
         init = True
         for idx, cont in enumerate(self.contours_tissue):
             if (idx + 1) % fp_chunk_size == fp_chunk_size:
-                print("Processing contour {}/{}".format(idx, n_contours))
+                logger.info("Processing contour {}/{}".format(idx, n_contours))
 
             asset_dict, attr_dict = self.process_contour(
                 cont,
@@ -602,9 +597,9 @@ class WholeSlideImage(object):
         # get mpp of WSI
         mpp_wsi = float(self.wsi.properties[openslide.PROPERTY_NAME_MPP_X])
 
-        assert mpp >= mpp_wsi, "mpp must be greater than or equal to mpp_wsi"
+        assert abs(mpp - mpp_wsi) <= 0.01, "mpp must be greater than or equal to mpp_wsi"
         scale = mpp / mpp_wsi
-        print(f"desired_mpp: {mpp:.3f}, mpp_wsi: {mpp_wsi:.3f}, mpp scale: {scale:.3f}")
+        logger.info(f"desired_mpp: {mpp:.3f}, mpp_wsi: {mpp_wsi:.3f}, mpp scale: {scale:.3f}")
 
         start_x, start_y, w, h = (
             cv2.boundingRect(cont)
@@ -622,8 +617,8 @@ class WholeSlideImage(object):
             stop_y = min(start_y + h, img_h - native_patch_size + 1)
             stop_x = min(start_x + w, img_w - native_patch_size + 1)
 
-        print("Bounding Box:", start_x, start_y, w, h)
-        print("Contour Area:", cv2.contourArea(cont))
+        logger.info(f"Bounding Box: {start_x} {start_y} {w} {h}")
+        logger.info(f"Contour Area: {cv2.contourArea(cont)}")
 
         if bot_right is not None:
             stop_y = min(bot_right[1], stop_y)
@@ -635,10 +630,10 @@ class WholeSlideImage(object):
         if bot_right is not None or top_left is not None:
             w, h = stop_x - start_x, stop_y - start_y
             if w <= 0 or h <= 0:
-                print("Contour is not in specified ROI, skip")
+                logger.info("Contour is not in specified ROI, skip")
                 return {}, {}
             else:
-                print("Adjusted Bounding Box:", start_x, start_y, w, h)
+                logger.info(f"Adjusted Bounding Box: {start_x}, {start_y} {w}, {h}")
 
         cont_check_fn = isInContourV3_Easy(
             contour=cont, patch_size=native_patch_size, center_shift=0.5
@@ -666,7 +661,7 @@ class WholeSlideImage(object):
         pool.close()
         results = np.array([result for result in results if result is not None])
 
-        print("Extracted {} coordinates".format(len(results)))
+        logger.info("Extracted {} coordinates".format(len(results)))
 
         if len(results) > 0:
             asset_dict = {"coords": results}
@@ -785,10 +780,10 @@ class WholeSlideImage(object):
         patch_size = np.ceil(np.array(patch_size) * np.array(scale)).astype(int)
         coords = np.ceil(coords * np.array(scale)).astype(int)
 
-        print("\ncreating heatmap for: ")
-        print("top_left: ", top_left, "bot_right: ", bot_right)
-        print("w: {}, h: {}".format(w, h))
-        print("scaled patch size: ", patch_size)
+        logger.info("\ncreating heatmap for: ")
+        logger.info("top_left: ", top_left, "bot_right: ", bot_right)
+        logger.info("w: {}, h: {}".format(w, h))
+        logger.info("scaled patch size: ", patch_size)
 
         ###### normalize filtered scores ######
         if convert_to_percentiles:
@@ -823,8 +818,8 @@ class WholeSlideImage(object):
             ] += 1
 
         if binarize:
-            print("\nbinarized tiles based on cutoff of {}".format(threshold))
-            print("identified {}/{} patches as positive".format(count, len(coords)))
+            logger.info("\nbinarized tiles based on cutoff of {}".format(threshold))
+            logger.info("identified {}/{} patches as positive".format(count, len(coords)))
 
         # fetch attended region and average accumulated attention
         zero_mask = counter == 0
@@ -858,8 +853,8 @@ class WholeSlideImage(object):
 
         # return Image.fromarray(img) #raw image
 
-        print("\ncomputing heatmap image")
-        print("total of {} patches".format(len(coords)))
+        logger.info("\ncomputing heatmap image")
+        logger.info("total of {} patches".format(len(coords)))
         twenty_percent_chunk = max(1, int(len(coords) * 0.2))
 
         if isinstance(cmap, str):
@@ -867,7 +862,7 @@ class WholeSlideImage(object):
 
         for idx in range(len(coords)):
             if (idx + 1) % twenty_percent_chunk == 0:
-                print("progress: {}/{}".format(idx, len(coords)))
+                logger.info("progress: {}/{}".format(idx, len(coords)))
 
             score = scores[idx]
             coord = coords[idx]
@@ -906,7 +901,7 @@ class WholeSlideImage(object):
                 ] = img_block.copy()
 
         # return Image.fromarray(img) #overlay
-        print("Done")
+        logger.info("Done")
         del overlay
 
         if blur:
@@ -947,13 +942,13 @@ class WholeSlideImage(object):
         blank_canvas=False,
         block_size=1024,
     ):
-        print("\ncomputing blend")
+        logger.info("\ncomputing blend")
         downsample = self.level_downsamples[vis_level]
         w = img.shape[1]
         h = img.shape[0]
         block_size_x = min(block_size, w)
         block_size_y = min(block_size, h)
-        print("using block size: {} x {}".format(block_size_x, block_size_y))
+        logger.info("using block size: {} x {}".format(block_size_x, block_size_y))
 
         shift = top_left  # amount shifted w.r.t. (0,0)
         for x_start in range(
@@ -962,7 +957,7 @@ class WholeSlideImage(object):
             for y_start in range(
                 top_left[1], bot_right[1], block_size_y * int(downsample[1])
             ):
-                # print(x_start, y_start)
+                # logger.info(x_start, y_start)
 
                 # 1. convert wsi coordinates to image coordinates via shift and scale
                 x_start_img = int((x_start - shift[0]) / int(downsample[0]))
@@ -974,7 +969,7 @@ class WholeSlideImage(object):
 
                 if y_end_img == y_start_img or x_end_img == x_start_img:
                     continue
-                # print('start_coord: {} end_coord: {}'.format((x_start_img, y_start_img), (x_end_img, y_end_img)))
+                # logger.info('start_coord: {} end_coord: {}'.format((x_start_img, y_start_img), (x_end_img, y_end_img)))
 
                 # 3. fetch blend block and size
                 blend_block = img[y_start_img:y_end_img, x_start_img:x_end_img]
@@ -1003,7 +998,7 @@ class WholeSlideImage(object):
         return img
 
     def get_seg_mask(self, region_size, scale, use_holes=False, offset=(0, 0)):
-        print("\ncomputing foreground tissue mask")
+        logger.info("\ncomputing foreground tissue mask")
         tissue_mask = np.full(np.flip(region_size), 0).astype(np.uint8)
         contours_tissue = self.scaleContourDim(self.contours_tissue, scale)
         offset = tuple((np.array(offset) * np.array(scale) * -1).astype(np.int32))
@@ -1038,7 +1033,7 @@ class WholeSlideImage(object):
             # contours_holes = self._scaleContourDim(self.holes_tissue, scale, holes=True, area_thresh=area_thresh)
 
         tissue_mask = tissue_mask.astype(bool)
-        print(
+        logger.info(
             "detected {}/{} of region as tissue".format(
                 tissue_mask.sum(), tissue_mask.size
             )

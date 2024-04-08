@@ -1,0 +1,5 @@
+scheme: "grpc+tcp"
+hostname: "tlvidreamcord1"
+port: 32010
+space: "pathology-data-mining.mussel"
+table: "slide_manifest"
