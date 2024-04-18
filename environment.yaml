@@ -1,9 +1,24 @@
 name: mussel
-channels:
-  - conda-forge
-  - nodefaults
 dependencies:
-  - python=3.12.*
-  - mamba
-  - poetry
-  - openslide
+  - python==3.12
+  - pip<=24.0
+  - conda-forge::openslide
+  - pip:
+    - pandas
+    - numpy
+    - opencv-python
+    - h5py
+    - matplotlib
+    - openslide-python
+    - torch
+    - torchvision
+    - hydra-core
+    - snakemake
+    - dacite
+    - open-clip-torch
+    - transformers
+    - snakemake-executor-plugin-htcondor 
+    - htcondor==23.4
+    - sentencepiece
+    - loguru 
+    - pyarrow
