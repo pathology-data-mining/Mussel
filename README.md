@@ -49,17 +49,30 @@ By default, reef files (patch and feature files) will be written to
 
 ### Pre-requisites
 
--   [mamba](https://mamba.readthedocs.io/en/latest/installation.html):
-    Follow the instructions for installingj
-    [Mambaforge](https://github.com/conda-forge/miniforge#mambaforge)
+[Miniconda](https://docs.anaconda.com/free/miniconda/#quick-command-line-install)
 
-### Create virtual environment and install packages
+### Steps for a clean build
 
 ```bash
-mamba env create -p .venv/ -f environment.yaml
-mamba activate .venv/j
-poetry install
+      Remove index cache, lock files, unused cache packages, tarballs, and logfiles
+      $ conda clean -ay
+      
+      Update base conda env with default conda packages
+      $ conda update -n base -c defaults conda
+      
+      Install into the base env the conda-libmamba-solver solver, a faster solver for the conda package manager
+      $ conda install -n base conda-libmamba-solver
+      
+      Remove any old version of the mussel environment if one exists
+      $ conda env remove -n mussel
+
+      Build a new mussel env from scratch
+      $ conda env create -f environment.yaml --solver=libmamba
+
+      Activate Mussel environment 
+      $ conda activate mussel
 ```
+
 
 ### If you plan to use CTransPath
 
@@ -76,19 +89,27 @@ There are 4 CLI tools: `annotate`, `cache_tiles`, `extract_features`, and
 
 <img src="docs/example-mask.jpg" width="600px" />
 
-Generate `.h5` file with coordinates and metadata. Optionally generate stitch and mask.
+Generate .h5 file with coordinates and metadata necessary for downstream steps. Optionally generate stitch and mask.
 
 Example command (see defaults with `tessellate --help`):
 ```bash
-tessellate slide_path=[slide path] output_h5_path=[output path] seg_config.use_otsu=true
+$ mkdir reef
+$ python -m mussel.cli.tessellate \
+    slide_path=data/7789726.svs \
+    output_h5_path=reef/7789726_cood.h5 \
+    seg_config.use_otsu=true
 ```
 
 ### feature extraction
-Generate .h5 file and .pt file with embeddings for each tile.
+Generate .h5 file with features and .pt file with embeddings for each tile.
 
 Example command (see defaults with `extract_features --help`):
 ```bash
-extract_features slide_path=[slide path] patch_h5_path=[patch path] output_h5_path=[output h5 path] output_pt_path=[output pt path]
+$ python -m mussel.cli.extract_features \
+    slide_path=data/7789726.svs \
+    patch_h5_path=reef/7789726_cood.h5 \
+    output_h5_path=reef/7789726_feat.h5 \
+    output_pt_path=reef/7789726_embed.pt
 ```
 
 ### annotate tiles with tissue types (QuiltNet only)
@@ -100,9 +121,20 @@ Current classes are:
 Try your own classes! Any natural language works, and no training is required.
 Generate interrogation reports to eval your prompt engineering by setting `iterrogate`.
 
+Create class embeddings
+```bash
+$ python -m mussel.cli.create_class_embeddings \
+    'classes=["carcinoma in situ", "invasive carcinoma with lymphocytes", "tumor infiltrating lymphocytes", "lymphocytes", "carcinoma in situ with lymphocytes", "tumor-associated stroma with lymphocytes" ]' \
+    output_pt_path=reef/classes.pt
+```
+
 Example command (see defaults with `annotate --help`):
 ```bash
-annotate features_pt_path=[features pt path] output_csv_path=[output csv path] class_json_path=[custom class json file]
+$ python -m mussel.cli.annotate \
+    features_pt_path=reef/7789726_embed.pt \
+    output_csv_path=reef/7789726.csv \
+    'classes=["carcinoma in situ", "invasive carcinoma with lymphocytes", "tumor infiltrating lymphocytes", "lymphocytes", "carcinoma in situ with lymphocytes", "tumor-associated stroma with lymphocytes" ]' \
+    class_embedding_pt_path=reef/classes.pt
 ```
 
 <img src="docs/example-interrog.png" width="600px" />
@@ -115,12 +147,15 @@ containing invasive carcinoma by setting `limit_to_class`. `patches_h5_path` is
 the output from `tessellate`.
 
 ```bash
-cache_tiles slide_path=[slide path] patches_h5_path=[patches h5 path] output_pt_path=[output pt path] 'limit_to_class=[adipose,invasive carcinoma]' output_indices_json_path=[output indices json]
+$ python -m mussel.cli.cache_tiles slide_path=data/7789726.svs \
+    patch_h5_path=reef/7789726_cood.h5 output_pt_path=reef/7789726_cache.pt \
+    'limit_to_class=["carcinoma in situ", "invasive carcinoma with lymphocytes"]' \
+    output_indices_json_path=reef/7789726_output_indices.json
 ```
 
 *This takes about ten seconds for an example slide.*
 
-## SnakeMake Pipeline
+## SnakeMake Pipeline (currently not working...)
 
 Run the snakemake pipeline on a set of slides to build a shareable 'reef' of
 slide patches and extracted features.
