@@ -53,26 +53,35 @@ By default, reef files (patch and feature files) will be written to
 
 ### Steps for a clean build
 
+Remove index cache, lock files, unused cache packages, tarballs, and logfiles
 ```bash
-      Remove index cache, lock files, unused cache packages, tarballs, and logfiles
-      $ conda clean -ay
-      
-      Update base conda env with default conda packages
-      $ conda update -n base -c defaults conda
-      
-      Install into the base env the conda-libmamba-solver solver, a faster solver for the conda package manager
-      $ conda install -n base conda-libmamba-solver
-      
-      Remove any old version of the mussel environment if one exists
-      $ conda env remove -n mussel
-
-      Build a new mussel env from scratch
-      $ conda env create -f environment.yaml --solver=libmamba
-
-      Activate Mussel environment 
-      $ conda activate mussel
+conda clean -ay
 ```
 
+Update base conda env with default conda packages
+```bash
+conda update -n base -c defaults conda
+```
+
+Install into the base env the conda-libmamba-solver solver, a faster solver for the conda package manager
+```bash
+conda install -n base conda-libmamba-solver
+```
+
+Remove any old version of the mussel environment if one exists
+```bash
+conda env remove -n mussel
+```     
+
+Build a new mussel env from scratch
+```bash
+conda env create -f environment.yaml --solver=libmamba
+```
+
+Activate Mussel environment 
+```bash
+conda activate mussel
+```
 
 ### If you plan to use CTransPath
 
@@ -93,8 +102,8 @@ Generate .h5 file with coordinates and metadata necessary for downstream steps. 
 
 Example command (see defaults with `tessellate --help`):
 ```bash
-$ mkdir reef
-$ python -m mussel.cli.tessellate \
+mkdir reef
+python -m mussel.cli.tessellate \
     slide_path=data/7789726.svs \
     output_h5_path=reef/7789726_cood.h5 \
     seg_config.use_otsu=true
@@ -105,7 +114,7 @@ Generate .h5 file with features and .pt file with embeddings for each tile.
 
 Example command (see defaults with `extract_features --help`):
 ```bash
-$ python -m mussel.cli.extract_features \
+python -m mussel.cli.extract_features \
     slide_path=data/7789726.svs \
     patch_h5_path=reef/7789726_cood.h5 \
     output_h5_path=reef/7789726_feat.h5 \
@@ -115,7 +124,7 @@ $ python -m mussel.cli.extract_features \
 ### annotate tiles with tissue types (QuiltNet only)
 Current classes are:
 ```
-{"0": "benign epithelium", "1": "carcinoma in situ", "2": "invasive carcinoma", "3": "connective tissue", "4": "adipose", "5": "vessel", "6": "necrosis", "7": "marking pen"}
+["carcinoma in situ", "invasive carcinoma with lymphocytes", "tumor infiltrating lymphocytes", "lymphocytes", "carcinoma in situ with lymphocytes", "tumor-associated stroma with lymphocytes"]
 ```
 
 Try your own classes! Any natural language works, and no training is required.
@@ -123,14 +132,14 @@ Generate interrogation reports to eval your prompt engineering by setting `iterr
 
 Create class embeddings
 ```bash
-$ python -m mussel.cli.create_class_embeddings \
+python -m mussel.cli.create_class_embeddings \
     'classes=["carcinoma in situ", "invasive carcinoma with lymphocytes", "tumor infiltrating lymphocytes", "lymphocytes", "carcinoma in situ with lymphocytes", "tumor-associated stroma with lymphocytes" ]' \
     output_pt_path=reef/classes.pt
 ```
 
 Example command (see defaults with `annotate --help`):
 ```bash
-$ python -m mussel.cli.annotate \
+python -m mussel.cli.annotate \
     features_pt_path=reef/7789726_embed.pt \
     output_csv_path=reef/7789726.csv \
     'classes=["carcinoma in situ", "invasive carcinoma with lymphocytes", "tumor infiltrating lymphocytes", "lymphocytes", "carcinoma in situ with lymphocytes", "tumor-associated stroma with lymphocytes" ]' \
@@ -147,7 +156,7 @@ containing invasive carcinoma by setting `limit_to_class`. `patches_h5_path` is
 the output from `tessellate`.
 
 ```bash
-$ python -m mussel.cli.cache_tiles slide_path=data/7789726.svs \
+python -m mussel.cli.cache_tiles slide_path=data/7789726.svs \
     patch_h5_path=reef/7789726_cood.h5 output_pt_path=reef/7789726_cache.pt \
     'limit_to_class=["carcinoma in situ", "invasive carcinoma with lymphocytes"]' \
     output_indices_json_path=reef/7789726_output_indices.json
