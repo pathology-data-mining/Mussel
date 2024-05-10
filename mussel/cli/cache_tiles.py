@@ -39,6 +39,7 @@ cs.store(name="cache_tiles_config", node=CacheTilesConfig)
 @hydra.main(config_path=".", config_name="cache_tiles_config", version_base=None)
 def main(cfg: CacheTilesConfig):
     time_start = time.time()
+    indices = None
     if cfg.limit_to_class and cfg.annotation_csv_path:
         annot = pd.read_csv(cfg.annotation_csv_path)
         annot['class'] = annot.idxmax(axis=1)
