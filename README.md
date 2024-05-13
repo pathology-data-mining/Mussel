@@ -73,10 +73,11 @@ Remove any old version of the mussel environment if one exists
 conda env remove -n mussel
 ```     
 
-Build a new mussel env from scratch
+Build a new mussel env from scratch (if you are having issues, try `--experimental-solver=libmamba`)
 ```bash
 conda env create -f environment.yaml --solver=libmamba
 ```
+
 
 Activate Mussel environment 
 ```bash
