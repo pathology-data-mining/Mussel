@@ -2,6 +2,7 @@ name: mussel
 dependencies:
   - python==3.12.0
   - conda-forge::openslide
+  - conda-forge::openslide-python
   - pip
   - pip:
     - pandas
@@ -9,7 +10,6 @@ dependencies:
     - opencv-python
     - h5py
     - matplotlib
-    - openslide-python
     - torch
     - torchvision
     - hydra-core
