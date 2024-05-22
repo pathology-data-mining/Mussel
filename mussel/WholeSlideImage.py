@@ -10,7 +10,7 @@ from xml.dom import minidom
 import cv2
 import matplotlib.pyplot as plt
 import numpy as np
-import openslide
+import tiffslide as openslide
 from loguru import logger
 from PIL import Image
 

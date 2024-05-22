@@ -8,7 +8,7 @@ from typing import List, Optional
 
 import h5py
 import hydra
-import openslide
+import tiffslide as openslide
 import pandas as pd
 import torch
 from hydra.core.config_store import ConfigStore
