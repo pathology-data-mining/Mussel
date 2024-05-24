@@ -166,7 +166,7 @@ def main(cfg: ExtractFeaturesConfig):
     file = h5py.File(output_file_path, "r")
     features = file["features"][:]
     logger.info(f"features size: {features.shape} ")
-    #logger.info(f"coordinates size: {file["coords"].shape} ")
+    logger.info(f'coordinates size: {file["coords"].shape} ')
     file.close()
 
     features = torch.from_numpy(features)
