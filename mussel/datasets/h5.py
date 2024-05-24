@@ -98,4 +98,9 @@ class Whole_Slide_Bag_FP(Dataset):
         return img, coord
 
     def worker_init(self, *args):
+        """
+        Needed to move wsi object creation to worker init method due to advice
+        from this TiffSlide github issue:
+        https://github.com/Bayer-Group/tiffslide/issues/57
+        """
         self.wsi = openslide.open_slide(self.wsi_path)
