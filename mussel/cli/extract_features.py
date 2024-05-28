@@ -147,7 +147,6 @@ def main(cfg: ExtractFeaturesConfig):
     model.eval()
 
     # extract features
-    # wsi = openslide.open_slide(cfg.slide_path)
     output_file_path = compute_w_loader(
         file_path=cfg.patch_h5_path,
         output_h5_path=cfg.output_h5_path,
