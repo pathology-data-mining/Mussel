@@ -10,7 +10,7 @@ from dataclasses import dataclass, field
 from typing import List, Optional
 
 import hydra
-import openslide
+import tiffslide as openslide
 import pandas as pd
 import torch
 from hydra.core.config_store import ConfigStore
@@ -46,10 +46,9 @@ def main(cfg: CacheTilesConfig):
         indices = annot[annot['class'].isin(cfg.limit_to_class)].index.tolist()
         logger.info(f"limiting to class {cfg.limit_to_class} with {len(indices)} tiles")
     
-    wsi = openslide.open_slide(cfg.slide_path)
     dataset = Whole_Slide_Bag_FP(
         file_path=cfg.patch_h5_path,
-        wsi=wsi,
+        wsi_path=cfg.slide_path,
         use_imagenet_rgb_dist=True,
         limit_to_indices=indices if cfg.limit_to_class else None,
     )
@@ -59,6 +58,7 @@ def main(cfg: CacheTilesConfig):
         batch_size=cfg.batch_size,
         **kwargs,
         collate_fn=collate_features,
+        worker_init_fn=dataset.worker_init,
         shuffle=False,
     )
     with torch.no_grad():

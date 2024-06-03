@@ -10,7 +10,7 @@ from typing import List, Optional
 import h5py
 import hydra
 import open_clip
-import openslide
+import tiffslide as openslide
 import torch
 import torch.nn as nn
 from hydra.core.config_store import ConfigStore
@@ -51,7 +51,7 @@ class ExtractFeaturesConfig:
 def compute_w_loader(
     file_path,
     output_h5_path,
-    wsi,
+    wsi_path,
     model_obj,
     model: Model,
     device,
@@ -74,17 +74,17 @@ def compute_w_loader(
 
     dataset = Whole_Slide_Bag_FP(
         file_path=file_path,
-        wsi=wsi,
+        wsi_path=wsi_path,
         use_imagenet_rgb_dist=use_imagenet_rgb_dist,
         preprocess=preprocess,
     )
-    x, y = dataset[0]
     kwargs = {"num_workers": num_workers, "pin_memory": True}
     loader = DataLoader(
         dataset=dataset,
         batch_size=batch_size,
         **kwargs,
         collate_fn=collate_features,
+        worker_init_fn=dataset.worker_init,
         shuffle=False,
     )
 
@@ -147,11 +147,10 @@ def main(cfg: ExtractFeaturesConfig):
     model.eval()
 
     # extract features
-    wsi = openslide.open_slide(cfg.slide_path)
     output_file_path = compute_w_loader(
         file_path=cfg.patch_h5_path,
         output_h5_path=cfg.output_h5_path,
-        wsi=wsi,
+        wsi_path=cfg.slide_path,
         model_obj=model,
         model=cfg.model,
         preprocess=preprocessing,
@@ -166,7 +165,7 @@ def main(cfg: ExtractFeaturesConfig):
     file = h5py.File(output_file_path, "r")
     features = file["features"][:]
     logger.info(f"features size: {features.shape} ")
-    logger.info(f"coordinates size: {file["coords"].shape}")
+    logger.info(f'coordinates size: {file["coords"].shape} ')
     file.close()
 
     features = torch.from_numpy(features)
