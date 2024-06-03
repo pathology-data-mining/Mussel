@@ -20,3 +20,5 @@ venv/
 reef/
 .snakemake/
 config/config.yaml
+*.pyc
+outputs/

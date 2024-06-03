@@ -1,4 +1,5 @@
 import h5py
+import tiffslide as openslide
 from loguru import logger
 from PIL import Image
 from torch.utils.data import Dataset
@@ -25,7 +26,7 @@ class Whole_Slide_Bag_FP(Dataset):
     def __init__(
         self,
         file_path,
-        wsi,
+        wsi_path,
         use_imagenet_rgb_dist=True,
         preprocess=None,
         limit_to_indices=None,
@@ -37,7 +38,8 @@ class Whole_Slide_Bag_FP(Dataset):
                 target_patch_size (int): Custom defined image size before embedding
         """
         self.use_imagenet_rgb_dist = use_imagenet_rgb_dist
-        self.wsi = wsi
+        self.wsi_path = wsi_path
+        self.wsi = None
         self.limit_to_indices = limit_to_indices
         self.file_path = file_path
 
@@ -88,9 +90,17 @@ class Whole_Slide_Bag_FP(Dataset):
             
         with h5py.File(self.file_path, "r") as hdf5_file:
             coord = hdf5_file["coords"][idx]
-        img = self.wsi.read_region(
-            coord, self.patch_level, (self.patch_size, self.patch_size)
-        ).convert("RGB")
+            img = self.wsi.read_region(
+                    coord, self.patch_level, (self.patch_size, self.patch_size)
+                ).convert("RGB")
 
         img = self.roi_transforms(img).unsqueeze(0)
         return img, coord
+
+    def worker_init(self, *args):
+        """
+        Needed to move wsi object creation to worker init method due to advice
+        from this TiffSlide github issue:
+        https://github.com/Bayer-Group/tiffslide/issues/57
+        """
+        self.wsi = openslide.open_slide(self.wsi_path)
