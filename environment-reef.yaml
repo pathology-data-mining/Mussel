@@ -1,0 +1,15 @@
+name: mussel
+channels:
+  - conda-forge
+  - bioconda
+  - nodefaults
+dependencies:
+  - python=3.12.*
+  - mamba
+  - poetry
+  - snakemake
+  - python-htcondor
+  - pip
+  - pip:
+    - snakemake-executor-plugin-htcondor
+

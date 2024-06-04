@@ -18,10 +18,18 @@ Usable using Condor, but suffers from limitations of current Condor system:
 ## Using the installed Mussel on the MSK-MIND servers
 
 Mussel is installed in `/gpfs/mskmind_ess/mussel`. If you have `conda` already
-installed, you can activate the Mussel virtual environment with:
+installed, you can activate an existing Mussel virtual environment.
+
+On the RHEL 8 machines (tllihpcgpu):
 
 ```bash
 conda activate /gpfs/mskmind_ess/mussel/venv
+```
+
+On the RHEL 7 machines, (pllimsksparky and pllimskhpc):
+
+```bash
+conda activate /gpfs/mskmind_ess/mussel/venv-rhel7
 ```
 
 If `conda` is not installed, either install it or first run:
@@ -49,40 +57,39 @@ By default, reef files (patch and feature files) will be written to
 
 ### Pre-requisites
 
-[Miniconda](https://docs.anaconda.com/free/miniconda/#quick-command-line-install)
+- [mamba](https://mamba.readthedocs.io/en/latest/installation.html):
+    Follow the instructions for installingj
+    [Mambaforge](https://github.com/conda-forge/miniforge#mambaforge)
 
-### Steps for a clean build
+### Create virtual environment and install packages
 
-Remove index cache, lock files, unused cache packages, tarballs, and logfiles
+If you don't intend to use snakemake, the following commands suffice:
+
 ```bash
-conda clean -ay
+mamba env create -p .venv/ -f environment.yaml
+mamba activate .venv/
+poetry install
 ```
 
-Update base conda env with default conda packages
+#### SnakeMake on RHEL 8 (tllihpcgpu machines)
+
 ```bash
-conda update -n base -c defaults conda
+mamba env create -p .venv/ -f environment.yaml
+mamba activate .venv/
+poetry install --with reef
 ```
 
-Install into the base env the conda-libmamba-solver solver, a faster solver for the conda package manager
+#### SnakeMake on RHEL 7 (pllimsksparky and pllimskhpc machines)
+
 ```bash
-conda install -n base conda-libmamba-solver
+mamba env create -p .venv/ -f environment-reef.yaml
+mamba activate .venv/
+poetry install
 ```
 
-Remove any old version of the mussel environment if one exists
-```bash
-conda env remove -n mussel
-```     
+#### Modifying the virtual environment
 
-Build a new mussel env from scratch (if you are having issues, try `--experimental-solver=libmamba`)
-```bash
-conda env create -f environment.yaml --solver=libmamba
-```
-
-
-Activate Mussel environment 
-```bash
-conda activate mussel
-```
+Add packages using `pip`, `mamba`, `conda`, or `poetry` as per usual.
 
 ### If you plan to use CTransPath
 
@@ -165,10 +172,11 @@ python -m mussel.cli.cache_tiles slide_path=data/7789726.svs \
 
 *This takes about ten seconds for an example slide.*
 
-## SnakeMake Pipeline (currently not working...)
+## SnakeMake Pipeline
 
 Run the snakemake pipeline on a set of slides to build a shareable 'reef' of
 slide patches and extracted features.
+
 
 ### Configuration
 
