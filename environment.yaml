@@ -1,20 +1,5 @@
 name: mussel
 dependencies:
-  - python==3.12.0
-  - pip
-  - pip:
-    - pandas
-    - numpy
-    - opencv-python
-    - h5py
-    - matplotlib
-    - tiffslide
-    - torch
-    - torchvision
-    - hydra-core
-    - dacite
-    - open-clip-torch
-    - transformers
-    - sentencepiece
-    - loguru 
-    - pyarrow
+  - python=3.12.*
+  - mamba
+  - poetry
