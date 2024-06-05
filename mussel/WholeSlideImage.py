@@ -590,6 +590,7 @@ class WholeSlideImage(object):
         save_path,
         patch_size=256,
         step_size=256,
+        num_workers = 4,
         use_padding=True,
         top_left=None,
         bot_right=None,
@@ -648,9 +649,6 @@ class WholeSlideImage(object):
             [x_coords.flatten(), y_coords.flatten()]
         ).transpose()
 
-        num_workers = mp.cpu_count()
-        if num_workers > 4:
-            num_workers = 4
         pool = mp.Pool(num_workers)
 
         iterable = [
