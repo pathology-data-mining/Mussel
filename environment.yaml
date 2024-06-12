@@ -1,5 +1,27 @@
 name: mussel
+channels:
+  - conda-forge
+  - pytorch
+  - nodefaults
 dependencies:
-  - python=3.12.*
-  - mamba
-  - poetry
+  - python
+  - pandas
+  - numpy
+  - opencv
+  - h5py
+  - matplotlib
+  - tiffslide
+  - pytorch
+  - torchvision
+  - hydra-core
+  - dacite
+  - open-clip-torch
+  - transformers
+  - sentencepiece
+  - loguru
+  - pyarrow
+  - pip
+platforms:
+  - linux-64
+  - osx-64
+  - osx-arm64
