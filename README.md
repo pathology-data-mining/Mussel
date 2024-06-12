@@ -33,21 +33,17 @@ commands.
 ### Pre-requisites
 
 - [mamba](https://mamba.readthedocs.io/en/latest/installation.html):
-    Follow the instructions for installingj
+    Follow the instructions for installing
     [Mambaforge](https://github.com/conda-forge/miniforge#mambaforge)
+- [conda-lock](https://conda.github.io/conda-lock/)
 
 ### Create virtual environment and install packages
 
-
 ```bash
-mamba env create -p .venv/ -f environment.yaml
+conda-lock install -p .venv/ -f conda-lock.yml
 mamba activate .venv/
-poetry install
+pip install --no-deps .
 ```
-
-#### Modifying the virtual environment
-
-Add packages using `pip`, `mamba`, `conda`, or `poetry` as per usual.
 
 ## CLI
 
@@ -124,6 +120,22 @@ python -m mussel.cli.cache_tiles slide_path=data/7789726.svs \
 
 *This takes about ten seconds for an example slide.*
 
+
+## Development Notes
+
+### Modifying package requirements
+
+Add abstract requirements to the conda `environment.yaml`, and build a new `conda-lock.yml` file:
+
+```bash
+conda-lock -f environment.yaml
+```
+
+Add the concrete requirements to the `requirements.txt` or `requirements-dev.txt`:
+
+```bash
+pip list --format=freeze > requirements.txt
+```
 
 ## License
 This code is made available under the GPLv3 License and is available for non-commercial academic purposes.
