@@ -128,7 +128,7 @@ python -m mussel.cli.cache_tiles slide_path=data/7789726.svs \
 Add abstract requirements to the conda `environment.yaml`, and build a new `conda-lock.yml` file:
 
 ```bash
-conda-lock -f environment.yaml
+conda-lock -f environment.yaml --with-cuda 12.3 # change cuda version as desired
 ```
 
 Add the concrete requirements to the `requirements.txt` or `requirements-dev.txt`:
