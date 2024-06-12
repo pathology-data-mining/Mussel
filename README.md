@@ -40,7 +40,7 @@ commands.
 ### Create virtual environment and install packages
 
 ```bash
-conda-lock install -p .venv/ -f conda-lock.yml
+conda-lock install -p .venv/
 mamba activate .venv/
 pip install --no-deps .
 ```

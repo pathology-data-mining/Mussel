@@ -2,7 +2,6 @@
 name = "mussel"
 version = "0.1.0"
 description = "weakly supervised computational pathology on whole slide images"
-#authors = ["Your Name <you@example.com>"]
 license = {text = "GPL-3.0 license"}
 readme = "README.md"
 requires-python = ">=3.12"
