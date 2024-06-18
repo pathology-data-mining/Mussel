@@ -20,7 +20,7 @@ Supported systems:
 * Linux (x86)
 
 ### Pre-requisites
-
+- [conda](https://docs.anaconda.com/miniconda/)
 - [conda-lock](https://conda.github.io/conda-lock/)
     ```bash
     conda install -c conda-forge conda-lock
