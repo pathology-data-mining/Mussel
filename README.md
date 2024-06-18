@@ -11,37 +11,26 @@ This is a fork of Faisal Mahmood's CLAM repository (GPL v3 license), with the fo
 - Made usable for job submission (one script run, one slide)
 - Removed modeling
 
-## Using the installed Mussel on the MSK-MIND servers
-
-Mussel is installed in `/gpfs/mskmind_ess/mussel`. If you have `conda` already
-installed, you can activate an existing Mussel virtual environment.
-
-```bash
-conda activate /gpfs/mskmind_ess/mussel/venv
-```
-
-If `conda` is not installed, either install it or first run:
-```bash
- . "/gpfs/mskmind_ess/limr/mambaforge/etc/profile.d/conda.sh"
-```
-
-With the virtual environment activated, you can now run all the CLI 
-commands.
-
 ## Installation
+
+### System requirements
+
+Supported systems:
+* Mac OS (x86 and ARM)
+* Linux (x86)
 
 ### Pre-requisites
 
-- [mamba](https://mamba.readthedocs.io/en/latest/installation.html):
-    Follow the instructions for installing
-    [Mambaforge](https://github.com/conda-forge/miniforge#mambaforge)
 - [conda-lock](https://conda.github.io/conda-lock/)
+    ```bash
+    conda install -c conda-forge conda-lock
+    ```
 
 ### Create virtual environment and install packages
 
 ```bash
 conda-lock install -p .venv/
-mamba activate .venv/
+conda activate .venv/
 pip install --no-deps .
 ```
 
@@ -143,6 +132,13 @@ Add the concrete requirements to the `requirements.txt` or `requirements-dev.txt
 
 ```bash
 pip list --format=freeze > requirements.txt
+```
+
+### Run unit tests
+
+```bash
+pip install -r requirements-dev.txt # install pytest if not already installed
+pytest tests
 ```
 
 ## License
