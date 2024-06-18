@@ -14,10 +14,11 @@ test_*sh
 *temp*
 !*templ*
 scratch/
-.venv/
-venv/
-reef/
+.venv*/
+venv*/
+reef*/
 .snakemake/
-config/config.yaml
+config/
 *.pyc
 outputs/
+*.env
