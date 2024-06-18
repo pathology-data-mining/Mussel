@@ -8,7 +8,6 @@ __pycache__/
 /.idea/inspectionProfiles/Project_Default.xml
 /.idea/vcs.xml
 *.sub
-*.txt
 condor_logs/
 *.out
 test_*sh

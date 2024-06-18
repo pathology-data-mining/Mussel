@@ -11,84 +11,36 @@ This is a fork of Faisal Mahmood's CLAM repository (GPL v3 license), with the fo
 - Made usable for job submission (one script run, one slide)
 - Removed modeling
 
-Usable using Condor, but suffers from limitations of current Condor system:
-- sporadic data accessibility (e.g. sparky2 cannot access `/gpfs/mskmind_emc/data_large`)
-- uncontrolled GPU usage by non-Condor usage (e.g. user was using most gpus across pll1,2,3 without Condor when I tried to test the featurization using Condor, so mine largely failed due to clashes.)
-
-## Using the installed Mussel on the MSK-MIND servers
-
-Mussel is installed in `/gpfs/mskmind_ess/mussel`. If you have `conda` already
-installed, you can activate the Mussel virtual environment with:
-
-```bash
-conda activate /gpfs/mskmind_ess/mussel/venv
-```
-
-If `conda` is not installed, either install it or first run:
-```bash
- . "/gpfs/mskmind_ess/limr/mambaforge/etc/profile.d/conda.sh"
-```
-
-With the virtual environment activated, you can now run all the CLI and
-snakemake commands (run snakemake commands in `/gpfs/mskmind_ess/mussel`). When
-running snakemake, you may want to override some of the configuration options
-using the `--config` option, e.g.
-```bash
-snakemake --config output_dir=/gpfs/mskmind_ess/my_username/results test=True slide_list_path=my_slides.txt annotation_class_json_path=my_annotations.json cached_tiles
-```
-Alternativly, specify one or more yaml files using `--configfile`.
-
-To submit to HTCondor, use the pre-installed `htcondor` snakemake profile with
-the `--profile` option, e.g. `snakemake --profile htcondor`.
-
-By default, reef files (patch and feature files) will be written to
-`/gpfs/mskmind_ess/mussel/reef` and results (annotations and cached tiles) to
-`/gpfs/mskmind_ess/mussel/results`.
-
 ## Installation
 
+### System requirements
+
+Supported systems:
+* Mac OS (x86 and ARM)
+* Linux (x86)
+
 ### Pre-requisites
+- [conda](https://docs.anaconda.com/miniconda/)
+- [conda-lock](https://conda.github.io/conda-lock/)
+    ```bash
+    conda install -c conda-forge conda-lock
+    ```
 
-[Miniconda](https://docs.anaconda.com/free/miniconda/#quick-command-line-install)
+### Create virtual environment and install packages
 
-### Steps for a clean build
-
-Remove index cache, lock files, unused cache packages, tarballs, and logfiles
 ```bash
-conda clean -ay
+conda-lock install -p .venv/
+conda activate .venv/
+pip install --no-deps .
 ```
 
-Update base conda env with default conda packages
+### If using CTransPath
+
+Download and install [modified timm](https://drive.google.com/file/d/1JV7aj9rKqGedXY1TdDfi3dP07022hcgZ/view).
+
 ```bash
-conda update -n base -c defaults conda
+pip install timm-0.5.4.tar
 ```
-
-Install into the base env the conda-libmamba-solver solver, a faster solver for the conda package manager
-```bash
-conda install -n base conda-libmamba-solver
-```
-
-Remove any old version of the mussel environment if one exists
-```bash
-conda env remove -n mussel
-```     
-
-Build a new mussel env from scratch (if you are having issues, try `--experimental-solver=libmamba`)
-```bash
-conda env create -f environment.yaml --solver=libmamba
-```
-
-
-Activate Mussel environment 
-```bash
-conda activate mussel
-```
-
-### If you plan to use CTransPath
-
-Install CTransPath somewhere and reference the path in the config yaml as
-`transpath_dir`. Reference to the CTransPath model (.pth file) with
-`transpath_model_path`.
 
 ## CLI
 
@@ -165,194 +117,28 @@ python -m mussel.cli.cache_tiles slide_path=data/7789726.svs \
 
 *This takes about ten seconds for an example slide.*
 
-## SnakeMake Pipeline (currently not working...)
 
-Run the snakemake pipeline on a set of slides to build a shareable 'reef' of
-slide patches and extracted features.
+## Development Notes
 
-### Configuration
+### Modifying package requirements
 
-Create a `config/config.yaml` file that conforms to the specification in
-`config/config.schema.yaml`. `slide_list_path` must be set to a file containing
-the list of image IDs that you wish to analyze. The image IDs must exist in the
-`slide_directory_csv_path`, which is a csv file that must conform to
-`config/slides.schema.yaml`. If you set a `parameters_path` to override
-defaults, make sure that conforms to the `config/params.schema.yaml` in .csv
-format (i.e. columns are parameters and rows are the parameter values).
-
-### Using HT-Condor for job submission
-
-On the MSK-MIND servers, the htcondor profile has been installed and can be
-used with `snakemake --profile htcondor`. Elsewhere, you can install the
-[HT-Condor profile](https://github.com/msk-mind/snakemake-htcondor)
-using [cookiecutter](https://github.com/cookiecutter/cookiecutter). Note that
-the condor job directory must be in a network-shared location. After the
-profile is installed, you can use it with:
+Add abstract requirements to the conda `environment.yaml`, and build a new `conda-lock.yml` file:
 
 ```bash
-snakemake --profile {name of htcondor profile}
+conda-lock -f environment.yaml --with-cuda 12.3 # change cuda version as desired
 ```
 
-### generate slide manifest from dremio
-
-Create a `config/dremio_config.yaml` file that adheres to
-`config/dremio_config.schema.yaml`. Set environment variables for
-`DREMIO_USERNAME` and `DREMIO_PASSWORD`. Run the slide manifest workflow to
-generate a `slide_manifest.csv`.
+Add the concrete requirements to the `requirements.txt` or `requirements-dev.txt`:
 
 ```bash
-snakemake --cores 1 --snakefile slide_manifest_workflow/Snakefile
+pip list --format=freeze > requirements.txt
 ```
 
-### foreground detection and tiling
-
-Generate `.h5` files with coordinates and metadata in the `reef_dir`.
+### Run unit tests
 
 ```bash
-snakemake --cores {number of jobs} tiles
-```
-*This takes about one second for an example slide. Using Condor, tiling 1000 slides takes about two minutes.*
-
-### feature extraction
-Generate .h5 and .pt files with embeddings for each tile in the `reef_dir`. (This is the default snakemake target.)
-
-```bash
-snakemake --cores {number of jobs}
-```
-
-*This takes about 30 seconds for an example slide.*
-
-### annotate tiles with tissue types (QuiltNet only)
-
-Create an `annotation_class.csv` with rows that adhere to the
-`config/annotation.schema.yaml`, i.e. map oncotree codes to annotation classes.
-If the `annotation_class.csv` is absent or unspecified for a particular
-oncotree code, the `default_annotation_classes` array in the config file is used.
-
-```bash
-snakemake --cores {number of cores} annotations
-```
-
-#### Use a custom JSON file
-
-Set `annotation_class_json_path` to a custom json file. Annotations will be created in a subdirectory of `output_dir`.
-
-```bash
-snakemake --cores {number of cores} custom_annotations
-```
-
-### tile caching
-
-Generate `.pt` file for rapid access of tiles during I/O intense operations such
-as training. This can be conditioned on tissue types: e.g. cache only the tiles
-containing invasive carcinoma by setting `annotation_class_to_cache_json` to
-the appropriate JSON string in the `annotation_class.csv`.
-If the `annotation_class.csv` is absent or unspecified for a particular
-oncotree code, the `default_annotation_classes_to_cache` array in the config
-file is used.
-
-```bash
-snakemake --cores {number of cores} cached_tiles
-```
-
-#### Use a custom JSON file
-
-Set `annotation_class_to_cache_json_path` to a custom json file. Cache files will be created in a subdirectory of `output_dir`.
-
-```bash
-snakemake --cores {number of cores} custom_cached_tiles
-```
-
-### output files
-
-Results are output to the `reef_dir`:
-```
-reef
-├── class_embeddings
-│   └── IDC.pt
-└── model--quiltnet
-    └── mpp--0.5
-        └── patch_size--256
-            └── step_size--256
-                └── tissue_area_threshold--100
-                    ├── annotations
-                    │   └── IDC
-                    │       ├── 1051151.csv
-                    │       ├── 1064170.csv
-                    │       ├── 759112.csv
-                    │       ├── 979373.csv
-                    │       └── 980143.csv
-                    ├── cache_tiles
-                    │   └── IDC
-                    │       ├── indices
-                    │       │   ├── 1051151.json
-                    │       │   ├── 1064170.json
-                    │       │   ├── 759112.json
-                    │       │   ├── 979373.json
-                    │       │   └── 980143.json
-                    │       └── pt
-                    │           ├── 1051151.pt
-                    │           ├── 1064170.pt
-                    │           ├── 759112.pt
-                    │           ├── 979373.pt
-                    │           └── 980143.pt
-                    ├── features
-                    │   ├── h5
-                    │   │   ├── 1051151.h5
-                    │   │   ├── 1064170.h5
-                    │   │   ├── 759112.h5
-                    │   │   ├── 979373.h5
-                    │   │   └── 980143.h5
-                    │   └── pt
-                    │       ├── 1051151.pt
-                    │       ├── 1064170.pt
-                    │       ├── 759112.pt
-                    │       ├── 979373.pt
-                    │       └── 980143.pt
-                    ├── patches
-                    │   ├── 1051151.h5
-                    │   ├── 1064170.h5
-                    │   ├── 759112.h5
-                    │   ├── 979373.h5
-                    │   └── 980143.h5
-                    └── stitches
-                        ├── 1051151.jpg
-                        ├── 1064170.jpg
-                        ├── 759112.jpg
-                        ├── 979373.jpg
-                        └── 980143.jpg
-```
-
-If you define `annotation_class_json_path` (with optionally
-`annotation_class_to_cache_json_path`) and build `custom_cache_tiles` or
-`custom_annotations`, the results are stored in `output_dir`:
-
-```
-results
-└── model--quiltnet
-    └── mpp--0.5
-        └── patch_size--256
-            └── step_size--256
-                └── tissue_area_threshold--100
-                    ├── annotations
-                    │   ├── 1051151.csv
-                    │   ├── 1064170.csv
-                    │   ├── 759112.csv
-                    │   ├── 979373.csv
-                    │   └── 980143.csv
-                    └── cache_tiles
-                        ├── indices
-                        │   ├── 1051151.json
-                        │   ├── 1064170.json
-                        │   ├── 759112.json
-                        │   ├── 979373.json
-                        │   └── 980143.json
-                        └── pt
-                            ├── 1051151.pt
-                            ├── 1064170.pt
-                            ├── 759112.pt
-                            ├── 979373.pt
-                            └── 980143.pt
+pip install -r requirements-dev.txt # install pytest if not already installed
+pytest tests
 ```
 
 ## License
@@ -364,7 +150,6 @@ Forked from CLAM, © [Mahmood Lab](http://www.mahmoodlab.org).
 Please cite the original CLAM [paper](https://www.nature.com/articles/s41551-020-00682-w):
 
 Lu, M.Y., Williamson, D.F.K., Chen, T.Y. et al. Data-efficient and weakly supervised computational pathology on whole-slide images. Nat Biomed Eng 5, 555–570 (2021). https://doi.org/10.1038/s41551-020-00682-w
-j
 ```
 @article{lu2021data,
   title={Data-efficient and weakly supervised computational pathology on whole-slide images},
