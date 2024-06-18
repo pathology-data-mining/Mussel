@@ -4,7 +4,7 @@ channels:
   - pytorch
   - nodefaults
 dependencies:
-  - python
+  - python==3.12.*
   - pandas
   - numpy
   - opencv
