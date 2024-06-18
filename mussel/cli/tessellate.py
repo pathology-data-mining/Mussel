@@ -22,6 +22,7 @@ class PatchConfig:
     patch_size: int = 256
     step_size: int = 256
     mpp: float = 0.5
+    num_workers: int = 4
 
 @dataclass
 class VisConfig:
