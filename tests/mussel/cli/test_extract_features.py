@@ -6,8 +6,8 @@ from mussel.cli.extract_features import ExtractFeaturesConfig
 
 
 def test_extract_features(tmp_path):
-    slide_path = "tests/testdata/1065626.svs"
-    patch_h5_path = "tests/testdata/1065626.patches.h5"
+    slide_path = "tests/testdata/948176.svs"
+    patch_h5_path = "tests/testdata/948176.patch.h5"
     output_h5_path = tmp_path / "test.h5"
     output_pt_path = tmp_path / "test.pt"
     cfg = ExtractFeaturesConfig(
