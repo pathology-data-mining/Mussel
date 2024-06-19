@@ -125,7 +125,7 @@ def main(cfg: ExtractFeaturesConfig):
         if torch.cuda.is_available():
             device = torch.device("cuda")
         else:
-            logger.warn("cuda not available, using cpu")
+            logger.warning("cuda not available, using cpu")
     logger.info("loading model checkpoint")
     if cfg.model == Model.RESNET50:
         model = resnet50_baseline(pretrained=True)
