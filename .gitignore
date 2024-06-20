@@ -21,3 +21,4 @@ reef/
 config/config.yaml
 *.pyc
 outputs/
+tmp*
