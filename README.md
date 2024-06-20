@@ -120,24 +120,24 @@ python -m mussel.cli.cache_tiles slide_path=data/7789726.svs \
 
 ## Development Notes
 
-### Modifying package requirements
-
-Add abstract requirements to the conda `environment.yaml`, and build a new `conda-lock.yml` file:
+Install dev packages:
 
 ```bash
-conda-lock -f environment.yaml --with-cuda 12.3 # change cuda version as desired
+pip install .[dev]
 ```
 
-Add the concrete requirements to the `requirements.txt` or `requirements-dev.txt`:
+### Modifying package requirements
+
+Add abstract requirements to the the `pyproject.toml`. use `unidep` to build `conda-lock.yml`:
 
 ```bash
-pip list --format=freeze > requirements.txt
+unidep conda-lock
 ```
 
 ### Run unit tests
 
 ```bash
-pip install -r requirements-dev.txt # install pytest if not already installed
+pip install .[test]
 pytest tests
 ```
 

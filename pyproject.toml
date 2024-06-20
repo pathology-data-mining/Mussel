@@ -5,17 +5,44 @@ description = "weakly supervised computational pathology on whole slide images"
 license = {text = "GPL-3.0 license"}
 readme = "README.md"
 requires-python = ">=3.12"
-dynamic = ["dependencies"]
+dynamic = ["dependencies", "optional-dependencies"]
+
+[tool.unidep]
+channels = ["conda-forge", "pytorch", "nodefaults"]
+dependencies = [
+  { conda = "python==3.12.*" },
+  "pandas",
+  "numpy",
+  "h5py",
+  "matplotlib",
+  "tiffslide",
+  { conda = "opencv", pip = "opencv-python-headless" },
+  { conda = "pytorch", pip = "torch" },
+  "torchvision",
+  "hydra-core",
+  "dacite",
+  "open-clip-torch",
+  "transformers",
+  "sentencepiece",
+  "loguru",
+  "pyarrow",
+  { conda = "pip" }
+]
+platforms = [
+  "linux-64",
+  "osx-64",
+  "osx-arm64"
+]
+
+[tool.unidep.optional_dependencies]
+dev = ["mypy", "unidep"]
+test = ["pytest"]
 
 [tool.setuptools]
 packages = ["mussel"]
 
-[tool.setuptools.dynamic]
-dependencies = { file = ["requirements.txt"] }
-optional-dependencies = { dev = { file = ["requirements-dev.txt"] } }
-
 [build-system]
-requires = ["setuptools", "setuptools-scm"]
+requires = ["setuptools", "unidep[toml]"]
 build-backend = "setuptools.build_meta"
 
 [project.scripts]
