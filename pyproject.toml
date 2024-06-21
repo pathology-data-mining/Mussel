@@ -10,7 +10,7 @@ dynamic = ["dependencies", "optional-dependencies"]
 [tool.unidep]
 channels = ["conda-forge", "pytorch", "nodefaults"]
 dependencies = [
-  { conda = "python==3.12.*" },
+  { conda = "python>=3.12" },
   "pandas",
   "numpy",
   "h5py",
@@ -39,7 +39,7 @@ dev = ["mypy", "unidep"]
 test = ["pytest"]
 
 [tool.setuptools]
-packages = ["mussel"]
+packages = ["mussel", "mussel.cli"]
 
 [build-system]
 requires = ["setuptools", "unidep[toml]"]
