@@ -5,7 +5,7 @@ import mussel.cli.tessellate
 from mussel.cli.tessellate import TessellateConfig, SegConfig, PatchConfig
 
 def test_tessellate(tmp_path):
-    slide_path = "tests/testdata/1065626.svs"
+    slide_path = "tests/testdata/948176.svs"
     patch_h5_path = tmp_path / "test.h5"
     stitch_path = tmp_path / "test.jpg"
     seg_config = SegConfig(segment_threshold=0)

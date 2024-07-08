@@ -19,9 +19,9 @@ def test_cache_tiles(tmp_path):
     cfg = CacheTilesConfig(
         limit_to_class=annotation_classes,
         num_workers=1,
-        patch_h5_path="tests/testdata/1065626.patches.h5",
-        slide_path="tests/testdata/1065626.svs",
-        annotation_csv_path="tests/testdata/1065626.annotation.csv",
+        patch_h5_path="tests/testdata/948176.patch.h5",
+        slide_path="tests/testdata/948176.svs",
+        annotation_csv_path="tests/testdata/948176.annotation.csv",
         output_indices_json_path=output_indices_json,
         output_pt_path=output_pt_path,
     )

@@ -26,7 +26,9 @@ dependencies = [
   "sentencepiece",
   "loguru",
   "pyarrow",
-  { conda = "pip" }
+  { conda = "pip" },
+  { pip =  "transpath @ https://github.com/msk-mind/TransPath/archive/refs/heads/main.zip"},
+  { pip =  "timm_ctranspath @ https://github.com/msk-mind/timm-ctranspath/archive/refs/heads/main.zip"}
 ]
 platforms = [
   "linux-64",

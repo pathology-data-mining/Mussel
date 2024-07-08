@@ -25,10 +25,11 @@ from mussel.utils.ml import collate_features
 from mussel.utils.timer import timed
 
 
-class Model(Enum):
+class ModelType(Enum):
     RESNET50 = 'resnet50'
     CTRANSPATH = 'ctranspath'
-    QUILTNET = 'quiltnet'
+    GIGAPATH = 'gigapath'
+    CLIP = 'clip'
 
 
 @dataclass
@@ -37,10 +38,8 @@ class ExtractFeaturesConfig:
     slide_path: str = MISSING
     output_h5_path: str = MISSING
     output_pt_path: str = MISSING
-    transpath_dir: Optional[str] = None
-    model: Model = Model.QUILTNET
-    quiltnet_model_path: Optional[str] = "hf-hub:wisdomik/QuiltNet-B-16-PMB"
-    transpath_model_path: Optional[str] = None
+    model_type: ModelType = ModelType.CLIP
+    model_path: Optional[str] = "hf-hub:wisdomik/QuiltNet-B-16-PMB"
     batch_size: int = 64
     use_gpu: bool = True
     gpu_device_ids: Optional[List[int]] = field(default_factory=list)
@@ -53,7 +52,7 @@ def compute_w_loader(
     output_h5_path,
     wsi_path,
     model_obj,
-    model: Model,
+    model_type: ModelType,
     device,
     batch_size=8,
     verbose=0,
@@ -66,7 +65,7 @@ def compute_w_loader(
     args:
             file_path: directory of bag (.h5 file)
             output_h5_path: file path to save computed features (.h5 file)
-            model: pytorch model
+            model_type: model type
             batch_size: batch_size for computing features in batches
             verbose: level of feedback
             pretrained: use weights pretrained on imagenet
@@ -102,7 +101,7 @@ def compute_w_loader(
                 )
             batch = batch.to(device, non_blocking=True)
 
-            if model == Model.QUILTNET:
+            if model_type == ModelType.CLIP:
                 features = model_obj.encode_image(batch)
             else:
                 features = model_obj(batch)
@@ -125,18 +124,31 @@ def main(cfg: ExtractFeaturesConfig):
         if torch.cuda.is_available():
             device = torch.device("cuda")
         else:
-            logger.warn("cuda not available, using cpu")
+            logger.warning("cuda not available, using cpu")
     logger.info("loading model checkpoint")
-    if cfg.model == Model.RESNET50:
+    if cfg.model_type == ModelType.RESNET50:
         model = resnet50_baseline(pretrained=True)
         preprocessing = None
-    elif cfg.model == Model.CTRANSPATH:
-        sys.path.append(cfg.transpath_dir)
-        model = torch.load(cfg.transpath_model_path)
+    elif cfg.model_type == ModelType.CTRANSPATH:
+        from transpath.ctran import ctranspath
+        model = ctranspath()
+        model.head = nn.Identity()
+        td = torch.load(cfg.model_path)
+        model.load_state_dict(td['model'], strict=True)
         preprocessing = None
-    elif cfg.model == Model.QUILTNET:
+    elif cfg.model_type == ModelType.GIGAPATH:
+        model = timm.create_model("hf_hub:prov-gigapath/prov-gigapath", pretrained=True)
+        preprocessing = transforms.Compose(
+            [
+                transforms.Resize(256, interpolation=transforms.InterpolationMode.BICUBIC),
+                transforms.CenterCrop(224),
+                transforms.ToTensor(),
+                transforms.Normalize(mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225)),
+            ]
+        )
+    elif cfg.model_type == ModelType.CLIP:
         model, _, preprocessing = open_clip.create_model_and_transforms(
-            cfg.quiltnet_model_path,
+            cfg.model_path,
         )
     else:
         raise ValueError("model not recognized")
@@ -152,7 +164,7 @@ def main(cfg: ExtractFeaturesConfig):
         output_h5_path=cfg.output_h5_path,
         wsi_path=cfg.slide_path,
         model_obj=model,
-        model=cfg.model,
+        model_type=cfg.model_type,
         preprocess=preprocessing,
         device=device,
         batch_size=cfg.batch_size,
