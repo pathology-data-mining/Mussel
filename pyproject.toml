@@ -40,8 +40,8 @@ platforms = [
 dev = ["mypy", "unidep"]
 test = ["pytest"]
 
-[tool.setuptools]
-packages = ["mussel", "mussel.cli"]
+[tool.setuptools.packages.find]
+include = ["mussel*"]
 
 [build-system]
 requires = ["setuptools", "unidep[toml]"]
