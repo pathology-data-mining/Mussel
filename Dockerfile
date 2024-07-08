@@ -24,18 +24,19 @@ RUN apt-get update && apt-get install \
   libgl1-mesa-dev \
   ffmpeg \
   libsm6 \
-  libxext6 -y
+  libxext6 \
+  git -y
 
 USER $MAMBA_USER
 
-COPY --chown=$MAMBA_USER:$MAMBA_USER conda-lock.yml /code/
-WORKDIR /code
+COPY --chown=$MAMBA_USER:$MAMBA_USER conda-lock.yml /code/mussel/
+WORKDIR /code/mussel
 RUN micromamba install -y -n base -c conda-forge conda-lock && \
     micromamba clean --all --yes
 ARG MAMBA_DOCKERFILE_ACTIVATE=1  # (otherwise python will not be found)
 
 RUN conda-lock install -p /opt/conda/
 
-COPY --chown=$MAMBA_USER:$MAMBA_USER . /code
+COPY --chown=$MAMBA_USER:$MAMBA_USER . /code/mussel
 
 RUN pip install --no-deps .
