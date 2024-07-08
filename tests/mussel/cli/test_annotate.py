@@ -14,7 +14,7 @@ def test_annotate(tmp_path):
         "necrosis",
         "invasive adenocarcinoma",
         "sarcoma"]
-    features_pt_path = "tests/testdata/1065626.features.pt"
+    features_pt_path = "tests/testdata/948176.features.pt"
     class_embedding_pt_path = "tests/testdata/class_embedding.pt"
     output_csv_path = tmp_path / "test.csv"
     cfg = AnnotateConfig(

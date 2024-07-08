@@ -34,14 +34,6 @@ conda activate .venv/
 pip install --no-deps .
 ```
 
-### If using CTransPath
-
-Download and install [modified timm](https://drive.google.com/file/d/1JV7aj9rKqGedXY1TdDfi3dP07022hcgZ/view).
-
-```bash
-pip install timm-0.5.4.tar
-```
-
 ## CLI
 
 There are 4 CLI tools: `annotate`, `cache_tiles`, `extract_features`, and

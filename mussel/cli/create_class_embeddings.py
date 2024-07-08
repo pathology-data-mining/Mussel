@@ -7,20 +7,24 @@ import torch
 from hydra.core.config_store import ConfigStore
 from omegaconf import MISSING
 
+from mussel.cli.extract_features import ModelType
+
 
 @dataclass
 class ClassEmbeddingConfig:
     classes: List[str] = MISSING
     output_pt_path: str = MISSING
-    quiltnet_model_path: str = 'hf-hub:wisdomik/QuiltNet-B-16-PMB'
+    model_path: str = 'hf-hub:wisdomik/QuiltNet-B-16-PMB'
+    model_type: ModelType = ModelType.CLIP
 
 cs = ConfigStore.instance()
 cs.store(name="class_embedding_config", node=ClassEmbeddingConfig)
 
 @hydra.main(config_path=".", config_name="class_embedding_config", version_base=None)
 def main(cfg: ClassEmbeddingConfig):
-    model, _, _ = open_clip.create_model_and_transforms(cfg.quiltnet_model_path)
-    tokenizer = open_clip.get_tokenizer(cfg.quiltnet_model_path)
+    model, _, _ = open_clip.create_model_and_transforms(cfg.model_path)
+    tokenizer = open_clip.get_tokenizer(cfg.model_path)
+    
     embs = []
     for idx, class_text in enumerate(cfg.classes):
         text = tokenizer(class_text)
