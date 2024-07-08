@@ -22,12 +22,8 @@ cs.store(name="class_embedding_config", node=ClassEmbeddingConfig)
 
 @hydra.main(config_path=".", config_name="class_embedding_config", version_base=None)
 def main(cfg: ClassEmbeddingConfig):
-    if cfg.model_type == ModelType.CLIP:
-        model, _, _ = open_clip.create_model_and_transforms(cfg.model_path)
-        tokenizer = open_clip.get_tokenizer(cfg.model_path)
-    elif cfg.model_type == ModelType.GIGAPATH:
-        model = timm.create_model("hf_hub:prov-gigapath/prov-gigapath", pretrained=True)
-        tokenizer = open_clip.get_tokenizer(cfg.model_path)
+    model, _, _ = open_clip.create_model_and_transforms(cfg.model_path)
+    tokenizer = open_clip.get_tokenizer(cfg.model_path)
     
     embs = []
     for idx, class_text in enumerate(cfg.classes):
