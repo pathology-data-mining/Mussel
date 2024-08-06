@@ -11,12 +11,14 @@ import h5py
 import hydra
 import open_clip
 import tiffslide as openslide
+import timm
 import torch
 import torch.nn as nn
 from hydra.core.config_store import ConfigStore
 from loguru import logger
 from omegaconf import MISSING
 from torch.utils.data import DataLoader
+from torchvision import transforms
 
 from mussel.datasets.h5 import Whole_Slide_Bag_FP
 from mussel.models.resnet_custom import resnet50_baseline
