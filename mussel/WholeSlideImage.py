@@ -1,9 +1,11 @@
+import functools
 import logging
 import math
 import multiprocessing as mp
 import os
 import sys
 import time
+from pathlib import Path
 from typing import List
 from xml.dom import minidom
 
@@ -342,6 +344,43 @@ class WholeSlideImage(object):
 
         return img
 
+    def save_patches_png(
+        self,
+        save_dir,
+        patch_level=0,
+        mpp=0.5,
+        patch_size=256,
+        step_size=256,
+        num_workers=4,
+        **kwargs,
+    ):
+        save_dir = Path(save_dir)
+        save_dir.mkdir(parents=True, exist_ok=True)
+        contours = self.contours_tissue
+        contour_holes = self.holes_tissue
+        native_patch_size = self.get_native_size(mpp, patch_size)
+        native_step_size = self.get_native_size(mpp, step_size)
+
+        logger.info(f"Creating png patches for: {self.name} ...")
+        elapsed = time.time()
+        pool = mp.Pool(num_workers)
+        for idx, cont in enumerate(contours):
+            patch_gen = self._getPatchGenerator(
+                cont, idx, patch_level, save_dir, native_patch_size, native_step_size, **kwargs
+            )
+
+            pool.map(functools.partial(WholeSlideImage._save_patch_png, save_dir=save_dir), patch_gen)
+
+        pool.close()
+
+
+    @staticmethod
+    def _save_patch_png(patch, save_dir):
+        file_path = save_dir / f"{patch['x']}_{patch['y']}.png"
+        patch['patch_PIL'].save(file_path, "png")
+
+
+
     def createPatches_bag_hdf5(
         self,
         save_path,
@@ -582,6 +621,14 @@ class WholeSlideImage(object):
 
         return self.hdf5_file
 
+    def get_native_size(self, mpp, size):
+        # get mpp of WSI
+        slide_mpp = float(self.wsi.properties[openslide.PROPERTY_NAME_MPP_X])
+        assert abs(mpp - slide_mpp) <= 0.01, "mpp must be greater than or equal to mpp_wsi"
+        scale_factor = mpp / slide_mpp
+        logger.debug(f"desired_mpp: {mpp:.3f}, slide_mpp: {slide_mpp:.3f}, mpp scale: {scale_factor:.3f}")
+        return int(round(size * scale_factor))
+
     def process_contour(
         self,
         cont,
@@ -590,25 +637,20 @@ class WholeSlideImage(object):
         save_path,
         patch_size=256,
         step_size=256,
-        num_workers = 4,
+        num_workers=4,
         use_padding=True,
         top_left=None,
         bot_right=None,
     ):
-        # get mpp of WSI
-        mpp_wsi = float(self.wsi.properties[openslide.PROPERTY_NAME_MPP_X])
 
-        assert abs(mpp - mpp_wsi) <= 0.01, "mpp must be greater than or equal to mpp_wsi"
-        scale = mpp / mpp_wsi
-        logger.info(f"desired_mpp: {mpp:.3f}, mpp_wsi: {mpp_wsi:.3f}, mpp scale: {scale:.3f}")
+        native_step_size = self.get_native_size(mpp, step_size)
+        native_patch_size =  self.get_native_size(mpp, patch_size)
 
         start_x, start_y, w, h = (
             cv2.boundingRect(cont)
             if cont is not None
             else (0, 0, self.level_dim[0][0], self.level_dim[0][1])
         )
-
-        native_patch_size = int(round(patch_size * scale))
 
         img_w, img_h = self.level_dim[0]
         if use_padding:
@@ -640,7 +682,6 @@ class WholeSlideImage(object):
             contour=cont, patch_size=native_patch_size, center_shift=0.5
         )
 
-        native_step_size = int(round(step_size * scale))
 
         x_range = np.arange(start_x, stop_x, step=native_step_size)
         y_range = np.arange(start_y, stop_y, step=native_step_size)
@@ -670,7 +711,7 @@ class WholeSlideImage(object):
                 "patch_size_to_resize_to_for_desired_mpp": patch_size,
                 "patch_level": 0,
                 "mpp": mpp,
-                "native_mpp": mpp_wsi,
+                "native_mpp": float(self.wsi.properties[openslide.PROPERTY_NAME_MPP_X]),
                 "level_dim": self.level_dim[0],
                 "name": self.name,
                 "save_path": save_path,

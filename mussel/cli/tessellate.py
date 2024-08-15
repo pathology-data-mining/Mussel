@@ -22,7 +22,6 @@ class PatchConfig:
     patch_size: int = 256
     step_size: int = 256
     mpp: float = 0.5
-    num_workers: int = 4
 
 @dataclass
 class VisConfig:
@@ -51,8 +50,10 @@ class FilterConfig:
 class TessellateConfig:
     slide_path: str = MISSING
     output_h5_path: str = MISSING
+    output_png_dir: Optional[str] = None
     stitch_jpeg_path: Optional[str] = None
     mask_path: Optional[str] = None
+    num_workers: int = 4
     seg_config: SegConfig = field(default_factory=SegConfig)
     filter_config: FilterConfig = field(default_factory=FilterConfig)
     vis_config: VisConfig = field(default_factory=VisConfig)
@@ -106,7 +107,15 @@ def main(
 
     WSI_object.process_contours(
         save_path=cfg.output_h5_path,
+        num_workers=cfg.num_workers,
         **OmegaConf.to_container(cfg.patch_config))
+
+    if cfg.output_png_dir:
+        WSI_object.save_patches_png(
+            save_dir=cfg.output_png_dir,
+            num_workers=cfg.num_workers,
+            **OmegaConf.to_container(cfg.patch_config)
+        )
 
     if cfg.stitch_jpeg_path:
         heatmap = StitchCoords(
