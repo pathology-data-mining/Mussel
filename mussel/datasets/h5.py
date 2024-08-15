@@ -49,7 +49,9 @@ class Whole_Slide_Bag_FP(Dataset):
             self.scaled_patch_size = int(
                 f["coords"].attrs["patch_size_to_resize_to_for_desired_mpp"]
             )
-            self.length = len(limit_to_indices) if limit_to_indices else len(f["coords"])
+            self.length = (
+                len(limit_to_indices) if limit_to_indices else len(f["coords"])
+            )
 
         if preprocess is not None:
             assert (
@@ -74,12 +76,12 @@ class Whole_Slide_Bag_FP(Dataset):
         dset = hdf5_file["coords"]
         for name, value in dset.attrs.items():
             logger.info(f"{name} {value}")
-        
+
         hdf5_file.close()
 
         logger.info("\nfeature extraction settings")
         logger.info("target patch size: " + str(self.scaled_patch_size))
-        logger.info("use_imagenet_rgb_dist: " +  str(self.use_imagenet_rgb_dist))
+        logger.info("use_imagenet_rgb_dist: " + str(self.use_imagenet_rgb_dist))
         logger.info("transformations: " + str(self.roi_transforms))
 
     def __getitem__(self, idx_):
@@ -87,12 +89,12 @@ class Whole_Slide_Bag_FP(Dataset):
             idx = self.limit_to_indices[idx_]
         else:
             idx = idx_
-            
+
         with h5py.File(self.file_path, "r") as hdf5_file:
             coord = hdf5_file["coords"][idx]
             img = self.wsi.read_region(
-                    coord, self.patch_level, (self.patch_size, self.patch_size)
-                ).convert("RGB")
+                coord, self.patch_level, (self.patch_size, self.patch_size)
+            ).convert("RGB")
 
         img = self.roi_transforms(img).unsqueeze(0)
         return img, coord

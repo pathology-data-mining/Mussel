@@ -17,15 +17,24 @@ from loguru import logger
 from PIL import Image
 
 from mussel.utils.file import load_pkl, save_pkl
-from mussel.utils.wsi import (initialize_hdf5_bag, isBlackPatch, isWhitePatch,
-                              save_hdf5, savePatchIter_bag_hdf5, screen_coords,
-                              to_percentiles)
-from mussel.utils.wsi_classes import (Contour_Checking_fn, isInContourV1,
-                                      isInContourV2, isInContourV3_Easy,
-                                      isInContourV3_Hard)
+from mussel.utils.wsi import (
+    initialize_hdf5_bag,
+    isBlackPatch,
+    isWhitePatch,
+    save_hdf5,
+    savePatchIter_bag_hdf5,
+    screen_coords,
+    to_percentiles,
+)
+from mussel.utils.wsi_classes import (
+    Contour_Checking_fn,
+    isInContourV1,
+    isInContourV2,
+    isInContourV3_Easy,
+    isInContourV3_Hard,
+)
 
 Image.MAX_IMAGE_PIXELS = 933120000
-
 
 
 class WholeSlideImage(object):
@@ -133,13 +142,13 @@ class WholeSlideImage(object):
         Segment the tissue via HSV -> Median thresholding -> Binary threshold
         """
 
-        def _filter_contours(contours,
-                             hierarchy,
-                             tissue_area_threshold: int,
-                             hole_area_threshold: int,
-                             max_num_holes: int,
-                             ):
-
+        def _filter_contours(
+            contours,
+            hierarchy,
+            tissue_area_threshold: int,
+            hole_area_threshold: int,
+            max_num_holes: int,
+        ):
             """
             Filter contours by: area.
             """
@@ -177,7 +186,7 @@ class WholeSlideImage(object):
                     unfiltered_holes, key=cv2.contourArea, reverse=True
                 )
                 # take max_n_holes largest holes by area
-                unfilered_holes = unfilered_holes[: max_num_holes]
+                unfilered_holes = unfilered_holes[:max_num_holes]
                 filtered_holes = []
 
                 # filter these holes
@@ -193,7 +202,9 @@ class WholeSlideImage(object):
             self.wsi.read_region((0, 0), seg_level, self.level_dim[seg_level])
         )
         img_hsv = cv2.cvtColor(img, cv2.COLOR_RGB2HSV)  # Convert to HSV space
-        img_med = cv2.medianBlur(img_hsv[:, :, 1], median_blur_ksize)  # Apply median blurring
+        img_med = cv2.medianBlur(
+            img_hsv[:, :, 1], median_blur_ksize
+        )  # Apply median blurring
 
         # Thresholding
         if use_otsu:
@@ -201,7 +212,9 @@ class WholeSlideImage(object):
                 img_med, 0, segment_max_value, cv2.THRESH_OTSU + cv2.THRESH_BINARY
             )
         else:
-            _, img_otsu = cv2.threshold(img_med, segment_threshold, segment_max_value, cv2.THRESH_BINARY)
+            _, img_otsu = cv2.threshold(
+                img_med, segment_threshold, segment_max_value, cv2.THRESH_BINARY
+            )
 
         # Morphological closing
         if morphology_ex_kernel > 0:
@@ -220,7 +233,11 @@ class WholeSlideImage(object):
         hierarchy = np.squeeze(hierarchy, axis=(0,))[:, 2:]
         if filter_contours:
             foreground_contours, hole_contours = _filter_contours(
-                contours, hierarchy, tissue_area_threshold, hole_area_threshold, max_num_holes
+                contours,
+                hierarchy,
+                tissue_area_threshold,
+                hole_area_threshold,
+                max_num_holes,
             )  # Necessary for filtering out artifacts
 
         self.contours_tissue = self.scaleContourDim(foreground_contours, scale)
@@ -366,20 +383,26 @@ class WholeSlideImage(object):
         pool = mp.Pool(num_workers)
         for idx, cont in enumerate(contours):
             patch_gen = self._getPatchGenerator(
-                cont, idx, patch_level, save_dir, native_patch_size, native_step_size, **kwargs
+                cont,
+                idx,
+                patch_level,
+                save_dir,
+                native_patch_size,
+                native_step_size,
+                **kwargs,
             )
 
-            pool.map(functools.partial(WholeSlideImage._save_patch_png, save_dir=save_dir), patch_gen)
+            pool.map(
+                functools.partial(WholeSlideImage._save_patch_png, save_dir=save_dir),
+                patch_gen,
+            )
 
         pool.close()
-
 
     @staticmethod
     def _save_patch_png(patch, save_dir):
         file_path = save_dir / f"{patch['x']}_{patch['y']}.png"
-        patch['patch_PIL'].save(file_path, "png")
-
-
+        patch["patch_PIL"].save(file_path, "png")
 
     def createPatches_bag_hdf5(
         self,
@@ -579,10 +602,15 @@ class WholeSlideImage(object):
             self.wsi.level_downsamples, self.wsi.level_dimensions
         ):
             estimated_downsample = (dim_0[0] / float(dim[0]), dim_0[1] / float(dim[1]))
-            level_downsamples.append(estimated_downsample) if estimated_downsample != (
-                downsample,
-                downsample,
-            ) else level_downsamples.append((downsample, downsample))
+            (
+                level_downsamples.append(estimated_downsample)
+                if estimated_downsample
+                != (
+                    downsample,
+                    downsample,
+                )
+                else level_downsamples.append((downsample, downsample))
+            )
 
         return level_downsamples
 
@@ -624,9 +652,13 @@ class WholeSlideImage(object):
     def get_native_size(self, mpp, size):
         # get mpp of WSI
         slide_mpp = float(self.wsi.properties[openslide.PROPERTY_NAME_MPP_X])
-        assert abs(mpp - slide_mpp) <= 0.01, "mpp must be greater than or equal to mpp_wsi"
+        assert (
+            abs(mpp - slide_mpp) <= 0.01
+        ), "mpp must be greater than or equal to mpp_wsi"
         scale_factor = mpp / slide_mpp
-        logger.debug(f"desired_mpp: {mpp:.3f}, slide_mpp: {slide_mpp:.3f}, mpp scale: {scale_factor:.3f}")
+        logger.debug(
+            f"desired_mpp: {mpp:.3f}, slide_mpp: {slide_mpp:.3f}, mpp scale: {scale_factor:.3f}"
+        )
         return int(round(size * scale_factor))
 
     def process_contour(
@@ -644,7 +676,7 @@ class WholeSlideImage(object):
     ):
 
         native_step_size = self.get_native_size(mpp, step_size)
-        native_patch_size =  self.get_native_size(mpp, patch_size)
+        native_patch_size = self.get_native_size(mpp, patch_size)
 
         start_x, start_y, w, h = (
             cv2.boundingRect(cont)
@@ -681,7 +713,6 @@ class WholeSlideImage(object):
         cont_check_fn = isInContourV3_Easy(
             contour=cont, patch_size=native_patch_size, center_shift=0.5
         )
-
 
         x_range = np.arange(start_x, stop_x, step=native_step_size)
         y_range = np.arange(start_y, stop_y, step=native_step_size)
@@ -858,7 +889,9 @@ class WholeSlideImage(object):
 
         if binarize:
             logger.info("\nbinarized tiles based on cutoff of {}".format(threshold))
-            logger.info("identified {}/{} patches as positive".format(count, len(coords)))
+            logger.info(
+                "identified {}/{} patches as positive".format(count, len(coords))
+            )
 
         # fetch attended region and average accumulated attention
         zero_mask = counter == 0
