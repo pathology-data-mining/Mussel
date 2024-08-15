@@ -23,10 +23,12 @@ class PatchConfig:
     step_size: int = 256
     mpp: float = 0.5
 
+
 @dataclass
 class VisConfig:
     vis_level: int = -1
     line_thickness: int = 100
+
 
 @dataclass
 class SegConfig:
@@ -40,11 +42,13 @@ class SegConfig:
     keep_ids: List[int] = field(default_factory=list)
     exclude_ids: List[int] = field(default_factory=list)
 
+
 @dataclass
 class FilterConfig:
     tissue_area_threshold: int = 100
     hole_area_threshold: int = 16
     max_num_holes: int = 8
+
 
 @dataclass
 class TessellateConfig:
@@ -59,8 +63,10 @@ class TessellateConfig:
     vis_config: VisConfig = field(default_factory=VisConfig)
     patch_config: PatchConfig = field(default_factory=PatchConfig)
 
+
 cs = ConfigStore.instance()
 cs.store(name="tessellate_config", node=TessellateConfig)
+
 
 @hydra.main(version_base=None, config_path=".", config_name="tessellate_config")
 def main(
@@ -87,7 +93,6 @@ def main(
             best_level = wsi.get_best_level_for_downsample(64)
             cfg.seg_config.seg_level = best_level
 
-
     w, h = WSI_object.level_dim[cfg.seg_config.seg_level]
     if w * h > 1e8:
         logger.error(
@@ -98,8 +103,10 @@ def main(
         return
 
     seg_time_elapsed = -1
-    WSI_object.segmentTissue(**OmegaConf.to_container(cfg.seg_config),
-                                **OmegaConf.to_container(cfg.filter_config))
+    WSI_object.segmentTissue(
+        **OmegaConf.to_container(cfg.seg_config),
+        **OmegaConf.to_container(cfg.filter_config),
+    )
 
     if cfg.mask_path:
         mask = WSI_object.visWSI(**OmegaConf.to_container(cfg.vis_config))
@@ -108,13 +115,14 @@ def main(
     WSI_object.process_contours(
         save_path=cfg.output_h5_path,
         num_workers=cfg.num_workers,
-        **OmegaConf.to_container(cfg.patch_config))
+        **OmegaConf.to_container(cfg.patch_config),
+    )
 
     if cfg.output_png_dir:
         WSI_object.save_patches_png(
             save_dir=cfg.output_png_dir,
             num_workers=cfg.num_workers,
-            **OmegaConf.to_container(cfg.patch_config)
+            **OmegaConf.to_container(cfg.patch_config),
         )
 
     if cfg.stitch_jpeg_path:

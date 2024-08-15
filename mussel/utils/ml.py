@@ -6,9 +6,14 @@ import numpy as np
 import torch
 import torch.nn as nn
 import torch.optim as optim
-from torch.utils.data import (DataLoader, RandomSampler, Sampler,
-                              SequentialSampler, WeightedRandomSampler,
-                              sampler)
+from torch.utils.data import (
+    DataLoader,
+    RandomSampler,
+    Sampler,
+    SequentialSampler,
+    WeightedRandomSampler,
+    sampler,
+)
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -53,7 +58,7 @@ def get_simple_loader(dataset, batch_size=1, num_workers=1):
         batch_size=batch_size,
         sampler=sampler.SequentialSampler(dataset),
         collate_fn=collate_MIL,
-        **kwargs
+        **kwargs,
     )
     return loader
 
@@ -72,7 +77,7 @@ def get_split_loader(split_dataset, training=False, testing=False, weighted=Fals
                     batch_size=1,
                     sampler=WeightedRandomSampler(weights, len(weights)),
                     collate_fn=collate_MIL,
-                    **kwargs
+                    **kwargs,
                 )
             else:
                 loader = DataLoader(
@@ -80,7 +85,7 @@ def get_split_loader(split_dataset, training=False, testing=False, weighted=Fals
                     batch_size=1,
                     sampler=RandomSampler(split_dataset),
                     collate_fn=collate_MIL,
-                    **kwargs
+                    **kwargs,
                 )
         else:
             loader = DataLoader(
@@ -88,7 +93,7 @@ def get_split_loader(split_dataset, training=False, testing=False, weighted=Fals
                 batch_size=1,
                 sampler=SequentialSampler(split_dataset),
                 collate_fn=collate_MIL,
-                **kwargs
+                **kwargs,
             )
 
     else:
@@ -100,7 +105,7 @@ def get_split_loader(split_dataset, training=False, testing=False, weighted=Fals
             batch_size=1,
             sampler=SubsetSequentialSampler(ids),
             collate_fn=collate_MIL,
-            **kwargs
+            **kwargs,
         )
 
     return loader

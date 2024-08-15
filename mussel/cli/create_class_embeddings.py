@@ -14,17 +14,19 @@ from mussel.cli.extract_features import ModelType
 class ClassEmbeddingConfig:
     classes: List[str] = MISSING
     output_pt_path: str = MISSING
-    model_path: str = 'hf-hub:wisdomik/QuiltNet-B-16-PMB'
+    model_path: str = "hf-hub:wisdomik/QuiltNet-B-16-PMB"
     model_type: ModelType = ModelType.CLIP
+
 
 cs = ConfigStore.instance()
 cs.store(name="class_embedding_config", node=ClassEmbeddingConfig)
+
 
 @hydra.main(config_path=".", config_name="class_embedding_config", version_base=None)
 def main(cfg: ClassEmbeddingConfig):
     model, _, _ = open_clip.create_model_and_transforms(cfg.model_path)
     tokenizer = open_clip.get_tokenizer(cfg.model_path)
-    
+
     embs = []
     for idx, class_text in enumerate(cfg.classes):
         text = tokenizer(class_text)
@@ -35,6 +37,7 @@ def main(cfg: ClassEmbeddingConfig):
     embs = [x[1] for x in embs]
     class_emb = torch.stack(embs).squeeze(1)
     torch.save(class_emb, cfg.output_pt_path)
+
 
 if __name__ == "__main__":
     main()
