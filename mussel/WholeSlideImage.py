@@ -598,7 +598,7 @@ class WholeSlideImage(object):
         # get mpp of WSI
         mpp_wsi = float(self.wsi.properties[openslide.PROPERTY_NAME_MPP_X])
 
-        assert abs(mpp - mpp_wsi) <= 0.01, "mpp must be greater than or equal to mpp_wsi"
+        assert mpp <= mpp_wsi + 0.01, "mpp must be greater than or equal to mpp_wsi"
         scale = mpp / mpp_wsi
         logger.info(f"desired_mpp: {mpp:.3f}, mpp_wsi: {mpp_wsi:.3f}, mpp scale: {scale:.3f}")
 
