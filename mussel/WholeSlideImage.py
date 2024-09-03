@@ -17,22 +17,12 @@ from loguru import logger
 from PIL import Image
 
 from mussel.utils.file import load_pkl, save_pkl
-from mussel.utils.wsi import (
-    initialize_hdf5_bag,
-    isBlackPatch,
-    isWhitePatch,
-    save_hdf5,
-    savePatchIter_bag_hdf5,
-    screen_coords,
-    to_percentiles,
-)
-from mussel.utils.wsi_classes import (
-    Contour_Checking_fn,
-    isInContourV1,
-    isInContourV2,
-    isInContourV3_Easy,
-    isInContourV3_Hard,
-)
+from mussel.utils.wsi import (initialize_hdf5_bag, isBlackPatch, isWhitePatch,
+                              save_hdf5, savePatchIter_bag_hdf5, screen_coords,
+                              to_percentiles)
+from mussel.utils.wsi_classes import (Contour_Checking_fn, isInContourV1,
+                                      isInContourV2, isInContourV3_Easy,
+                                      isInContourV3_Hard)
 
 Image.MAX_IMAGE_PIXELS = 933120000
 
@@ -644,6 +634,7 @@ class WholeSlideImage(object):
                 if init:
                     save_hdf5(save_path_hdf5, asset_dict, attr_dict, mode="w")
                     init = False
+                    logger.info(f"Writing to {save_path_hdf5}")
                 else:
                     save_hdf5(save_path_hdf5, asset_dict, mode="a")
 
@@ -653,7 +644,7 @@ class WholeSlideImage(object):
         # get mpp of WSI
         slide_mpp = float(self.wsi.properties[openslide.PROPERTY_NAME_MPP_X])
         assert (
-            abs(mpp - slide_mpp) <= 0.01
+            mpp <= 0.01 + slide_mpp
         ), "mpp must be greater than or equal to mpp_wsi"
         scale_factor = mpp / slide_mpp
         logger.debug(
