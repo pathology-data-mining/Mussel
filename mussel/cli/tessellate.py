@@ -9,10 +9,9 @@ import numpy as np
 import pandas as pd
 from hydra.core.config_store import ConfigStore
 from loguru import logger
-from omegaconf import MISSING, DictConfig, OmegaConf
+from omegaconf import MISSING, OmegaConf
 
 from mussel.utils.timer import timed
-from mussel.utils.wsi import StitchCoords
 from mussel.WholeSlideImage import WholeSlideImage
 
 
@@ -55,7 +54,6 @@ class TessellateConfig:
     slide_path: str = MISSING
     output_h5_path: str = MISSING
     output_png_dir: Optional[str] = None
-    stitch_jpeg_path: Optional[str] = None
     mask_path: Optional[str] = None
     num_workers: int = 4
     seg_config: SegConfig = field(default_factory=SegConfig)
@@ -124,17 +122,6 @@ def main(
             num_workers=cfg.num_workers,
             **OmegaConf.to_container(cfg.patch_config),
         )
-
-    if cfg.stitch_jpeg_path:
-        heatmap = StitchCoords(
-            cfg.output_h5_path,
-            WSI_object,
-            downscale=64,
-            bg_color=(0, 0, 0),
-            alpha=-1,
-            draw_grid=False,
-        )
-        heatmap.save(cfg.stitch_jpeg_path)
 
 
 if __name__ == "__main__":
