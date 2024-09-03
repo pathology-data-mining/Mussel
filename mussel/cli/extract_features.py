@@ -17,6 +17,10 @@ import torch.nn as nn
 from hydra.core.config_store import ConfigStore
 from loguru import logger
 from omegaconf import MISSING
+from PIL import Image
+from timm.data import resolve_data_config
+from timm.data.transforms_factory import create_transform
+from timm.layers import SwiGLUPacked
 from torch.utils.data import DataLoader
 from torchvision import transforms
 
@@ -31,6 +35,7 @@ class ModelType(Enum):
     RESNET50 = "resnet50"
     CTRANSPATH = "ctranspath"
     GIGAPATH = "gigapath"
+    VIRCHOW = "virchow"
     CLIP = "clip"
 
 
@@ -155,6 +160,10 @@ def main(cfg: ExtractFeaturesConfig):
                 ),
             ]
         )
+    elif cfg.model_type == ModelType.VIRCHOW:
+        # need to specify MLP layer and activation function for proper init
+        model = timm.create_model("hf-hub:paige-ai/Virchow", pretrained=True, mlp_layer=SwiGLUPacked, act_layer=torch.nn.SiLU)
+        preprocessing = create_transform(**resolve_data_config(model.pretrained_cfg, model=model))
     elif cfg.model_type == ModelType.CLIP:
         model, _, preprocessing = open_clip.create_model_and_transforms(
             cfg.model_path,
