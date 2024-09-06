@@ -17,6 +17,10 @@ import torch.nn as nn
 from hydra.core.config_store import ConfigStore
 from loguru import logger
 from omegaconf import MISSING
+from PIL import Image
+from timm.data import resolve_data_config
+from timm.data.transforms_factory import create_transform
+from timm.layers import SwiGLUPacked
 from torch.utils.data import DataLoader
 from torchvision import transforms
 
@@ -28,10 +32,11 @@ from mussel.utils.timer import timed
 
 
 class ModelType(Enum):
-    RESNET50 = 'resnet50'
-    CTRANSPATH = 'ctranspath'
-    GIGAPATH = 'gigapath'
-    CLIP = 'clip'
+    RESNET50 = "resnet50"
+    CTRANSPATH = "ctranspath"
+    GIGAPATH = "gigapath"
+    VIRCHOW = "virchow"
+    CLIP = "clip"
 
 
 @dataclass
@@ -115,8 +120,10 @@ def compute_w_loader(
 
     return output_h5_path
 
+
 cs = ConfigStore.instance()
 cs.store(name="extract_features_config", node=ExtractFeaturesConfig)
+
 
 @hydra.main(version_base=None, config_path=".", config_name="extract_features_config")
 def main(cfg: ExtractFeaturesConfig):
@@ -133,21 +140,30 @@ def main(cfg: ExtractFeaturesConfig):
         preprocessing = None
     elif cfg.model_type == ModelType.CTRANSPATH:
         from transpath.ctran import ctranspath
+
         model = ctranspath()
         model.head = nn.Identity()
         td = torch.load(cfg.model_path)
-        model.load_state_dict(td['model'], strict=True)
+        model.load_state_dict(td["model"], strict=True)
         preprocessing = None
     elif cfg.model_type == ModelType.GIGAPATH:
         model = timm.create_model("hf_hub:prov-gigapath/prov-gigapath", pretrained=True)
         preprocessing = transforms.Compose(
             [
-                transforms.Resize(256, interpolation=transforms.InterpolationMode.BICUBIC),
+                transforms.Resize(
+                    256, interpolation=transforms.InterpolationMode.BICUBIC
+                ),
                 transforms.CenterCrop(224),
                 transforms.ToTensor(),
-                transforms.Normalize(mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225)),
+                transforms.Normalize(
+                    mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225)
+                ),
             ]
         )
+    elif cfg.model_type == ModelType.VIRCHOW:
+        # need to specify MLP layer and activation function for proper init
+        model = timm.create_model("hf-hub:paige-ai/Virchow", pretrained=True, mlp_layer=SwiGLUPacked, act_layer=torch.nn.SiLU)
+        preprocessing = create_transform(**resolve_data_config(model.pretrained_cfg, model=model))
     elif cfg.model_type == ModelType.CLIP:
         model, _, preprocessing = open_clip.create_model_and_transforms(
             cfg.model_path,
@@ -183,9 +199,8 @@ def main(cfg: ExtractFeaturesConfig):
     file.close()
 
     features = torch.from_numpy(features)
-    torch.save(
-        features, cfg.output_pt_path
-    )
+    torch.save(features, cfg.output_pt_path)
+
 
 if __name__ == "__main__":
     main()

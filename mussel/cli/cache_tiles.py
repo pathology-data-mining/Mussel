@@ -10,8 +10,8 @@ from dataclasses import dataclass, field
 from typing import List, Optional
 
 import hydra
-import tiffslide as openslide
 import pandas as pd
+import tiffslide as openslide
 import torch
 from hydra.core.config_store import ConfigStore
 from loguru import logger
@@ -33,8 +33,10 @@ class CacheTilesConfig:
     annotation_csv_path: Optional[str] = None
     output_indices_json_path: Optional[str] = None
 
+
 cs = ConfigStore.instance()
 cs.store(name="cache_tiles_config", node=CacheTilesConfig)
+
 
 @hydra.main(config_path=".", config_name="cache_tiles_config", version_base=None)
 def main(cfg: CacheTilesConfig):
@@ -42,10 +44,10 @@ def main(cfg: CacheTilesConfig):
     indices = None
     if cfg.limit_to_class and cfg.annotation_csv_path:
         annot = pd.read_csv(cfg.annotation_csv_path)
-        annot['class'] = annot.idxmax(axis=1)
-        indices = annot[annot['class'].isin(cfg.limit_to_class)].index.tolist()
+        annot["class"] = annot.idxmax(axis=1)
+        indices = annot[annot["class"].isin(cfg.limit_to_class)].index.tolist()
         logger.info(f"limiting to class {cfg.limit_to_class} with {len(indices)} tiles")
-    
+
     dataset = Whole_Slide_Bag_FP(
         file_path=cfg.patch_h5_path,
         wsi_path=cfg.slide_path,
@@ -73,7 +75,9 @@ def main(cfg: CacheTilesConfig):
             batch_list.append(batch)
         all_tiles = torch.cat(batch_list, dim=0)
     time_elapsed = time.time() - time_start
-    logger.info("\ncaching tiles for {} took {} s".format(cfg.output_pt_path, time_elapsed))
+    logger.info(
+        "\ncaching tiles for {} took {} s".format(cfg.output_pt_path, time_elapsed)
+    )
     logger.info(f"all_tiles shape: {all_tiles.shape}")
     torch.save(all_tiles, cfg.output_pt_path)
     logger.info(f"saved to {cfg.output_pt_path}")
