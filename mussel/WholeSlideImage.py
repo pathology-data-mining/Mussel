@@ -357,10 +357,12 @@ class WholeSlideImage(object):
         patch_level=0,
         mpp=0.5,
         patch_size=256,
-        step_size=256,
+        step_size=None,
         num_workers=4,
         **kwargs,
     ):
+        if step_size is None:
+            step_size = patch_size
         save_dir = Path(save_dir)
         save_dir.mkdir(parents=True, exist_ok=True)
         contours = self.contours_tissue
@@ -399,10 +401,12 @@ class WholeSlideImage(object):
         save_path,
         patch_level=0,
         patch_size=256,
-        step_size=256,
+        step_size=None,
         save_coord=True,
         **kwargs,
     ):
+        if step_size is None:
+            step_size = patch_size
         contours = self.contours_tissue
         contour_holes = self.holes_tissue
 
@@ -436,7 +440,7 @@ class WholeSlideImage(object):
         patch_level,
         save_path,
         patch_size=256,
-        step_size=256,
+        step_size=None,
         custom_downsample=1,
         white_black=True,
         white_thresh=15,
@@ -444,6 +448,8 @@ class WholeSlideImage(object):
         contour_fn="four_pt",
         use_padding=True,
     ):
+        if step_size is None:
+            step_size = patch_size
         start_x, start_y, w, h = (
             cv2.boundingRect(cont)
             if cont is not None
@@ -605,9 +611,10 @@ class WholeSlideImage(object):
         return level_downsamples
 
     def process_contours(
-        self, save_path, patch_size=256, step_size=256, mpp=0.5, **kwargs
+        self, save_path, patch_size=256, step_size=None, mpp=0.5, **kwargs
     ):
-        save_path_hdf5 = save_path
+        if step_size is None:
+            step_size = patch_size
         logger.info(f"Creating patches for: {self.name} ...")
         elapsed = time.time()
         n_contours = len(self.contours_tissue)
@@ -660,12 +667,14 @@ class WholeSlideImage(object):
         mpp,
         save_path,
         patch_size=256,
-        step_size=256,
+        step_size=None,
         num_workers=4,
         use_padding=True,
         top_left=None,
         bot_right=None,
     ):
+        if step_size is None:
+            step_size = patch_size
 
         native_step_size = self.get_native_size(mpp, step_size)
         native_patch_size = self.get_native_size(mpp, patch_size)
