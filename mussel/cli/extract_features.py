@@ -30,13 +30,19 @@ from mussel.utils.file import save_hdf5
 from mussel.utils.ml import collate_features
 from mussel.utils.timer import timed
 
-
 class ModelType(Enum):
-    RESNET50 = "resnet50"
-    CTRANSPATH = "ctranspath"
-    GIGAPATH = "gigapath"
-    VIRCHOW = "virchow"
-    CLIP = "clip"
+
+    def __init__(self, id, code, hf_path):
+        self.id = id
+        self.code = code
+        self.hf_path = hf_path
+
+    RESNET50 = 1, 'resnet50', ""
+    CTRANSPATH = 2, 'ctranspath', ""
+    GIGAPATH = 3, "gigapath", "hf-hub:prov-gigapath/prov-gigapath"
+    VIRCHOW = 4, "virchow", "hf-hub:paige-ai/Virchow"
+    OPTIMUS = 5, "optimus", "hf-hub:bioptimus/H-optimus-0"
+    CLIP = 6, "clip","hf-hub:wisdomik/QuiltNet-B-16-PMB"
 
 
 @dataclass
@@ -46,7 +52,7 @@ class ExtractFeaturesConfig:
     output_h5_path: str = MISSING
     output_pt_path: str = MISSING
     model_type: ModelType = ModelType.CLIP
-    model_path: Optional[str] = "hf-hub:wisdomik/QuiltNet-B-16-PMB"
+    model_path: Optional[str] = None
     batch_size: int = 64
     use_gpu: bool = True
     gpu_device_ids: Optional[List[int]] = field(default_factory=list)
@@ -135,6 +141,8 @@ def main(cfg: ExtractFeaturesConfig):
         else:
             logger.warning("cuda not available, using cpu")
     logger.info("loading model checkpoint")
+    if cfg.model_path is None:
+        cfg.model_path = cfg.model_type.hf_path
     if cfg.model_type == ModelType.RESNET50:
         model = resnet50_baseline(pretrained=True)
         preprocessing = None
@@ -147,13 +155,12 @@ def main(cfg: ExtractFeaturesConfig):
         model.load_state_dict(td["model"], strict=True)
         preprocessing = None
     elif cfg.model_type == ModelType.GIGAPATH:
-        model = timm.create_model("hf_hub:prov-gigapath/prov-gigapath", pretrained=True)
+        model = timm.create_model(cfg.model_path, pretrained=True)
         preprocessing = transforms.Compose(
             [
                 transforms.Resize(
-                    256, interpolation=transforms.InterpolationMode.BICUBIC
+                    224, interpolation=transforms.InterpolationMode.BICUBIC
                 ),
-                transforms.CenterCrop(224),
                 transforms.ToTensor(),
                 transforms.Normalize(
                     mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225)
@@ -162,12 +169,27 @@ def main(cfg: ExtractFeaturesConfig):
         )
     elif cfg.model_type == ModelType.VIRCHOW:
         # need to specify MLP layer and activation function for proper init
-        model = timm.create_model("hf-hub:paige-ai/Virchow", pretrained=True, mlp_layer=SwiGLUPacked, act_layer=torch.nn.SiLU)
+        model = timm.create_model(cfg.model_path, pretrained=True, mlp_layer=SwiGLUPacked, act_layer=torch.nn.SiLU)
         preprocessing = create_transform(**resolve_data_config(model.pretrained_cfg, model=model))
     elif cfg.model_type == ModelType.CLIP:
         model, _, preprocessing = open_clip.create_model_and_transforms(
             cfg.model_path,
         )
+    elif cfg.model_type == ModelType.OPTIMUS:
+        model = timm.create_model(
+            cfg.model_path, pretrained=True, init_values=1e-5, dynamic_img_size=False
+        )
+
+        preprocessing = transforms.Compose([
+            transforms.Resize(
+                224, interpolation=transforms.InterpolationMode.BICUBIC
+            ),
+            transforms.ToTensor(),
+            transforms.Normalize(
+                mean=(0.707223, 0.578729, 0.703617),
+                std=(0.211883, 0.230117, 0.177517)
+            ),
+        ])
     else:
         raise ValueError("model not recognized")
 
