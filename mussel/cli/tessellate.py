@@ -19,7 +19,7 @@ from mussel.WholeSlideImage import WholeSlideImage
 class PatchConfig:
     use_padding: bool = True
     patch_size: int = 256
-    step_size: int = 256
+    step_size: Optional[int] = None # if None, defaults to patch_size
     mpp: float = 0.5
 
 
