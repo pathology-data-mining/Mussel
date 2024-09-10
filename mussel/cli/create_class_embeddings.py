@@ -14,7 +14,7 @@ from mussel.cli.extract_features import ModelType
 class ClassEmbeddingConfig:
     classes: List[str] = MISSING
     output_pt_path: str = MISSING
-    model_path: str = "hf-hub:wisdomik/QuiltNet-B-16-PMB"
+    model_path: Optional[str] = None
     model_type: ModelType = ModelType.CLIP
 
 
@@ -24,6 +24,8 @@ cs.store(name="class_embedding_config", node=ClassEmbeddingConfig)
 
 @hydra.main(config_path=".", config_name="class_embedding_config", version_base=None)
 def main(cfg: ClassEmbeddingConfig):
+    if cfg.model_path is None:
+        cfg.model_path = cfg.model_type.hf_path
     model, _, _ = open_clip.create_model_and_transforms(cfg.model_path)
     tokenizer = open_clip.get_tokenizer(cfg.model_path)
 
