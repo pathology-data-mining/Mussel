@@ -632,22 +632,23 @@ class WholeSlideImage(object):
             )
             if len(asset_dict) > 0:
                 if init:
-                    save_hdf5(save_path_hdf5, asset_dict, attr_dict, mode="w")
+                    save_hdf5(save_path, asset_dict, attr_dict, mode="w")
                     init = False
-                    logger.info(f"Writing to {save_path_hdf5}")
+                    logger.info(f"Writing to {save_path}")
                 else:
-                    save_hdf5(save_path_hdf5, asset_dict, mode="a")
+                    save_hdf5(save_path, asset_dict, mode="a")
 
         return self.hdf5_file
 
     def get_native_size(self, mpp, size):
         # get mpp of WSI
         slide_mpp = float(self.wsi.properties[openslide.PROPERTY_NAME_MPP_X])
+        logger.info(f"slide_mpp: {slide_mpp}")
         assert (
-            mpp <= 0.01 + slide_mpp
+            mpp >= slide_mpp - 0.01
         ), "mpp must be greater than or equal to mpp_wsi"
         scale_factor = mpp / slide_mpp
-        logger.debug(
+        logger.info(
             f"desired_mpp: {mpp:.3f}, slide_mpp: {slide_mpp:.3f}, mpp scale: {scale_factor:.3f}"
         )
         return int(round(size * scale_factor))
