@@ -220,6 +220,8 @@ class WholeSlideImage(object):
         contours, hierarchy = cv2.findContours(
             img_otsu, cv2.RETR_CCOMP, cv2.CHAIN_APPROX_NONE
         )  # Find contours
+        if contours is None or hierarchy is None:
+            return
         hierarchy = np.squeeze(hierarchy, axis=(0,))[:, 2:]
         if filter_contours:
             foreground_contours, hole_contours = _filter_contours(
@@ -617,10 +619,10 @@ class WholeSlideImage(object):
             step_size = patch_size
         logger.info(f"Creating patches for: {self.name} ...")
         elapsed = time.time()
-        n_contours = len(self.contours_tissue)
-        if n_contours == 0:
+        if self.contours_tissue is None or len(self.contours_tissue) == 0:
             logger.info("0 contours, exiting")
             sys.exit(0)
+        n_contours = len(self.contours_tissue)
         logger.info(f"Total number of contours to process: {n_contours}")
         fp_chunk_size = math.ceil(n_contours * 0.05)
         init = True
