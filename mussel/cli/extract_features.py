@@ -6,6 +6,7 @@ from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
 from typing import List, Optional
+import pickle
 
 import h5py
 import hydra
@@ -73,6 +74,7 @@ def compute_w_loader(
     use_imagenet_rgb_dist=True,
     preprocess=None,
     num_workers=32,
+    pin_memory=True,
 ):
     """
     args:
@@ -90,11 +92,11 @@ def compute_w_loader(
         use_imagenet_rgb_dist=use_imagenet_rgb_dist,
         preprocess=preprocess,
     )
-    kwargs = {"num_workers": num_workers, "pin_memory": True}
     loader = DataLoader(
         dataset=dataset,
         batch_size=batch_size,
-        **kwargs,
+        num_workers=num_workers,
+        pin_memory=pin_memory,
         collate_fn=collate_features,
         worker_init_fn=dataset.worker_init,
         shuffle=False,
@@ -108,7 +110,7 @@ def compute_w_loader(
         with torch.no_grad():
             if count % print_every == 0:
                 logger.info(
-                    "batch {}/{}, {} files processed".format(
+                    "batch {}/{}, {} tiles processed".format(
                         count, len(loader), count * batch_size
                     )
                 )
@@ -135,14 +137,20 @@ cs.store(name="extract_features_config", node=ExtractFeaturesConfig)
 def main(cfg: ExtractFeaturesConfig):
 
     device = torch.device("cpu")
+    pin_memory = False
     if cfg.use_gpu:
         if torch.cuda.is_available():
+            pin_memory = True
             device = torch.device("cuda")
         else:
             logger.warning("cuda not available, using cpu")
     logger.info("loading model checkpoint")
+    model = None
     if cfg.model_path is None:
         cfg.model_path = cfg.model_type.hf_path
+    if cfg.model_path.endswith('.pkl'):
+        with open(cfg.model_path, 'rb') as f:
+            model = pickle.load(f)
     if cfg.model_type == ModelType.RESNET50:
         model = resnet50_baseline(pretrained=True)
         preprocessing = None
@@ -155,7 +163,8 @@ def main(cfg: ExtractFeaturesConfig):
         model.load_state_dict(td["model"], strict=True)
         preprocessing = None
     elif cfg.model_type == ModelType.GIGAPATH:
-        model = timm.create_model(cfg.model_path, pretrained=True)
+        if model is None:
+            model = timm.create_model(cfg.model_path, pretrained=True)
         preprocessing = transforms.Compose(
             [
                 transforms.Resize(
@@ -169,16 +178,18 @@ def main(cfg: ExtractFeaturesConfig):
         )
     elif cfg.model_type == ModelType.VIRCHOW:
         # need to specify MLP layer and activation function for proper init
-        model = timm.create_model(cfg.model_path, pretrained=True, mlp_layer=SwiGLUPacked, act_layer=torch.nn.SiLU)
+        if model is None:
+            model = timm.create_model(cfg.model_path, pretrained=True, mlp_layer=SwiGLUPacked, act_layer=torch.nn.SiLU)
         preprocessing = create_transform(**resolve_data_config(model.pretrained_cfg, model=model))
     elif cfg.model_type == ModelType.CLIP:
         model, _, preprocessing = open_clip.create_model_and_transforms(
             cfg.model_path,
         )
     elif cfg.model_type == ModelType.OPTIMUS:
-        model = timm.create_model(
-            cfg.model_path, pretrained=True, init_values=1e-5, dynamic_img_size=False
-        )
+        if model is None:
+            model = timm.create_model(
+                cfg.model_path, pretrained=True, init_values=1e-5, dynamic_img_size=False
+            )
 
         preprocessing = transforms.Compose([
             transforms.Resize(
@@ -207,6 +218,7 @@ def main(cfg: ExtractFeaturesConfig):
         model_type=cfg.model_type,
         preprocess=preprocessing,
         device=device,
+        pin_memory=pin_memory,
         batch_size=cfg.batch_size,
         verbose=1,
         print_every=20,
