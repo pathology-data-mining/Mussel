@@ -16,9 +16,9 @@ import tiffslide as openslide
 from loguru import logger
 from PIL import Image
 
-from mussel.utils.file import load_pkl, save_pkl
+from mussel.utils.file import load_pkl, save_pkl, save_hdf5
 from mussel.utils.wsi import (initialize_hdf5_bag, isBlackPatch, isWhitePatch,
-                              save_hdf5, savePatchIter_bag_hdf5, screen_coords,
+                              savePatchIter_bag_hdf5, screen_coords,
                               to_percentiles)
 from mussel.utils.wsi_classes import (Contour_Checking_fn, isInContourV1,
                                       isInContourV2, isInContourV3_Easy,
