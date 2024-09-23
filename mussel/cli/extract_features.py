@@ -123,7 +123,7 @@ def compute_w_loader(
             features = features.cpu().numpy()
 
             asset_dict = {"features": features, "coords": coords}
-            save_hdf5(output_h5_path, asset_dict, attr_dict=None, mode=mode)
+            save_hdf5(output_h5_path, asset_dict, attr_h5_path=file_path, mode=mode)
             mode = "a"
 
     return output_h5_path
