@@ -28,7 +28,6 @@ cs.store(name="merge_annotation_features_config", node=MergeAnnotationFeaturesCo
 
 @hydra.main(version_base=None, config_path=".", config_name="merge_annotation_features_config")
 def main(cfg: MergeAnnotationFeaturesConfig):
-    cfg.class_mapping = { 1 : 1, 2 : 1, 3 : 1, 4 : 0, 5 : 0, 6 : 0, 7 : 0, 8 : 0, 9 : 0, 11 : 0, }
     with open(cfg.features_h5_path, 'rb') as f:
         logger.info(f"Reading features from {cfg.features_h5_path}...")
         tiles_h5 = h5py.File(f, 'r')
