@@ -26,6 +26,8 @@ dependencies = [
   "sentencepiece",
   "loguru",
   "pyarrow",
+  "geopandas",
+  "scikit-learn",
   { conda = "pip" },
   { pip =  "transpath @ https://github.com/msk-mind/TransPath/archive/refs/heads/main.zip"},
   { pip =  "timm_ctranspath @ https://github.com/msk-mind/timm-ctranspath/archive/refs/heads/main.zip"}
@@ -37,7 +39,7 @@ platforms = [
 ]
 
 [tool.unidep.optional_dependencies]
-dev = ["mypy", "unidep"]
+dev = ["mypy", "unidep", "conda-lock"]
 test = ["pytest"]
 
 [tool.setuptools.packages.find]
@@ -54,3 +56,5 @@ extract_features = 'mussel.cli.extract_features:main'
 tessellate = 'mussel.cli.tessellate:main'
 create_class_embeddings = 'mussel.cli.create_class_embeddings:main'
 stitch_tiles = 'mussel.cli.stitch_tiles:main'
+merge_annotation_features = 'mussel.cli.merge_annotation_features:main'
+linear_probe_benchmark = 'mussel.cli.linear_probe_benchmark:main'
