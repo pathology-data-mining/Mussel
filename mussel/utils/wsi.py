@@ -319,10 +319,10 @@ def StitchPatches(
     logger.info("patch shape: {}".format(img_shape))
     downscaled_shape = (img_shape[1] // downscale, img_shape[0] // downscale)
 
-    if w * h > Image.MAX_IMAGE_PIXELS:
-        raise Image.DecompressionBombError(
-            "Visualization Downscale %d is too large" % downscale
-        )
+    #if w * h > Image.MAX_IMAGE_PIXELS:
+        #raise Image.DecompressionBombError(
+            #"Visualization Downscale %d is too large" % downscale
+        #)
 
     if alpha < 0 or alpha == -1:
         heatmap = Image.new(size=(w, h), mode="RGB", color=bg_color)
@@ -374,10 +374,10 @@ def StitchCoords(
         )
         logger.info("ref patch size: {}x{}".format(patch_size, patch_size))
 
-        if w * h > Image.MAX_IMAGE_PIXELS:
-            raise Image.DecompressionBombError(
-                "Visualization Downscale %d is too large" % downscale
-            )
+        #if w * h > Image.MAX_IMAGE_PIXELS:
+            #raise Image.DecompressionBombError(
+                #"Visualization Downscale %d is too large" % downscale
+            #)
 
         if alpha < 0 or alpha == -1:
             heatmap = Image.new(size=(w, h), mode="RGB", color=bg_color)
