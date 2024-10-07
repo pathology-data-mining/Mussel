@@ -16,7 +16,7 @@ import tiffslide as openslide
 from loguru import logger
 from PIL import Image
 
-from mussel.utils.file import load_pkl, save_pkl, save_hdf5
+from mussel.utils.file import load_pkl, save_hdf5, save_pkl
 from mussel.utils.wsi import (initialize_hdf5_bag, isBlackPatch, isWhitePatch,
                               savePatchIter_bag_hdf5, screen_coords,
                               to_percentiles)
@@ -24,7 +24,7 @@ from mussel.utils.wsi_classes import (Contour_Checking_fn, isInContourV1,
                                       isInContourV2, isInContourV3_Easy,
                                       isInContourV3_Hard)
 
-Image.MAX_IMAGE_PIXELS = 933120000
+Image.MAX_IMAGE_PIXELS = None
 
 
 class WholeSlideImage(object):
@@ -208,7 +208,7 @@ class WholeSlideImage(object):
 
         # Morphological closing
         if morphology_ex_kernel > 0:
-            kernel = np.ones((morphology_ex_kernel, close), np.uint8)
+            kernel = np.ones((morphology_ex_kernel, morphology_ex_kernel), np.uint8)
             img_otsu = cv2.morphologyEx(img_otsu, cv2.MORPH_CLOSE, kernel)
 
         scale = self.level_downsamples[seg_level]
@@ -620,8 +620,8 @@ class WholeSlideImage(object):
         logger.info(f"Creating patches for: {self.name} ...")
         elapsed = time.time()
         if self.contours_tissue is None or len(self.contours_tissue) == 0:
-            logger.info("0 contours, exiting")
-            sys.exit(0)
+            logger.info("0 contours found")
+            return None
         n_contours = len(self.contours_tissue)
         logger.info(f"Total number of contours to process: {n_contours}")
         fp_chunk_size = math.ceil(n_contours * 0.05)
@@ -644,6 +644,7 @@ class WholeSlideImage(object):
                     save_hdf5(save_path, asset_dict, attr_dict, mode="w")
                     init = False
                     logger.info(f"Writing to {save_path}")
+                    self.hdf5_file = save_path
                 else:
                     save_hdf5(save_path, asset_dict, mode="a")
 

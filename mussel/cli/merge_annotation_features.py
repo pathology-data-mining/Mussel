@@ -1,18 +1,19 @@
 from dataclasses import dataclass
 from typing import Optional
 
-import hydra
-import h5py
-import pandas as pd
 import geopandas as gpd
+import h5py
+import hydra
 import numpy as np
-from loguru import logger
+import pandas as pd
+import yaml
 from hydra.core.config_store import ConfigStore
+from loguru import logger
 from omegaconf import MISSING, OmegaConf
 from PIL import Image
 from shapely.geometry import box
 
-Image.MAX_IMAGE_PIXELS = 100000000000
+Image.MAX_IMAGE_PIXELS = None
 
 
 @dataclass
@@ -21,7 +22,7 @@ class MergeAnnotationFeaturesConfig:
     annotation_bmp_path: str = MISSING
     output_parquet_path: str = MISSING
     slide_id: Optional[str] = None
-    class_mapping: Optional[dict] = None
+    class_mapping_yaml_path: Optional[str] = None
 
 cs = ConfigStore.instance()
 cs.store(name="merge_annotation_features_config", node=MergeAnnotationFeaturesConfig)
@@ -46,8 +47,10 @@ def main(cfg: MergeAnnotationFeaturesConfig):
     ind = np.nonzero(img_arr)
     df = pd.DataFrame(np.transpose(ind), columns = ['i', 'j'])
     df = df.assign(annotation=img_arr[ind])
-    if cfg.class_mapping is not None:
-        df.annotation = df.annotation.replace(cfg.class_mapping)
+    if cfg.class_mapping_yaml_path is not None:
+        with open(cfg.class_mapping_yaml_path, 'r') as f:
+            class_mapping = yaml.safe_load(f)
+        df.annotation = df.annotation.replace(class_mapping)
     #df.annotation = pd.Categorical(df.annotation).rename_categories(CATEGORIES)
     ann_gdf = gpd.GeoDataFrame(df, geometry=gpd.points_from_xy(df['i'], df['j']))
     logger.info(f"Loaded {len(ann_gdf)} annotations pixels")

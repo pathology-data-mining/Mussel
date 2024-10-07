@@ -1,12 +1,13 @@
 import argparse
 import os
+import pickle
+import ssl
 import sys
 import time
 from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
 from typing import List, Optional
-import pickle
 
 import h5py
 import hydra
@@ -30,6 +31,8 @@ from mussel.models.resnet_custom import resnet50_baseline
 from mussel.utils.file import save_hdf5
 from mussel.utils.ml import collate_features
 from mussel.utils.timer import timed
+
+ssl._create_default_https_context = ssl._create_unverified_context
 
 class ModelType(Enum):
 

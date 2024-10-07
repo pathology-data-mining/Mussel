@@ -54,7 +54,9 @@ class TessellateConfig:
     slide_path: str = MISSING
     output_h5_path: str = MISSING
     output_png_dir: Optional[str] = None
-    mask_path: Optional[str] = None
+    output_mask_path: Optional[str] = None
+    output_thumbnail_path: Optional[str] = None
+    thumbnail_size: tuple = (1024, 1024)
     num_workers: int = 4
     seg_config: SegConfig = field(default_factory=SegConfig)
     filter_config: FilterConfig = field(default_factory=FilterConfig)
@@ -92,7 +94,7 @@ def main(
             cfg.seg_config.seg_level = best_level
 
     w, h = WSI_object.level_dim[cfg.seg_config.seg_level]
-    if w * h > 1e8:
+    if w * h > 1e12:
         logger.error(
             "level_dim {} x {} is likely too large for successful segmentation, aborting".format(
                 w, h
@@ -106,22 +108,29 @@ def main(
         **OmegaConf.to_container(cfg.filter_config),
     )
 
-    if cfg.mask_path:
+    if cfg.output_mask_path:
         mask = WSI_object.visWSI(**OmegaConf.to_container(cfg.vis_config))
-        mask.save(cfg.mask_path)
+        mask.save(cfg.output_mask_path)
 
-    WSI_object.process_contours(
+    ret = WSI_object.process_contours(
         save_path=cfg.output_h5_path,
         num_workers=cfg.num_workers,
         **OmegaConf.to_container(cfg.patch_config),
     )
 
-    if cfg.output_png_dir:
+    if ret is not None and cfg.output_png_dir:
+        logger.info(f"saving patches to {cfg.output_png_dir}")
         WSI_object.save_patches_png(
             save_dir=cfg.output_png_dir,
             num_workers=cfg.num_workers,
             **OmegaConf.to_container(cfg.patch_config),
         )
+
+    if cfg.output_thumbnail_path:
+        logger.info(f"saving thumbnail to {cfg.output_thumbnail_path}")
+        thumbnail = WSI_object.getOpenSlide().get_thumbnail(cfg.thumbnail_size)
+        with open(cfg.output_thumbnail_path, 'wb') as f:
+            thumbnail.save(f)
 
 
 if __name__ == "__main__":
