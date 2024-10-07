@@ -22,3 +22,8 @@ config/
 *.pyc
 outputs/
 *.env
+*.parquet
+*.svs
+*.h5
+*.bmp
+*.npy
