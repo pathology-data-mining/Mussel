@@ -45,7 +45,7 @@ def main(cfg: MergeAnnotationFeaturesConfig):
     logger.info(f"Reading annotations from {cfg.annotation_bmp_path}...")
     img_arr = np.array(Image.open(cfg.annotation_bmp_path))
     ind = np.nonzero(img_arr)
-    df = pd.DataFrame(np.transpose(ind), columns = ['i', 'j'])
+    df = pd.DataFrame(np.transpose(ind), columns = ['j', 'i'])
     df = df.assign(annotation=img_arr[ind])
     if cfg.class_mapping_yaml_path is not None:
         with open(cfg.class_mapping_yaml_path, 'r') as f:
