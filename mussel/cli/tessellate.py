@@ -103,7 +103,7 @@ def main(
         return
 
     seg_time_elapsed = -1
-    WSI_object.segmentTissue(
+    WSI_object.segment_tissue(
         **OmegaConf.to_container(cfg.seg_config),
         **OmegaConf.to_container(cfg.filter_config),
     )
