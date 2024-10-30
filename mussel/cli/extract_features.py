@@ -71,6 +71,7 @@ def compute_w_loader(
     model_obj,
     model_type: ModelType,
     device,
+    device_type,
     batch_size=8,
     verbose=0,
     print_every=20,
@@ -110,7 +111,7 @@ def compute_w_loader(
 
     mode = "w"
     for count, (batch, coords) in enumerate(loader):
-        with torch.no_grad():
+        with torch.no_grad(), torch.inference_mode(), torch.autocast(device_type=device_type, dtype=torch.float16):
             if count % print_every == 0:
                 logger.info(
                     "batch {}/{}, {} tiles processed".format(
@@ -139,12 +140,12 @@ cs.store(name="extract_features_config", node=ExtractFeaturesConfig)
 @hydra.main(version_base=None, config_path=".", config_name="extract_features_config")
 def main(cfg: ExtractFeaturesConfig):
 
-    device = torch.device("cpu")
+    device_type = "cpu"
     pin_memory = False
     if cfg.use_gpu:
         if torch.cuda.is_available():
             pin_memory = True
-            device = torch.device("cuda")
+            device_type = "cuda"
         else:
             logger.warning("cuda not available, using cpu")
     logger.info("loading model checkpoint")
@@ -207,6 +208,7 @@ def main(cfg: ExtractFeaturesConfig):
     else:
         raise ValueError("model not recognized")
 
+    device = torch.device(device_type)
     model = model.to(device)
     if cfg.gpu_device_ids and len(cfg.gpu_device_ids) > 1:
         model = nn.DataParallel(model, device_ids=cfg.gpu_device_ids)
@@ -221,6 +223,7 @@ def main(cfg: ExtractFeaturesConfig):
         model_type=cfg.model_type,
         preprocess=preprocessing,
         device=device,
+        device_type=device_type,
         pin_memory=pin_memory,
         batch_size=cfg.batch_size,
         verbose=1,
