@@ -1,5 +1,6 @@
 import pickle
 from contextlib import ExitStack
+from pathlib import Path
 
 import h5py
 
@@ -18,6 +19,8 @@ def load_pkl(filename):
 
 
 def save_hdf5(output_path, asset_dict, attr_dict=None, attr_h5_path=None, mode="a"):
+    if "w" in mode:
+        Path(output_path).unlink(missing_ok=True)
     with ExitStack() as stack:
         file = stack.enter_context(h5py.File(output_path, mode))
         if attr_h5_path is not None:
