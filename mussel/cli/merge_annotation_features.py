@@ -56,7 +56,7 @@ def main(cfg: MergeAnnotationFeaturesConfig):
     logger.info(f"Loaded {len(ann_gdf)} annotations pixels")
 
     logger.info("Joining tiles and annotations...")
-    mgdf = tiles_gdf.sjoin(ann_gdf, how='inner')
+    mgdf = tiles_gdf.sjoin(ann_gdf, how='inner', predicate='within')
     gb = mgdf.reset_index().groupby('index')
     ann_count = gb.size()
     ann_mean = gb.annotation.mean()
