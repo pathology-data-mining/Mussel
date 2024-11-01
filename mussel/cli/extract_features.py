@@ -109,6 +109,9 @@ def compute_w_loader(
     if verbose > 0:
         logger.info("processing {}: total of {} batches".format(file_path, len(loader)))
 
+    if len(loader) == 0:
+        return None
+
     mode = "w"
     for count, (batch, coords) in enumerate(loader):
         with torch.no_grad(), torch.inference_mode(), torch.autocast(device_type=device_type, dtype=torch.float16):
@@ -231,6 +234,10 @@ def main(cfg: ExtractFeaturesConfig):
         use_imagenet_rgb_dist=preprocessing is None,
         num_workers=cfg.num_workers,
     )
+
+    if output_file_path is None:
+        logger.info("No features found")
+        return
 
     file = h5py.File(output_file_path, "r")
     features = file["features"][:]
