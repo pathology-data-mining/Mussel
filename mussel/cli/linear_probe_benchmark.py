@@ -18,6 +18,12 @@ class LinearProbeBenchmarkConfig:
     features_annotation_parquet_path: str = MISSING
     annotation_percent_filter_threshold: float = 0.5
     annotation_mean_threshold: float = 0.5
+    test_size: float = 0.2
+    val_size: float = 0.1
+    random_state: int = 42
+    penalty: Optional[str] = None # 'l1', 'l2', 'elasticnet' or None
+    C: float = 1.0
+    max_iter: int = 5000
 
 cs = ConfigStore.instance()
 cs.store(name="linear_probe_benchmark_config", node=LinearProbeBenchmarkConfig)
@@ -32,8 +38,13 @@ def main(cfg: LinearProbeBenchmarkConfig):
 
     slide_ids = df_filtered['slide_id'].unique()
 
-    train_ids, test_ids = train_test_split(slide_ids, test_size=0.2, random_state=42)
-    train_ids, val_ids = train_test_split(train_ids, test_size=0.125, random_state=42)  # 0.25 * 0.8 = 0.2
+    # 20% test size, 10% validation, 70% train size
+    train_ids, test_ids = train_test_split(slide_ids,
+                                           test_size=cfg.test_size,
+                                           random_state=cfg.random_state)
+    train_ids, val_ids = train_test_split(train_ids,
+                                          test_size=cfg.val_size / (1 - cfg.test_size),
+                                          cfg.random_state=cfg.random_state)  # 0.25 * 0.8 = 0.2
 
     train_df = df_filtered[df_filtered['slide_id'].isin(train_ids)]
     val_df = df_filtered[df_filtered['slide_id'].isin(val_ids)]
@@ -48,22 +59,9 @@ def main(cfg: LinearProbeBenchmarkConfig):
     X_test = test_df.filter(regex='feature_').values
     y_test = test_df['y'].values
 
-    C_values = [0.01, 0.1, 1, 10, 100]
+    clf = LogisticRegression(penalty=cfg.penalty, C=cfg.C, max_iter=cfg.max_iter, solver='lbfgs')
+    clf.fit(X_train, y_train)
+    y_val_pred = clf.predict(X_val)
+    val_f1 = f1_score(y_val, y_val_pred, average='weighted')
 
-    best_f1 = 0
-    best_model = None
-    best_C = None
-
-    for C in C_values:
-        # Initialize logistic regression model
-        clf = LogisticRegression(C=C, max_iter=5000, solver='lbfgs')
-        # Train the model
-        clf.fit(X_train, y_train)
-        # Validation predictions
-        y_val_pred = clf.predict(X_val)
-        val_f1 = f1_score(y_val, y_val_pred, average='weighted')
-        print(f"C_value : {C} \t F1_score: {val_f1}")
-        if val_f1 > best_f1:
-            best_f1 = val_f1
-            best_model = clf
-            best_C = C
+    logger.info(f"C_value : {cfg.C} \t F1_score: {val_f1}")
