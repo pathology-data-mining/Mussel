@@ -44,7 +44,7 @@ def main(cfg: LinearProbeBenchmarkConfig):
                                            random_state=cfg.random_state)
     train_ids, val_ids = train_test_split(train_ids,
                                           test_size=cfg.val_size / (1 - cfg.test_size),
-                                          cfg.random_state=cfg.random_state)  # 0.25 * 0.8 = 0.2
+                                          random_state=cfg.random_state)  # 0.25 * 0.8 = 0.2
 
     train_df = df_filtered[df_filtered['slide_id'].isin(train_ids)]
     val_df = df_filtered[df_filtered['slide_id'].isin(val_ids)]
