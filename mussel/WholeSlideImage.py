@@ -15,16 +15,17 @@ import numpy as np
 import tiffslide as openslide
 from loguru import logger
 from PIL import Image
+from pydantic.utils import deep_update
 
-from mussel.utils.file import load_pkl, save_pkl
+from mussel.utils.file import load_pkl, save_hdf5, save_pkl
 from mussel.utils.wsi import (initialize_hdf5_bag, isBlackPatch, isWhitePatch,
-                              save_hdf5, savePatchIter_bag_hdf5, screen_coords,
+                              savePatchIter_bag_hdf5, screen_coords,
                               to_percentiles)
 from mussel.utils.wsi_classes import (Contour_Checking_fn, isInContourV1,
                                       isInContourV2, isInContourV3_Easy,
                                       isInContourV3_Hard)
 
-Image.MAX_IMAGE_PIXELS = 933120000
+Image.MAX_IMAGE_PIXELS = None
 
 
 class WholeSlideImage(object):
@@ -43,6 +44,7 @@ class WholeSlideImage(object):
         self.contours_tissue = None
         self.contours_tumor = None
         self.hdf5_file = None
+        self.attr_dict = {}
 
     def getOpenSlide(self):
         return self.wsi
@@ -100,19 +102,19 @@ class WholeSlideImage(object):
             self.contours_tumor, key=cv2.contourArea, reverse=True
         )
 
-    def initSegmentation(self, mask_file):
+    def init_segmentation(self, mask_file):
         # load segmentation results from pickle file
 
         asset_dict = load_pkl(mask_file)
         self.holes_tissue = asset_dict["holes"]
         self.contours_tissue = asset_dict["tissue"]
 
-    def saveSegmentation(self, mask_file):
+    def save_segmentation(self, mask_file):
         # save segmentation results using pickle
         asset_dict = {"holes": self.holes_tissue, "tissue": self.contours_tissue}
         save_pkl(mask_file, asset_dict)
 
-    def segmentTissue(
+    def segment_tissue(
         self,
         seg_level: int = 0,
         segment_threshold: int = 20,
@@ -131,6 +133,25 @@ class WholeSlideImage(object):
         """
         Segment the tissue via HSV -> Median thresholding -> Binary threshold
         """
+
+        self.attr_dict = deep_update(
+            self.attr_dict,
+            {
+                "coords": {
+                    "seg_level": seg_level,
+                    "segment_threshold": segment_threshold,
+                    "segment_max_value": segment_max_value,
+                    "median_blur_ksize": median_blur_ksize,
+                    "morphology_ex_kernel": morphology_ex_kernel,
+                    "use_otsu": use_otsu,
+                    "filter_contours": filter_contours,
+                    "tissue_area_threshold": tissue_area_threshold,
+                    "hole_area_threshold": hole_area_threshold,
+                    "max_num_holes": max_num_holes,
+                    "ref_patch_size": ref_patch_size,
+                }
+            }
+        )
 
         def _filter_contours(
             contours,
@@ -208,7 +229,7 @@ class WholeSlideImage(object):
 
         # Morphological closing
         if morphology_ex_kernel > 0:
-            kernel = np.ones((morphology_ex_kernel, close), np.uint8)
+            kernel = np.ones((morphology_ex_kernel, morphology_ex_kernel), np.uint8)
             img_otsu = cv2.morphologyEx(img_otsu, cv2.MORPH_CLOSE, kernel)
 
         scale = self.level_downsamples[seg_level]
@@ -220,6 +241,8 @@ class WholeSlideImage(object):
         contours, hierarchy = cv2.findContours(
             img_otsu, cv2.RETR_CCOMP, cv2.CHAIN_APPROX_NONE
         )  # Find contours
+        if contours is None or hierarchy is None:
+            return
         hierarchy = np.squeeze(hierarchy, axis=(0,))[:, 2:]
         if filter_contours:
             foreground_contours, hole_contours = _filter_contours(
@@ -617,10 +640,10 @@ class WholeSlideImage(object):
             step_size = patch_size
         logger.info(f"Creating patches for: {self.name} ...")
         elapsed = time.time()
+        if self.contours_tissue is None or len(self.contours_tissue) == 0:
+            logger.info("0 contours found")
+            return None
         n_contours = len(self.contours_tissue)
-        if n_contours == 0:
-            logger.info("0 contours, exiting")
-            sys.exit(0)
         logger.info(f"Total number of contours to process: {n_contours}")
         fp_chunk_size = math.ceil(n_contours * 0.05)
         init = True
@@ -628,7 +651,7 @@ class WholeSlideImage(object):
             if (idx + 1) % fp_chunk_size == fp_chunk_size:
                 logger.info("Processing contour {}/{}".format(idx, n_contours))
 
-            asset_dict, attr_dict = self.process_contour(
+            asset_dict = self.process_contour(
                 cont,
                 self.holes_tissue[idx],
                 mpp,
@@ -639,9 +662,10 @@ class WholeSlideImage(object):
             )
             if len(asset_dict) > 0:
                 if init:
-                    save_hdf5(save_path, asset_dict, attr_dict, mode="w")
+                    save_hdf5(save_path, asset_dict, self.attr_dict, mode="w")
                     init = False
                     logger.info(f"Writing to {save_path}")
+                    self.hdf5_file = save_path
                 else:
                     save_hdf5(save_path, asset_dict, mode="a")
 
@@ -749,11 +773,11 @@ class WholeSlideImage(object):
                 "save_path": save_path,
             }
 
-            attr_dict = {"coords": attr}
-            return asset_dict, attr_dict
+            self.attr_dict = deep_update(self.attr_dict, {"coords": attr})
+            return asset_dict
 
         else:
-            return {}, {}
+            return {}
 
     @staticmethod
     def process_coord_candidate(coord, contour_holes, ref_patch_size, cont_check_fn):
@@ -797,7 +821,7 @@ class WholeSlideImage(object):
             alpha (float [0, 1]): blending coefficient for overlaying heatmap onto original slide
             blur (bool): apply gaussian blurring
             overlap (float [0 1]): percentage of overlap between neighboring patches (only affect radius of blurring)
-            segment (bool): whether to use tissue segmentation contour (must have already called self.segmentTissue such that
+            segment (bool): whether to use tissue segmentation contour (must have already called self.segment_tissue such that
                             self.contours_tissue and self.holes_tissue are not None
             use_holes (bool): whether to also clip out detected tissue cavities (only in effect when segment == True)
             convert_to_percentiles (bool): whether to convert attention scores to percentiles
