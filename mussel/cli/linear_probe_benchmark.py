@@ -8,13 +8,16 @@ import pandas as pd
 from hydra.core.config_store import ConfigStore
 from loguru import logger
 from omegaconf import MISSING, OmegaConf
+import matplotlib.pyplot as plt
 from sklearn.linear_model import LogisticRegression
-from sklearn.metrics import accuracy_score, classification_report, f1_score
+from sklearn.metrics import accuracy_score, classification_report, f1_score, confusion_matrix, ConfusionMatrixDisplay
 from sklearn.model_selection import train_test_split
 
 
 @dataclass
 class LinearProbeBenchmarkConfig:
+    output_csv: str = "classification_report.csv"
+    output_png: str = "confusion_matrix.png"
     features_annotation_parquet_path: str = MISSING
     annotation_percent_filter_threshold: float = 0.5
     annotation_mean_threshold: float = 0.5
@@ -63,5 +66,11 @@ def main(cfg: LinearProbeBenchmarkConfig):
     clf.fit(X_train, y_train)
     y_val_pred = clf.predict(X_val)
     val_f1 = f1_score(y_val, y_val_pred, average='weighted')
+
+    cls_report_df = pd.DataFrame(classification_report(y_val, y_val_pred, output_dict=True))
+    cls_report_df.to_csv(cfg.output_csv)
+
+    ConfusionMatrixDisplay.from_predictions(y_val, y_val_pred)
+    plt.savefig(cfg.output_png)
 
     logger.info(f"C_value : {cfg.C} \t F1_score: {val_f1}")
