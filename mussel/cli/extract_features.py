@@ -1,5 +1,7 @@
 import argparse
 import os
+import pickle
+import ssl
 import sys
 import time
 from dataclasses import dataclass, field
@@ -29,6 +31,8 @@ from mussel.models.resnet_custom import resnet50_baseline
 from mussel.utils.file import save_hdf5
 from mussel.utils.ml import collate_features
 from mussel.utils.timer import timed
+
+ssl._create_default_https_context = ssl._create_unverified_context
 
 class ModelType(Enum):
 
@@ -67,12 +71,14 @@ def compute_w_loader(
     model_obj,
     model_type: ModelType,
     device,
+    device_type,
     batch_size=8,
     verbose=0,
     print_every=20,
     use_imagenet_rgb_dist=True,
     preprocess=None,
     num_workers=32,
+    pin_memory=True,
 ):
     """
     args:
@@ -90,11 +96,11 @@ def compute_w_loader(
         use_imagenet_rgb_dist=use_imagenet_rgb_dist,
         preprocess=preprocess,
     )
-    kwargs = {"num_workers": num_workers, "pin_memory": True}
     loader = DataLoader(
         dataset=dataset,
         batch_size=batch_size,
-        **kwargs,
+        num_workers=num_workers,
+        pin_memory=pin_memory,
         collate_fn=collate_features,
         worker_init_fn=dataset.worker_init,
         shuffle=False,
@@ -103,12 +109,15 @@ def compute_w_loader(
     if verbose > 0:
         logger.info("processing {}: total of {} batches".format(file_path, len(loader)))
 
+    if len(loader) == 0:
+        return None
+
     mode = "w"
     for count, (batch, coords) in enumerate(loader):
-        with torch.no_grad():
+        with torch.no_grad(), torch.inference_mode(), torch.autocast(device_type=device_type, dtype=torch.float16):
             if count % print_every == 0:
                 logger.info(
-                    "batch {}/{}, {} files processed".format(
+                    "batch {}/{}, {} tiles processed".format(
                         count, len(loader), count * batch_size
                     )
                 )
@@ -121,7 +130,7 @@ def compute_w_loader(
             features = features.cpu().numpy()
 
             asset_dict = {"features": features, "coords": coords}
-            save_hdf5(output_h5_path, asset_dict, attr_dict=None, mode=mode)
+            save_hdf5(output_h5_path, asset_dict, attr_h5_path=file_path, mode=mode)
             mode = "a"
 
     return output_h5_path
@@ -134,15 +143,21 @@ cs.store(name="extract_features_config", node=ExtractFeaturesConfig)
 @hydra.main(version_base=None, config_path=".", config_name="extract_features_config")
 def main(cfg: ExtractFeaturesConfig):
 
-    device = torch.device("cpu")
+    device_type = "cpu"
+    pin_memory = False
     if cfg.use_gpu:
         if torch.cuda.is_available():
-            device = torch.device("cuda")
+            pin_memory = True
+            device_type = "cuda"
         else:
             logger.warning("cuda not available, using cpu")
     logger.info("loading model checkpoint")
+    model = None
     if cfg.model_path is None:
         cfg.model_path = cfg.model_type.hf_path
+    if cfg.model_path.endswith('.pkl'):
+        with open(cfg.model_path, 'rb') as f:
+            model = pickle.load(f)
     if cfg.model_type == ModelType.RESNET50:
         model = resnet50_baseline(pretrained=True)
         preprocessing = None
@@ -155,7 +170,8 @@ def main(cfg: ExtractFeaturesConfig):
         model.load_state_dict(td["model"], strict=True)
         preprocessing = None
     elif cfg.model_type == ModelType.GIGAPATH:
-        model = timm.create_model(cfg.model_path, pretrained=True)
+        if model is None:
+            model = timm.create_model(cfg.model_path, pretrained=True)
         preprocessing = transforms.Compose(
             [
                 transforms.Resize(
@@ -169,16 +185,18 @@ def main(cfg: ExtractFeaturesConfig):
         )
     elif cfg.model_type == ModelType.VIRCHOW:
         # need to specify MLP layer and activation function for proper init
-        model = timm.create_model(cfg.model_path, pretrained=True, mlp_layer=SwiGLUPacked, act_layer=torch.nn.SiLU)
+        if model is None:
+            model = timm.create_model(cfg.model_path, pretrained=True, mlp_layer=SwiGLUPacked, act_layer=torch.nn.SiLU)
         preprocessing = create_transform(**resolve_data_config(model.pretrained_cfg, model=model))
     elif cfg.model_type == ModelType.CLIP:
         model, _, preprocessing = open_clip.create_model_and_transforms(
             cfg.model_path,
         )
     elif cfg.model_type == ModelType.OPTIMUS:
-        model = timm.create_model(
-            cfg.model_path, pretrained=True, init_values=1e-5, dynamic_img_size=False
-        )
+        if model is None:
+            model = timm.create_model(
+                cfg.model_path, pretrained=True, init_values=1e-5, dynamic_img_size=False
+            )
 
         preprocessing = transforms.Compose([
             transforms.Resize(
@@ -193,6 +211,7 @@ def main(cfg: ExtractFeaturesConfig):
     else:
         raise ValueError("model not recognized")
 
+    device = torch.device(device_type)
     model = model.to(device)
     if cfg.gpu_device_ids and len(cfg.gpu_device_ids) > 1:
         model = nn.DataParallel(model, device_ids=cfg.gpu_device_ids)
@@ -207,12 +226,18 @@ def main(cfg: ExtractFeaturesConfig):
         model_type=cfg.model_type,
         preprocess=preprocessing,
         device=device,
+        device_type=device_type,
+        pin_memory=pin_memory,
         batch_size=cfg.batch_size,
         verbose=1,
         print_every=20,
         use_imagenet_rgb_dist=preprocessing is None,
         num_workers=cfg.num_workers,
     )
+
+    if output_file_path is None:
+        logger.info("No features found")
+        return
 
     file = h5py.File(output_file_path, "r")
     features = file["features"][:]
