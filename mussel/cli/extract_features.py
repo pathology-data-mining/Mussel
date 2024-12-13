@@ -101,6 +101,9 @@ def compute_w_loader(
             transform=preprocess,
         )
 
+        # override batch_size for filepath based feature extraction
+        batch_size = 1
+
         loader = DataLoader(
             dataset=dataset,
             batch_size=batch_size,
@@ -157,7 +160,13 @@ def compute_w_loader(
 
             if os.path.isdir(wsi_path):
                 asset_dict = {"features": features}
-                save_hdf5(output_h5_path, asset_dict, attr_h5_path=None, mode=mode)
+                fname = os.path.splitext(os.path.basename(dataset.imgs[count][0]))[0]
+                save_hdf5(
+                    os.path.join(output_h5_path, f"{fname}.h5"),
+                    asset_dict,
+                    attr_h5_path=None,
+                    mode=mode,
+                )
             else:
                 asset_dict = {"features": features, "coords": coords}
                 save_hdf5(output_h5_path, asset_dict, attr_h5_path=file_path, mode=mode)
@@ -283,14 +292,18 @@ def main(cfg: ExtractFeaturesConfig):
         logger.info("No features found")
         return
 
-    file = h5py.File(output_file_path, "r")
-    features = file["features"][:]
-    logger.info(f"features size: {features.shape} ")
-    # logger.info(f'coordinates size: {file["coords"].shape} ')
-    file.close()
+    # TODO: potentially output .pt files for folder based feature extraction if needed
+    if os.path.isdir(cfg.slide_path):
+        return
+    else:
+        file = h5py.File(output_file_path, "r")
+        features = file["features"][:]
+        logger.info(f"features size: {features.shape} ")
+        # logger.info(f'coordinates size: {file["coords"].shape} ')
+        file.close()
 
-    features = torch.from_numpy(features)
-    torch.save(features, cfg.output_pt_path)
+        features = torch.from_numpy(features)
+        torch.save(features, cfg.output_pt_path)
 
 
 if __name__ == "__main__":
