@@ -25,6 +25,7 @@ from timm.data.transforms_factory import create_transform
 from timm.layers import SwiGLUPacked
 from torch.utils.data import DataLoader
 from torchvision import transforms
+from torchvision.datasets import ImageFolder
 
 from mussel.datasets.h5 import Whole_Slide_Bag_FP
 from mussel.models.resnet_custom import resnet50_baseline
@@ -34,19 +35,19 @@ from mussel.utils.timer import timed
 
 ssl._create_default_https_context = ssl._create_unverified_context
 
-class ModelType(Enum):
 
+class ModelType(Enum):
     def __init__(self, id, code, hf_path):
         self.id = id
         self.code = code
         self.hf_path = hf_path
 
-    RESNET50 = 1, 'resnet50', ""
-    CTRANSPATH = 2, 'ctranspath', ""
+    RESNET50 = 1, "resnet50", ""
+    CTRANSPATH = 2, "ctranspath", ""
     GIGAPATH = 3, "gigapath", "hf-hub:prov-gigapath/prov-gigapath"
     VIRCHOW = 4, "virchow", "hf-hub:paige-ai/Virchow"
     OPTIMUS = 5, "optimus", "hf-hub:bioptimus/H-optimus-0"
-    CLIP = 6, "clip","hf-hub:wisdomik/QuiltNet-B-16-PMB"
+    CLIP = 6, "clip", "hf-hub:wisdomik/QuiltNet-B-16-PMB"
 
 
 @dataclass
@@ -72,7 +73,7 @@ def compute_w_loader(
     model_type: ModelType,
     device,
     device_type,
-    batch_size=8,
+    batch_size=64,
     verbose=0,
     print_every=20,
     use_imagenet_rgb_dist=True,
@@ -90,21 +91,43 @@ def compute_w_loader(
             pretrained: use weights pretrained on imagenet
     """
 
-    dataset = Whole_Slide_Bag_FP(
-        file_path=file_path,
-        wsi_path=wsi_path,
-        use_imagenet_rgb_dist=use_imagenet_rgb_dist,
-        preprocess=preprocess,
-    )
-    loader = DataLoader(
-        dataset=dataset,
-        batch_size=batch_size,
-        num_workers=num_workers,
-        pin_memory=pin_memory,
-        collate_fn=collate_features,
-        worker_init_fn=dataset.worker_init,
-        shuffle=False,
-    )
+    # if file_path is a directory, assume it is a directory of pre-tiled images
+    # that can be processed independently and collated as-needed.
+    if os.path.isdir(wsi_path):
+        logger.info(wsi_path)
+
+        dataset = ImageFolder(
+            root=wsi_path,
+            transform=preprocess,
+        )
+
+        loader = DataLoader(
+            dataset=dataset,
+            batch_size=batch_size,
+            num_workers=num_workers,
+            pin_memory=pin_memory,
+            collate_fn=None,
+            worker_init_fn=None,
+            shuffle=False,
+        )
+    else:
+
+        dataset = Whole_Slide_Bag_FP(
+            file_path=file_path,
+            wsi_path=wsi_path,
+            use_imagenet_rgb_dist=use_imagenet_rgb_dist,
+            preprocess=preprocess,
+        )
+
+        loader = DataLoader(
+            dataset=dataset,
+            batch_size=batch_size,
+            num_workers=num_workers,
+            pin_memory=pin_memory,
+            collate_fn=collate_features,
+            worker_init_fn=dataset.worker_init,
+            shuffle=False,
+        )
 
     if verbose > 0:
         logger.info("processing {}: total of {} batches".format(file_path, len(loader)))
@@ -113,8 +136,11 @@ def compute_w_loader(
         return None
 
     mode = "w"
+
     for count, (batch, coords) in enumerate(loader):
-        with torch.no_grad(), torch.inference_mode(), torch.autocast(device_type=device_type, dtype=torch.float16):
+        with torch.no_grad(), torch.inference_mode(), torch.autocast(
+            device_type=device_type, dtype=torch.float16
+        ):
             if count % print_every == 0:
                 logger.info(
                     "batch {}/{}, {} tiles processed".format(
@@ -129,8 +155,12 @@ def compute_w_loader(
                 features = model_obj(batch)
             features = features.cpu().numpy()
 
-            asset_dict = {"features": features, "coords": coords}
-            save_hdf5(output_h5_path, asset_dict, attr_h5_path=file_path, mode=mode)
+            if os.path.isdir(wsi_path):
+                asset_dict = {"features": features}
+                save_hdf5(output_h5_path, asset_dict, attr_h5_path=None, mode=mode)
+            else:
+                asset_dict = {"features": features, "coords": coords}
+                save_hdf5(output_h5_path, asset_dict, attr_h5_path=file_path, mode=mode)
             mode = "a"
 
     return output_h5_path
@@ -155,8 +185,8 @@ def main(cfg: ExtractFeaturesConfig):
     model = None
     if cfg.model_path is None:
         cfg.model_path = cfg.model_type.hf_path
-    if cfg.model_path.endswith('.pkl'):
-        with open(cfg.model_path, 'rb') as f:
+    if cfg.model_path.endswith(".pkl"):
+        with open(cfg.model_path, "rb") as f:
             model = pickle.load(f)
     if cfg.model_type == ModelType.RESNET50:
         model = resnet50_baseline(pretrained=True)
@@ -168,6 +198,8 @@ def main(cfg: ExtractFeaturesConfig):
         model.head = nn.Identity()
         td = torch.load(cfg.model_path)
         model.load_state_dict(td["model"], strict=True)
+        # ctranspath() module has required torch transforms built in so
+        # preprocessing should be None here
         preprocessing = None
     elif cfg.model_type == ModelType.GIGAPATH:
         if model is None:
@@ -186,8 +218,15 @@ def main(cfg: ExtractFeaturesConfig):
     elif cfg.model_type == ModelType.VIRCHOW:
         # need to specify MLP layer and activation function for proper init
         if model is None:
-            model = timm.create_model(cfg.model_path, pretrained=True, mlp_layer=SwiGLUPacked, act_layer=torch.nn.SiLU)
-        preprocessing = create_transform(**resolve_data_config(model.pretrained_cfg, model=model))
+            model = timm.create_model(
+                cfg.model_path,
+                pretrained=True,
+                mlp_layer=SwiGLUPacked,
+                act_layer=torch.nn.SiLU,
+            )
+        preprocessing = create_transform(
+            **resolve_data_config(model.pretrained_cfg, model=model)
+        )
     elif cfg.model_type == ModelType.CLIP:
         model, _, preprocessing = open_clip.create_model_and_transforms(
             cfg.model_path,
@@ -195,19 +234,24 @@ def main(cfg: ExtractFeaturesConfig):
     elif cfg.model_type == ModelType.OPTIMUS:
         if model is None:
             model = timm.create_model(
-                cfg.model_path, pretrained=True, init_values=1e-5, dynamic_img_size=False
+                cfg.model_path,
+                pretrained=True,
+                init_values=1e-5,
+                dynamic_img_size=False,
             )
 
-        preprocessing = transforms.Compose([
-            transforms.Resize(
-                224, interpolation=transforms.InterpolationMode.BICUBIC
-            ),
-            transforms.ToTensor(),
-            transforms.Normalize(
-                mean=(0.707223, 0.578729, 0.703617),
-                std=(0.211883, 0.230117, 0.177517)
-            ),
-        ])
+        preprocessing = transforms.Compose(
+            [
+                transforms.Resize(
+                    224, interpolation=transforms.InterpolationMode.BICUBIC
+                ),
+                transforms.ToTensor(),
+                transforms.Normalize(
+                    mean=(0.707223, 0.578729, 0.703617),
+                    std=(0.211883, 0.230117, 0.177517),
+                ),
+            ]
+        )
     else:
         raise ValueError("model not recognized")
 
@@ -242,7 +286,7 @@ def main(cfg: ExtractFeaturesConfig):
     file = h5py.File(output_file_path, "r")
     features = file["features"][:]
     logger.info(f"features size: {features.shape} ")
-    logger.info(f'coordinates size: {file["coords"].shape} ')
+    # logger.info(f'coordinates size: {file["coords"].shape} ')
     file.close()
 
     features = torch.from_numpy(features)
