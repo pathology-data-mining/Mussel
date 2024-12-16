@@ -71,8 +71,8 @@ Generates .h5 file with features using pre-tiled images (as opposed to tiles tha
 from `tesselate`)
 ```
 python -m mussel.cli.extract_features \
-    slide_path=[path to folder w/ tiles in image format (.tif, .png, .jpg, etc.)] \
-    patch_h5_path=None \
+    slide_path=None \
+    patch_h5_path=[path to folder w/ tiles in image format (.tif, .png, .jpg, etc.)] \
     output_h5_path=[path to output folder] \
     output_pt_path=None
 ```
