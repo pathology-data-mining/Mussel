@@ -93,11 +93,11 @@ def compute_w_loader(
 
     # if file_path is a directory, assume it is a directory of pre-tiled images
     # that can be processed independently and collated as-needed.
-    if os.path.isdir(wsi_path):
+    if os.path.isdir(file_path):
         logger.info(wsi_path)
 
         dataset = ImageFolder(
-            root=wsi_path,
+            root=file_path,
             transform=preprocess,
         )
 
@@ -158,7 +158,7 @@ def compute_w_loader(
                 features = model_obj(batch)
             features = features.cpu().numpy()
 
-            if os.path.isdir(wsi_path):
+            if os.path.isdir(file_path):
                 asset_dict = {"features": features}
                 fname = os.path.splitext(os.path.basename(dataset.imgs[count][0]))[0]
                 save_hdf5(
@@ -293,7 +293,7 @@ def main(cfg: ExtractFeaturesConfig):
         return
 
     # TODO: potentially output .pt files for folder based feature extraction if needed
-    if os.path.isdir(cfg.slide_path):
+    if os.path.isdir(cfg.patch_h5_path):
         return
     else:
         file = h5py.File(output_file_path, "r")
