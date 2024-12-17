@@ -58,6 +58,7 @@ class ExtractFeaturesConfig:
     output_pt_path: str = MISSING
     model_type: ModelType = ModelType.CLIP
     model_path: Optional[str] = None
+    patch_path: Optional[str] = None
     batch_size: int = 64
     use_gpu: bool = True
     gpu_device_ids: Optional[List[int]] = field(default_factory=list)
@@ -73,6 +74,7 @@ def compute_w_loader(
     model_type: ModelType,
     device,
     device_type,
+    patch_path = None,
     batch_size=64,
     verbose=0,
     print_every=20,
@@ -91,13 +93,12 @@ def compute_w_loader(
             pretrained: use weights pretrained on imagenet
     """
 
-    # if file_path is a directory, assume it is a directory of pre-tiled images
+    # if patch_path is a directory, assume it is a directory of pre-tiled images
     # that can be processed independently and collated as-needed.
-    if os.path.isdir(file_path):
-        logger.info(wsi_path)
+    if os.path.isdir(patch_path):
 
         dataset = ImageFolder(
-            root=file_path,
+            root=patch_path,
             transform=preprocess,
         )
 
@@ -158,7 +159,7 @@ def compute_w_loader(
                 features = model_obj(batch)
             features = features.cpu().numpy()
 
-            if os.path.isdir(file_path):
+            if os.path.isdir(patch_path):
                 asset_dict = {"features": features}
                 fname = os.path.splitext(os.path.basename(dataset.imgs[count][0]))[0]
                 save_hdf5(
@@ -281,6 +282,7 @@ def main(cfg: ExtractFeaturesConfig):
         device=device,
         device_type=device_type,
         pin_memory=pin_memory,
+        patch_path=cfg.patch_path,
         batch_size=cfg.batch_size,
         verbose=1,
         print_every=20,
@@ -293,7 +295,7 @@ def main(cfg: ExtractFeaturesConfig):
         return
 
     # TODO: potentially output .pt files for folder based feature extraction if needed
-    if os.path.isdir(cfg.patch_h5_path):
+    if os.path.isdir(cfg.patch_path):
         return
     else:
         file = h5py.File(output_file_path, "r")
