@@ -28,6 +28,7 @@ dependencies = [
   "pyarrow",
   "geopandas",
   "scikit-learn",
+  "pydantic",
   { conda = "pip" },
   { pip =  "transpath @ https://github.com/msk-mind/TransPath/archive/refs/heads/main.zip"},
   { pip =  "timm_ctranspath @ https://github.com/msk-mind/timm-ctranspath/archive/refs/heads/main.zip"}
