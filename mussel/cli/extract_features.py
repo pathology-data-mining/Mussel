@@ -61,6 +61,7 @@ class ExtractFeaturesConfig:
     patch_path: Optional[str] = None
     batch_size: int = 64
     use_gpu: bool = True
+    gpu_device_id: Optional[int] = None
     gpu_device_ids: Optional[List[int]] = field(default_factory=list)
     num_workers: int = 32
 
@@ -95,7 +96,7 @@ def compute_w_loader(
 
     # if patch_path is a directory, assume it is a directory of pre-tiled images
     # that can be processed independently and collated as-needed.
-    if os.path.isdir(patch_path):
+    if patch_path is not None and os.path.isdir(patch_path):
 
         dataset = ImageFolder(
             root=patch_path,
@@ -159,7 +160,7 @@ def compute_w_loader(
                 features = model_obj(batch)
             features = features.cpu().numpy()
 
-            if os.path.isdir(patch_path):
+            if patch_path is not None and os.path.isdir(patch_path):
                 asset_dict = {"features": features}
                 fname = os.path.splitext(os.path.basename(dataset.imgs[count][0]))[0]
                 save_hdf5(
@@ -265,10 +266,14 @@ def main(cfg: ExtractFeaturesConfig):
     else:
         raise ValueError("model not recognized")
 
-    device = torch.device(device_type)
-    model = model.to(device)
     if cfg.gpu_device_ids and len(cfg.gpu_device_ids) > 1:
         model = nn.DataParallel(model, device_ids=cfg.gpu_device_ids)
+    else:
+        if cfg.gpu_device_id:
+            device = torch.device(device_type, cfg.gpu_device_id)
+        else:
+            device = torch.device(device_type)
+        model = model.to(device)
     model.eval()
 
     # extract features
@@ -295,7 +300,7 @@ def main(cfg: ExtractFeaturesConfig):
         return
 
     # TODO: potentially output .pt files for folder based feature extraction if needed
-    if os.path.isdir(cfg.patch_path):
+    if cfg.patch_path is not None and os.path.isdir(cfg.patch_path):
         return
     else:
         file = h5py.File(output_file_path, "r")
