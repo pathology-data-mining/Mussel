@@ -48,9 +48,9 @@ Generate .h5 file with coordinates and metadata necessary for downstream steps. 
 Example command (see defaults with `tessellate --help`):
 ```bash
 mkdir reef
-python -m mussel.cli.tessellate \
+tessellate \
     slide_path=data/7789726.svs \
-    output_h5_path=reef/7789726_cood.h5 \
+    output_h5_path=reef/7789726_coord.h5 \
     seg_config.use_otsu=true
 ```
 
@@ -59,22 +59,22 @@ Generate .h5 file with features and .pt file with embeddings for each tile.
 
 Example command (see defaults with `extract_features --help`):
 ```bash
-python -m mussel.cli.extract_features \
+extract_features \
     slide_path=data/7789726.svs \
-    patch_h5_path=reef/7789726_cood.h5 \
+    patch_h5_path=reef/7789726_coord.h5 \
     output_h5_path=reef/7789726_feat.h5 \
     output_pt_path=reef/7789726_embed.pt
 ```
 
 #### (beta) - Folder-based feature extraction
 Generates .h5 file with features using pre-tiled images (as opposed to tiles that come
-from `tesselate`)
+from `tessellate`)
 ```
-python -m mussel.cli.extract_features \
+extract_features \
     slide_path=None \
     patch_h5_path=None \
     patch_path=[path to folder w/ tiles in image format (.tif, .png, .jpg, etc.)] \
-    output_h5_path=[path to output folder] \
+    output_h5_path=[path to output h5 file] \
     output_pt_path=None
 ```
 
@@ -89,14 +89,14 @@ Generate interrogation reports to eval your prompt engineering by setting `iterr
 
 Create class embeddings
 ```bash
-python -m mussel.cli.create_class_embeddings \
+create_class_embeddings \
     'classes=["carcinoma in situ", "invasive carcinoma with lymphocytes", "tumor infiltrating lymphocytes", "lymphocytes", "carcinoma in situ with lymphocytes", "tumor-associated stroma with lymphocytes" ]' \
     output_pt_path=reef/classes.pt
 ```
 
 Example command (see defaults with `annotate --help`):
 ```bash
-python -m mussel.cli.annotate \
+annotate \
     features_pt_path=reef/7789726_embed.pt \
     output_csv_path=reef/7789726.csv \
     'classes=["carcinoma in situ", "invasive carcinoma with lymphocytes", "tumor infiltrating lymphocytes", "lymphocytes", "carcinoma in situ with lymphocytes", "tumor-associated stroma with lymphocytes" ]' \
@@ -113,8 +113,8 @@ containing invasive carcinoma by setting `limit_to_class`. `patches_h5_path` is
 the output from `tessellate`.
 
 ```bash
-python -m mussel.cli.cache_tiles slide_path=data/7789726.svs \
-    patch_h5_path=reef/7789726_cood.h5 output_pt_path=reef/7789726_cache.pt \
+cache_tiles slide_path=data/7789726.svs \
+    patch_h5_path=reef/7789726_coord.h5 output_pt_path=reef/7789726_cache.pt \
     'limit_to_class=["carcinoma in situ", "invasive carcinoma with lymphocytes"]' \
     output_indices_json_path=reef/7789726_output_indices.json
 ```
