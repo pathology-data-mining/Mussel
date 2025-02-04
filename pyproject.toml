@@ -18,7 +18,7 @@ dependencies = [
   "tiffslide",
   { conda = "opencv", pip = "opencv-python-headless" },
   { conda = "pytorch-gpu", pip = "torch" },
-  "cudatoolkit",
+  { conda = "cudatoolkit" },
   "torchvision",
   "hydra-core",
   "dacite",
@@ -39,7 +39,7 @@ platforms = [
 ]
 
 [tool.unidep.optional_dependencies]
-dev = ["mypy", "unidep", "conda-lock"]
+dev = ["mypy", "unidep", "conda-lock", "isort", "black"]
 test = ["pytest"]
 
 [tool.setuptools.packages.find]
