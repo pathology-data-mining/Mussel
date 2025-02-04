@@ -17,7 +17,8 @@ dependencies = [
   "matplotlib",
   "tiffslide",
   { conda = "opencv", pip = "opencv-python-headless" },
-  { conda = "pytorch", pip = "torch" },
+  { conda = "pytorch-gpu", pip = "torch" },
+  "cudatoolkit",
   "torchvision",
   "hydra-core",
   "dacite",
@@ -34,9 +35,7 @@ dependencies = [
   { pip =  "timm_ctranspath @ https://github.com/msk-mind/timm-ctranspath/archive/refs/heads/main.zip"}
 ]
 platforms = [
-  "linux-64",
-  "osx-64",
-  "osx-arm64"
+  "linux-64"
 ]
 
 [tool.unidep.optional_dependencies]
