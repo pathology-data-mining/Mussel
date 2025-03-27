@@ -20,18 +20,59 @@ Supported systems:
 * Linux (x86)
 
 ### Pre-requisites
-- [conda](https://docs.anaconda.com/miniconda/)
-- [conda-lock](https://conda.github.io/conda-lock/)
+- [uv](https://docs.astral.sh/uv/)
     ```bash
-    conda install -c conda-forge conda-lock
+    curl -LsSf https://astral.sh/uv/install.sh | sh
     ```
 
 ### Create virtual environment and install packages
 
+Model inference either uses the pytorch libraries or tensorflow. Unfortunately,
+there are often conflicts with CUDA libraries required by both when running on
+GPU. To handle this, the required set of libraries must be specified to `uv` to
+build the virtual environment correctly.
+
+#### PyTorch
+
+Required for the following models:
+
+* [ResNet-50](https://huggingface.co/microsoft/resnet-50)
+* [TransPath](https://github.com/Xiyue-Wang/TransPath)
+* [Prov-GigaPath](https://github.com/prov-gigapath/prov-gigapath)
+* [Virchow](https://huggingface.co/paige-ai/Virchow)
+* [H-Optimus-0](https://huggingface.co/bioptimus/H-optimus-0)
+* [OpenCLIP](https://github.com/mlfoundations/open_clip)
+    GOOGLEPATH = 7, "googlepath", "google/path-foundation"
+
+
+##### GPU (CUDA)
+
 ```bash
-conda-lock install -p .venv/
-conda activate .venv/
-pip install --no-deps .
+uv sync --extra torch-gpu
+```
+
+##### CPU
+
+```bash
+uv sync --extra torch-cpu
+```
+
+#### Tensorflow
+
+Required for:
+
+* [Google Path Foundation](https://huggingface.co/google/path-foundation)
+
+##### GPU (CUDA)
+
+```bash
+uv sync --extra tensorflow-gpu
+```
+
+##### CPU
+
+```bash
+uv sync --extra tensorflow-cpu
 ```
 
 ## CLI
@@ -48,7 +89,7 @@ Generate .h5 file with coordinates and metadata necessary for downstream steps. 
 Example command (see defaults with `tessellate --help`):
 ```bash
 mkdir reef
-tessellate \
+uv run tessellate \
     slide_path=data/7789726.svs \
     output_h5_path=reef/7789726_coord.h5 \
     seg_config.use_otsu=true
@@ -59,7 +100,7 @@ Generate .h5 file with features and .pt file with embeddings for each tile.
 
 Example command (see defaults with `extract_features --help`):
 ```bash
-extract_features \
+uv run extract_features \
     slide_path=data/7789726.svs \
     patch_h5_path=reef/7789726_coord.h5 \
     output_h5_path=reef/7789726_feat.h5 \
@@ -70,7 +111,7 @@ extract_features \
 Generates .h5 file with features using pre-tiled images (as opposed to tiles that come
 from `tessellate`)
 ```
-extract_features \
+uv run extract_features \
     slide_path=None \
     patch_h5_path=None \
     patch_path=[path to folder w/ tiles in image format (.tif, .png, .jpg, etc.)] \
@@ -89,14 +130,14 @@ Generate interrogation reports to eval your prompt engineering by setting `iterr
 
 Create class embeddings
 ```bash
-create_class_embeddings \
+uv run create_class_embeddings \
     'classes=["carcinoma in situ", "invasive carcinoma with lymphocytes", "tumor infiltrating lymphocytes", "lymphocytes", "carcinoma in situ with lymphocytes", "tumor-associated stroma with lymphocytes" ]' \
     output_pt_path=reef/classes.pt
 ```
 
 Example command (see defaults with `annotate --help`):
 ```bash
-annotate \
+uv run annotate \
     features_pt_path=reef/7789726_embed.pt \
     output_csv_path=reef/7789726.csv \
     'classes=["carcinoma in situ", "invasive carcinoma with lymphocytes", "tumor infiltrating lymphocytes", "lymphocytes", "carcinoma in situ with lymphocytes", "tumor-associated stroma with lymphocytes" ]' \
@@ -113,7 +154,7 @@ containing invasive carcinoma by setting `limit_to_class`. `patches_h5_path` is
 the output from `tessellate`.
 
 ```bash
-cache_tiles slide_path=data/7789726.svs \
+uv run cache_tiles slide_path=data/7789726.svs \
     patch_h5_path=reef/7789726_coord.h5 output_pt_path=reef/7789726_cache.pt \
     'limit_to_class=["carcinoma in situ", "invasive carcinoma with lymphocytes"]' \
     output_indices_json_path=reef/7789726_output_indices.json
@@ -127,21 +168,21 @@ cache_tiles slide_path=data/7789726.svs \
 Install dev packages:
 
 ```bash
-pip install .[dev]
+uv sync --extra dev
 ```
 
 ### Modifying package requirements
 
-Add abstract requirements to the the `pyproject.toml`. use `unidep` to build `conda-lock.yml`:
+Add abstract requirements to the the `pyproject.toml`. Use `uv sync` to build `uv.lock`:
 
 ```bash
-unidep conda-lock
+uv sync
 ```
 
 ### Run unit tests
 
 ```bash
-pip install .[test]
+uv sync --extra test
 pytest tests
 ```
 
