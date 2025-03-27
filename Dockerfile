@@ -1,16 +1,7 @@
-FROM mambaorg/micromamba:1-focal-cuda-11.7.1
+FROM nvidia/cuda:12.1.1-cudnn8-devel-ubuntu22.04
 
-ARG YOUR_ENV
-
-ENV YOUR_ENV=${YOUR_ENV} \
-             PYTHONFAULTHANDLER=1 \
-             PYTHONUNBUFFERED=1 \
-             PYTHONHASHSEED=random \
-             PIP_NO_CACHE_DIR=off \
-             PIP_DISABLE_PIP_VERSION_CHECK=on \
-             PIP_DEFAULT_TIMEOUT=100
-
-USER root
+ARG BACKEND=torch-gpu
+ENV BACKEND=$BACKEND
 
 ENV DEBIAN_FRONTEND=noninteractive
 
@@ -25,18 +16,24 @@ RUN apt-get update && apt-get install \
   ffmpeg \
   libsm6 \
   libxext6 \
+  curl \
+  zip \
   git -y
 
-USER $MAMBA_USER
+# Download the latest installer
+ADD https://astral.sh/uv/0.6.10/install.sh /uv-installer.sh
 
-COPY --chown=$MAMBA_USER:$MAMBA_USER conda-lock.yml /code/mussel/
+# Run the installer then remove it
+RUN sh /uv-installer.sh && rm /uv-installer.sh
+
+# Ensure the installed binary is on the `PATH`
+ENV PATH="/root/.local/bin/:$PATH"
+
+RUN curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
+RUN unzip awscliv2.zip
+RUN ./aws/install
+
+ADD . /code/mussel
 WORKDIR /code/mussel
-RUN micromamba install -y -n base -c conda-forge conda-lock && \
-    micromamba clean --all --yes
-ARG MAMBA_DOCKERFILE_ACTIVATE=1  # (otherwise python will not be found)
 
-RUN conda-lock install -p /opt/conda/
-
-COPY --chown=$MAMBA_USER:$MAMBA_USER . /code/mussel
-
-RUN pip install --no-deps .
+RUN uv sync --frozen --extra $BACKEND
