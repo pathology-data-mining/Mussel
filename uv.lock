@@ -608,11 +608,6 @@ dependencies = [
 ]
 
 [package.optional-dependencies]
-dev = [
-    { name = "black" },
-    { name = "isort" },
-    { name = "mypy" },
-]
 tensorflow-cpu = [
     { name = "keras" },
     { name = "open-clip-torch" },
@@ -633,9 +628,6 @@ tensorflow-gpu = [
     { name = "torchvision", version = "0.21.0", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "(platform_machine == 'aarch64' and sys_platform == 'linux' and extra == 'extra-6-mussel-tensorflow-gpu') or (platform_machine != 'aarch64' and extra == 'extra-6-mussel-tensorflow-gpu' and extra == 'extra-6-mussel-torch-cpu') or (platform_machine != 'aarch64' and extra == 'extra-6-mussel-tensorflow-gpu' and extra == 'extra-6-mussel-torch-gpu') or (platform_machine != 'aarch64' and extra == 'extra-6-mussel-torch-cpu' and extra == 'extra-6-mussel-torch-gpu') or (sys_platform == 'darwin' and extra == 'extra-6-mussel-tensorflow-gpu') or (sys_platform != 'linux' and extra == 'extra-6-mussel-tensorflow-gpu' and extra == 'extra-6-mussel-torch-cpu') or (sys_platform != 'linux' and extra == 'extra-6-mussel-tensorflow-gpu' and extra == 'extra-6-mussel-torch-gpu') or (sys_platform != 'linux' and extra == 'extra-6-mussel-torch-cpu' and extra == 'extra-6-mussel-torch-gpu') or (sys_platform == 'darwin' and extra == 'extra-6-mussel-torch-cpu' and extra == 'extra-6-mussel-torch-gpu') or (extra == 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-tensorflow-gpu') or (extra == 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-torch-cpu') or (extra == 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-torch-gpu') or (extra != 'extra-6-mussel-tensorflow-gpu' and extra == 'extra-6-mussel-torch-cpu' and extra == 'extra-6-mussel-torch-gpu')" },
     { name = "torchvision", version = "0.21.0+cpu", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "(platform_machine != 'aarch64' and sys_platform == 'linux' and extra == 'extra-6-mussel-tensorflow-gpu') or (sys_platform != 'darwin' and sys_platform != 'linux' and extra == 'extra-6-mussel-tensorflow-gpu') or (sys_platform == 'darwin' and extra == 'extra-6-mussel-tensorflow-gpu' and extra == 'extra-6-mussel-torch-cpu') or (sys_platform == 'darwin' and extra == 'extra-6-mussel-tensorflow-gpu' and extra == 'extra-6-mussel-torch-gpu') or (sys_platform == 'darwin' and extra == 'extra-6-mussel-torch-cpu' and extra == 'extra-6-mussel-torch-gpu') or (sys_platform == 'linux' and extra == 'extra-6-mussel-tensorflow-gpu' and extra == 'extra-6-mussel-torch-cpu') or (sys_platform == 'linux' and extra == 'extra-6-mussel-tensorflow-gpu' and extra == 'extra-6-mussel-torch-gpu') or (extra == 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-tensorflow-gpu') or (extra == 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-torch-cpu') or (extra == 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-torch-gpu') or (extra != 'extra-6-mussel-tensorflow-gpu' and extra == 'extra-6-mussel-torch-cpu' and extra == 'extra-6-mussel-torch-gpu')" },
 ]
-test = [
-    { name = "pytest" },
-]
 torch-cpu = [
     { name = "open-clip-torch" },
     { name = "torch", version = "2.6.0", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "(sys_platform == 'darwin' and extra == 'extra-6-mussel-torch-cpu') or (extra == 'extra-6-mussel-torch-cpu' and extra == 'extra-6-mussel-torch-gpu') or (extra == 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-tensorflow-gpu') or (extra == 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-torch-cpu') or (extra == 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-torch-gpu') or (extra == 'extra-6-mussel-tensorflow-gpu' and extra == 'extra-6-mussel-torch-cpu') or (extra == 'extra-6-mussel-tensorflow-gpu' and extra == 'extra-6-mussel-torch-gpu')" },
@@ -649,19 +641,24 @@ torch-gpu = [
     { name = "torchvision", version = "0.20.1+cu121", source = { registry = "https://download.pytorch.org/whl/cu121" } },
 ]
 
+[package.dev-dependencies]
+dev = [
+    { name = "black" },
+    { name = "isort" },
+    { name = "mypy" },
+    { name = "pytest" },
+]
+
 [package.metadata]
 requires-dist = [
-    { name = "black", marker = "extra == 'dev'" },
     { name = "dacite" },
     { name = "geopandas" },
     { name = "h5py" },
     { name = "hydra-core" },
-    { name = "isort", marker = "extra == 'dev'" },
     { name = "keras", marker = "extra == 'tensorflow-cpu'" },
     { name = "keras", marker = "extra == 'tensorflow-gpu'" },
     { name = "loguru" },
     { name = "matplotlib" },
-    { name = "mypy", marker = "extra == 'dev'" },
     { name = "numpy" },
     { name = "open-clip-torch", marker = "extra == 'tensorflow-cpu'" },
     { name = "open-clip-torch", marker = "extra == 'tensorflow-gpu'" },
@@ -671,7 +668,6 @@ requires-dist = [
     { name = "pandas" },
     { name = "pyarrow" },
     { name = "pydantic" },
-    { name = "pytest", marker = "extra == 'test'" },
     { name = "scikit-learn" },
     { name = "sentencepiece" },
     { name = "tensorflow", marker = "extra == 'tensorflow-cpu'" },
@@ -691,7 +687,15 @@ requires-dist = [
     { name = "transformers" },
     { name = "transpath", git = "https://github.com/msk-mind/TransPath/" },
 ]
-provides-extras = ["dev", "test", "tensorflow-gpu", "tensorflow-cpu", "torch-cpu", "torch-gpu"]
+provides-extras = ["tensorflow-gpu", "tensorflow-cpu", "torch-cpu", "torch-gpu"]
+
+[package.metadata.requires-dev]
+dev = [
+    { name = "black" },
+    { name = "isort" },
+    { name = "mypy" },
+    { name = "pytest" },
+]
 
 [[package]]
 name = "mypy"

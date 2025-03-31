@@ -25,9 +25,10 @@ dependencies = [
   "timm_ctranspath@git+https://github.com/msk-mind/timm-ctranspath",
 ]
 
+[dependency-groups]
+dev = ["mypy", "isort", "black", "pytest"]
+
 [project.optional-dependencies]
-dev = ["mypy", "isort", "black"]
-test = ["pytest"]
 "tensorflow-gpu" = [
   "tensorflow[and-cuda]",
   "keras",
