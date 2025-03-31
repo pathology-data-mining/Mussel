@@ -110,7 +110,7 @@ uv run extract_features \
 #### (beta) - Folder-based feature extraction
 Generates .h5 file with features using pre-tiled images (as opposed to tiles that come
 from `tessellate`)
-```
+```bash
 uv run extract_features \
     slide_path=None \
     patch_h5_path=None \
@@ -183,7 +183,7 @@ uv sync
 
 ```bash
 uv sync --extra test
-pytest tests
+uv run pytest tests
 ```
 
 ## License
