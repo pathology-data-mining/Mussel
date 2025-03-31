@@ -42,7 +42,6 @@ Required for the following models:
 * [Virchow](https://huggingface.co/paige-ai/Virchow)
 * [H-Optimus-0](https://huggingface.co/bioptimus/H-optimus-0)
 * [OpenCLIP](https://github.com/mlfoundations/open_clip)
-    GOOGLEPATH = 7, "googlepath", "google/path-foundation"
 
 
 ##### GPU (CUDA)
@@ -168,7 +167,7 @@ uv run cache_tiles slide_path=data/7789726.svs \
 Install dev packages:
 
 ```bash
-uv sync --extra dev
+uv sync --extra dev --extra torch-[gpu|cpu]
 ```
 
 ### Modifying package requirements
@@ -182,7 +181,7 @@ uv sync
 ### Run unit tests
 
 ```bash
-uv sync --extra test
+uv sync --extra test --extra dev --extra torch-[gpu|cpu]
 uv run pytest tests
 ```
 

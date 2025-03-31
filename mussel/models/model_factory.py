@@ -232,7 +232,7 @@ class ClipTorchModel(TorchModel):
                 torch.autocast(device_type=self.device.type, dtype=torch.float16),
             ):
                 x = x.to(self.device, non_blocking=True)
-                return self.obj(x).encode_image(x).cpu()
+                return self.obj.encode_image(x).cpu()
 
         return model_fun
 
