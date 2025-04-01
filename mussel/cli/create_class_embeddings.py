@@ -7,7 +7,7 @@ import torch
 from hydra.core.config_store import ConfigStore
 from omegaconf import MISSING
 
-from mussel.cli.extract_features import ModelType
+from mussel.models.model_factory import ModelType
 
 
 @dataclass
