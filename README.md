@@ -164,12 +164,6 @@ uv run cache_tiles slide_path=data/7789726.svs \
 
 ## Development Notes
 
-Install dev packages:
-
-```bash
-uv sync --extra dev --extra torch-[gpu|cpu]
-```
-
 ### Modifying package requirements
 
 Add abstract requirements to the the `pyproject.toml`. Use `uv sync` to build `uv.lock`:
@@ -180,8 +174,9 @@ uv sync
 
 ### Run unit tests
 
+Ensure that the dev group is installed (installed by default).
+
 ```bash
-uv sync --extra test --extra dev --extra torch-[gpu|cpu]
 uv run pytest tests
 ```
 
