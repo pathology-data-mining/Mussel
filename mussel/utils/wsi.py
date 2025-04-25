@@ -80,8 +80,6 @@ def savePatchIter_bag_hdf5(patch):
     file.close()
 
 
-
-
 def initialize_hdf5_bag(first_patch, save_coord=False):
     (
         x,
@@ -319,10 +317,10 @@ def StitchPatches(
     logger.info("patch shape: {}".format(img_shape))
     downscaled_shape = (img_shape[1] // downscale, img_shape[0] // downscale)
 
-    #if w * h > Image.MAX_IMAGE_PIXELS:
-        #raise Image.DecompressionBombError(
-            #"Visualization Downscale %d is too large" % downscale
-        #)
+    # if w * h > Image.MAX_IMAGE_PIXELS:
+    # raise Image.DecompressionBombError(
+    # "Visualization Downscale %d is too large" % downscale
+    # )
 
     if alpha < 0 or alpha == -1:
         heatmap = Image.new(size=(w, h), mode="RGB", color=bg_color)
@@ -365,7 +363,9 @@ def StitchCoords(
         patch_size = dset.attrs["patch_size"]
         patch_level = dset.attrs["patch_level"]
         logger.info(
-            "patch size: {}x{} patch level: {}".format(patch_size, patch_size, patch_level)
+            "patch size: {}x{} patch level: {}".format(
+                patch_size, patch_size, patch_level
+            )
         )
         patch_size = tuple(
             (
@@ -374,10 +374,10 @@ def StitchCoords(
         )
         logger.info("ref patch size: {}x{}".format(patch_size, patch_size))
 
-        #if w * h > Image.MAX_IMAGE_PIXELS:
-            #raise Image.DecompressionBombError(
-                #"Visualization Downscale %d is too large" % downscale
-            #)
+        # if w * h > Image.MAX_IMAGE_PIXELS:
+        # raise Image.DecompressionBombError(
+        # "Visualization Downscale %d is too large" % downscale
+        # )
 
         if alpha < 0 or alpha == -1:
             heatmap = Image.new(size=(w, h), mode="RGB", color=bg_color)

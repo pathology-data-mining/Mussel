@@ -12,7 +12,8 @@ from hydra.core.config_store import ConfigStore
 from loguru import logger
 from omegaconf import MISSING, OmegaConf
 
-from mussel.wsi.segment import draw_slide_mask, save_patches_png, segment_tissue
+from mussel.wsi.segment import (draw_slide_mask, save_patches_png,
+                                segment_tissue)
 
 
 @dataclass
