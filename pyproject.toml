@@ -33,7 +33,7 @@ dev = ["mypy", "isort", "black", "pytest"]
   "tensorflow[and-cuda]",
   "keras",
   "tf-keras",
-  "torch",
+  "torch < 2.6",
   "torchvision",
   "open-clip-torch",
 ]
@@ -41,17 +41,17 @@ dev = ["mypy", "isort", "black", "pytest"]
   "tensorflow",
   "keras",
   "tf-keras",
-  "torch",
+  "torch < 2.6",
   "torchvision",
   "open-clip-torch",
 ]
 "torch-cpu" = [
-  "torch",
+  "torch < 2.6",
   "torchvision",
   "open-clip-torch",
 ]
 "torch-gpu" = [
-  "torch",
+  "torch < 2.6",
   "torchvision",
   "open-clip-torch",
 ]
