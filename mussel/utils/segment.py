@@ -18,6 +18,44 @@ from mussel.utils.timer import timed
 
 Image.MAX_IMAGE_PIXELS = None
 
+def is_white_patch(patch, satThresh=5):
+    """
+    Determine if patch is white
+    """
+    patch_hsv = cv2.cvtColor(patch, cv2.COLOR_RGB2HSV)
+    return True if np.mean(patch_hsv[:, :, 1]) < satThresh else False
+
+
+def is_black_patch(patch, rgbThresh=40):
+    """
+    Determine if patch is black
+    """
+    return True if np.all(np.mean(patch, axis=(0, 1)) < rgbThresh) else False
+
+
+def is_black_patch_S(patch, rgbThresh=20, percentage=0.05):
+    """
+    Determine if percentage of patch is black
+    """
+    num_pixels = patch.size[0] * patch.size[1]
+    return (
+        True
+        if np.all(np.array(patch) < rgbThresh, axis=(2)).sum() > num_pixels * percentage
+        else False
+    )
+
+
+def is_white_patch_S(patch, rgbThresh=220, percentage=0.2):
+    """
+    Determine if percentage of patch is white
+    """
+    num_pixels = patch.size[0] * patch.size[1]
+    return (
+        True
+        if np.all(np.array(patch) > rgbThresh, axis=(2)).sum() > num_pixels * percentage
+        else False
+    )
+
 
 def scale_geometry(geometry: shapely.Geometry, scale_factor: float):
     """
@@ -378,7 +416,7 @@ def _save_patch_png(coord, img, save_dir):
     img.save(file_path, "png")
 
 
-def get_patch_generator(wsi, coords, patch_level, patch_size):
+def get_patch_generator(wsi, coords, patch_level, patch_size, filter_black_white=True, white_threshold=15, black_threshold=50):
     """
     Generate patches at specified coordinates
     """
@@ -386,6 +424,9 @@ def get_patch_generator(wsi, coords, patch_level, patch_size):
         img = wsi.read_region(coord, patch_level, (patch_size, patch_size)).convert(
             "RGB"
         )
+        img_arr = np.array(img)
+        if filter_black_white and (is_black_patch(img_arr, black_threshold) or is_white_patch(img_arr, white_threshold)):
+            continue
         yield coord, img
 
 
@@ -395,6 +436,9 @@ def save_patches_png(
     save_dir: str,
     mpp=0.5,
     patch_size=256,
+    filter_black_white=True,
+    white_threshold=15,
+    black_threshold=50,
     num_workers=4,
 ):
     """
@@ -409,7 +453,8 @@ def save_patches_png(
 
     pool = mp.Pool(num_workers)
     patch_gen = get_patch_generator(
-        wsi, coords, patch_level=0, patch_size=native_patch_size
+        wsi, coords, patch_level=0, patch_size=native_patch_size,
+        filter_black_white=filter_black_white, black_threshold=black_threshold, white_threshold=white_threshold
     )
     pool.starmap(
         functools.partial(
