@@ -12,8 +12,8 @@ from hydra.core.config_store import ConfigStore
 from loguru import logger
 from omegaconf import MISSING, OmegaConf
 
-from mussel.wsi.segment import (draw_slide_mask, save_patches_png,
-                                segment_tissue)
+from mussel.utils.segment import (draw_slide_mask, save_patches_png,
+    segment_tissue)
 
 
 @dataclass
@@ -42,6 +42,12 @@ class VisConfig:
     fill = (255, 0, 0, 80)
     custom_downsample: Optional[int] = None
 
+@dataclass
+class PngConfig:
+    filter_black_white: bool = True
+    white_threshold: int = 15
+    black_threshold: int = 50
+
 
 @dataclass
 class TessellateConfig:
@@ -55,6 +61,7 @@ class TessellateConfig:
     num_workers: int = 4
     seg_config: SegConfig = field(default_factory=SegConfig)
     vis_config: VisConfig = field(default_factory=VisConfig)
+    png_config: PngConfig = field(default_factory=PngConfig)
 
 
 cs = ConfigStore.instance()
@@ -118,6 +125,9 @@ def main(
             save_dir=cfg.output_png_dir,
             num_workers=cfg.num_workers,
             patch_size=cfg.seg_config.patch_size,
+            filter_black_white=cfg.png_config.filter_black_white,
+            white_threshold=cfg.png_config.white_threshold,
+            black_threshold=cfg.png_config.black_threshold,
         )
 
     if cfg.output_thumbnail_path:
