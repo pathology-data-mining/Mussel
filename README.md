@@ -180,6 +180,16 @@ Ensure that the dev group is installed (installed by default).
 uv run pytest tests
 ```
 
+### Create conda environment
+
+Create a conda environment, activate it, and install mussel with:
+
+```bash
+uv pip install -r pyproject.toml
+```
+
+Specify the extra packages as required for your conda environment.
+
 ## License
 This code is made available under the GPLv3 License and is available for non-commercial academic purposes.
 Forked from CLAM, © [Mahmood Lab](http://www.mahmoodlab.org).
