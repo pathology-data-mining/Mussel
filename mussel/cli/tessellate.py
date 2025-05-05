@@ -98,7 +98,7 @@ def main(
         return
 
     polygon, grid, coords = segment_tissue(
-        wsi, slide_id=slide_id, **OmegaConf.to_container(cfg.seg_config)
+        wsi, slide_id=slide_id, output_h5_path=cfg.output_h5_path, **OmegaConf.to_container(cfg.seg_config)
     )
 
     if cfg.output_mask_path:
