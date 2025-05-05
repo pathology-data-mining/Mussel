@@ -15,6 +15,7 @@ from shapely.ops import transform
 from shapely.prepared import prep
 
 from mussel.utils.timer import timed
+from mussel.utils.file import save_hdf5
 
 Image.MAX_IMAGE_PIXELS = None
 

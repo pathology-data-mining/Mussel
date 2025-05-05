@@ -11,7 +11,6 @@ def test_tessellate(tmp_path):
     cfg = TessellateConfig(
         slide_path=slide_path,
         output_h5_path=patch_h5_path,
-        segment_threshold=0,
         seg_config=seg_config,
         num_workers=1,
     )
