@@ -335,7 +335,7 @@ def segment_tissue(
     logger.info(f"Total number of patches: {len(coords)}")
 
     if output_h5_path:
-        attr_dict = {
+        attrs = {
             "seg_level": seg_level,
             "segment_threshold": segment_threshold,
             "segment_max_value": segment_max_value,
@@ -357,6 +357,7 @@ def segment_tissue(
         }
 
         asset_dict = {"coords": np.array(coords)}
+        attr_dict = {"coords": attrs}
         save_hdf5(output_h5_path, asset_dict, attr_dict, mode="w")
         logger.info(f"Writing to {output_h5_path}")
 
