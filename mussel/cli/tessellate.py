@@ -115,7 +115,7 @@ def main(
             grid,
             **OmegaConf.to_container(cfg.vis_config),
         )
-        mask.save(cfg.output_grid_mask_path)
+        grid_mask.save(cfg.output_grid_mask_path)
 
     if cfg.output_png_dir:
         logger.info(f"saving patches to {cfg.output_png_dir}")
