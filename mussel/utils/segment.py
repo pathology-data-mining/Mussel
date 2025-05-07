@@ -14,10 +14,11 @@ from shapely.geometry import MultiPolygon, Polygon
 from shapely.ops import transform
 from shapely.prepared import prep
 
-from mussel.utils.timer import timed
 from mussel.utils.file import save_hdf5
+from mussel.utils.timer import timed
 
 Image.MAX_IMAGE_PIXELS = None
+
 
 def is_white_patch(patch, satThresh=5):
     """
@@ -69,7 +70,7 @@ def scale_geometry(geometry: shapely.Geometry, scale_factor: float):
     return transform(scale_coords, geometry)
 
 
-def contours_to_polygon(foreground_contours, hole_contours) -> MultiPolygon:
+def contours_to_polygon(foreground_contours, hole_contours=None) -> MultiPolygon:
     """
     Merge individual contours into one MultiPolygon
     """
@@ -77,7 +78,7 @@ def contours_to_polygon(foreground_contours, hole_contours) -> MultiPolygon:
 
     def create_polygon(contour):
         contour = np.squeeze(contour)
-        if len(contour) < 2:
+        if len(contour) < 4:  # Need at least 4 coordinates
             return None
         # Convert contour to shapely polygon
         new_poly = Polygon(contour)
@@ -88,16 +89,25 @@ def contours_to_polygon(foreground_contours, hole_contours) -> MultiPolygon:
             new_poly = new_poly.buffer(0)
         return new_poly
 
-    for contour in foreground_contours:
-        new_poly = create_polygon(contour)
+    for idx, contour in enumerate(foreground_contours):
+        try:
+            new_poly = create_polygon(contour)
+        except:
+            logger.warning(f"Unable to create polygon from foreground contour {idx}")
+            new_poly = None
         if new_poly is not None:
             polygon = polygon.union(new_poly)
 
-    for contours in hole_contours:
-        for contour in contours:
-            new_poly = create_polygon(contour)
-            if new_poly is not None:
-                polygon = polygon.difference(new_poly)
+    if hole_contours:
+        for idx, contours in enumerate(hole_contours):
+            for contour in contours:
+                try:
+                    new_poly = create_polygon(contour)
+                except:
+                    logger.warning(f"Unable to create polygon from hole contour {idx}")
+                    new_poly = None
+                if new_poly is not None:
+                    polygon = polygon.difference(new_poly)
 
     return polygon
 
@@ -418,7 +428,15 @@ def _save_patch_png(coord, img, save_dir):
     img.save(file_path, "png")
 
 
-def get_patch_generator(wsi, coords, patch_level, patch_size, filter_black_white=True, white_threshold=15, black_threshold=50):
+def get_patch_generator(
+    wsi,
+    coords,
+    patch_level,
+    patch_size,
+    filter_black_white=True,
+    white_threshold=15,
+    black_threshold=50,
+):
     """
     Generate patches at specified coordinates
     """
@@ -427,7 +445,10 @@ def get_patch_generator(wsi, coords, patch_level, patch_size, filter_black_white
             "RGB"
         )
         img_arr = np.array(img)
-        if filter_black_white and (is_black_patch(img_arr, black_threshold) or is_white_patch(img_arr, white_threshold)):
+        if filter_black_white and (
+            is_black_patch(img_arr, black_threshold)
+            or is_white_patch(img_arr, white_threshold)
+        ):
             continue
         yield coord, img
 
@@ -455,8 +476,13 @@ def save_patches_png(
 
     pool = mp.Pool(num_workers)
     patch_gen = get_patch_generator(
-        wsi, coords, patch_level=0, patch_size=native_patch_size,
-        filter_black_white=filter_black_white, black_threshold=black_threshold, white_threshold=white_threshold
+        wsi,
+        coords,
+        patch_level=0,
+        patch_size=native_patch_size,
+        filter_black_white=filter_black_white,
+        black_threshold=black_threshold,
+        white_threshold=white_threshold,
     )
     pool.starmap(
         functools.partial(

@@ -10,8 +10,13 @@ from hydra.core.config_store import ConfigStore
 from loguru import logger
 from omegaconf import MISSING, OmegaConf
 from sklearn.linear_model import LogisticRegression
-from sklearn.metrics import (ConfusionMatrixDisplay, accuracy_score,
-                             classification_report, confusion_matrix, f1_score)
+from sklearn.metrics import (
+    ConfusionMatrixDisplay,
+    accuracy_score,
+    classification_report,
+    confusion_matrix,
+    f1_score,
+)
 from sklearn.model_selection import train_test_split
 
 
@@ -41,11 +46,12 @@ def main(cfg: LinearProbeBenchmarkConfig):
     df = gpd.read_parquet(cfg.features_annotation_parquet_path)
 
     df_filtered = df.query(
-        f"annotation_count > {cfg.annotation_percent_filter_threshold} * patch_size * patch_size"
+        f"overlap_area > {cfg.annotation_percent_filter_threshold} * tile_area"
     )
 
     df_filtered["y"] = (
-        df_filtered.annotation_mean > cfg.annotation_mean_threshold
+        df_filtered.annotation == 2
+        and df_filtered.overlap_area > cfg.annotation_mean_threshold * tile_area
     ).astype(int)
 
     slide_ids = df_filtered["slide_id"].unique()

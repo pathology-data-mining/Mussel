@@ -12,8 +12,7 @@ from hydra.core.config_store import ConfigStore
 from loguru import logger
 from omegaconf import MISSING, OmegaConf
 
-from mussel.utils.segment import (draw_slide_mask, save_patches_png,
-    segment_tissue)
+from mussel.utils.segment import draw_slide_mask, save_patches_png, segment_tissue
 
 
 @dataclass
@@ -41,6 +40,7 @@ class VisConfig:
     outline = "black"
     fill = (255, 0, 0, 80)
     custom_downsample: Optional[int] = None
+
 
 @dataclass
 class PngConfig:
@@ -98,7 +98,10 @@ def main(
         return
 
     polygon, grid, coords = segment_tissue(
-        wsi, slide_id=slide_id, output_h5_path=cfg.output_h5_path, **OmegaConf.to_container(cfg.seg_config)
+        wsi,
+        slide_id=slide_id,
+        output_h5_path=cfg.output_h5_path,
+        **OmegaConf.to_container(cfg.seg_config),
     )
 
     if cfg.output_mask_path:

@@ -6,9 +6,14 @@ import numpy as np
 import torch
 import torch.nn as nn
 import torch.optim as optim
-from torch.utils.data import (DataLoader, RandomSampler, Sampler,
-                              SequentialSampler, WeightedRandomSampler,
-                              sampler)
+from torch.utils.data import (
+    DataLoader,
+    RandomSampler,
+    Sampler,
+    SequentialSampler,
+    WeightedRandomSampler,
+    sampler,
+)
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
