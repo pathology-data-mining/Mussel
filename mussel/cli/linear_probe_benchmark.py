@@ -25,8 +25,7 @@ class LinearProbeBenchmarkConfig:
     output_csv: str = "classification_report.csv"
     output_png: str = "confusion_matrix.png"
     features_annotation_parquet_path: str = MISSING
-    annotation_percent_filter_threshold: float = 0.5
-    annotation_mean_threshold: float = 0.5
+    annotation_percent_filter_threshold: float = 0.05
     test_size: float = 0.2
     val_size: float = 0.1
     random_state: int = 42
@@ -51,10 +50,9 @@ def main(cfg: LinearProbeBenchmarkConfig):
 
     df_filtered["y"] = (
         df_filtered.annotation == 2
-        and df_filtered.overlap_area > cfg.annotation_mean_threshold * tile_area
     ).astype(int)
 
-    slide_ids = df_filtered["slide_id"].unique()
+    slide_ids = df_filtered.query("annotation == 2")["slide_id"].unique()
 
     # 20% test size, 10% validation, 70% train size
     train_ids, test_ids = train_test_split(
