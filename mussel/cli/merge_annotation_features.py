@@ -66,26 +66,20 @@ def main(cfg: MergeAnnotationFeaturesConfig):
     if cfg.class_mapping_yaml_path is not None:
         with open(cfg.class_mapping_yaml_path, "r") as f:
             class_mapping = yaml.safe_load(f)
-        k = np.array(list(class_mapping.keys()))
-        v = np.array(list(class_mapping.values()))
-        mapping_ar = np.zeros(k.max() + 1, dtype=v.dtype)  # k,v from approach #1
-        mapping_ar[k] = v
-        img_arr = mapping_ar[img_arr]
-        classes = np.unique(list(class_mapping.values()))
+        classes, inv = np.unique(img_arr, return_inverse=True)
+        img_arr = np.array([class_mapping[int(x)] for x in classes])[inv].reshape(
+            img_arr.shape
+        )
     else:
         classes = np.unique(img_arr)
 
     gdfs = []
     for clss in classes:
-        class_img_arr = (img_arr == clss).astype(int)
-        # import pdb; pdb.set_trace()
+        class_img_arr = (img_arr == clss).astype(np.uint8)
         contours, hierarchy = cv2.findContours(
-            class_img_arr, cv2.RETR_CCOMP, cv2.CHAIN_APPROX_NONE
+            class_img_arr, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE
         )
-        hierarchy_1 = np.flatnonzero(hierarchy[:, 1] == -1)
-        foreground_contours = [contours[cont_idx] for cont_idx in hierarchy_1]
-        class_polygon = contours_to_polygon(foreground_contours)
-        # import pdb; pdb.set_trace()
+        class_polygon = contours_to_polygon(contours)
         if isinstance(class_polygon, MultiPolygon):
             class_gdf = gpd.GeoDataFrame(geometry=list(class_polygon.geoms))
         else:
@@ -93,13 +87,19 @@ def main(cfg: MergeAnnotationFeaturesConfig):
         class_gdf = class_gdf.assign(annotation=clss)
         class_gdf = class_gdf.assign(annotation_area=class_gdf.area)
         gdfs.append(class_gdf)
-    class_gdf = pd.concat(gdfs)
-    gdf = tiles_gdf.overlay(class_gdf, how="intersection")
+    gdf = pd.concat(gdfs)
+
+    gdf = gdf[gdf.annotation != 0]
+    if len(gdf) == 0:
+        logger.info("No annotated tiles found")
+        return
+
+    gdf = tiles_gdf.overlay(gdf, how="intersection")
     gdf = gdf.assign(overlap_area=gdf.area)
 
     logger.info(f"Writing merged results to {cfg.output_parquet_path}")
     if cfg.slide_id is not None:
-        ann_tiles_gdf = gdf.assign(slide_id=cfg.slide_id)
+        gdf = gdf.assign(slide_id=cfg.slide_id)
 
     gdf.to_parquet(cfg.output_parquet_path)
 
