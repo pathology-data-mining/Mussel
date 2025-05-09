@@ -23,10 +23,19 @@ dependencies = [
   "pydantic",
   "transpath@git+https://github.com/msk-mind/TransPath/",
   "timm_ctranspath@git+https://github.com/msk-mind/timm-ctranspath",
+  "mdutils>=1.6.0",
+  "shapely>=2.0.7",
 ]
 
 [dependency-groups]
-dev = ["mypy", "isort", "black", "pytest"]
+dev = [
+    "mypy",
+    "isort",
+    "black",
+    "pytest",
+    "ipython>=9.1.0",
+    "jupyter>=1.1.1",
+]
 
 [project.optional-dependencies]
 "tensorflow-gpu" = [

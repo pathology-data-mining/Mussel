@@ -2,7 +2,7 @@ import os
 from omegaconf import OmegaConf
 
 import mussel.cli.tessellate
-from mussel.cli.tessellate import TessellateConfig, SegConfig, PatchConfig
+from mussel.cli.tessellate import TessellateConfig, SegConfig
 
 def test_tessellate(tmp_path):
     slide_path = "tests/testdata/948176.svs"
