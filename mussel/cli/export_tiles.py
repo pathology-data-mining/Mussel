@@ -18,8 +18,7 @@ from loguru import logger
 from omegaconf import MISSING
 from tqdm import tqdm
 
-from mussel.WholeSlideImage import WholeSlideImage
-from mussel.utils.wsi import isWhitePatch, isBlackPatch
+from mussel.utils.wsi import is_white_patch, is_black_patch
 
 
 @dataclass
@@ -38,16 +37,14 @@ cs.store(name="export_tiles_config", node=ExportTilesConfig)
 
 def export_tile(
     tile_coords: np.array,
-    wsi_object: WholeSlideImage,
+    wsi: WholeSlideImage,
     patch_size: int,
     output_path: str,
 ) -> None:
     """Utility function to export tile to .png file"""
-    patch = wsi_object.wsi.read_region(
-        tile_coords, 0, (patch_size, patch_size)
-    ).convert("RGB")
-    if isWhitePatch(np.array(patch)) or isBlackPatch(np.array(patch)):
-        return 
+    patch = wsi.read_region(tile_coords, 0, (patch_size, patch_size)).convert("RGB")
+    if is_white_patch(np.array(patch)) or is_black_patch(np.array(patch)):
+        return
     file_path = os.path.join(output_path, f"{tile_coords[0]}_{tile_coords[1]}.png")
     patch.save(file_path, "png")
 
@@ -63,8 +60,10 @@ def main(cfg: ExportTilesConfig):
         tile_coords = np.array(patches_h5["coords"])
 
     # Init whole slide image
-    WSI_object = WholeSlideImage(cfg.slide_path)
-    native_patch_size = WSI_object.get_native_size(cfg.mpp, cfg.patch_size)
+    wsi = tiffslide.TiffSlide(cfg.slide_path)
+    slide_mpp = float(wsi.properties[tiffslide.PROPERTY_NAME_MPP_X])
+
+    native_patch_size = WSI_object.get_native_size(cfg.patch_size, cfg.mpp, slide_mpp)
     logger.info(
         f"Exporting approx. {len(tile_coords)} tiles as .png files to {cfg.output_png_path}"
     )
@@ -72,7 +71,7 @@ def main(cfg: ExportTilesConfig):
 
     partial = functools.partial(
         export_tile,
-        wsi_object=WSI_object,
+        wsi_object=wsi,
         patch_size=native_patch_size,
         output_path=cfg.output_png_path,
     )
