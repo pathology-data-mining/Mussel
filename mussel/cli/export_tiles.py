@@ -18,7 +18,7 @@ from loguru import logger
 from omegaconf import MISSING
 from tqdm import tqdm
 
-from mussel.utils.wsi import is_white_patch, is_black_patch
+from mussel.utils.segment import is_white_patch, is_black_patch, get_native_size
 
 
 @dataclass
@@ -63,7 +63,7 @@ def main(cfg: ExportTilesConfig):
     wsi = tiffslide.TiffSlide(cfg.slide_path)
     slide_mpp = float(wsi.properties[tiffslide.PROPERTY_NAME_MPP_X])
 
-    native_patch_size = WSI_object.get_native_size(cfg.patch_size, cfg.mpp, slide_mpp)
+    native_patch_size = get_native_size(cfg.patch_size, cfg.mpp, slide_mpp)
     logger.info(
         f"Exporting approx. {len(tile_coords)} tiles as .png files to {cfg.output_png_path}"
     )
