@@ -23,3 +23,5 @@ config/
 outputs/
 *.env
 tmp*
+*~
+*.swp
