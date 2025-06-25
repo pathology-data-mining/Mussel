@@ -253,7 +253,7 @@ class TransPathTorchModel(TorchModel):
 
             model_obj = ctranspath()
             model_obj.head = nn.Identity()
-            td = torch.load(model_path)
+            td = torch.load(model_path, weights_only=True)
             model_obj.load_state_dict(td["model"], strict=True)
         # ctranspath() module has required torch transforms built in so
         # preprocessing should be None here

@@ -84,9 +84,9 @@ def main(cfg: AnnotateConfig):
 
     """
     # load precomputed embeddings
-    class_emb = torch.load(cfg.class_embedding_pt_path)
+    class_emb = torch.load(cfg.class_embedding_pt_path, weights_only=True)
 
-    slide_emb = torch.load(cfg.features_pt_path)  # N_tiles 512
+    slide_emb = torch.load(cfg.features_pt_path, weights_only=True)  # N_tiles 512
 
     # zero-shot classification
     cos_sim = torch.nn.functional.cosine_similarity(
