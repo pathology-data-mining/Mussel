@@ -38,7 +38,7 @@ def main(
 
     with h5py.File(cfg.features_h5_path, "r") as features_h5:
         if cfg.features_pt_path:
-            features = torch.load(cfg.features_pt_path)
+            features = torch.load(cfg.features_pt_path, weights_only=True)
         else:
             features = np.array(features_h5["features"])
             features = torch.Tensor(features)
