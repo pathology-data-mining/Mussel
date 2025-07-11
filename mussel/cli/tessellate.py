@@ -124,7 +124,7 @@ class TessellateConfig:
     output_mask_path (Optional[str]): Optional path to output tissue mask
     output_grid_mask_path (Optional[str]): Optional path to output tissue grid mask
     output_thumbnail_path (Optional[str]): Optional path to output tissue thumbnail
-    thumbnail_size (tuple): Thumbnail size tuple
+    thumbnail_size (tuple): Thumbnail size (row, col) tuple
     num_workers (int): Number of workers for saving patches
     """
 
@@ -143,10 +143,15 @@ class TessellateConfig:
 
 
 docs = f"""
+== Available Parameters ==
 {TessellateConfig.__doc__}
 seg_config: {SegConfig.__doc__}
 vis_config: {VisConfig.__doc__}
 png_config: {PngConfig.__doc__}
+
+== Description ==
+tessellate tiles a whole-slide image.  The tile coordinates are written to an HDF5 (.h5)
+file for use in downstream processing, such as feature extraction.
 """
 
 
