@@ -2,21 +2,41 @@ import os
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import List, Optional
+from typing import Any, List, Optional
 
-import hydra
 import numpy as np
 import pandas as pd
 import tiffslide
+from hydra.conf import HelpConf, HydraConf
 from hydra.core.config_store import ConfigStore
+from hydra.core.hydra_config import HydraConfig
 from loguru import logger
 from omegaconf import MISSING, OmegaConf
 
+import hydra
 from mussel.utils.segment import draw_slide_mask, save_patches_png, segment_tissue
 
 
 @dataclass
 class SegConfig:
+    """
+    patch_size (int): Patch size at specified mpp (microns per pixel).
+    step_size (int): Optional step size. Defaults to the patch size.
+    mpp (float): Desired microns per pixel
+    seg_level (int): tessellation pyramid level. If negative, use best level for factor=64 downsample.
+    segment_threshold (int): pixel threshold value . If pixel value smaller than or equal to threshold, it is set to 0, otherwise it is set to the maximum value (segment_max_value).
+    segment_max_value (int): maximum pixel value.
+    median_blur_ksize (int): aperture linear size. it must be odd and greater than 1. image is blurred with median filter.
+    morphology_ex_kernel (int): kernel for mophological closing transformation.
+    ref_patch_size (int): reference patch size to use for tissue area and hole area thresholding.
+    use_otsu (bool): apply otsu thresholding
+    tissue_area_threshold (int): tissue area threshold. Foreground contour area needs to exceed this threshold (scaled by reference patch size) to be included as foreground.
+    hole_area_threshold (int): holea area threshold. Hole contour area needs to exceed this threshold (scaled by reference patch size) to be included as a hole.
+    max_num_holes (int): maximum number of holes.
+    keep_ids (List[int]): list of contour IDs to keep
+    exclude_ids (List[int]): list of contour IDs to exclude
+    """
+
     patch_size: int = 256
     step_size: Optional[int] = None  # if None, defaults to patch_size
     mpp: float = 0.5
@@ -35,7 +55,44 @@ class SegConfig:
 
 
 @dataclass
+class BiopsySegConfig(SegConfig):
+    segment_threshold: int = 15
+    median_blur_ksize: int = 11
+    morphology_ex_kernel: int = 2
+    tissue_area_threshold: int = 1
+    hole_area_threshold: int = 1
+    max_num_holes: int = 2
+
+
+@dataclass
+class ResectionSegConfig(SegConfig):
+    segment_threshold: int = 15
+    median_blur_ksize: int = 11
+    morphology_ex_kernel: int = 4
+    tissue_area_threshold: int = 100
+    hole_area_threshold: int = 16
+    max_num_holes: int = 8
+
+
+@dataclass
+class TcgaSegConfig(SegConfig):
+    segment_threshold: int = 8
+    median_blur_ksize: int = 7
+    morphology_ex_kernel: int = 4
+    tissue_area_threshold: int = 16
+    hole_area_threshold: int = 4
+    max_num_holes: int = 8
+
+
+@dataclass
 class VisConfig:
+    """
+    vis_level (int): Image pyramid level. If negative, use best level for factor=64 downsample.
+    outline (Any): outline color
+    fill (Any): fill color
+    custom_downsample (Optional[int]): custom downsample
+    """
+
     vis_level: int = -1
     outline = "black"
     fill = (255, 0, 0, 80)
@@ -44,13 +101,34 @@ class VisConfig:
 
 @dataclass
 class PngConfig:
+    """
+    filter_black_white (bool): filter black/white tiles
+    white_threshold (int): threshold for white tile
+    black_threshold (int): threshold for black tile
+    """
+
     filter_black_white: bool = True
     white_threshold: int = 15
     black_threshold: int = 50
 
 
+defaults = ["_self_", {"seg_config": "default"}]
+
+
 @dataclass
 class TessellateConfig:
+    """
+    slide_path (str): Path to slide (.svs,.tiff)
+    output_h5_path (str): Path to output h5 file
+    output_png_dir (Optional[str]): Optional path to output png directory
+    output_mask_path (Optional[str]): Optional path to output tissue mask
+    output_grid_mask_path (Optional[str]): Optional path to output tissue grid mask
+    output_thumbnail_path (Optional[str]): Optional path to output tissue thumbnail
+    thumbnail_size (tuple): Thumbnail size tuple
+    num_workers (int): Number of workers for saving patches
+    """
+
+    defaults: List[Any] = field(default_factory=lambda: defaults)
     slide_path: str = MISSING
     output_h5_path: str = MISSING
     output_png_dir: Optional[str] = None
@@ -59,12 +137,35 @@ class TessellateConfig:
     output_thumbnail_path: Optional[str] = None
     thumbnail_size: tuple = (1024, 1024)
     num_workers: int = 4
-    seg_config: SegConfig = field(default_factory=SegConfig)
+    seg_config: SegConfig = MISSING
     vis_config: VisConfig = field(default_factory=VisConfig)
     png_config: PngConfig = field(default_factory=PngConfig)
 
 
+docs = f"""
+{TessellateConfig.__doc__}
+seg_config: {SegConfig.__doc__}
+vis_config: {VisConfig.__doc__}
+png_config: {PngConfig.__doc__}
+"""
+
+
+@dataclass
+class MyHelpConf(HelpConf):
+    footer: str = docs
+
+
+@dataclass
+class MyHydraConf(HydraConf):
+    help: HelpConf = field(default_factory=MyHelpConf)
+
+
 cs = ConfigStore.instance()
+cs.store(group="hydra", name="config", node=MyHydraConf(), provider="hydra")
+cs.store(group="seg_config", name="default", node=SegConfig)
+cs.store(group="seg_config", name="biopsy", node=BiopsySegConfig)
+cs.store(group="seg_config", name="resection", node=ResectionSegConfig)
+cs.store(group="seg_config", name="tcga", node=TcgaSegConfig)
 cs.store(name="tessellate_config", node=TessellateConfig)
 
 
