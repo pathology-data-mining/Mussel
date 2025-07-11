@@ -113,8 +113,8 @@ from `tessellate`)
 uv run extract_features \
     slide_path=None \
     patch_h5_path=None \
-    patch_path=[path to folder w/ tiles in image format (.tif, .png, .jpg, etc.)] \
-    output_h5_path=[path to output h5 file] \
+    patch_path=<path to folder w/ tiles in image format (.tif, .png, .jpg, etc.)> \
+    output_h5_path=<path to output h5 file> \
     output_pt_path=None
 ```
 
@@ -154,7 +154,8 @@ the output from `tessellate`.
 
 ```bash
 uv run cache_tiles slide_path=data/7789726.svs \
-    patch_h5_path=reef/7789726_coord.h5 output_pt_path=reef/7789726_cache.pt \
+    patch_h5_path=reef/7789726_coord.h5 \
+    output_pt_path=reef/7789726_cache.pt \
     'limit_to_class=["carcinoma in situ", "invasive carcinoma with lymphocytes"]' \
     output_indices_json_path=reef/7789726_output_indices.json
 ```
@@ -164,9 +165,12 @@ uv run cache_tiles slide_path=data/7789726.svs \
 
 ## Development Notes
 
+* Any commands executed using `uv run <command...>` are automatically executed in the project environment.
+
 ### Modifying package requirements
 
-Add abstract requirements to the the `pyproject.toml`. Use `uv sync` to build `uv.lock`:
+* Use `uv sync` to install install this project and its dependencies into the project's virtual environment.
+* Execute `uv sync` after making any changes to the requirements.
 
 ```bash
 uv sync
@@ -174,7 +178,9 @@ uv sync
 
 ### Run unit tests
 
-Ensure that the dev group is installed (installed by default).
+Ensure that the dev group is installed (installed by default).   (Note that the tests in
+this repo expect you to have installed the `torch-gpu` version of the project, and only
+the default model, `CLIP`, is used for feature extraction.)
 
 ```bash
 uv run pytest tests
@@ -182,7 +188,8 @@ uv run pytest tests
 
 ### Create conda environment
 
-Create a conda environment, activate it, and install mussel with:
+To install this module into an existing Python environment, activate that environment
+and install mussel with the command,
 
 ```bash
 uv pip install -r pyproject.toml
