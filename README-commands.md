@@ -18,7 +18,7 @@ Required for the following models:
 Mussel provides handful of CLI tools:
 
 * `tessellate` - tiling and foreground detection
-* `extract_features` - calculate slide embeddings using a pathology foundation model 
+* `extract_features` - generate embeddings with a pathology foundation model 
 * `filter_features` - 
 * `cache_tiles`
 * `stitch_tiles`
@@ -35,30 +35,28 @@ by executing `<command> --help`.
 
 ### Examples
 
-The example commands below are based on the test data provided in the `tests/testdata`
-folder. 
+<img src="docs/example-mask.jpg" width="600px" />
 
-The commands expect to write their outputs to a `reef/` folder in the current directory,
+The example commands below use the test data provided in the `tests/testdata` folder. 
+
+Some of the commands expect to write their outputs to a `reef/` folder in the current directory,
 so you should create that directory before running them, with
 
-mkdir -p reef
+    mkdir -p reef
 
 
 ### `tessellate`
 
-<img src="docs/example-mask.jpg" width="600px" />
-
 Tessellate tiles a whole-slide image.  The tile coordinates and other metadata necessary
-for downstream steps are specified in an .h5 file.  You can optionally generate stitch and
-mask as well..
+for downstream steps are written to an .h5 file.
 
 Example command (see defaults with `tessellate --help`):
 ```bash
-mkdir reef
-uv run tessellate \
-    slide_path=data/7789726.svs \
-    output_h5_path=reef/7789726_coord.h5 \
-    seg_config.use_otsu=true
+    tessellate \
+        slide_path=tests/testdata/948176.svs \
+        output_h5_path=reef/948176_coord.h5 \
+        seg_config.segment_threshold=0 \
+        num_workers=1
 ```
 
 ### feature extraction
@@ -66,24 +64,17 @@ Generate .h5 file with features and .pt file with embeddings for each tile.
 
 Example command (see defaults with `extract_features --help`):
 ```bash
-tessellate \
-    slide_path=tests/testdata/948176.svs \
-    output_h5_path=reef/948176_coord.h5 \
-    seg_config.segment_threshold=0 \
-    num_workers=1
-
-uv run extract_features \
+extract_features \
     slide_path=data/7789726.svs \
     patch_h5_path=reef/7789726_coord.h5 \
     output_h5_path=reef/7789726_feat.h5 \
     output_pt_path=reef/7789726_embed.pt
 ```
 
-#### (beta) - Folder-based feature extraction
-Generates .h5 file with features using pre-tiled images (as opposed to tiles that come
-from `tessellate`)
+Generate a .h5 file with features calculated from a folder of pre-tiled images
+(as opposed to the tiles that come from `tessellate`)
 ```bash
-uv run extract_features \
+extract_features \
     slide_path=None \
     patch_h5_path=None \
     patch_path=<path to folder w/ tiles in image format (.tif, .png, .jpg, etc.)> \
@@ -100,7 +91,7 @@ Current classes are:
 Try your own classes! Any natural language works, and no training is required.
 Generate interrogation reports to eval your prompt engineering by setting `iterrogate`.
 
-Create class embeddings
+### generate class embeddings
 ```bash
 uv run create_class_embeddings \
     'classes=["carcinoma in situ", "invasive carcinoma with lymphocytes", "tumor infiltrating lymphocytes", "lymphocytes", "carcinoma in situ with lymphocytes", "tumor-associated stroma with lymphocytes" ]' \
