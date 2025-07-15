@@ -1,24 +1,47 @@
 from dataclasses import dataclass
 from typing import List, Optional
 
-import hydra
 import open_clip
 import torch
+from hydra.conf import HelpConf, HydraConf
 from hydra.core.config_store import ConfigStore
 from omegaconf import MISSING
 
+import hydra
 from mussel.models.model_factory import ModelType
 
 
 @dataclass
 class ClassEmbeddingConfig:
+    """
+    classes (List[str]): List of class names for which to compute embeddings.
+    output_pt_path (str): Path to save the computed class embeddings in PyTorch format.
+    model_path (Optional[str]): Path to the model weights, if applicable.
+    model_type (ModelType): Type of model to use for computing embeddings.
+    """
+
     classes: List[str] = MISSING
     output_pt_path: str = MISSING
     model_path: Optional[str] = None
     model_type: ModelType = ModelType.CLIP
 
 
+desc_doc = """== ${hydra.help.app_name} ==
+Computes class embeddings for zero-shot classification using a specified model.
+"""
+
+parameter_doc = f"""
+== Available Parameters ==
+{ClassEmbeddingConfig.__doc__}
+"""
+
 cs = ConfigStore.instance()
+cs.store(
+    group="hydra",
+    name="config",
+    node=HydraConf(help=HelpConf(header=desc_doc, footer=parameter_doc)),
+    provider="hydra",
+)
 cs.store(name="class_embedding_config", node=ClassEmbeddingConfig)
 
 

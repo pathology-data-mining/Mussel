@@ -7,17 +7,30 @@ from io import BytesIO
 from typing import List, Optional
 
 import h5py
-import hydra
 import pandas as pd
 import tiffslide as openslide
 import torch
+from hydra.conf import HelpConf, HydraConf
 from hydra.core.config_store import ConfigStore
 from loguru import logger
 from omegaconf import MISSING
 
+import hydra
+
 
 @dataclass
 class AnnotateConfig:
+    """
+    features_pt_path (str): Path to the precomputed features in PyTorch format.
+    output_csv_path (str): Path to save the classification results in CSV format.
+    class_embedding_pt_path (str): Path to the precomputed class embeddings in PyTorch format.
+    classes (List[str]): List of class names for zero-shot classification.
+    interrogate (bool): Whether to generate an interrogation report.
+    slide_path (Optional[str]): Path to the whole slide image for interrogation.
+    patch_path (Optional[str]): Path to the HDF5 file containing patch coordinates for interrogation.
+    interrogation_report_path (Optional[str]): Path to save the interrogation report HTML file.
+    """
+
     features_pt_path: str = MISSING
     output_csv_path: str = MISSING
     class_embedding_pt_path: str = MISSING
@@ -69,18 +82,28 @@ def interrogate_function(slide_path, patch_path, interrogation_report_path, df):
         f.write(html_document)
 
 
+desc_doc = """== ${hydra.help.app_name} ==
+This script performs zero-shot classification on specified classes.
+"""
+
+parameter_doc = f"""
+== Available Parameters ==
+{AnnotateConfig.__doc__}
+"""
+
 cs = ConfigStore.instance()
+cs.store(
+    group="hydra",
+    name="config",
+    node=HydraConf(help=HelpConf(header=desc_doc, footer=parameter_doc)),
+    provider="hydra",
+)
 cs.store(name="annotate_config", node=AnnotateConfig)
 
 
 @hydra.main(config_path=".", config_name="annotate_config", version_base=None)
 def main(cfg: AnnotateConfig):
-    """Do zero shot classification on specified classes
-
-    Keyword arguments:
-
-
-    """
+    """Do zero shot classification on specified classes"""
     # load precomputed embeddings
     class_emb = torch.load(cfg.class_embedding_pt_path, weights_only=True)
 

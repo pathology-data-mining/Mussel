@@ -9,21 +9,33 @@ import time
 from dataclasses import dataclass, field
 from typing import List, Optional
 
-import hydra
 import pandas as pd
 import tiffslide as openslide
 import torch
+from hydra.conf import HelpConf, HydraConf
 from hydra.core.config_store import ConfigStore
 from loguru import logger
 from omegaconf import MISSING
 from torch.utils.data import DataLoader
 
+import hydra
 from mussel.datasets.h5 import Whole_Slide_Bag_FP
 from mussel.utils.ml import collate_features
 
 
 @dataclass
 class CacheTilesConfig:
+    """
+    slide_path (str): Path to the whole slide image.
+    patch_h5_path (str): Path to the HDF5 file containing patch coordinates.
+    output_pt_path (str): Path to save the cached tiles in PyTorch format.
+    batch_size (int): Batch size for processing patches or tiles.
+    num_workers (int): Number of worker threads for data loading.
+    limit_to_class (Optional[List[str]]): Optional list of classes to limit the tiles to.
+    annotation_csv_path (Optional[str]): Path to a CSV file containing annotations for filtering tiles.
+    output_indices_json_path (Optional[str]): Path to save the indices of the tiles that were processed.
+    """
+
     slide_path: str = MISSING
     patch_h5_path: str = MISSING
     output_pt_path: str = MISSING
@@ -34,8 +46,24 @@ class CacheTilesConfig:
     output_indices_json_path: Optional[str] = None
 
 
+desc_doc = """== ${hydra.help.app_name} ==
+
+Caches tiles from a whole-slide image into a PyTorch tensor.
+"""
+
+parameter_doc = f"""
+== Available Parameters ==
+{CacheTilesConfig.__doc__}
+"""
+
 cs = ConfigStore.instance()
 cs.store(name="cache_tiles_config", node=CacheTilesConfig)
+cs.store(
+    group="hydra",
+    name="config",
+    node=HydraConf(help=HelpConf(header=desc_doc, footer=parameter_doc)),
+    provider="hydra",
+)
 
 
 @hydra.main(config_path=".", config_name="cache_tiles_config", version_base=None)

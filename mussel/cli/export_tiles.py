@@ -4,25 +4,36 @@ CLI tool to export tiles as individual .png files from .patch.h5 file
 """
 
 import functools
-import os
 import multiprocessing as mp
+import os
 import time
-from dataclasses import dataclass
 from concurrent import futures
+from dataclasses import dataclass
 
 import h5py
-import hydra
 import numpy as np
+import tiffslide
+from hydra.conf import HelpConf, HydraConf
 from hydra.core.config_store import ConfigStore
 from loguru import logger
 from omegaconf import MISSING
 from tqdm import tqdm
 
-from mussel.utils.segment import is_white_patch, is_black_patch, get_native_size
+import hydra
+from mussel.utils.segment import get_native_size, is_black_patch, is_white_patch
 
 
 @dataclass
 class ExportTilesConfig:
+    """
+    slide_path (str): Path to the whole slide image.
+    patch_h5_path (str): Path to the HDF5 file containing tile coordinates.
+    output_png_path (str): Path to save the exported tiles as .png files.
+    patch_size (int): Size of the patches to export (in pixels).
+    mpp (float): Microns per pixel of the slide.
+    num_workers (int): Number of worker threads to use for exporting tiles.
+    """
+
     slide_path: str = MISSING
     patch_h5_path: str = MISSING
     output_png_path: str = MISSING
@@ -31,13 +42,28 @@ class ExportTilesConfig:
     num_workers: int = 16
 
 
+desc_doc = """== ${hydra.help.app_name} ==
+Exports tiles from a slide as individual .png files using a HDF5 tile coordinate manifest.
+"""
+
+parameter_doc = f"""
+== Available Parameters ==
+{ExportTilesConfig.__doc__}
+"""
+
 cs = ConfigStore.instance()
+cs.store(
+    group="hydra",
+    name="config",
+    node=HydraConf(help=HelpConf(header=desc_doc, footer=parameter_doc)),
+    provider="hydra",
+)
 cs.store(name="export_tiles_config", node=ExportTilesConfig)
 
 
 def export_tile(
     tile_coords: np.array,
-    wsi: WholeSlideImage,
+    wsi: tiffslide.TiffSlide,
     patch_size: int,
     output_path: str,
 ) -> None:
