@@ -5,15 +5,16 @@ from dataclasses import dataclass
 from typing import List, Optional
 
 import h5py
-import hydra
 import tiffslide as openslide
 import torch
+from hydra.conf import HelpConf, HydraConf
 from hydra.core.config_store import ConfigStore
 from loguru import logger
 from omegaconf import MISSING
 from torch.utils.data import DataLoader
 from torchvision.datasets import ImageFolder
 
+import hydra
 from mussel.datasets.h5 import Whole_Slide_Bag_FP
 from mussel.models.model_factory import ModelType, get_model_factory
 from mussel.utils.file import save_hdf5
@@ -25,6 +26,21 @@ ssl._create_default_https_context = ssl._create_unverified_context
 
 @dataclass
 class ExtractFeaturesConfig:
+    """
+    patch_h5_path (str): Path to the HDF5 file containing patches.
+    slide_path (str): Path to the whole slide image.
+    output_h5_path (str): Path to save the computed features in HDF5 format.
+    output_pt_path (str): Path to save the computed features in PyTorch format.
+    model_type (ModelType): Type of model to use for feature extraction.
+    model_path (Optional[str]): Path to the model weights, if applicable.
+    patch_path (Optional[str]): Directory containing pre-tiled images, if applicable.
+    batch_size (int): Batch size for processing patches or tiles.
+    use_gpu (bool): Whether to use GPU for computation.
+    gpu_device_id (Optional[int]): Specific GPU device ID to use, if applicable.
+    gpu_device_ids (Optional[List[int]]): List of GPU device IDs to use, if applicable.
+    num_workers (int): Number of worker threads for data loading.
+    """
+
     patch_h5_path: str = MISSING
     slide_path: str = MISSING
     output_h5_path: str = MISSING
@@ -140,7 +156,22 @@ def compute_w_loader(
     return output_h5_path
 
 
+desc_doc = """== ${hydra.help.app_name} ==
+
+Extract features from whole slide images (WSI) or patches using a specified model.
+"""
+
+parameter_doc = f"""== Available Parameters ==
+{ExtractFeaturesConfig.__doc__}
+"""
+
 cs = ConfigStore.instance()
+cs.store(
+    group="hydra",
+    name="config",
+    node=HydraConf(help=HelpConf(header=desc_doc, footer=parameter_doc)),
+    provider="hydra",
+)
 cs.store(name="extract_features_config", node=ExtractFeaturesConfig)
 
 

@@ -4,16 +4,17 @@ from typing import Optional
 import cv2
 import geopandas as gpd
 import h5py
-import hydra
 import numpy as np
 import pandas as pd
 import yaml
+from hydra.conf import HelpConf, HydraConf
 from hydra.core.config_store import ConfigStore
 from loguru import logger
 from omegaconf import MISSING, OmegaConf
 from PIL import Image
 from shapely.geometry import MultiPolygon, Polygon
 
+import hydra
 from mussel.utils.segment import contours_to_polygon
 
 Image.MAX_IMAGE_PIXELS = None
@@ -21,6 +22,14 @@ Image.MAX_IMAGE_PIXELS = None
 
 @dataclass
 class MergeAnnotationFeaturesConfig:
+    """
+    features_h5_path (str): Path to the HDF5 file containing tile features.
+    annotation_bmp_path (str): Path to the BMP file containing annotations.
+    output_parquet_path (str): Path to save the merged results in Parquet format.
+    slide_id (Optional[str]): Optional slide identifier to include in the output.
+    class_mapping_yaml_path (Optional[str]): Optional path to a YAML file for class mapping.
+    """
+
     features_h5_path: str = MISSING
     annotation_bmp_path: str = MISSING
     output_parquet_path: str = MISSING
@@ -28,7 +37,22 @@ class MergeAnnotationFeaturesConfig:
     class_mapping_yaml_path: Optional[str] = None
 
 
+desc_doc = """== ${hydra.help.app_name} ==
+Merges tile features with annotations from a BMP file. It reads features from an HDF5 file, processes annotations, and saves the merged results in Parquet format.
+"""
+
+parameter_doc = f"""
+== Available Parameters ==
+{MergeAnnotationFeaturesConfig.__doc__}
+"""
+
 cs = ConfigStore.instance()
+cs.store(
+    group="hydra",
+    name="config",
+    node=HydraConf(help=HelpConf(header=desc_doc, footer=parameter_doc)),
+    provider="hydra",
+)
 cs.store(name="merge_annotation_features_config", node=MergeAnnotationFeaturesConfig)
 
 
