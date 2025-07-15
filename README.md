@@ -128,17 +128,17 @@ uv pip install .[torch-gpu]
 
 Mussel provides a set of CLI tools for tiling whole-slide images, working with tiled
 slides, and generating feature embeddings with pathology foundation models.
+The tools currently available from Mussel are,
 
-* `tessellate` - tiling and foreground detection
-* `extract_features` - generate embeddings with a pathology foundation model 
+* `tessellate` - tiling and foreground detection of whole-slide images
+* `extract_features` - extract features from whole slide images (WSI) using a foundation model.
 * `create_class_embeddings` - generate tissue-type embeddings for classifying tiles
 * `annotate` - annotate tiles with tissue-types
 * `cache_tiles` - save tile information in an efficient form for training
-* `stitch_tiles`
-* `export_tiles`
-* `filter_features` - 
-* `merge_annotation_features`
-* `linear_probe_benchmark`
+* `export_tiles` - export tiles as individual .png files using an HDF5 tile-coordinate manifest.
+* `filter_features` - filter features using a classifier model
+* `merge_annotation_features` - merge tile features with annotations from a BMP file.
+* `linear_probe_benchmark` - benchmark a linear probe classifier on features extracted from a slide
 
 These are described, with examples, in the accompanying document, `README-commands.md`
 
