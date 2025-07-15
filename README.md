@@ -2,7 +2,8 @@
 
 <img src="docs/mussel.jpg" width="300px" />
 
-This is a fork of Faisal Mahmood's CLAM repository (GPL v3 license), with the following modifications:
+This is a fork of Faisal Mahmood's [CLAM repository](:bn
+ (GPL v3 license), with the following modifications:
 - Added CTransPath and Quilt embeddings
 - Added zero-shot tissue-type annotation of tiles
 - Added browser for text-to-image AI search of MSK pathology data
@@ -16,8 +17,8 @@ This is a fork of Faisal Mahmood's CLAM repository (GPL v3 license), with the fo
 ### System requirements
 
 Supported systems:
-* Mac OS (x86 and ARM)
-* Linux (x86)
+* Mac OS (x86 and ARM) (cpu only)
+* Linux (x86) (cpu and gpu)
 
 ### Pre-requisites
 - [uv](https://docs.astral.sh/uv/)
@@ -27,14 +28,19 @@ Supported systems:
 
 ### Create virtual environment and install packages
 
-Model inference either uses the pytorch libraries or tensorflow. Unfortunately,
-there are often conflicts with CUDA libraries required by both when running on
-GPU. To handle this, the required set of libraries must be specified to `uv` to
-build the virtual environment correctly.
+Model inference may require either PyTorch or TensorFlow, depending on which 
+foundation models you wish to use.  Because it can be challenging to satisfy the dependencies
+for both of those at the same time, you need to choose whether to install the module for
+PyTorch or for TensorFlow.
+
+In addition, you can choose to install Mussel with or without GPU support.  GPUs are
+necessary to run model inference for feature extraction or for generating class embeddings,
+but other operations can just run on cpus.  (Technically, model inference can just run on
+cpus, as well, but it's very slow.)
 
 #### PyTorch
 
-Required for the following models:
+PyTorch is required for the following models:
 
 * [ResNet-50](https://huggingface.co/microsoft/resnet-50)
 * [TransPath](https://github.com/Xiyue-Wang/TransPath)
@@ -45,140 +51,64 @@ Required for the following models:
 
 
 ##### GPU (CUDA)
-
+If you need to run a PyTorch model on GPUs, you can create the Mussel dev environment with
+the command
 ```bash
 uv sync --extra torch-gpu
 ```
 
 ##### CPU
-
+If you just want CPU support for a PyTorch model, you can create your Mussel environment with 
 ```bash
 uv sync --extra torch-cpu
 ```
+Mussel doesn't currently support Apple Metal GPUs, so this is what you'd use to install on a modern MacBook.
 
-#### Tensorflow
-
-Required for:
+#### TensorFlow
+TesnorFlow is required to run the Google Path Foundation model,
 
 * [Google Path Foundation](https://huggingface.co/google/path-foundation)
 
 ##### GPU (CUDA)
-
+To run the GooglePath with GPUs, create your dev environment with
 ```bash
 uv sync --extra tensorflow-gpu
 ```
 
 ##### CPU
-
+If you just want CPU support for working with GooglePath, create your Mussel environment with 
 ```bash
 uv sync --extra tensorflow-cpu
 ```
-
-## CLI
-
-There are 4 CLI tools: `annotate`, `cache_tiles`, `extract_features`, and
-`tessellate`. See CLI options using `{command} --help`.
-
-### foreground detection and tiling
-
-<img src="docs/example-mask.jpg" width="600px" />
-
-Generate .h5 file with coordinates and metadata necessary for downstream steps. Optionally generate stitch and mask.
-
-Example command (see defaults with `tessellate --help`):
-```bash
-mkdir reef
-uv run tessellate \
-    slide_path=data/7789726.svs \
-    output_h5_path=reef/7789726_coord.h5 \
-    seg_config.use_otsu=true
-```
-
-### feature extraction
-Generate .h5 file with features and .pt file with embeddings for each tile.
-
-Example command (see defaults with `extract_features --help`):
-```bash
-uv run extract_features \
-    slide_path=data/7789726.svs \
-    patch_h5_path=reef/7789726_coord.h5 \
-    output_h5_path=reef/7789726_feat.h5 \
-    output_pt_path=reef/7789726_embed.pt
-```
-
-#### (beta) - Folder-based feature extraction
-Generates .h5 file with features using pre-tiled images (as opposed to tiles that come
-from `tessellate`)
-```bash
-uv run extract_features \
-    slide_path=None \
-    patch_h5_path=None \
-    patch_path=<path to folder w/ tiles in image format (.tif, .png, .jpg, etc.)> \
-    output_h5_path=<path to output h5 file> \
-    output_pt_path=None
-```
-
-### annotate tiles with tissue types (QuiltNet only)
-Current classes are:
-```
-["carcinoma in situ", "invasive carcinoma with lymphocytes", "tumor infiltrating lymphocytes", "lymphocytes", "carcinoma in situ with lymphocytes", "tumor-associated stroma with lymphocytes"]
-```
-
-Try your own classes! Any natural language works, and no training is required.
-Generate interrogation reports to eval your prompt engineering by setting `iterrogate`.
-
-Create class embeddings
-```bash
-uv run create_class_embeddings \
-    'classes=["carcinoma in situ", "invasive carcinoma with lymphocytes", "tumor infiltrating lymphocytes", "lymphocytes", "carcinoma in situ with lymphocytes", "tumor-associated stroma with lymphocytes" ]' \
-    output_pt_path=reef/classes.pt
-```
-
-Example command (see defaults with `annotate --help`):
-```bash
-uv run annotate \
-    features_pt_path=reef/7789726_embed.pt \
-    output_csv_path=reef/7789726.csv \
-    'classes=["carcinoma in situ", "invasive carcinoma with lymphocytes", "tumor infiltrating lymphocytes", "lymphocytes", "carcinoma in situ with lymphocytes", "tumor-associated stroma with lymphocytes" ]' \
-    class_embedding_pt_path=reef/classes.pt
-```
-
-<img src="docs/example-interrog.png" width="600px" />
-
-### tile caching
-
-Generate .pt file for rapid access of tiles during I/O intense operations such
-as training. This can be conditioned on tissue types: e.g. cache only the tiles
-containing invasive carcinoma by setting `limit_to_class`. `patches_h5_path` is
-the output from `tessellate`.
-
-```bash
-uv run cache_tiles slide_path=data/7789726.svs \
-    patch_h5_path=reef/7789726_coord.h5 \
-    output_pt_path=reef/7789726_cache.pt \
-    'limit_to_class=["carcinoma in situ", "invasive carcinoma with lymphocytes"]' \
-    output_indices_json_path=reef/7789726_output_indices.json
-```
-
-*This takes about ten seconds for an example slide.*
-
+Again, this is what you'd install on a MacBook running on Apple Silicon.
 
 ## Development Notes
 
 * Any commands executed using `uv run <command...>` are automatically executed in the project environment.
+* You can also explicitly activate the virtual environment created by `uv` by executing
+```bash
+source .venv/bin/activate
+```
+* To install Mussel into an existing environment, activate that environment and use `uv pip` or `conda` to install
+  one of `Mussel[torch-gpu]`, `Mussel[tensorflow-gpu]`, `Mussel[torch-cpu]`, or `Mussel[tensorflow-cpu]`
+  into that environment.  (Here, `Mussel` would be replaced with the path to the Mussel
+  repo you've checked out.)
+
+(The example commands in README-commands.md all expect you to have a activated python environment, so that `uv run` isn't necessary.)
 
 ### Modifying package requirements
 
-* Use `uv sync` to install install this project and its dependencies into the project's virtual environment.
-* Execute `uv sync` after making any changes to the requirements.
+* Use `uv sync --extra <extra-deps>` to install this project and its dependencies into the project's virtual environment,
+  where <extra-deps> is one of `torch-gpu`, `tensorflow-gpu`, `torch-cpu`, or `tensorflow-cpu`
+* Execute `uv sync --extra <extra-deps>` after making any changes to the requirements.
 
 ```bash
-uv sync
+uv sync --extra torch-gpu
 ```
 
 ### Run unit tests
 
-Ensure that the dev group is installed (installed by default).   (Note that the tests in
+Make sure that the dev dependencies are installed. (They should be installed by default).   (Note that the tests in
 this repo expect you to have installed the `torch-gpu` version of the project, and only
 the default model, `CLIP`, is used for feature extraction.)
 
@@ -189,13 +119,29 @@ uv run pytest tests
 ### Create conda environment
 
 To install this module into an existing Python environment, activate that environment
-and install mussel with the command,
-
+and install mussel and its extra dependencies with the command, (for example)
 ```bash
-uv pip install -r pyproject.toml
+uv pip install .[torch-gpu]
 ```
 
-Specify the extra packages as required for your conda environment.
+## Command-line interface
+
+Mussel provides a set of CLI tools for tiling whole-slide images, working with tiled
+slides, and generating feature embeddings with pathology foundation models.
+
+* `tessellate` - tiling and foreground detection
+* `extract_features` - generate embeddings with a pathology foundation model 
+* `create_class_embeddings` - generate tissue-type embeddings for classifying tiles
+* `annotate` - annotate tiles with tissue-types
+* `cache_tiles` - save tile information in an efficient form for training
+* `stitch_tiles`
+* `export_tiles`
+* `filter_features` - 
+* `merge_annotation_features`
+* `linear_probe_benchmark`
+
+These are described, with examples, in the accompanying document, `README-commands.md`
+
 
 ## License
 This code is made available under the GPLv3 License and is available for non-commercial academic purposes.
