@@ -2,15 +2,15 @@
 
 <img src="docs/mussel.jpg" width="300px" />
 
-This is a fork of Faisal Mahmood's [CLAM repository](:bn
- (GPL v3 license), with the following modifications:
-- Added CTransPath and Quilt embeddings
+This is a fork of Faisal Mahmood's [CLAM repository](https://github.com/mahmoodlab/CLAM)
+ (GPL v3 license), with a handful of modifications:
+- Added additional foundation models for generating embeddings
 - Added zero-shot tissue-type annotation of tiles
-- Added browser for text-to-image AI search of MSK pathology data
 - Added caching of images for inference right on the tiles (rather than on embeddings)
 - Added microns per pixel (mpp) as parameter for tiling, supported regardless of native slide resolution
 - Made usable for job submission (one script run, one slide)
 - Removed modeling
+- Updated the tiling algorithm
 
 ## Installation
 
@@ -140,7 +140,7 @@ The tools currently available from Mussel are,
 * `merge_annotation_features` - merge tile features with annotations from a BMP file.
 * `linear_probe_benchmark` - benchmark a linear probe classifier on features extracted from a slide
 
-These are described, with examples, in the accompanying document, `README-commands.md`
+These are described, with examples, in the accompanying document, [README-commands.md](README-commands.md)
 
 
 ## License
