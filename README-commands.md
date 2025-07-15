@@ -117,7 +117,8 @@ annotate \
 
 ### `create_class_embeddings`
 
-You can also define your own classes with OpenClip! Any natural language works, and no training is required.  For example,
+You can also define your own classes with OpenClip! Any natural language works, and no training
+is required.  For example,
 
 ```bash
 create_class_embeddings \
@@ -135,17 +136,19 @@ annotate \
 
 ### `cache_tiles`
 
-Generate PyTorch (.pt) file for rapid access of tiles during I/O intense operations such
-as training. This can be conditioned on tissue types: e.g. cache only the tiles
-containing invasive carcinoma by setting `limit_to_class`. `patches_h5_path` is
+Use `cache_tiles` to generate a PyTorch (.pt) file for rapid access to tiles during I/O intense
+operations such as training. This can be conditioned on tissue types: e.g. cache only the tiles
+containing invasive carcinoma by setting `limit_to_class`. The `patch_h5_path` input file is
 the output from `tessellate`.
 
 ```bash
-cache_tiles slide_path=data/948176.svs \
+cache_tiles \
+    slide_path=tests/testdata/948176.svs \
     patch_h5_path=reef/948176_coord.h5 \
-    output_pt_path=reef/948176_cache.pt \
+    annotation_csv_path=tests/testdata/948176.annotation.csv \
     'limit_to_class=["carcinoma in situ", "invasive carcinoma with lymphocytes"]' \
-    output_indices_json_path=reef/948176_output_indices.json
+    output_pt_path=948176_cache.pt \
+    output_indices_json_path=948176_output_indices.json
 ```
 
 *This takes about ten seconds for an example slide.*
