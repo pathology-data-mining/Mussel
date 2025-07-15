@@ -1,26 +1,25 @@
 # Mussel commands
 
-This document provides a more detailed reference to the command-line tools provided by
-Mussel.
-
+This document describes the main command-line tools provided by Mussel, with examples.
 
 ## Commands
 
-Mussel provides handful of CLI tools:
+Mussel provides a set of CLI tools for tiling whole-slide images, working with tiled
+slides, and generating feature embeddings with pathology foundation models.
 
 * `tessellate` - tiling and foreground detection
 * `extract_features` - generate embeddings with a pathology foundation model 
-* `filter_features` - 
-* `cache_tiles`
+* `create_class_embeddings` - generate tissue-type embeddings for classifying tiles
+* `annotate` - annotate tiles with tissue-types
+* `cache_tiles` - save tile information in an efficient form for training
 * `stitch_tiles`
-* `annotate`
-* `create_class_embeddings`
+* `export_tiles`
+* `filter_features` - 
 * `merge_annotation_features`
 * `linear_probe_benchmark`
-* `export_tiles`
 
-Each of these commands is configurable with a number of different parameters, which are summarized
-further below.  You can always get a quick list of the parameters and default values for a given tool
+Each of these commands is configurable with a number of different parameters.
+You can always get a quick list of the parameters and default values for a given tool
 by executing `<command> --help`.
 
 ### Examples
@@ -28,7 +27,6 @@ by executing `<command> --help`.
 <img src="docs/example-mask.jpg" width="600px" />
 
 The example commands below use the test data provided in the `tests/testdata` folder. 
-
 
 ### `tessellate`
 
