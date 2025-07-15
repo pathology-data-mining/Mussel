@@ -4,18 +4,28 @@ from dataclasses import dataclass, field
 from typing import Optional
 
 import h5py
-import hydra
 import numpy as np
 import torch
+from hydra.conf import HelpConf, HydraConf
 from hydra.core.config_store import ConfigStore
 from loguru import logger
 from omegaconf import MISSING, OmegaConf
 
+import hydra
 from mussel.utils.file import save_hdf5
 
 
 @dataclass
 class FilterFeaturesConfig:
+    """
+    features_h5_path (str): Path to the HDF5 file containing features.
+    features_pt_path (Optional[str]): Path to the PyTorch file containing features.
+    output_h5_path (str): Path to save the filtered features in HDF5 format.
+    output_pt_path (str): Path to save the filtered features in PyTorch format.
+    classifier_pkl (str): Path to the classifier model in pickle format.
+    classifier_threshold (float): Threshold for the classifier to filter features.
+    """
+
     features_h5_path: str = MISSING
     features_pt_path: Optional[str] = None
     output_h5_path: str = MISSING
@@ -24,7 +34,22 @@ class FilterFeaturesConfig:
     classifier_threshold: float = 0.75
 
 
+desc_doc = """== ${hydra.help.app_name} ==
+Filters features based on a classifier model. It loads features from an HDF5 file or a PyTorch file, applies a classifier to filter them, and saves the filtered features to specified output paths.
+"""
+
+parameter_doc = f"""
+== Available Parameters ==
+{FilterFeaturesConfig.__doc__}
+"""
+
 cs = ConfigStore.instance()
+cs.store(
+    group="hydra",
+    name="config",
+    node=HydraConf(help=HelpConf(header=desc_doc, footer=parameter_doc)),
+    provider="hydra",
+)
 cs.store(name="filter_features_config", node=FilterFeaturesConfig)
 
 

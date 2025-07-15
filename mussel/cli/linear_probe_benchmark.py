@@ -2,10 +2,10 @@ from dataclasses import dataclass
 from typing import Optional
 
 import geopandas as gpd
-import hydra
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
+from hydra.conf import HelpConf, HydraConf
 from hydra.core.config_store import ConfigStore
 from loguru import logger
 from omegaconf import MISSING, OmegaConf
@@ -19,9 +19,24 @@ from sklearn.metrics import (
 )
 from sklearn.model_selection import train_test_split
 
+import hydra
+
 
 @dataclass
 class LinearProbeBenchmarkConfig:
+    """
+    output_csv (str): Path to save the classification report in CSV format.
+    output_png (str): Path to save the confusion matrix as a PNG image.
+    features_annotation_parquet_path (str): Path to the parquet file containing features and annotations.
+    annotation_percent_filter_threshold (float): Threshold for filtering annotations based on overlap area.
+    test_size (float): Proportion of the dataset to include in the test split.
+    val_size (float): Proportion of the training dataset to include in the validation split.
+    random_state (int): Random seed for reproducibility.
+    penalty (Optional[str]): Regularization penalty to use in the logistic regression ('l1', 'l2', 'elasticnet' or None).
+    C (float): Inverse of regularization strength; smaller values specify stronger regularization.
+    max_iter (int): Maximum number of iterations for the logistic regression solver.
+    """
+
     output_csv: str = "classification_report.csv"
     output_png: str = "confusion_matrix.png"
     features_annotation_parquet_path: str = MISSING
@@ -34,7 +49,22 @@ class LinearProbeBenchmarkConfig:
     max_iter: int = 5000
 
 
+desc_doc = """== ${hydra.help.app_name} ==
+This script benchmarks a linear probe classifier on features extracted from whole slide images.
+"""
+
+parameter_doc = f"""
+== Available Parameters ==
+{LinearProbeBenchmarkConfig.__doc__}
+"""
+
 cs = ConfigStore.instance()
+cs.store(
+    group="hydra",
+    name="config",
+    node=HydraConf(help=HelpConf(header=desc_doc, footer=parameter_doc)),
+    provider="hydra",
+)
 cs.store(name="linear_probe_benchmark_config", node=LinearProbeBenchmarkConfig)
 
 
@@ -48,9 +78,7 @@ def main(cfg: LinearProbeBenchmarkConfig):
         f"overlap_area > {cfg.annotation_percent_filter_threshold} * tile_area"
     )
 
-    df_filtered = df_filtered.assign(y = (
-        df_filtered.annotation == 2
-    ).astype(int))
+    df_filtered = df_filtered.assign(y=(df_filtered.annotation == 2).astype(int))
 
     slide_ids = df_filtered.query("annotation == 2")["slide_id"].unique()
 
