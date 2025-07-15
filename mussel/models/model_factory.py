@@ -325,7 +325,7 @@ class VirchowModelFactory(ModelFactory):
     def get_model(
         self, model_path=None, model_obj=None, use_gpu=True, gpu_device_id=None
     ):
-        return VirchowModelFactory(model_path, model_obj, use_gpu, gpu_device_id)
+        return VirchowTorchModel(model_path, model_obj, use_gpu, gpu_device_id)
 
 
 @register_model_factory(ModelType.OPTIMUS)
