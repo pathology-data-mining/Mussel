@@ -49,7 +49,8 @@ a PyTorch (.pt) file, with embeddings for each tile.
 
 The following models are currently supported,
 
-|| Model       || model_type || Reference ||
+| Model         | model_type  | Reference |
+|---------------|-------------|-----------|
 | ResNet-50     | RESNET50    | https://huggingface.co/microsoft/resnet-50 |
 | TransPath     | CTRANSPATH  | https://github.com/Xiyue-Wang/TransPath |
 | Prov-GigaPath | GIGAPATH    | https://github.com/prov-gigapath/prov-gigapath |
@@ -87,12 +88,12 @@ extract_features \
     output_pt_path=None
 ```
 
-### `create_class_embeddings` and `annotate`
+### `annotate`
 
 You can generate embeddings for different tissue types, using the QuiltNet OpenClip model, and
 use these to annotate a set of tiles for which you have OpenClip embeddings. 
 
-The `tests/testdata/` folder includes some emmbeddings generated for the following tissue
+The `tests/testdata/` folder includes some embeddings generated for the following tissue
 types,
 
 * "carcinoma in situ"
