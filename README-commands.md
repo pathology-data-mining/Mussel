@@ -142,7 +142,7 @@ the output from `tessellate`.
 ```bash
 cache_tiles \
     slide_path=tests/testdata/948176.svs \
-    patch_h5_path=reef/948176_coord.h5 \
+    patch_h5_path=948176_coord.h5 \
     annotation_csv_path=tests/testdata/948176.annotation.csv \
     'limit_to_class=["carcinoma in situ", "invasive carcinoma with lymphocytes"]' \
     output_pt_path=948176_cache.pt \
