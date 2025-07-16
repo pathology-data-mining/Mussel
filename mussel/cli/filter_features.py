@@ -35,8 +35,9 @@ class FilterFeaturesConfig:
 
 
 desc_doc = """== ${hydra.help.app_name} ==
-Filters features based on a classifier model. It loads features from an HDF5 file or a PyTorch file, applies a classifier to filter them, and saves the filtered features to specified output paths.
-"""
+Filter tiles using a classifier model. Features are loaded from an HDF5 or PyTorch
+file and assigned a score by the classifier.  Tiles that meet the threshold value are
+written to the output file(s).  """
 
 parameter_doc = f"""
 == Available Parameters ==

@@ -158,7 +158,9 @@ def compute_w_loader(
 
 desc_doc = """== ${hydra.help.app_name} ==
 
-Extract features from whole slide images (WSI) or patches using a specified model.
+Extract features (embeddings) from whole slide images (WSI) or patches using a 
+pathology foundation model.  The embeddings are written to a PyTorch tensor file (.pt)
+and an HDF5 (.h5) file.
 """
 
 parameter_doc = f"""== Available Parameters ==
