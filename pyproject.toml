@@ -4,7 +4,7 @@ version = "1.0.0"
 description = "weakly supervised computational pathology on whole slide images"
 license = {text = "GPL-3.0 license"}
 readme = "README.md"
-requires-python = ">=3.12"
+requires-python = ">=3.12, <3.13"
 dependencies = [
   "pandas",
   "numpy<2.3",
