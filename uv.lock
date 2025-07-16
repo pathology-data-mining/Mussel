@@ -2,27 +2,18 @@ version = 1
 revision = 2
 requires-python = ">=3.12"
 resolution-markers = [
-    "sys_platform == 'darwin' and extra != 'extra-6-mussel-tensorflow-cpu' and extra != 'extra-6-mussel-tensorflow-gpu' and extra != 'extra-6-mussel-torch-cpu' and extra == 'extra-6-mussel-torch-gpu'",
-    "platform_machine == 'aarch64' and sys_platform == 'linux' and extra != 'extra-6-mussel-tensorflow-cpu' and extra != 'extra-6-mussel-tensorflow-gpu' and extra != 'extra-6-mussel-torch-cpu' and extra == 'extra-6-mussel-torch-gpu'",
-    "(platform_machine != 'aarch64' and sys_platform == 'linux' and extra != 'extra-6-mussel-tensorflow-cpu' and extra != 'extra-6-mussel-tensorflow-gpu' and extra != 'extra-6-mussel-torch-cpu' and extra == 'extra-6-mussel-torch-gpu') or (sys_platform != 'darwin' and sys_platform != 'linux' and extra != 'extra-6-mussel-tensorflow-cpu' and extra != 'extra-6-mussel-tensorflow-gpu' and extra != 'extra-6-mussel-torch-cpu' and extra == 'extra-6-mussel-torch-gpu')",
-    "sys_platform == 'darwin' and extra != 'extra-6-mussel-tensorflow-cpu' and extra != 'extra-6-mussel-tensorflow-gpu' and extra == 'extra-6-mussel-torch-cpu' and extra != 'extra-6-mussel-torch-gpu'",
-    "platform_machine == 'aarch64' and sys_platform == 'linux' and extra != 'extra-6-mussel-tensorflow-cpu' and extra != 'extra-6-mussel-tensorflow-gpu' and extra == 'extra-6-mussel-torch-cpu' and extra != 'extra-6-mussel-torch-gpu'",
+    "extra != 'extra-6-mussel-tensorflow-cpu' and extra != 'extra-6-mussel-tensorflow-gpu' and extra != 'extra-6-mussel-torch-cpu' and extra == 'extra-6-mussel-torch-gpu'",
     "(platform_machine != 'aarch64' and sys_platform == 'linux' and extra != 'extra-6-mussel-tensorflow-cpu' and extra != 'extra-6-mussel-tensorflow-gpu' and extra == 'extra-6-mussel-torch-cpu' and extra != 'extra-6-mussel-torch-gpu') or (sys_platform != 'darwin' and sys_platform != 'linux' and extra != 'extra-6-mussel-tensorflow-cpu' and extra != 'extra-6-mussel-tensorflow-gpu' and extra == 'extra-6-mussel-torch-cpu' and extra != 'extra-6-mussel-torch-gpu')",
-    "python_full_version >= '3.13' and sys_platform == 'darwin' and extra != 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-tensorflow-gpu' and extra != 'extra-6-mussel-torch-cpu' and extra != 'extra-6-mussel-torch-gpu'",
-    "python_full_version < '3.13' and sys_platform == 'darwin' and extra != 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-tensorflow-gpu' and extra != 'extra-6-mussel-torch-cpu' and extra != 'extra-6-mussel-torch-gpu'",
-    "python_full_version >= '3.13' and platform_machine == 'aarch64' and sys_platform == 'linux' and extra != 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-tensorflow-gpu' and extra != 'extra-6-mussel-torch-cpu' and extra != 'extra-6-mussel-torch-gpu'",
-    "python_full_version < '3.13' and platform_machine == 'aarch64' and sys_platform == 'linux' and extra != 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-tensorflow-gpu' and extra != 'extra-6-mussel-torch-cpu' and extra != 'extra-6-mussel-torch-gpu'",
+    "(platform_machine == 'aarch64' and sys_platform == 'linux' and extra != 'extra-6-mussel-tensorflow-cpu' and extra != 'extra-6-mussel-tensorflow-gpu' and extra == 'extra-6-mussel-torch-cpu' and extra != 'extra-6-mussel-torch-gpu') or (sys_platform == 'darwin' and extra != 'extra-6-mussel-tensorflow-cpu' and extra != 'extra-6-mussel-tensorflow-gpu' and extra == 'extra-6-mussel-torch-cpu' and extra != 'extra-6-mussel-torch-gpu')",
     "(python_full_version >= '3.13' and platform_machine != 'aarch64' and sys_platform == 'linux' and extra != 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-tensorflow-gpu' and extra != 'extra-6-mussel-torch-cpu' and extra != 'extra-6-mussel-torch-gpu') or (python_full_version >= '3.13' and sys_platform != 'darwin' and sys_platform != 'linux' and extra != 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-tensorflow-gpu' and extra != 'extra-6-mussel-torch-cpu' and extra != 'extra-6-mussel-torch-gpu')",
     "(python_full_version < '3.13' and platform_machine != 'aarch64' and sys_platform == 'linux' and extra != 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-tensorflow-gpu' and extra != 'extra-6-mussel-torch-cpu' and extra != 'extra-6-mussel-torch-gpu') or (python_full_version < '3.13' and sys_platform != 'darwin' and sys_platform != 'linux' and extra != 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-tensorflow-gpu' and extra != 'extra-6-mussel-torch-cpu' and extra != 'extra-6-mussel-torch-gpu')",
-    "python_full_version >= '3.13' and sys_platform == 'darwin' and extra == 'extra-6-mussel-tensorflow-cpu' and extra != 'extra-6-mussel-tensorflow-gpu' and extra != 'extra-6-mussel-torch-cpu' and extra != 'extra-6-mussel-torch-gpu'",
-    "python_full_version < '3.13' and sys_platform == 'darwin' and extra == 'extra-6-mussel-tensorflow-cpu' and extra != 'extra-6-mussel-tensorflow-gpu' and extra != 'extra-6-mussel-torch-cpu' and extra != 'extra-6-mussel-torch-gpu'",
-    "python_full_version >= '3.13' and platform_machine == 'aarch64' and sys_platform == 'linux' and extra == 'extra-6-mussel-tensorflow-cpu' and extra != 'extra-6-mussel-tensorflow-gpu' and extra != 'extra-6-mussel-torch-cpu' and extra != 'extra-6-mussel-torch-gpu'",
-    "python_full_version < '3.13' and platform_machine == 'aarch64' and sys_platform == 'linux' and extra == 'extra-6-mussel-tensorflow-cpu' and extra != 'extra-6-mussel-tensorflow-gpu' and extra != 'extra-6-mussel-torch-cpu' and extra != 'extra-6-mussel-torch-gpu'",
+    "(python_full_version >= '3.13' and platform_machine == 'aarch64' and sys_platform == 'linux' and extra != 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-tensorflow-gpu' and extra != 'extra-6-mussel-torch-cpu' and extra != 'extra-6-mussel-torch-gpu') or (python_full_version >= '3.13' and sys_platform == 'darwin' and extra != 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-tensorflow-gpu' and extra != 'extra-6-mussel-torch-cpu' and extra != 'extra-6-mussel-torch-gpu')",
+    "(python_full_version < '3.13' and platform_machine == 'aarch64' and sys_platform == 'linux' and extra != 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-tensorflow-gpu' and extra != 'extra-6-mussel-torch-cpu' and extra != 'extra-6-mussel-torch-gpu') or (python_full_version < '3.13' and sys_platform == 'darwin' and extra != 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-tensorflow-gpu' and extra != 'extra-6-mussel-torch-cpu' and extra != 'extra-6-mussel-torch-gpu')",
     "(python_full_version >= '3.13' and platform_machine != 'aarch64' and sys_platform == 'linux' and extra == 'extra-6-mussel-tensorflow-cpu' and extra != 'extra-6-mussel-tensorflow-gpu' and extra != 'extra-6-mussel-torch-cpu' and extra != 'extra-6-mussel-torch-gpu') or (python_full_version >= '3.13' and sys_platform != 'darwin' and sys_platform != 'linux' and extra == 'extra-6-mussel-tensorflow-cpu' and extra != 'extra-6-mussel-tensorflow-gpu' and extra != 'extra-6-mussel-torch-cpu' and extra != 'extra-6-mussel-torch-gpu')",
     "(python_full_version < '3.13' and platform_machine != 'aarch64' and sys_platform == 'linux' and extra == 'extra-6-mussel-tensorflow-cpu' and extra != 'extra-6-mussel-tensorflow-gpu' and extra != 'extra-6-mussel-torch-cpu' and extra != 'extra-6-mussel-torch-gpu') or (python_full_version < '3.13' and sys_platform != 'darwin' and sys_platform != 'linux' and extra == 'extra-6-mussel-tensorflow-cpu' and extra != 'extra-6-mussel-tensorflow-gpu' and extra != 'extra-6-mussel-torch-cpu' and extra != 'extra-6-mussel-torch-gpu')",
-    "sys_platform == 'darwin' and extra != 'extra-6-mussel-tensorflow-cpu' and extra != 'extra-6-mussel-tensorflow-gpu' and extra != 'extra-6-mussel-torch-cpu' and extra != 'extra-6-mussel-torch-gpu'",
-    "platform_machine == 'aarch64' and sys_platform == 'linux' and extra != 'extra-6-mussel-tensorflow-cpu' and extra != 'extra-6-mussel-tensorflow-gpu' and extra != 'extra-6-mussel-torch-cpu' and extra != 'extra-6-mussel-torch-gpu'",
-    "(platform_machine != 'aarch64' and sys_platform == 'linux' and extra != 'extra-6-mussel-tensorflow-cpu' and extra != 'extra-6-mussel-tensorflow-gpu' and extra != 'extra-6-mussel-torch-cpu' and extra != 'extra-6-mussel-torch-gpu') or (sys_platform != 'darwin' and sys_platform != 'linux' and extra != 'extra-6-mussel-tensorflow-cpu' and extra != 'extra-6-mussel-tensorflow-gpu' and extra != 'extra-6-mussel-torch-cpu' and extra != 'extra-6-mussel-torch-gpu')",
+    "(python_full_version >= '3.13' and platform_machine == 'aarch64' and sys_platform == 'linux' and extra == 'extra-6-mussel-tensorflow-cpu' and extra != 'extra-6-mussel-tensorflow-gpu' and extra != 'extra-6-mussel-torch-cpu' and extra != 'extra-6-mussel-torch-gpu') or (python_full_version >= '3.13' and sys_platform == 'darwin' and extra == 'extra-6-mussel-tensorflow-cpu' and extra != 'extra-6-mussel-tensorflow-gpu' and extra != 'extra-6-mussel-torch-cpu' and extra != 'extra-6-mussel-torch-gpu')",
+    "(python_full_version < '3.13' and platform_machine == 'aarch64' and sys_platform == 'linux' and extra == 'extra-6-mussel-tensorflow-cpu' and extra != 'extra-6-mussel-tensorflow-gpu' and extra != 'extra-6-mussel-torch-cpu' and extra != 'extra-6-mussel-torch-gpu') or (python_full_version < '3.13' and sys_platform == 'darwin' and extra == 'extra-6-mussel-tensorflow-cpu' and extra != 'extra-6-mussel-tensorflow-gpu' and extra != 'extra-6-mussel-torch-cpu' and extra != 'extra-6-mussel-torch-gpu')",
+    "extra != 'extra-6-mussel-tensorflow-cpu' and extra != 'extra-6-mussel-tensorflow-gpu' and extra != 'extra-6-mussel-torch-cpu' and extra != 'extra-6-mussel-torch-gpu'",
 ]
 conflicts = [[
     { package = "mussel", extra = "tensorflow-cpu" },
@@ -159,7 +150,8 @@ name = "contourpy"
 version = "1.3.2"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "numpy" },
+    { name = "numpy", version = "2.1.3", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'extra-6-mussel-tensorflow-cpu' or extra == 'extra-6-mussel-tensorflow-gpu' or (extra == 'extra-6-mussel-torch-cpu' and extra == 'extra-6-mussel-torch-gpu')" },
+    { name = "numpy", version = "2.2.6", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'extra-6-mussel-torch-cpu' or extra == 'extra-6-mussel-torch-gpu' or (extra == 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-tensorflow-gpu') or (extra != 'extra-6-mussel-tensorflow-cpu' and extra != 'extra-6-mussel-tensorflow-gpu')" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/66/54/eb9bfc647b19f2009dd5c7f5ec51c4e6ca831725f1aea7a993034f483147/contourpy-1.3.2.tar.gz", hash = "sha256:b6945942715a034c671b7fc54f9588126b0b8bf23db2696e3ca8328f3ff0ab54", size = 13466130, upload-time = "2025-04-15T17:47:53.79Z" }
 wheels = [
@@ -303,7 +295,8 @@ name = "geopandas"
 version = "1.1.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "numpy" },
+    { name = "numpy", version = "2.1.3", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'extra-6-mussel-tensorflow-cpu' or extra == 'extra-6-mussel-tensorflow-gpu' or (extra == 'extra-6-mussel-torch-cpu' and extra == 'extra-6-mussel-torch-gpu')" },
+    { name = "numpy", version = "2.2.6", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'extra-6-mussel-torch-cpu' or extra == 'extra-6-mussel-torch-gpu' or (extra == 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-tensorflow-gpu') or (extra != 'extra-6-mussel-tensorflow-cpu' and extra != 'extra-6-mussel-tensorflow-gpu')" },
     { name = "packaging" },
     { name = "pandas" },
     { name = "pyogrio" },
@@ -360,7 +353,8 @@ name = "h5py"
 version = "3.14.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "numpy" },
+    { name = "numpy", version = "2.1.3", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'extra-6-mussel-tensorflow-cpu' or extra == 'extra-6-mussel-tensorflow-gpu' or (extra == 'extra-6-mussel-torch-cpu' and extra == 'extra-6-mussel-torch-gpu')" },
+    { name = "numpy", version = "2.2.6", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'extra-6-mussel-torch-cpu' or extra == 'extra-6-mussel-torch-gpu' or (extra == 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-tensorflow-gpu') or (extra != 'extra-6-mussel-tensorflow-cpu' and extra != 'extra-6-mussel-tensorflow-gpu')" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/5d/57/dfb3c5c3f1bf5f5ef2e59a22dec4ff1f3d7408b55bfcefcfb0ea69ef21c6/h5py-3.14.0.tar.gz", hash = "sha256:2372116b2e0d5d3e5e705b7f663f7c8d96fa79a4052d250484ef91d24d6a08f4", size = 424323, upload-time = "2025-06-06T14:06:15.01Z" }
 wheels = [
@@ -438,7 +432,8 @@ name = "imagecodecs"
 version = "2025.3.30"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "numpy" },
+    { name = "numpy", version = "2.1.3", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'extra-6-mussel-tensorflow-cpu' or extra == 'extra-6-mussel-tensorflow-gpu' or (extra == 'extra-6-mussel-torch-cpu' and extra == 'extra-6-mussel-torch-gpu')" },
+    { name = "numpy", version = "2.2.6", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'extra-6-mussel-torch-cpu' or extra == 'extra-6-mussel-torch-gpu' or (extra == 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-tensorflow-gpu') or (extra != 'extra-6-mussel-tensorflow-cpu' and extra != 'extra-6-mussel-tensorflow-gpu')" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/de/bf/81c848ffe2b42fc141b6db3e4e8e650183b7aab8c4535498ebff25740a3b/imagecodecs-2025.3.30.tar.gz", hash = "sha256:29256f44a7fcfb8f235a3e9b3bae72b06ea2112e63bcc892267a8c01b7097f90", size = 9506573, upload-time = "2025-03-30T04:44:50.368Z" }
 wheels = [
@@ -507,7 +502,7 @@ dependencies = [
     { name = "h5py" },
     { name = "ml-dtypes" },
     { name = "namex" },
-    { name = "numpy" },
+    { name = "numpy", version = "2.1.3", source = { registry = "https://pypi.org/simple" } },
     { name = "optree" },
     { name = "packaging" },
     { name = "rich" },
@@ -666,7 +661,8 @@ dependencies = [
     { name = "cycler" },
     { name = "fonttools" },
     { name = "kiwisolver" },
-    { name = "numpy" },
+    { name = "numpy", version = "2.1.3", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'extra-6-mussel-tensorflow-cpu' or extra == 'extra-6-mussel-tensorflow-gpu' or (extra == 'extra-6-mussel-torch-cpu' and extra == 'extra-6-mussel-torch-gpu')" },
+    { name = "numpy", version = "2.2.6", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'extra-6-mussel-torch-cpu' or extra == 'extra-6-mussel-torch-gpu' or (extra == 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-tensorflow-gpu') or (extra != 'extra-6-mussel-tensorflow-cpu' and extra != 'extra-6-mussel-tensorflow-gpu')" },
     { name = "packaging" },
     { name = "pillow" },
     { name = "pyparsing" },
@@ -708,7 +704,7 @@ name = "ml-dtypes"
 version = "0.5.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "numpy" },
+    { name = "numpy", version = "2.1.3", source = { registry = "https://pypi.org/simple" } },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/32/49/6e67c334872d2c114df3020e579f3718c333198f8312290e09ec0216703a/ml_dtypes-0.5.1.tar.gz", hash = "sha256:ac5b58559bb84a95848ed6984eb8013249f90b6bab62aa5acbad876e256002c9", size = 698772, upload-time = "2025-01-07T03:34:55.613Z" }
 wheels = [
@@ -736,7 +732,7 @@ wheels = [
 
 [[package]]
 name = "mussel"
-version = "0.9.1"
+version = "1.0.0"
 source = { editable = "." }
 dependencies = [
     { name = "geopandas" },
@@ -744,13 +740,15 @@ dependencies = [
     { name = "hydra-core" },
     { name = "loguru" },
     { name = "matplotlib" },
-    { name = "numpy" },
+    { name = "numpy", version = "2.1.3", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'extra-6-mussel-tensorflow-cpu' or extra == 'extra-6-mussel-tensorflow-gpu' or (extra == 'extra-6-mussel-torch-cpu' and extra == 'extra-6-mussel-torch-gpu')" },
+    { name = "numpy", version = "2.2.6", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'extra-6-mussel-torch-cpu' or extra == 'extra-6-mussel-torch-gpu' or (extra == 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-tensorflow-gpu') or (extra != 'extra-6-mussel-tensorflow-cpu' and extra != 'extra-6-mussel-tensorflow-gpu')" },
     { name = "opencv-python-headless" },
     { name = "pandas" },
     { name = "scikit-learn" },
     { name = "shapely" },
     { name = "tiffslide" },
     { name = "timm-ctranspath" },
+    { name = "transformers" },
     { name = "transpath" },
 ]
 
@@ -828,6 +826,7 @@ requires-dist = [
     { name = "torchvision", marker = "extra == 'tensorflow-gpu'", index = "https://download.pytorch.org/whl/cpu", conflict = { package = "mussel", extra = "tensorflow-gpu" } },
     { name = "torchvision", marker = "extra == 'torch-cpu'", index = "https://download.pytorch.org/whl/cpu", conflict = { package = "mussel", extra = "torch-cpu" } },
     { name = "torchvision", marker = "extra == 'torch-gpu'", index = "https://download.pytorch.org/whl/cu121", conflict = { package = "mussel", extra = "torch-gpu" } },
+    { name = "transformers" },
     { name = "transpath", git = "https://github.com/msk-mind/TransPath/" },
 ]
 provides-extras = ["tensorflow-gpu", "tensorflow-cpu", "torch-cpu", "torch-gpu"]
@@ -899,7 +898,8 @@ version = "0.15.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "deprecated" },
-    { name = "numpy" },
+    { name = "numpy", version = "2.1.3", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'extra-6-mussel-tensorflow-cpu' or extra == 'extra-6-mussel-tensorflow-gpu' or (extra == 'extra-6-mussel-torch-cpu' and extra == 'extra-6-mussel-torch-gpu')" },
+    { name = "numpy", version = "2.2.6", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'extra-6-mussel-torch-cpu' or extra == 'extra-6-mussel-torch-gpu' or (extra == 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-tensorflow-gpu') or (extra != 'extra-6-mussel-tensorflow-cpu' and extra != 'extra-6-mussel-tensorflow-gpu')" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/63/fc/bb532969eb8236984ba65e4f0079a7da885b8ac0ce1f0835decbb3938a62/numcodecs-0.15.1.tar.gz", hash = "sha256:eeed77e4d6636641a2cc605fbc6078c7a8f2cc40f3dfa2b3f61e52e6091b04ff", size = 6267275, upload-time = "2025-02-10T10:23:33.254Z" }
 wheels = [
@@ -917,6 +917,12 @@ wheels = [
 name = "numpy"
 version = "2.1.3"
 source = { registry = "https://pypi.org/simple" }
+resolution-markers = [
+    "(python_full_version >= '3.13' and platform_machine != 'aarch64' and sys_platform == 'linux') or (python_full_version >= '3.13' and sys_platform != 'darwin' and sys_platform != 'linux')",
+    "(python_full_version < '3.13' and platform_machine != 'aarch64' and sys_platform == 'linux') or (python_full_version < '3.13' and sys_platform != 'darwin' and sys_platform != 'linux')",
+    "(python_full_version >= '3.13' and platform_machine == 'aarch64' and sys_platform == 'linux') or (python_full_version >= '3.13' and sys_platform == 'darwin')",
+    "(python_full_version < '3.13' and platform_machine == 'aarch64' and sys_platform == 'linux') or (python_full_version < '3.13' and sys_platform == 'darwin')",
+]
 sdist = { url = "https://files.pythonhosted.org/packages/25/ca/1166b75c21abd1da445b97bf1fa2f14f423c6cfb4fc7c4ef31dccf9f6a94/numpy-2.1.3.tar.gz", hash = "sha256:aa08e04e08aaf974d4458def539dece0d28146d866a39da5639596f4921fd761", size = 20166090, upload-time = "2024-11-02T17:48:55.832Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/8a/f0/385eb9970309643cbca4fc6eebc8bb16e560de129c91258dfaa18498da8b/numpy-2.1.3-cp312-cp312-macosx_10_13_x86_64.whl", hash = "sha256:f55ba01150f52b1027829b50d70ef1dafd9821ea82905b63936668403c3b471e", size = 20849658, upload-time = "2024-11-02T17:37:23.919Z" },
@@ -952,12 +958,53 @@ wheels = [
 ]
 
 [[package]]
+name = "numpy"
+version = "2.2.6"
+source = { registry = "https://pypi.org/simple" }
+resolution-markers = [
+    "extra != 'extra-6-mussel-tensorflow-cpu' and extra != 'extra-6-mussel-tensorflow-gpu' and extra != 'extra-6-mussel-torch-cpu' and extra == 'extra-6-mussel-torch-gpu'",
+    "(platform_machine != 'aarch64' and sys_platform == 'linux' and extra != 'extra-6-mussel-tensorflow-cpu' and extra != 'extra-6-mussel-tensorflow-gpu' and extra == 'extra-6-mussel-torch-cpu' and extra != 'extra-6-mussel-torch-gpu') or (sys_platform != 'darwin' and sys_platform != 'linux' and extra != 'extra-6-mussel-tensorflow-cpu' and extra != 'extra-6-mussel-tensorflow-gpu' and extra == 'extra-6-mussel-torch-cpu' and extra != 'extra-6-mussel-torch-gpu')",
+    "(platform_machine == 'aarch64' and sys_platform == 'linux' and extra != 'extra-6-mussel-tensorflow-cpu' and extra != 'extra-6-mussel-tensorflow-gpu' and extra == 'extra-6-mussel-torch-cpu' and extra != 'extra-6-mussel-torch-gpu') or (sys_platform == 'darwin' and extra != 'extra-6-mussel-tensorflow-cpu' and extra != 'extra-6-mussel-tensorflow-gpu' and extra == 'extra-6-mussel-torch-cpu' and extra != 'extra-6-mussel-torch-gpu')",
+    "extra != 'extra-6-mussel-tensorflow-cpu' and extra != 'extra-6-mussel-tensorflow-gpu' and extra != 'extra-6-mussel-torch-cpu' and extra != 'extra-6-mussel-torch-gpu'",
+]
+sdist = { url = "https://files.pythonhosted.org/packages/76/21/7d2a95e4bba9dc13d043ee156a356c0a8f0c6309dff6b21b4d71a073b8a8/numpy-2.2.6.tar.gz", hash = "sha256:e29554e2bef54a90aa5cc07da6ce955accb83f21ab5de01a62c8478897b264fd", size = 20276440, upload-time = "2025-05-17T22:38:04.611Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/82/5d/c00588b6cf18e1da539b45d3598d3557084990dcc4331960c15ee776ee41/numpy-2.2.6-cp312-cp312-macosx_10_13_x86_64.whl", hash = "sha256:41c5a21f4a04fa86436124d388f6ed60a9343a6f767fced1a8a71c3fbca038ff", size = 20875348, upload-time = "2025-05-17T21:34:39.648Z" },
+    { url = "https://files.pythonhosted.org/packages/66/ee/560deadcdde6c2f90200450d5938f63a34b37e27ebff162810f716f6a230/numpy-2.2.6-cp312-cp312-macosx_11_0_arm64.whl", hash = "sha256:de749064336d37e340f640b05f24e9e3dd678c57318c7289d222a8a2f543e90c", size = 14119362, upload-time = "2025-05-17T21:35:01.241Z" },
+    { url = "https://files.pythonhosted.org/packages/3c/65/4baa99f1c53b30adf0acd9a5519078871ddde8d2339dc5a7fde80d9d87da/numpy-2.2.6-cp312-cp312-macosx_14_0_arm64.whl", hash = "sha256:894b3a42502226a1cac872f840030665f33326fc3dac8e57c607905773cdcde3", size = 5084103, upload-time = "2025-05-17T21:35:10.622Z" },
+    { url = "https://files.pythonhosted.org/packages/cc/89/e5a34c071a0570cc40c9a54eb472d113eea6d002e9ae12bb3a8407fb912e/numpy-2.2.6-cp312-cp312-macosx_14_0_x86_64.whl", hash = "sha256:71594f7c51a18e728451bb50cc60a3ce4e6538822731b2933209a1f3614e9282", size = 6625382, upload-time = "2025-05-17T21:35:21.414Z" },
+    { url = "https://files.pythonhosted.org/packages/f8/35/8c80729f1ff76b3921d5c9487c7ac3de9b2a103b1cd05e905b3090513510/numpy-2.2.6-cp312-cp312-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:f2618db89be1b4e05f7a1a847a9c1c0abd63e63a1607d892dd54668dd92faf87", size = 14018462, upload-time = "2025-05-17T21:35:42.174Z" },
+    { url = "https://files.pythonhosted.org/packages/8c/3d/1e1db36cfd41f895d266b103df00ca5b3cbe965184df824dec5c08c6b803/numpy-2.2.6-cp312-cp312-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:fd83c01228a688733f1ded5201c678f0c53ecc1006ffbc404db9f7a899ac6249", size = 16527618, upload-time = "2025-05-17T21:36:06.711Z" },
+    { url = "https://files.pythonhosted.org/packages/61/c6/03ed30992602c85aa3cd95b9070a514f8b3c33e31124694438d88809ae36/numpy-2.2.6-cp312-cp312-musllinux_1_2_aarch64.whl", hash = "sha256:37c0ca431f82cd5fa716eca9506aefcabc247fb27ba69c5062a6d3ade8cf8f49", size = 15505511, upload-time = "2025-05-17T21:36:29.965Z" },
+    { url = "https://files.pythonhosted.org/packages/b7/25/5761d832a81df431e260719ec45de696414266613c9ee268394dd5ad8236/numpy-2.2.6-cp312-cp312-musllinux_1_2_x86_64.whl", hash = "sha256:fe27749d33bb772c80dcd84ae7e8df2adc920ae8297400dabec45f0dedb3f6de", size = 18313783, upload-time = "2025-05-17T21:36:56.883Z" },
+    { url = "https://files.pythonhosted.org/packages/57/0a/72d5a3527c5ebffcd47bde9162c39fae1f90138c961e5296491ce778e682/numpy-2.2.6-cp312-cp312-win32.whl", hash = "sha256:4eeaae00d789f66c7a25ac5f34b71a7035bb474e679f410e5e1a94deb24cf2d4", size = 6246506, upload-time = "2025-05-17T21:37:07.368Z" },
+    { url = "https://files.pythonhosted.org/packages/36/fa/8c9210162ca1b88529ab76b41ba02d433fd54fecaf6feb70ef9f124683f1/numpy-2.2.6-cp312-cp312-win_amd64.whl", hash = "sha256:c1f9540be57940698ed329904db803cf7a402f3fc200bfe599334c9bd84a40b2", size = 12614190, upload-time = "2025-05-17T21:37:26.213Z" },
+    { url = "https://files.pythonhosted.org/packages/f9/5c/6657823f4f594f72b5471f1db1ab12e26e890bb2e41897522d134d2a3e81/numpy-2.2.6-cp313-cp313-macosx_10_13_x86_64.whl", hash = "sha256:0811bb762109d9708cca4d0b13c4f67146e3c3b7cf8d34018c722adb2d957c84", size = 20867828, upload-time = "2025-05-17T21:37:56.699Z" },
+    { url = "https://files.pythonhosted.org/packages/dc/9e/14520dc3dadf3c803473bd07e9b2bd1b69bc583cb2497b47000fed2fa92f/numpy-2.2.6-cp313-cp313-macosx_11_0_arm64.whl", hash = "sha256:287cc3162b6f01463ccd86be154f284d0893d2b3ed7292439ea97eafa8170e0b", size = 14143006, upload-time = "2025-05-17T21:38:18.291Z" },
+    { url = "https://files.pythonhosted.org/packages/4f/06/7e96c57d90bebdce9918412087fc22ca9851cceaf5567a45c1f404480e9e/numpy-2.2.6-cp313-cp313-macosx_14_0_arm64.whl", hash = "sha256:f1372f041402e37e5e633e586f62aa53de2eac8d98cbfb822806ce4bbefcb74d", size = 5076765, upload-time = "2025-05-17T21:38:27.319Z" },
+    { url = "https://files.pythonhosted.org/packages/73/ed/63d920c23b4289fdac96ddbdd6132e9427790977d5457cd132f18e76eae0/numpy-2.2.6-cp313-cp313-macosx_14_0_x86_64.whl", hash = "sha256:55a4d33fa519660d69614a9fad433be87e5252f4b03850642f88993f7b2ca566", size = 6617736, upload-time = "2025-05-17T21:38:38.141Z" },
+    { url = "https://files.pythonhosted.org/packages/85/c5/e19c8f99d83fd377ec8c7e0cf627a8049746da54afc24ef0a0cb73d5dfb5/numpy-2.2.6-cp313-cp313-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:f92729c95468a2f4f15e9bb94c432a9229d0d50de67304399627a943201baa2f", size = 14010719, upload-time = "2025-05-17T21:38:58.433Z" },
+    { url = "https://files.pythonhosted.org/packages/19/49/4df9123aafa7b539317bf6d342cb6d227e49f7a35b99c287a6109b13dd93/numpy-2.2.6-cp313-cp313-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:1bc23a79bfabc5d056d106f9befb8d50c31ced2fbc70eedb8155aec74a45798f", size = 16526072, upload-time = "2025-05-17T21:39:22.638Z" },
+    { url = "https://files.pythonhosted.org/packages/b2/6c/04b5f47f4f32f7c2b0e7260442a8cbcf8168b0e1a41ff1495da42f42a14f/numpy-2.2.6-cp313-cp313-musllinux_1_2_aarch64.whl", hash = "sha256:e3143e4451880bed956e706a3220b4e5cf6172ef05fcc397f6f36a550b1dd868", size = 15503213, upload-time = "2025-05-17T21:39:45.865Z" },
+    { url = "https://files.pythonhosted.org/packages/17/0a/5cd92e352c1307640d5b6fec1b2ffb06cd0dabe7d7b8227f97933d378422/numpy-2.2.6-cp313-cp313-musllinux_1_2_x86_64.whl", hash = "sha256:b4f13750ce79751586ae2eb824ba7e1e8dba64784086c98cdbbcc6a42112ce0d", size = 18316632, upload-time = "2025-05-17T21:40:13.331Z" },
+    { url = "https://files.pythonhosted.org/packages/f0/3b/5cba2b1d88760ef86596ad0f3d484b1cbff7c115ae2429678465057c5155/numpy-2.2.6-cp313-cp313-win32.whl", hash = "sha256:5beb72339d9d4fa36522fc63802f469b13cdbe4fdab4a288f0c441b74272ebfd", size = 6244532, upload-time = "2025-05-17T21:43:46.099Z" },
+    { url = "https://files.pythonhosted.org/packages/cb/3b/d58c12eafcb298d4e6d0d40216866ab15f59e55d148a5658bb3132311fcf/numpy-2.2.6-cp313-cp313-win_amd64.whl", hash = "sha256:b0544343a702fa80c95ad5d3d608ea3599dd54d4632df855e4c8d24eb6ecfa1c", size = 12610885, upload-time = "2025-05-17T21:44:05.145Z" },
+    { url = "https://files.pythonhosted.org/packages/6b/9e/4bf918b818e516322db999ac25d00c75788ddfd2d2ade4fa66f1f38097e1/numpy-2.2.6-cp313-cp313t-macosx_10_13_x86_64.whl", hash = "sha256:0bca768cd85ae743b2affdc762d617eddf3bcf8724435498a1e80132d04879e6", size = 20963467, upload-time = "2025-05-17T21:40:44Z" },
+    { url = "https://files.pythonhosted.org/packages/61/66/d2de6b291507517ff2e438e13ff7b1e2cdbdb7cb40b3ed475377aece69f9/numpy-2.2.6-cp313-cp313t-macosx_11_0_arm64.whl", hash = "sha256:fc0c5673685c508a142ca65209b4e79ed6740a4ed6b2267dbba90f34b0b3cfda", size = 14225144, upload-time = "2025-05-17T21:41:05.695Z" },
+    { url = "https://files.pythonhosted.org/packages/e4/25/480387655407ead912e28ba3a820bc69af9adf13bcbe40b299d454ec011f/numpy-2.2.6-cp313-cp313t-macosx_14_0_arm64.whl", hash = "sha256:5bd4fc3ac8926b3819797a7c0e2631eb889b4118a9898c84f585a54d475b7e40", size = 5200217, upload-time = "2025-05-17T21:41:15.903Z" },
+    { url = "https://files.pythonhosted.org/packages/aa/4a/6e313b5108f53dcbf3aca0c0f3e9c92f4c10ce57a0a721851f9785872895/numpy-2.2.6-cp313-cp313t-macosx_14_0_x86_64.whl", hash = "sha256:fee4236c876c4e8369388054d02d0e9bb84821feb1a64dd59e137e6511a551f8", size = 6712014, upload-time = "2025-05-17T21:41:27.321Z" },
+    { url = "https://files.pythonhosted.org/packages/b7/30/172c2d5c4be71fdf476e9de553443cf8e25feddbe185e0bd88b096915bcc/numpy-2.2.6-cp313-cp313t-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:e1dda9c7e08dc141e0247a5b8f49cf05984955246a327d4c48bda16821947b2f", size = 14077935, upload-time = "2025-05-17T21:41:49.738Z" },
+    { url = "https://files.pythonhosted.org/packages/12/fb/9e743f8d4e4d3c710902cf87af3512082ae3d43b945d5d16563f26ec251d/numpy-2.2.6-cp313-cp313t-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:f447e6acb680fd307f40d3da4852208af94afdfab89cf850986c3ca00562f4fa", size = 16600122, upload-time = "2025-05-17T21:42:14.046Z" },
+    { url = "https://files.pythonhosted.org/packages/12/75/ee20da0e58d3a66f204f38916757e01e33a9737d0b22373b3eb5a27358f9/numpy-2.2.6-cp313-cp313t-musllinux_1_2_aarch64.whl", hash = "sha256:389d771b1623ec92636b0786bc4ae56abafad4a4c513d36a55dce14bd9ce8571", size = 15586143, upload-time = "2025-05-17T21:42:37.464Z" },
+    { url = "https://files.pythonhosted.org/packages/76/95/bef5b37f29fc5e739947e9ce5179ad402875633308504a52d188302319c8/numpy-2.2.6-cp313-cp313t-musllinux_1_2_x86_64.whl", hash = "sha256:8e9ace4a37db23421249ed236fdcdd457d671e25146786dfc96835cd951aa7c1", size = 18385260, upload-time = "2025-05-17T21:43:05.189Z" },
+    { url = "https://files.pythonhosted.org/packages/09/04/f2f83279d287407cf36a7a8053a5abe7be3622a4363337338f2585e4afda/numpy-2.2.6-cp313-cp313t-win32.whl", hash = "sha256:038613e9fb8c72b0a41f025a7e4c3f0b7a1b5d768ece4796b674c8f3fe13efff", size = 6377225, upload-time = "2025-05-17T21:43:16.254Z" },
+    { url = "https://files.pythonhosted.org/packages/67/0e/35082d13c09c02c011cf21570543d202ad929d961c02a147493cb0c2bdf5/numpy-2.2.6-cp313-cp313t-win_amd64.whl", hash = "sha256:6031dd6dfecc0cf9f668681a37648373bddd6421fff6c66ec1624eed0180ee06", size = 12771374, upload-time = "2025-05-17T21:43:35.479Z" },
+]
+
+[[package]]
 name = "nvidia-cublas-cu12"
 version = "12.1.3.1"
 source = { registry = "https://pypi.org/simple" }
-resolution-markers = [
-    "(platform_machine != 'aarch64' and sys_platform == 'linux') or (sys_platform != 'darwin' and sys_platform != 'linux')",
-]
 wheels = [
     { url = "https://files.pythonhosted.org/packages/37/6d/121efd7382d5b0284239f4ab1fc1590d86d34ed4a4a2fdb13b30ca8e5740/nvidia_cublas_cu12-12.1.3.1-py3-none-manylinux1_x86_64.whl", hash = "sha256:ee53ccca76a6fc08fb9701aa95b6ceb242cdaab118c3bb152af4e579af792728", size = 410594774, upload-time = "2023-04-19T15:50:03.519Z" },
     { url = "https://files.pythonhosted.org/packages/c5/ef/32a375b74bea706c93deea5613552f7c9104f961b21df423f5887eca713b/nvidia_cublas_cu12-12.1.3.1-py3-none-win_amd64.whl", hash = "sha256:2b964d60e8cf11b5e1073d179d85fa340c120e99b3067558f3cf98dd69d02906", size = 439918445, upload-time = "2023-04-19T15:56:13.346Z" },
@@ -968,12 +1015,10 @@ name = "nvidia-cublas-cu12"
 version = "12.5.3.2"
 source = { registry = "https://pypi.org/simple" }
 resolution-markers = [
-    "python_full_version >= '3.13' and sys_platform == 'darwin'",
-    "python_full_version < '3.13' and sys_platform == 'darwin'",
-    "python_full_version >= '3.13' and platform_machine == 'aarch64' and sys_platform == 'linux'",
-    "python_full_version < '3.13' and platform_machine == 'aarch64' and sys_platform == 'linux'",
     "(python_full_version >= '3.13' and platform_machine != 'aarch64' and sys_platform == 'linux') or (python_full_version >= '3.13' and sys_platform != 'darwin' and sys_platform != 'linux')",
     "(python_full_version < '3.13' and platform_machine != 'aarch64' and sys_platform == 'linux') or (python_full_version < '3.13' and sys_platform != 'darwin' and sys_platform != 'linux')",
+    "(python_full_version >= '3.13' and platform_machine == 'aarch64' and sys_platform == 'linux') or (python_full_version >= '3.13' and sys_platform == 'darwin')",
+    "(python_full_version < '3.13' and platform_machine == 'aarch64' and sys_platform == 'linux') or (python_full_version < '3.13' and sys_platform == 'darwin')",
 ]
 wheels = [
     { url = "https://files.pythonhosted.org/packages/8b/41/2520894bccd8506e842b61d912cf96d62a904cdb76f27fdaad53cc563959/nvidia_cublas_cu12-12.5.3.2-py3-none-manylinux2014_aarch64.whl", hash = "sha256:7d0191251180de606023d396b94d66f66470a0ae96d1dbb906c7656ea0f71eda", size = 360965110, upload-time = "2024-07-18T19:35:49.171Z" },
@@ -985,9 +1030,6 @@ wheels = [
 name = "nvidia-cuda-cupti-cu12"
 version = "12.1.105"
 source = { registry = "https://pypi.org/simple" }
-resolution-markers = [
-    "(platform_machine != 'aarch64' and sys_platform == 'linux') or (sys_platform != 'darwin' and sys_platform != 'linux')",
-]
 wheels = [
     { url = "https://files.pythonhosted.org/packages/7e/00/6b218edd739ecfc60524e585ba8e6b00554dd908de2c9c66c1af3e44e18d/nvidia_cuda_cupti_cu12-12.1.105-py3-none-manylinux1_x86_64.whl", hash = "sha256:e54fde3983165c624cb79254ae9818a456eb6e87a7fd4d56a2352c24ee542d7e", size = 14109015, upload-time = "2023-04-19T15:47:32.502Z" },
     { url = "https://files.pythonhosted.org/packages/d0/56/0021e32ea2848c24242f6b56790bd0ccc8bf99f973ca790569c6ca028107/nvidia_cuda_cupti_cu12-12.1.105-py3-none-win_amd64.whl", hash = "sha256:bea8236d13a0ac7190bd2919c3e8e6ce1e402104276e6f9694479e48bb0eb2a4", size = 10154340, upload-time = "2023-04-19T15:53:33.563Z" },
@@ -998,12 +1040,10 @@ name = "nvidia-cuda-cupti-cu12"
 version = "12.5.82"
 source = { registry = "https://pypi.org/simple" }
 resolution-markers = [
-    "python_full_version >= '3.13' and sys_platform == 'darwin'",
-    "python_full_version < '3.13' and sys_platform == 'darwin'",
-    "python_full_version >= '3.13' and platform_machine == 'aarch64' and sys_platform == 'linux'",
-    "python_full_version < '3.13' and platform_machine == 'aarch64' and sys_platform == 'linux'",
     "(python_full_version >= '3.13' and platform_machine != 'aarch64' and sys_platform == 'linux') or (python_full_version >= '3.13' and sys_platform != 'darwin' and sys_platform != 'linux')",
     "(python_full_version < '3.13' and platform_machine != 'aarch64' and sys_platform == 'linux') or (python_full_version < '3.13' and sys_platform != 'darwin' and sys_platform != 'linux')",
+    "(python_full_version >= '3.13' and platform_machine == 'aarch64' and sys_platform == 'linux') or (python_full_version >= '3.13' and sys_platform == 'darwin')",
+    "(python_full_version < '3.13' and platform_machine == 'aarch64' and sys_platform == 'linux') or (python_full_version < '3.13' and sys_platform == 'darwin')",
 ]
 wheels = [
     { url = "https://files.pythonhosted.org/packages/3f/64/574b075df1c542e900820a1690824e017b7a485eaa12d2282442084c851b/nvidia_cuda_cupti_cu12-12.5.82-py3-none-manylinux2014_aarch64.whl", hash = "sha256:d32c06490c6ba35c4323730820c7d0c4c126c04ed58d2f57275adb8d54b138fe", size = 12380761, upload-time = "2024-07-18T19:34:01.829Z" },
@@ -1025,9 +1065,6 @@ wheels = [
 name = "nvidia-cuda-nvrtc-cu12"
 version = "12.1.105"
 source = { registry = "https://pypi.org/simple" }
-resolution-markers = [
-    "(platform_machine != 'aarch64' and sys_platform == 'linux') or (sys_platform != 'darwin' and sys_platform != 'linux')",
-]
 wheels = [
     { url = "https://files.pythonhosted.org/packages/b6/9f/c64c03f49d6fbc56196664d05dba14e3a561038a81a638eeb47f4d4cfd48/nvidia_cuda_nvrtc_cu12-12.1.105-py3-none-manylinux1_x86_64.whl", hash = "sha256:339b385f50c309763ca65456ec75e17bbefcbbf2893f462cb8b90584cd27a1c2", size = 23671734, upload-time = "2023-04-19T15:48:32.42Z" },
     { url = "https://files.pythonhosted.org/packages/ad/1d/f76987c4f454eb86e0b9a0e4f57c3bf1ac1d13ad13cd1a4da4eb0e0c0ce9/nvidia_cuda_nvrtc_cu12-12.1.105-py3-none-win_amd64.whl", hash = "sha256:0a98a522d9ff138b96c010a65e145dc1b4850e9ecb75a0172371793752fd46ed", size = 19331863, upload-time = "2023-04-19T15:54:34.603Z" },
@@ -1038,12 +1075,10 @@ name = "nvidia-cuda-nvrtc-cu12"
 version = "12.5.82"
 source = { registry = "https://pypi.org/simple" }
 resolution-markers = [
-    "python_full_version >= '3.13' and sys_platform == 'darwin'",
-    "python_full_version < '3.13' and sys_platform == 'darwin'",
-    "python_full_version >= '3.13' and platform_machine == 'aarch64' and sys_platform == 'linux'",
-    "python_full_version < '3.13' and platform_machine == 'aarch64' and sys_platform == 'linux'",
     "(python_full_version >= '3.13' and platform_machine != 'aarch64' and sys_platform == 'linux') or (python_full_version >= '3.13' and sys_platform != 'darwin' and sys_platform != 'linux')",
     "(python_full_version < '3.13' and platform_machine != 'aarch64' and sys_platform == 'linux') or (python_full_version < '3.13' and sys_platform != 'darwin' and sys_platform != 'linux')",
+    "(python_full_version >= '3.13' and platform_machine == 'aarch64' and sys_platform == 'linux') or (python_full_version >= '3.13' and sys_platform == 'darwin')",
+    "(python_full_version < '3.13' and platform_machine == 'aarch64' and sys_platform == 'linux') or (python_full_version < '3.13' and sys_platform == 'darwin')",
 ]
 wheels = [
     { url = "https://files.pythonhosted.org/packages/d0/69/d71d9c9a70a595af5cefb2c99b82da7f2ed300fb2253c0f8918d987d8bff/nvidia_cuda_nvrtc_cu12-12.5.82-py3-none-manylinux2014_aarch64.whl", hash = "sha256:5bb6a0eb01d4974bb7ca3d48bd3859472debb3c3057a5e7de2b08fbdf35eed7e", size = 24349525, upload-time = "2024-07-18T19:34:48.394Z" },
@@ -1055,9 +1090,6 @@ wheels = [
 name = "nvidia-cuda-runtime-cu12"
 version = "12.1.105"
 source = { registry = "https://pypi.org/simple" }
-resolution-markers = [
-    "(platform_machine != 'aarch64' and sys_platform == 'linux') or (sys_platform != 'darwin' and sys_platform != 'linux')",
-]
 wheels = [
     { url = "https://files.pythonhosted.org/packages/eb/d5/c68b1d2cdfcc59e72e8a5949a37ddb22ae6cade80cd4a57a84d4c8b55472/nvidia_cuda_runtime_cu12-12.1.105-py3-none-manylinux1_x86_64.whl", hash = "sha256:6e258468ddf5796e25f1dc591a31029fa317d97a0a94ed93468fc86301d61e40", size = 823596, upload-time = "2023-04-19T15:47:22.471Z" },
     { url = "https://files.pythonhosted.org/packages/9f/e2/7a2b4b5064af56ea8ea2d8b2776c0f2960d95c88716138806121ae52a9c9/nvidia_cuda_runtime_cu12-12.1.105-py3-none-win_amd64.whl", hash = "sha256:dfb46ef84d73fababab44cf03e3b83f80700d27ca300e537f85f636fac474344", size = 821226, upload-time = "2023-04-19T15:53:23.082Z" },
@@ -1068,12 +1100,10 @@ name = "nvidia-cuda-runtime-cu12"
 version = "12.5.82"
 source = { registry = "https://pypi.org/simple" }
 resolution-markers = [
-    "python_full_version >= '3.13' and sys_platform == 'darwin'",
-    "python_full_version < '3.13' and sys_platform == 'darwin'",
-    "python_full_version >= '3.13' and platform_machine == 'aarch64' and sys_platform == 'linux'",
-    "python_full_version < '3.13' and platform_machine == 'aarch64' and sys_platform == 'linux'",
     "(python_full_version >= '3.13' and platform_machine != 'aarch64' and sys_platform == 'linux') or (python_full_version >= '3.13' and sys_platform != 'darwin' and sys_platform != 'linux')",
     "(python_full_version < '3.13' and platform_machine != 'aarch64' and sys_platform == 'linux') or (python_full_version < '3.13' and sys_platform != 'darwin' and sys_platform != 'linux')",
+    "(python_full_version >= '3.13' and platform_machine == 'aarch64' and sys_platform == 'linux') or (python_full_version >= '3.13' and sys_platform == 'darwin')",
+    "(python_full_version < '3.13' and platform_machine == 'aarch64' and sys_platform == 'linux') or (python_full_version < '3.13' and sys_platform == 'darwin')",
 ]
 wheels = [
     { url = "https://files.pythonhosted.org/packages/a3/49/f0a708c50f1a2200fa2ebb76cdbde4eb509341fce5305452023702dfe6ea/nvidia_cuda_runtime_cu12-12.5.82-py3-none-manylinux2014_aarch64.whl", hash = "sha256:71f015dbf9df05dd71f7480132c6ebf47a6ceb2ab53d7db8e08e4b30ebb87e14", size = 906205, upload-time = "2024-07-18T19:33:42.141Z" },
@@ -1085,11 +1115,8 @@ wheels = [
 name = "nvidia-cudnn-cu12"
 version = "9.1.0.70"
 source = { registry = "https://pypi.org/simple" }
-resolution-markers = [
-    "(platform_machine != 'aarch64' and sys_platform == 'linux') or (sys_platform != 'darwin' and sys_platform != 'linux')",
-]
 dependencies = [
-    { name = "nvidia-cublas-cu12", version = "12.1.3.1", source = { registry = "https://pypi.org/simple" }, marker = "(platform_machine != 'aarch64' and sys_platform == 'linux' and extra == 'extra-6-mussel-torch-gpu') or (sys_platform != 'darwin' and sys_platform != 'linux' and extra == 'extra-6-mussel-torch-gpu') or (sys_platform == 'darwin' and extra == 'extra-6-mussel-torch-cpu' and extra == 'extra-6-mussel-torch-gpu') or (sys_platform == 'linux' and extra == 'extra-6-mussel-torch-cpu' and extra == 'extra-6-mussel-torch-gpu') or (extra == 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-tensorflow-gpu') or (extra == 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-torch-cpu') or (extra == 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-torch-gpu') or (extra == 'extra-6-mussel-tensorflow-gpu' and extra == 'extra-6-mussel-torch-cpu') or (extra == 'extra-6-mussel-tensorflow-gpu' and extra == 'extra-6-mussel-torch-gpu')" },
+    { name = "nvidia-cublas-cu12", version = "12.1.3.1", source = { registry = "https://pypi.org/simple" }, marker = "(extra == 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-tensorflow-gpu') or (extra == 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-torch-cpu') or (extra == 'extra-6-mussel-tensorflow-gpu' and extra == 'extra-6-mussel-torch-cpu') or (extra != 'extra-6-mussel-torch-cpu' and extra == 'extra-6-mussel-torch-gpu') or (extra != 'extra-6-mussel-tensorflow-cpu' and extra != 'extra-6-mussel-tensorflow-gpu' and extra == 'extra-6-mussel-torch-gpu')" },
 ]
 wheels = [
     { url = "https://files.pythonhosted.org/packages/9f/fd/713452cd72343f682b1c7b9321e23829f00b842ceaedcda96e742ea0b0b3/nvidia_cudnn_cu12-9.1.0.70-py3-none-manylinux2014_x86_64.whl", hash = "sha256:165764f44ef8c61fcdfdfdbe769d687e06374059fbb388b6c89ecb0e28793a6f", size = 664752741, upload-time = "2024-04-22T15:24:15.253Z" },
@@ -1101,12 +1128,10 @@ name = "nvidia-cudnn-cu12"
 version = "9.3.0.75"
 source = { registry = "https://pypi.org/simple" }
 resolution-markers = [
-    "python_full_version >= '3.13' and sys_platform == 'darwin'",
-    "python_full_version < '3.13' and sys_platform == 'darwin'",
-    "python_full_version >= '3.13' and platform_machine == 'aarch64' and sys_platform == 'linux'",
-    "python_full_version < '3.13' and platform_machine == 'aarch64' and sys_platform == 'linux'",
     "(python_full_version >= '3.13' and platform_machine != 'aarch64' and sys_platform == 'linux') or (python_full_version >= '3.13' and sys_platform != 'darwin' and sys_platform != 'linux')",
     "(python_full_version < '3.13' and platform_machine != 'aarch64' and sys_platform == 'linux') or (python_full_version < '3.13' and sys_platform != 'darwin' and sys_platform != 'linux')",
+    "(python_full_version >= '3.13' and platform_machine == 'aarch64' and sys_platform == 'linux') or (python_full_version >= '3.13' and sys_platform == 'darwin')",
+    "(python_full_version < '3.13' and platform_machine == 'aarch64' and sys_platform == 'linux') or (python_full_version < '3.13' and sys_platform == 'darwin')",
 ]
 dependencies = [
     { name = "nvidia-cublas-cu12", version = "12.5.3.2", source = { registry = "https://pypi.org/simple" } },
@@ -1121,9 +1146,6 @@ wheels = [
 name = "nvidia-cufft-cu12"
 version = "11.0.2.54"
 source = { registry = "https://pypi.org/simple" }
-resolution-markers = [
-    "(platform_machine != 'aarch64' and sys_platform == 'linux') or (sys_platform != 'darwin' and sys_platform != 'linux')",
-]
 wheels = [
     { url = "https://files.pythonhosted.org/packages/86/94/eb540db023ce1d162e7bea9f8f5aa781d57c65aed513c33ee9a5123ead4d/nvidia_cufft_cu12-11.0.2.54-py3-none-manylinux1_x86_64.whl", hash = "sha256:794e3948a1aa71fd817c3775866943936774d1c14e7628c74f6f7417224cdf56", size = 121635161, upload-time = "2023-04-19T15:50:46Z" },
     { url = "https://files.pythonhosted.org/packages/f7/57/7927a3aa0e19927dfed30256d1c854caf991655d847a4e7c01fe87e3d4ac/nvidia_cufft_cu12-11.0.2.54-py3-none-win_amd64.whl", hash = "sha256:d9ac353f78ff89951da4af698f80870b1534ed69993f10a4cf1d96f21357e253", size = 121344196, upload-time = "2023-04-19T15:56:59.562Z" },
@@ -1134,12 +1156,10 @@ name = "nvidia-cufft-cu12"
 version = "11.2.3.61"
 source = { registry = "https://pypi.org/simple" }
 resolution-markers = [
-    "python_full_version >= '3.13' and sys_platform == 'darwin'",
-    "python_full_version < '3.13' and sys_platform == 'darwin'",
-    "python_full_version >= '3.13' and platform_machine == 'aarch64' and sys_platform == 'linux'",
-    "python_full_version < '3.13' and platform_machine == 'aarch64' and sys_platform == 'linux'",
     "(python_full_version >= '3.13' and platform_machine != 'aarch64' and sys_platform == 'linux') or (python_full_version >= '3.13' and sys_platform != 'darwin' and sys_platform != 'linux')",
     "(python_full_version < '3.13' and platform_machine != 'aarch64' and sys_platform == 'linux') or (python_full_version < '3.13' and sys_platform != 'darwin' and sys_platform != 'linux')",
+    "(python_full_version >= '3.13' and platform_machine == 'aarch64' and sys_platform == 'linux') or (python_full_version >= '3.13' and sys_platform == 'darwin')",
+    "(python_full_version < '3.13' and platform_machine == 'aarch64' and sys_platform == 'linux') or (python_full_version < '3.13' and sys_platform == 'darwin')",
 ]
 dependencies = [
     { name = "nvidia-nvjitlink-cu12", version = "12.5.82", source = { registry = "https://pypi.org/simple" } },
@@ -1154,9 +1174,6 @@ wheels = [
 name = "nvidia-curand-cu12"
 version = "10.3.2.106"
 source = { registry = "https://pypi.org/simple" }
-resolution-markers = [
-    "(platform_machine != 'aarch64' and sys_platform == 'linux') or (sys_platform != 'darwin' and sys_platform != 'linux')",
-]
 wheels = [
     { url = "https://files.pythonhosted.org/packages/44/31/4890b1c9abc496303412947fc7dcea3d14861720642b49e8ceed89636705/nvidia_curand_cu12-10.3.2.106-py3-none-manylinux1_x86_64.whl", hash = "sha256:9d264c5036dde4e64f1de8c50ae753237c12e0b1348738169cd0f8a536c0e1e0", size = 56467784, upload-time = "2023-04-19T15:51:04.804Z" },
     { url = "https://files.pythonhosted.org/packages/5c/97/4c9c7c79efcdf5b70374241d48cf03b94ef6707fd18ea0c0f53684931d0b/nvidia_curand_cu12-10.3.2.106-py3-none-win_amd64.whl", hash = "sha256:75b6b0c574c0037839121317e17fd01f8a69fd2ef8e25853d826fec30bdba74a", size = 55995813, upload-time = "2023-04-19T15:57:16.676Z" },
@@ -1167,12 +1184,10 @@ name = "nvidia-curand-cu12"
 version = "10.3.6.82"
 source = { registry = "https://pypi.org/simple" }
 resolution-markers = [
-    "python_full_version >= '3.13' and sys_platform == 'darwin'",
-    "python_full_version < '3.13' and sys_platform == 'darwin'",
-    "python_full_version >= '3.13' and platform_machine == 'aarch64' and sys_platform == 'linux'",
-    "python_full_version < '3.13' and platform_machine == 'aarch64' and sys_platform == 'linux'",
     "(python_full_version >= '3.13' and platform_machine != 'aarch64' and sys_platform == 'linux') or (python_full_version >= '3.13' and sys_platform != 'darwin' and sys_platform != 'linux')",
     "(python_full_version < '3.13' and platform_machine != 'aarch64' and sys_platform == 'linux') or (python_full_version < '3.13' and sys_platform != 'darwin' and sys_platform != 'linux')",
+    "(python_full_version >= '3.13' and platform_machine == 'aarch64' and sys_platform == 'linux') or (python_full_version >= '3.13' and sys_platform == 'darwin')",
+    "(python_full_version < '3.13' and platform_machine == 'aarch64' and sys_platform == 'linux') or (python_full_version < '3.13' and sys_platform == 'darwin')",
 ]
 wheels = [
     { url = "https://files.pythonhosted.org/packages/84/ac/2623e574aba769160d1d9c312a16d5fc3e0e4484ad5a9cb21831447afaf4/nvidia_curand_cu12-10.3.6.82-py3-none-manylinux2014_aarch64.whl", hash = "sha256:36aabeb5990297bbce3df324ea7c7c13c3aabb140c86d50ab3b23e4ec61672f1", size = 56319067, upload-time = "2024-07-18T19:36:25.559Z" },
@@ -1184,13 +1199,10 @@ wheels = [
 name = "nvidia-cusolver-cu12"
 version = "11.4.5.107"
 source = { registry = "https://pypi.org/simple" }
-resolution-markers = [
-    "(platform_machine != 'aarch64' and sys_platform == 'linux') or (sys_platform != 'darwin' and sys_platform != 'linux')",
-]
 dependencies = [
-    { name = "nvidia-cublas-cu12", version = "12.1.3.1", source = { registry = "https://pypi.org/simple" }, marker = "(platform_machine != 'aarch64' and sys_platform == 'linux' and extra == 'extra-6-mussel-torch-gpu') or (sys_platform != 'darwin' and sys_platform != 'linux' and extra == 'extra-6-mussel-torch-gpu') or (sys_platform == 'darwin' and extra == 'extra-6-mussel-torch-cpu' and extra == 'extra-6-mussel-torch-gpu') or (sys_platform == 'linux' and extra == 'extra-6-mussel-torch-cpu' and extra == 'extra-6-mussel-torch-gpu') or (extra == 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-tensorflow-gpu') or (extra == 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-torch-cpu') or (extra == 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-torch-gpu') or (extra == 'extra-6-mussel-tensorflow-gpu' and extra == 'extra-6-mussel-torch-cpu') or (extra == 'extra-6-mussel-tensorflow-gpu' and extra == 'extra-6-mussel-torch-gpu')" },
-    { name = "nvidia-cusparse-cu12", version = "12.1.0.106", source = { registry = "https://pypi.org/simple" }, marker = "(platform_machine != 'aarch64' and sys_platform == 'linux' and extra == 'extra-6-mussel-torch-gpu') or (sys_platform != 'darwin' and sys_platform != 'linux' and extra == 'extra-6-mussel-torch-gpu') or (sys_platform == 'darwin' and extra == 'extra-6-mussel-torch-cpu' and extra == 'extra-6-mussel-torch-gpu') or (sys_platform == 'linux' and extra == 'extra-6-mussel-torch-cpu' and extra == 'extra-6-mussel-torch-gpu') or (extra == 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-tensorflow-gpu') or (extra == 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-torch-cpu') or (extra == 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-torch-gpu') or (extra == 'extra-6-mussel-tensorflow-gpu' and extra == 'extra-6-mussel-torch-cpu') or (extra == 'extra-6-mussel-tensorflow-gpu' and extra == 'extra-6-mussel-torch-gpu')" },
-    { name = "nvidia-nvjitlink-cu12", version = "12.9.86", source = { registry = "https://pypi.org/simple" }, marker = "(platform_machine != 'aarch64' and sys_platform == 'linux' and extra == 'extra-6-mussel-torch-gpu') or (sys_platform != 'darwin' and sys_platform != 'linux' and extra == 'extra-6-mussel-torch-gpu') or (sys_platform == 'darwin' and extra == 'extra-6-mussel-torch-cpu' and extra == 'extra-6-mussel-torch-gpu') or (sys_platform == 'linux' and extra == 'extra-6-mussel-torch-cpu' and extra == 'extra-6-mussel-torch-gpu') or (extra == 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-tensorflow-gpu') or (extra == 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-torch-cpu') or (extra == 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-torch-gpu') or (extra == 'extra-6-mussel-tensorflow-gpu' and extra == 'extra-6-mussel-torch-cpu') or (extra == 'extra-6-mussel-tensorflow-gpu' and extra == 'extra-6-mussel-torch-gpu')" },
+    { name = "nvidia-cublas-cu12", version = "12.1.3.1", source = { registry = "https://pypi.org/simple" }, marker = "(extra == 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-tensorflow-gpu') or (extra == 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-torch-cpu') or (extra == 'extra-6-mussel-tensorflow-gpu' and extra == 'extra-6-mussel-torch-cpu') or (extra != 'extra-6-mussel-torch-cpu' and extra == 'extra-6-mussel-torch-gpu') or (extra != 'extra-6-mussel-tensorflow-cpu' and extra != 'extra-6-mussel-tensorflow-gpu' and extra == 'extra-6-mussel-torch-gpu')" },
+    { name = "nvidia-cusparse-cu12", version = "12.1.0.106", source = { registry = "https://pypi.org/simple" }, marker = "(extra == 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-tensorflow-gpu') or (extra == 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-torch-cpu') or (extra == 'extra-6-mussel-tensorflow-gpu' and extra == 'extra-6-mussel-torch-cpu') or (extra != 'extra-6-mussel-torch-cpu' and extra == 'extra-6-mussel-torch-gpu') or (extra != 'extra-6-mussel-tensorflow-cpu' and extra != 'extra-6-mussel-tensorflow-gpu' and extra == 'extra-6-mussel-torch-gpu')" },
+    { name = "nvidia-nvjitlink-cu12", version = "12.9.86", source = { registry = "https://pypi.org/simple" }, marker = "(extra == 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-tensorflow-gpu') or (extra == 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-torch-cpu') or (extra == 'extra-6-mussel-tensorflow-gpu' and extra == 'extra-6-mussel-torch-cpu') or (extra != 'extra-6-mussel-torch-cpu' and extra == 'extra-6-mussel-torch-gpu') or (extra != 'extra-6-mussel-tensorflow-cpu' and extra != 'extra-6-mussel-tensorflow-gpu' and extra == 'extra-6-mussel-torch-gpu')" },
 ]
 wheels = [
     { url = "https://files.pythonhosted.org/packages/bc/1d/8de1e5c67099015c834315e333911273a8c6aaba78923dd1d1e25fc5f217/nvidia_cusolver_cu12-11.4.5.107-py3-none-manylinux1_x86_64.whl", hash = "sha256:8a7ec542f0412294b15072fa7dab71d31334014a69f953004ea7a118206fe0dd", size = 124161928, upload-time = "2023-04-19T15:51:25.781Z" },
@@ -1202,12 +1214,10 @@ name = "nvidia-cusolver-cu12"
 version = "11.6.3.83"
 source = { registry = "https://pypi.org/simple" }
 resolution-markers = [
-    "python_full_version >= '3.13' and sys_platform == 'darwin'",
-    "python_full_version < '3.13' and sys_platform == 'darwin'",
-    "python_full_version >= '3.13' and platform_machine == 'aarch64' and sys_platform == 'linux'",
-    "python_full_version < '3.13' and platform_machine == 'aarch64' and sys_platform == 'linux'",
     "(python_full_version >= '3.13' and platform_machine != 'aarch64' and sys_platform == 'linux') or (python_full_version >= '3.13' and sys_platform != 'darwin' and sys_platform != 'linux')",
     "(python_full_version < '3.13' and platform_machine != 'aarch64' and sys_platform == 'linux') or (python_full_version < '3.13' and sys_platform != 'darwin' and sys_platform != 'linux')",
+    "(python_full_version >= '3.13' and platform_machine == 'aarch64' and sys_platform == 'linux') or (python_full_version >= '3.13' and sys_platform == 'darwin')",
+    "(python_full_version < '3.13' and platform_machine == 'aarch64' and sys_platform == 'linux') or (python_full_version < '3.13' and sys_platform == 'darwin')",
 ]
 dependencies = [
     { name = "nvidia-cublas-cu12", version = "12.5.3.2", source = { registry = "https://pypi.org/simple" } },
@@ -1224,11 +1234,8 @@ wheels = [
 name = "nvidia-cusparse-cu12"
 version = "12.1.0.106"
 source = { registry = "https://pypi.org/simple" }
-resolution-markers = [
-    "(platform_machine != 'aarch64' and sys_platform == 'linux') or (sys_platform != 'darwin' and sys_platform != 'linux')",
-]
 dependencies = [
-    { name = "nvidia-nvjitlink-cu12", version = "12.9.86", source = { registry = "https://pypi.org/simple" }, marker = "(platform_machine != 'aarch64' and sys_platform == 'linux' and extra == 'extra-6-mussel-torch-gpu') or (sys_platform != 'darwin' and sys_platform != 'linux' and extra == 'extra-6-mussel-torch-gpu') or (sys_platform == 'darwin' and extra == 'extra-6-mussel-torch-cpu' and extra == 'extra-6-mussel-torch-gpu') or (sys_platform == 'linux' and extra == 'extra-6-mussel-torch-cpu' and extra == 'extra-6-mussel-torch-gpu') or (extra == 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-tensorflow-gpu') or (extra == 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-torch-cpu') or (extra == 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-torch-gpu') or (extra == 'extra-6-mussel-tensorflow-gpu' and extra == 'extra-6-mussel-torch-cpu') or (extra == 'extra-6-mussel-tensorflow-gpu' and extra == 'extra-6-mussel-torch-gpu')" },
+    { name = "nvidia-nvjitlink-cu12", version = "12.9.86", source = { registry = "https://pypi.org/simple" }, marker = "(extra == 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-tensorflow-gpu') or (extra == 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-torch-cpu') or (extra == 'extra-6-mussel-tensorflow-gpu' and extra == 'extra-6-mussel-torch-cpu') or (extra != 'extra-6-mussel-torch-cpu' and extra == 'extra-6-mussel-torch-gpu') or (extra != 'extra-6-mussel-tensorflow-cpu' and extra != 'extra-6-mussel-tensorflow-gpu' and extra == 'extra-6-mussel-torch-gpu')" },
 ]
 wheels = [
     { url = "https://files.pythonhosted.org/packages/65/5b/cfaeebf25cd9fdec14338ccb16f6b2c4c7fa9163aefcf057d86b9cc248bb/nvidia_cusparse_cu12-12.1.0.106-py3-none-manylinux1_x86_64.whl", hash = "sha256:f3b50f42cf363f86ab21f720998517a659a48131e8d538dc02f8768237bd884c", size = 195958278, upload-time = "2023-04-19T15:51:49.939Z" },
@@ -1240,12 +1247,10 @@ name = "nvidia-cusparse-cu12"
 version = "12.5.1.3"
 source = { registry = "https://pypi.org/simple" }
 resolution-markers = [
-    "python_full_version >= '3.13' and sys_platform == 'darwin'",
-    "python_full_version < '3.13' and sys_platform == 'darwin'",
-    "python_full_version >= '3.13' and platform_machine == 'aarch64' and sys_platform == 'linux'",
-    "python_full_version < '3.13' and platform_machine == 'aarch64' and sys_platform == 'linux'",
     "(python_full_version >= '3.13' and platform_machine != 'aarch64' and sys_platform == 'linux') or (python_full_version >= '3.13' and sys_platform != 'darwin' and sys_platform != 'linux')",
     "(python_full_version < '3.13' and platform_machine != 'aarch64' and sys_platform == 'linux') or (python_full_version < '3.13' and sys_platform != 'darwin' and sys_platform != 'linux')",
+    "(python_full_version >= '3.13' and platform_machine == 'aarch64' and sys_platform == 'linux') or (python_full_version >= '3.13' and sys_platform == 'darwin')",
+    "(python_full_version < '3.13' and platform_machine == 'aarch64' and sys_platform == 'linux') or (python_full_version < '3.13' and sys_platform == 'darwin')",
 ]
 dependencies = [
     { name = "nvidia-nvjitlink-cu12", version = "12.5.82", source = { registry = "https://pypi.org/simple" } },
@@ -1260,9 +1265,6 @@ wheels = [
 name = "nvidia-nccl-cu12"
 version = "2.21.5"
 source = { registry = "https://pypi.org/simple" }
-resolution-markers = [
-    "(platform_machine != 'aarch64' and sys_platform == 'linux') or (sys_platform != 'darwin' and sys_platform != 'linux')",
-]
 wheels = [
     { url = "https://files.pythonhosted.org/packages/df/99/12cd266d6233f47d00daf3a72739872bdc10267d0383508b0b9c84a18bb6/nvidia_nccl_cu12-2.21.5-py3-none-manylinux2014_x86_64.whl", hash = "sha256:8579076d30a8c24988834445f8d633c697d42397e92ffc3f63fa26766d25e0a0", size = 188654414, upload-time = "2024-04-03T15:32:57.427Z" },
 ]
@@ -1272,12 +1274,10 @@ name = "nvidia-nccl-cu12"
 version = "2.23.4"
 source = { registry = "https://pypi.org/simple" }
 resolution-markers = [
-    "python_full_version >= '3.13' and sys_platform == 'darwin'",
-    "python_full_version < '3.13' and sys_platform == 'darwin'",
-    "python_full_version >= '3.13' and platform_machine == 'aarch64' and sys_platform == 'linux'",
-    "python_full_version < '3.13' and platform_machine == 'aarch64' and sys_platform == 'linux'",
     "(python_full_version >= '3.13' and platform_machine != 'aarch64' and sys_platform == 'linux') or (python_full_version >= '3.13' and sys_platform != 'darwin' and sys_platform != 'linux')",
     "(python_full_version < '3.13' and platform_machine != 'aarch64' and sys_platform == 'linux') or (python_full_version < '3.13' and sys_platform != 'darwin' and sys_platform != 'linux')",
+    "(python_full_version >= '3.13' and platform_machine == 'aarch64' and sys_platform == 'linux') or (python_full_version >= '3.13' and sys_platform == 'darwin')",
+    "(python_full_version < '3.13' and platform_machine == 'aarch64' and sys_platform == 'linux') or (python_full_version < '3.13' and sys_platform == 'darwin')",
 ]
 wheels = [
     { url = "https://files.pythonhosted.org/packages/c8/3a/0112397396dec37ffc8edd7836d48261b4d14ca60ec8ed7bc857cce1d916/nvidia_nccl_cu12-2.23.4-py3-none-manylinux2014_aarch64.whl", hash = "sha256:aa946c8327e22ced28e7cef508a334673abc42064ec85f02d005ba1785ea4cec", size = 198953892, upload-time = "2024-09-11T23:29:56.861Z" },
@@ -1289,12 +1289,10 @@ name = "nvidia-nvjitlink-cu12"
 version = "12.5.82"
 source = { registry = "https://pypi.org/simple" }
 resolution-markers = [
-    "python_full_version >= '3.13' and sys_platform == 'darwin'",
-    "python_full_version < '3.13' and sys_platform == 'darwin'",
-    "python_full_version >= '3.13' and platform_machine == 'aarch64' and sys_platform == 'linux'",
-    "python_full_version < '3.13' and platform_machine == 'aarch64' and sys_platform == 'linux'",
     "(python_full_version >= '3.13' and platform_machine != 'aarch64' and sys_platform == 'linux') or (python_full_version >= '3.13' and sys_platform != 'darwin' and sys_platform != 'linux')",
     "(python_full_version < '3.13' and platform_machine != 'aarch64' and sys_platform == 'linux') or (python_full_version < '3.13' and sys_platform != 'darwin' and sys_platform != 'linux')",
+    "(python_full_version >= '3.13' and platform_machine == 'aarch64' and sys_platform == 'linux') or (python_full_version >= '3.13' and sys_platform == 'darwin')",
+    "(python_full_version < '3.13' and platform_machine == 'aarch64' and sys_platform == 'linux') or (python_full_version < '3.13' and sys_platform == 'darwin')",
 ]
 wheels = [
     { url = "https://files.pythonhosted.org/packages/65/93/4934518fecebfa5696f179ee984d028a39589515d7994bd7e30da396a89a/nvidia_nvjitlink_cu12-12.5.82-py3-none-manylinux2014_aarch64.whl", hash = "sha256:98103729cc5226e13ca319a10bbf9433bbbd44ef64fe72f45f067cacc14b8d27", size = 20774026, upload-time = "2024-07-18T19:38:04.752Z" },
@@ -1306,9 +1304,6 @@ wheels = [
 name = "nvidia-nvjitlink-cu12"
 version = "12.9.86"
 source = { registry = "https://pypi.org/simple" }
-resolution-markers = [
-    "(platform_machine != 'aarch64' and sys_platform == 'linux') or (sys_platform != 'darwin' and sys_platform != 'linux')",
-]
 wheels = [
     { url = "https://files.pythonhosted.org/packages/46/0c/c75bbfb967457a0b7670b8ad267bfc4fffdf341c074e0a80db06c24ccfd4/nvidia_nvjitlink_cu12-12.9.86-py3-none-manylinux2010_x86_64.manylinux_2_12_x86_64.whl", hash = "sha256:e3f1171dbdc83c5932a45f0f4c99180a70de9bd2718c1ab77d14104f6d7147f9", size = 39748338, upload-time = "2025-06-05T20:10:25.613Z" },
     { url = "https://files.pythonhosted.org/packages/97/bc/2dcba8e70cf3115b400fef54f213bcd6715a3195eba000f8330f11e40c45/nvidia_nvjitlink_cu12-12.9.86-py3-none-manylinux2014_aarch64.manylinux_2_17_aarch64.whl", hash = "sha256:994a05ef08ef4b0b299829cde613a424382aff7efb08a7172c1fa616cc3af2ca", size = 39514880, upload-time = "2025-06-05T20:10:04.89Z" },
@@ -1362,19 +1357,20 @@ wheels = [
 
 [[package]]
 name = "opencv-python-headless"
-version = "4.11.0.86"
+version = "4.12.0.88"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "numpy" },
+    { name = "numpy", version = "2.1.3", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'extra-6-mussel-tensorflow-cpu' or extra == 'extra-6-mussel-tensorflow-gpu' or (extra == 'extra-6-mussel-torch-cpu' and extra == 'extra-6-mussel-torch-gpu')" },
+    { name = "numpy", version = "2.2.6", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'extra-6-mussel-torch-cpu' or extra == 'extra-6-mussel-torch-gpu' or (extra == 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-tensorflow-gpu') or (extra != 'extra-6-mussel-tensorflow-cpu' and extra != 'extra-6-mussel-tensorflow-gpu')" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/36/2f/5b2b3ba52c864848885ba988f24b7f105052f68da9ab0e693cc7c25b0b30/opencv-python-headless-4.11.0.86.tar.gz", hash = "sha256:996eb282ca4b43ec6a3972414de0e2331f5d9cda2b41091a49739c19fb843798", size = 95177929, upload-time = "2025-01-16T13:53:40.22Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/a4/63/6861102ec149c3cd298f4d1ea7ce9d6adbc7529221606ff1dab991a19adb/opencv-python-headless-4.12.0.88.tar.gz", hash = "sha256:cfdc017ddf2e59b6c2f53bc12d74b6b0be7ded4ec59083ea70763921af2b6c09", size = 95379675, upload-time = "2025-07-07T09:21:06.815Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/dc/53/2c50afa0b1e05ecdb4603818e85f7d174e683d874ef63a6abe3ac92220c8/opencv_python_headless-4.11.0.86-cp37-abi3-macosx_13_0_arm64.whl", hash = "sha256:48128188ade4a7e517237c8e1e11a9cdf5c282761473383e77beb875bb1e61ca", size = 37326460, upload-time = "2025-01-16T13:52:57.015Z" },
-    { url = "https://files.pythonhosted.org/packages/3b/43/68555327df94bb9b59a1fd645f63fafb0762515344d2046698762fc19d58/opencv_python_headless-4.11.0.86-cp37-abi3-macosx_13_0_x86_64.whl", hash = "sha256:a66c1b286a9de872c343ee7c3553b084244299714ebb50fbdcd76f07ebbe6c81", size = 56723330, upload-time = "2025-01-16T13:55:45.731Z" },
-    { url = "https://files.pythonhosted.org/packages/45/be/1438ce43ebe65317344a87e4b150865c5585f4c0db880a34cdae5ac46881/opencv_python_headless-4.11.0.86-cp37-abi3-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:6efabcaa9df731f29e5ea9051776715b1bdd1845d7c9530065c7951d2a2899eb", size = 29487060, upload-time = "2025-01-16T13:51:59.625Z" },
-    { url = "https://files.pythonhosted.org/packages/dd/5c/c139a7876099916879609372bfa513b7f1257f7f1a908b0bdc1c2328241b/opencv_python_headless-4.11.0.86-cp37-abi3-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:0e0a27c19dd1f40ddff94976cfe43066fbbe9dfbb2ec1907d66c19caef42a57b", size = 49969856, upload-time = "2025-01-16T13:53:29.654Z" },
-    { url = "https://files.pythonhosted.org/packages/95/dd/ed1191c9dc91abcc9f752b499b7928aacabf10567bb2c2535944d848af18/opencv_python_headless-4.11.0.86-cp37-abi3-win32.whl", hash = "sha256:f447d8acbb0b6f2808da71fddd29c1cdd448d2bc98f72d9bb78a7a898fc9621b", size = 29324425, upload-time = "2025-01-16T13:52:49.048Z" },
-    { url = "https://files.pythonhosted.org/packages/86/8a/69176a64335aed183529207ba8bc3d329c2999d852b4f3818027203f50e6/opencv_python_headless-4.11.0.86-cp37-abi3-win_amd64.whl", hash = "sha256:6c304df9caa7a6a5710b91709dd4786bf20a74d57672b3c31f7033cc638174ca", size = 39402386, upload-time = "2025-01-16T13:52:56.418Z" },
+    { url = "https://files.pythonhosted.org/packages/f7/7d/414e243c5c8216a5277afd104a319cc1291c5e23f5eeef512db5629ee7f4/opencv_python_headless-4.12.0.88-cp37-abi3-macosx_13_0_arm64.whl", hash = "sha256:1e58d664809b3350c1123484dd441e1667cd7bed3086db1b9ea1b6f6cb20b50e", size = 37877864, upload-time = "2025-07-07T09:14:41.693Z" },
+    { url = "https://files.pythonhosted.org/packages/05/14/7e162714beed1cd5e7b5eb66fcbcba2f065c51b1d9da2463024c84d2f7c0/opencv_python_headless-4.12.0.88-cp37-abi3-macosx_13_0_x86_64.whl", hash = "sha256:365bb2e486b50feffc2d07a405b953a8f3e8eaa63865bc650034e5c71e7a5154", size = 57326608, upload-time = "2025-07-07T09:14:51.885Z" },
+    { url = "https://files.pythonhosted.org/packages/69/4e/116720df7f1f7f3b59abc608ca30fbec9d2b3ae810afe4e4d26483d9dfa0/opencv_python_headless-4.12.0.88-cp37-abi3-manylinux2014_aarch64.manylinux_2_17_aarch64.whl", hash = "sha256:aeb4b13ecb8b4a0beb2668ea07928160ea7c2cd2d9b5ef571bbee6bafe9cc8d0", size = 33145800, upload-time = "2025-07-07T09:15:00.367Z" },
+    { url = "https://files.pythonhosted.org/packages/89/53/e19c21e0c4eb1275c3e2c97b081103b6dfb3938172264d283a519bf728b9/opencv_python_headless-4.12.0.88-cp37-abi3-manylinux2014_x86_64.manylinux_2_17_x86_64.whl", hash = "sha256:236c8df54a90f4d02076e6f9c1cc763d794542e886c576a6fee46ec8ff75a7a9", size = 54023419, upload-time = "2025-07-07T09:15:10.164Z" },
+    { url = "https://files.pythonhosted.org/packages/bf/9c/a76fd5414de6ec9f21f763a600058a0c3e290053cea87e0275692b1375c0/opencv_python_headless-4.12.0.88-cp37-abi3-win32.whl", hash = "sha256:fde2cf5c51e4def5f2132d78e0c08f9c14783cd67356922182c6845b9af87dbd", size = 30225230, upload-time = "2025-07-07T09:15:17.045Z" },
+    { url = "https://files.pythonhosted.org/packages/f2/35/0858e9e71b36948eafbc5e835874b63e515179dc3b742cbe3d76bc683439/opencv_python_headless-4.12.0.88-cp37-abi3-win_amd64.whl", hash = "sha256:86b413bdd6c6bf497832e346cd5371995de148e579b9774f8eba686dee3f5528", size = 38923559, upload-time = "2025-07-07T09:15:25.229Z" },
 ]
 
 [[package]]
@@ -1441,7 +1437,8 @@ name = "pandas"
 version = "2.3.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "numpy" },
+    { name = "numpy", version = "2.1.3", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'extra-6-mussel-tensorflow-cpu' or extra == 'extra-6-mussel-tensorflow-gpu' or (extra == 'extra-6-mussel-torch-cpu' and extra == 'extra-6-mussel-torch-gpu')" },
+    { name = "numpy", version = "2.2.6", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'extra-6-mussel-torch-cpu' or extra == 'extra-6-mussel-torch-gpu' or (extra == 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-tensorflow-gpu') or (extra != 'extra-6-mussel-tensorflow-cpu' and extra != 'extra-6-mussel-tensorflow-gpu')" },
     { name = "python-dateutil" },
     { name = "pytz" },
     { name = "tzdata" },
@@ -1592,7 +1589,8 @@ version = "0.11.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "certifi" },
-    { name = "numpy" },
+    { name = "numpy", version = "2.1.3", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'extra-6-mussel-tensorflow-cpu' or extra == 'extra-6-mussel-tensorflow-gpu' or (extra == 'extra-6-mussel-torch-cpu' and extra == 'extra-6-mussel-torch-gpu')" },
+    { name = "numpy", version = "2.2.6", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'extra-6-mussel-torch-cpu' or extra == 'extra-6-mussel-torch-gpu' or (extra == 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-tensorflow-gpu') or (extra != 'extra-6-mussel-tensorflow-cpu' and extra != 'extra-6-mussel-tensorflow-gpu')" },
     { name = "packaging" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/54/c3/5e30f913ad8a975abe6f6582a2d3cf321bdf40fd696940d9283c63880c7a/pyogrio-0.11.0.tar.gz", hash = "sha256:a7e0a97bc10c0d7204f6bf52e1b928cba0554c35a907c32b23065aed1ed97b3f", size = 286915, upload-time = "2025-05-08T15:20:17.843Z" }
@@ -1804,7 +1802,8 @@ version = "1.7.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "joblib" },
-    { name = "numpy" },
+    { name = "numpy", version = "2.1.3", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'extra-6-mussel-tensorflow-cpu' or extra == 'extra-6-mussel-tensorflow-gpu' or (extra == 'extra-6-mussel-torch-cpu' and extra == 'extra-6-mussel-torch-gpu')" },
+    { name = "numpy", version = "2.2.6", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'extra-6-mussel-torch-cpu' or extra == 'extra-6-mussel-torch-gpu' or (extra == 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-tensorflow-gpu') or (extra != 'extra-6-mussel-tensorflow-cpu' and extra != 'extra-6-mussel-tensorflow-gpu')" },
     { name = "scipy" },
     { name = "threadpoolctl" },
 ]
@@ -1831,7 +1830,8 @@ name = "scipy"
 version = "1.16.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "numpy" },
+    { name = "numpy", version = "2.1.3", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'extra-6-mussel-tensorflow-cpu' or extra == 'extra-6-mussel-tensorflow-gpu' or (extra == 'extra-6-mussel-torch-cpu' and extra == 'extra-6-mussel-torch-gpu')" },
+    { name = "numpy", version = "2.2.6", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'extra-6-mussel-torch-cpu' or extra == 'extra-6-mussel-torch-gpu' or (extra == 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-tensorflow-gpu') or (extra != 'extra-6-mussel-tensorflow-cpu' and extra != 'extra-6-mussel-tensorflow-gpu')" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/81/18/b06a83f0c5ee8cddbde5e3f3d0bb9b702abfa5136ef6d4620ff67df7eee5/scipy-1.16.0.tar.gz", hash = "sha256:b5ef54021e832869c8cfb03bc3bf20366cbcd426e02a58e8a58d7584dfbb8f62", size = 30581216, upload-time = "2025-06-22T16:27:55.782Z" }
 wheels = [
@@ -1878,7 +1878,8 @@ name = "shapely"
 version = "2.1.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "numpy" },
+    { name = "numpy", version = "2.1.3", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'extra-6-mussel-tensorflow-cpu' or extra == 'extra-6-mussel-tensorflow-gpu' or (extra == 'extra-6-mussel-torch-cpu' and extra == 'extra-6-mussel-torch-gpu')" },
+    { name = "numpy", version = "2.2.6", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'extra-6-mussel-torch-cpu' or extra == 'extra-6-mussel-torch-gpu' or (extra == 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-tensorflow-gpu') or (extra != 'extra-6-mussel-tensorflow-cpu' and extra != 'extra-6-mussel-tensorflow-gpu')" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/ca/3c/2da625233f4e605155926566c0e7ea8dda361877f48e8b1655e53456f252/shapely-2.1.1.tar.gz", hash = "sha256:500621967f2ffe9642454808009044c21e5b35db89ce69f8a2042c2ffd0e2772", size = 315422, upload-time = "2025-05-19T11:04:41.265Z" }
 wheels = [
@@ -1937,7 +1938,7 @@ dependencies = [
     { name = "absl-py" },
     { name = "grpcio" },
     { name = "markdown" },
-    { name = "numpy" },
+    { name = "numpy", version = "2.1.3", source = { registry = "https://pypi.org/simple" } },
     { name = "packaging" },
     { name = "protobuf" },
     { name = "setuptools" },
@@ -1974,7 +1975,7 @@ dependencies = [
     { name = "keras" },
     { name = "libclang" },
     { name = "ml-dtypes" },
-    { name = "numpy" },
+    { name = "numpy", version = "2.1.3", source = { registry = "https://pypi.org/simple" } },
     { name = "opt-einsum" },
     { name = "packaging" },
     { name = "protobuf" },
@@ -2044,7 +2045,8 @@ name = "tifffile"
 version = "2025.5.10"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "numpy" },
+    { name = "numpy", version = "2.1.3", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'extra-6-mussel-tensorflow-cpu' or extra == 'extra-6-mussel-tensorflow-gpu' or (extra == 'extra-6-mussel-torch-cpu' and extra == 'extra-6-mussel-torch-gpu')" },
+    { name = "numpy", version = "2.2.6", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'extra-6-mussel-torch-cpu' or extra == 'extra-6-mussel-torch-gpu' or (extra == 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-tensorflow-gpu') or (extra != 'extra-6-mussel-tensorflow-cpu' and extra != 'extra-6-mussel-tensorflow-gpu')" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/44/d0/18fed0fc0916578a4463f775b0fbd9c5fed2392152d039df2fb533bfdd5d/tifffile-2025.5.10.tar.gz", hash = "sha256:018335d34283aa3fd8c263bae5c3c2b661ebc45548fde31504016fcae7bf1103", size = 365290, upload-time = "2025-05-10T19:22:34.386Z" }
 wheels = [
@@ -2094,20 +2096,40 @@ version = "0.1.0"
 source = { git = "https://github.com/msk-mind/timm-ctranspath#8930976147f5e9531af7990ecb6526e60a93cb19" }
 
 [[package]]
+name = "tokenizers"
+version = "0.21.2"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "huggingface-hub" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/ab/2d/b0fce2b8201635f60e8c95990080f58461cc9ca3d5026de2e900f38a7f21/tokenizers-0.21.2.tar.gz", hash = "sha256:fdc7cffde3e2113ba0e6cc7318c40e3438a4d74bbc62bf04bcc63bdfb082ac77", size = 351545, upload-time = "2025-06-24T10:24:52.449Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/1d/cc/2936e2d45ceb130a21d929743f1e9897514691bec123203e10837972296f/tokenizers-0.21.2-cp39-abi3-macosx_10_12_x86_64.whl", hash = "sha256:342b5dfb75009f2255ab8dec0041287260fed5ce00c323eb6bab639066fef8ec", size = 2875206, upload-time = "2025-06-24T10:24:42.755Z" },
+    { url = "https://files.pythonhosted.org/packages/6c/e6/33f41f2cc7861faeba8988e7a77601407bf1d9d28fc79c5903f8f77df587/tokenizers-0.21.2-cp39-abi3-macosx_11_0_arm64.whl", hash = "sha256:126df3205d6f3a93fea80c7a8a266a78c1bd8dd2fe043386bafdd7736a23e45f", size = 2732655, upload-time = "2025-06-24T10:24:41.56Z" },
+    { url = "https://files.pythonhosted.org/packages/33/2b/1791eb329c07122a75b01035b1a3aa22ad139f3ce0ece1b059b506d9d9de/tokenizers-0.21.2-cp39-abi3-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:4a32cd81be21168bd0d6a0f0962d60177c447a1aa1b1e48fa6ec9fc728ee0b12", size = 3019202, upload-time = "2025-06-24T10:24:31.791Z" },
+    { url = "https://files.pythonhosted.org/packages/05/15/fd2d8104faa9f86ac68748e6f7ece0b5eb7983c7efc3a2c197cb98c99030/tokenizers-0.21.2-cp39-abi3-manylinux_2_17_armv7l.manylinux2014_armv7l.whl", hash = "sha256:8bd8999538c405133c2ab999b83b17c08b7fc1b48c1ada2469964605a709ef91", size = 2934539, upload-time = "2025-06-24T10:24:34.567Z" },
+    { url = "https://files.pythonhosted.org/packages/a5/2e/53e8fd053e1f3ffbe579ca5f9546f35ac67cf0039ed357ad7ec57f5f5af0/tokenizers-0.21.2-cp39-abi3-manylinux_2_17_i686.manylinux2014_i686.whl", hash = "sha256:5e9944e61239b083a41cf8fc42802f855e1dca0f499196df37a8ce219abac6eb", size = 3248665, upload-time = "2025-06-24T10:24:39.024Z" },
+    { url = "https://files.pythonhosted.org/packages/00/15/79713359f4037aa8f4d1f06ffca35312ac83629da062670e8830917e2153/tokenizers-0.21.2-cp39-abi3-manylinux_2_17_ppc64le.manylinux2014_ppc64le.whl", hash = "sha256:514cd43045c5d546f01142ff9c79a96ea69e4b5cda09e3027708cb2e6d5762ab", size = 3451305, upload-time = "2025-06-24T10:24:36.133Z" },
+    { url = "https://files.pythonhosted.org/packages/38/5f/959f3a8756fc9396aeb704292777b84f02a5c6f25c3fc3ba7530db5feb2c/tokenizers-0.21.2-cp39-abi3-manylinux_2_17_s390x.manylinux2014_s390x.whl", hash = "sha256:b1b9405822527ec1e0f7d8d2fdb287a5730c3a6518189c968254a8441b21faae", size = 3214757, upload-time = "2025-06-24T10:24:37.784Z" },
+    { url = "https://files.pythonhosted.org/packages/c5/74/f41a432a0733f61f3d21b288de6dfa78f7acff309c6f0f323b2833e9189f/tokenizers-0.21.2-cp39-abi3-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:fed9a4d51c395103ad24f8e7eb976811c57fbec2af9f133df471afcd922e5020", size = 3121887, upload-time = "2025-06-24T10:24:40.293Z" },
+    { url = "https://files.pythonhosted.org/packages/3c/6a/bc220a11a17e5d07b0dfb3b5c628621d4dcc084bccd27cfaead659963016/tokenizers-0.21.2-cp39-abi3-musllinux_1_2_aarch64.whl", hash = "sha256:2c41862df3d873665ec78b6be36fcc30a26e3d4902e9dd8608ed61d49a48bc19", size = 9091965, upload-time = "2025-06-24T10:24:44.431Z" },
+    { url = "https://files.pythonhosted.org/packages/6c/bd/ac386d79c4ef20dc6f39c4706640c24823dca7ebb6f703bfe6b5f0292d88/tokenizers-0.21.2-cp39-abi3-musllinux_1_2_armv7l.whl", hash = "sha256:ed21dc7e624e4220e21758b2e62893be7101453525e3d23264081c9ef9a6d00d", size = 9053372, upload-time = "2025-06-24T10:24:46.455Z" },
+    { url = "https://files.pythonhosted.org/packages/63/7b/5440bf203b2a5358f074408f7f9c42884849cd9972879e10ee6b7a8c3b3d/tokenizers-0.21.2-cp39-abi3-musllinux_1_2_i686.whl", hash = "sha256:0e73770507e65a0e0e2a1affd6b03c36e3bc4377bd10c9ccf51a82c77c0fe365", size = 9298632, upload-time = "2025-06-24T10:24:48.446Z" },
+    { url = "https://files.pythonhosted.org/packages/a4/d2/faa1acac3f96a7427866e94ed4289949b2524f0c1878512516567d80563c/tokenizers-0.21.2-cp39-abi3-musllinux_1_2_x86_64.whl", hash = "sha256:106746e8aa9014a12109e58d540ad5465b4c183768ea96c03cbc24c44d329958", size = 9470074, upload-time = "2025-06-24T10:24:50.378Z" },
+    { url = "https://files.pythonhosted.org/packages/d8/a5/896e1ef0707212745ae9f37e84c7d50269411aef2e9ccd0de63623feecdf/tokenizers-0.21.2-cp39-abi3-win32.whl", hash = "sha256:cabda5a6d15d620b6dfe711e1af52205266d05b379ea85a8a301b3593c60e962", size = 2330115, upload-time = "2025-06-24T10:24:55.069Z" },
+    { url = "https://files.pythonhosted.org/packages/13/c3/cc2755ee10be859c4338c962a35b9a663788c0c0b50c0bdd8078fb6870cf/tokenizers-0.21.2-cp39-abi3-win_amd64.whl", hash = "sha256:58747bb898acdb1007f37a7bbe614346e98dc28708ffb66a3fd50ce169ac6c98", size = 2509918, upload-time = "2025-06-24T10:24:53.71Z" },
+]
+
+[[package]]
 name = "torch"
 version = "2.5.1"
 source = { registry = "https://download.pytorch.org/whl/cpu" }
 resolution-markers = [
-    "sys_platform == 'darwin' and extra != 'extra-6-mussel-tensorflow-cpu' and extra != 'extra-6-mussel-tensorflow-gpu' and extra == 'extra-6-mussel-torch-cpu' and extra != 'extra-6-mussel-torch-gpu'",
-    "platform_machine == 'aarch64' and sys_platform == 'linux' and extra != 'extra-6-mussel-tensorflow-cpu' and extra != 'extra-6-mussel-tensorflow-gpu' and extra == 'extra-6-mussel-torch-cpu' and extra != 'extra-6-mussel-torch-gpu'",
-    "python_full_version >= '3.13' and sys_platform == 'darwin' and extra != 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-tensorflow-gpu' and extra != 'extra-6-mussel-torch-cpu' and extra != 'extra-6-mussel-torch-gpu'",
-    "python_full_version < '3.13' and sys_platform == 'darwin' and extra != 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-tensorflow-gpu' and extra != 'extra-6-mussel-torch-cpu' and extra != 'extra-6-mussel-torch-gpu'",
-    "python_full_version >= '3.13' and platform_machine == 'aarch64' and sys_platform == 'linux' and extra != 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-tensorflow-gpu' and extra != 'extra-6-mussel-torch-cpu' and extra != 'extra-6-mussel-torch-gpu'",
-    "python_full_version < '3.13' and platform_machine == 'aarch64' and sys_platform == 'linux' and extra != 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-tensorflow-gpu' and extra != 'extra-6-mussel-torch-cpu' and extra != 'extra-6-mussel-torch-gpu'",
-    "python_full_version >= '3.13' and sys_platform == 'darwin' and extra == 'extra-6-mussel-tensorflow-cpu' and extra != 'extra-6-mussel-tensorflow-gpu' and extra != 'extra-6-mussel-torch-cpu' and extra != 'extra-6-mussel-torch-gpu'",
-    "python_full_version < '3.13' and sys_platform == 'darwin' and extra == 'extra-6-mussel-tensorflow-cpu' and extra != 'extra-6-mussel-tensorflow-gpu' and extra != 'extra-6-mussel-torch-cpu' and extra != 'extra-6-mussel-torch-gpu'",
-    "python_full_version >= '3.13' and platform_machine == 'aarch64' and sys_platform == 'linux' and extra == 'extra-6-mussel-tensorflow-cpu' and extra != 'extra-6-mussel-tensorflow-gpu' and extra != 'extra-6-mussel-torch-cpu' and extra != 'extra-6-mussel-torch-gpu'",
-    "python_full_version < '3.13' and platform_machine == 'aarch64' and sys_platform == 'linux' and extra == 'extra-6-mussel-tensorflow-cpu' and extra != 'extra-6-mussel-tensorflow-gpu' and extra != 'extra-6-mussel-torch-cpu' and extra != 'extra-6-mussel-torch-gpu'",
+    "(platform_machine == 'aarch64' and sys_platform == 'linux' and extra != 'extra-6-mussel-tensorflow-cpu' and extra != 'extra-6-mussel-tensorflow-gpu' and extra == 'extra-6-mussel-torch-cpu' and extra != 'extra-6-mussel-torch-gpu') or (sys_platform == 'darwin' and extra != 'extra-6-mussel-tensorflow-cpu' and extra != 'extra-6-mussel-tensorflow-gpu' and extra == 'extra-6-mussel-torch-cpu' and extra != 'extra-6-mussel-torch-gpu')",
+    "(python_full_version >= '3.13' and platform_machine == 'aarch64' and sys_platform == 'linux' and extra != 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-tensorflow-gpu' and extra != 'extra-6-mussel-torch-cpu' and extra != 'extra-6-mussel-torch-gpu') or (python_full_version >= '3.13' and sys_platform == 'darwin' and extra != 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-tensorflow-gpu' and extra != 'extra-6-mussel-torch-cpu' and extra != 'extra-6-mussel-torch-gpu')",
+    "(python_full_version < '3.13' and platform_machine == 'aarch64' and sys_platform == 'linux' and extra != 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-tensorflow-gpu' and extra != 'extra-6-mussel-torch-cpu' and extra != 'extra-6-mussel-torch-gpu') or (python_full_version < '3.13' and sys_platform == 'darwin' and extra != 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-tensorflow-gpu' and extra != 'extra-6-mussel-torch-cpu' and extra != 'extra-6-mussel-torch-gpu')",
+    "(python_full_version >= '3.13' and platform_machine == 'aarch64' and sys_platform == 'linux' and extra == 'extra-6-mussel-tensorflow-cpu' and extra != 'extra-6-mussel-tensorflow-gpu' and extra != 'extra-6-mussel-torch-cpu' and extra != 'extra-6-mussel-torch-gpu') or (python_full_version >= '3.13' and sys_platform == 'darwin' and extra == 'extra-6-mussel-tensorflow-cpu' and extra != 'extra-6-mussel-tensorflow-gpu' and extra != 'extra-6-mussel-torch-cpu' and extra != 'extra-6-mussel-torch-gpu')",
+    "(python_full_version < '3.13' and platform_machine == 'aarch64' and sys_platform == 'linux' and extra == 'extra-6-mussel-tensorflow-cpu' and extra != 'extra-6-mussel-tensorflow-gpu' and extra != 'extra-6-mussel-torch-cpu' and extra != 'extra-6-mussel-torch-gpu') or (python_full_version < '3.13' and sys_platform == 'darwin' and extra == 'extra-6-mussel-tensorflow-cpu' and extra != 'extra-6-mussel-tensorflow-gpu' and extra != 'extra-6-mussel-torch-cpu' and extra != 'extra-6-mussel-torch-gpu')",
 ]
 dependencies = [
     { name = "filelock", marker = "(platform_machine == 'aarch64' and sys_platform == 'linux' and extra == 'extra-6-mussel-tensorflow-cpu') or (platform_machine == 'aarch64' and sys_platform == 'linux' and extra == 'extra-6-mussel-tensorflow-gpu') or (platform_machine == 'aarch64' and sys_platform == 'linux' and extra == 'extra-6-mussel-torch-cpu') or (platform_machine != 'aarch64' and extra == 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-tensorflow-gpu') or (platform_machine != 'aarch64' and extra == 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-torch-cpu') or (platform_machine != 'aarch64' and extra == 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-torch-gpu') or (platform_machine != 'aarch64' and extra == 'extra-6-mussel-tensorflow-gpu' and extra == 'extra-6-mussel-torch-cpu') or (platform_machine != 'aarch64' and extra == 'extra-6-mussel-tensorflow-gpu' and extra == 'extra-6-mussel-torch-gpu') or (platform_machine != 'aarch64' and extra == 'extra-6-mussel-torch-cpu' and extra == 'extra-6-mussel-torch-gpu') or (sys_platform == 'darwin' and extra == 'extra-6-mussel-tensorflow-cpu') or (sys_platform == 'darwin' and extra == 'extra-6-mussel-tensorflow-gpu') or (sys_platform == 'darwin' and extra == 'extra-6-mussel-torch-cpu') or (sys_platform != 'linux' and extra == 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-tensorflow-gpu') or (sys_platform != 'linux' and extra == 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-torch-cpu') or (sys_platform != 'linux' and extra == 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-torch-gpu') or (sys_platform != 'linux' and extra == 'extra-6-mussel-tensorflow-gpu' and extra == 'extra-6-mussel-torch-cpu') or (sys_platform != 'linux' and extra == 'extra-6-mussel-tensorflow-gpu' and extra == 'extra-6-mussel-torch-gpu') or (sys_platform != 'linux' and extra == 'extra-6-mussel-torch-cpu' and extra == 'extra-6-mussel-torch-gpu')" },
@@ -2153,11 +2175,6 @@ wheels = [
 name = "torch"
 version = "2.5.1+cu121"
 source = { registry = "https://download.pytorch.org/whl/cu121" }
-resolution-markers = [
-    "sys_platform == 'darwin'",
-    "platform_machine == 'aarch64' and sys_platform == 'linux'",
-    "(platform_machine != 'aarch64' and sys_platform == 'linux') or (sys_platform != 'darwin' and sys_platform != 'linux')",
-]
 dependencies = [
     { name = "filelock", marker = "(extra == 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-tensorflow-gpu') or (extra == 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-torch-cpu') or (extra == 'extra-6-mussel-tensorflow-gpu' and extra == 'extra-6-mussel-torch-cpu') or (extra != 'extra-6-mussel-torch-cpu' and extra == 'extra-6-mussel-torch-gpu') or (extra != 'extra-6-mussel-tensorflow-cpu' and extra != 'extra-6-mussel-tensorflow-gpu' and extra == 'extra-6-mussel-torch-gpu')" },
     { name = "fsspec", marker = "(extra == 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-tensorflow-gpu') or (extra == 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-torch-cpu') or (extra == 'extra-6-mussel-tensorflow-gpu' and extra == 'extra-6-mussel-torch-cpu') or (extra != 'extra-6-mussel-torch-cpu' and extra == 'extra-6-mussel-torch-gpu') or (extra != 'extra-6-mussel-tensorflow-cpu' and extra != 'extra-6-mussel-tensorflow-gpu' and extra == 'extra-6-mussel-torch-gpu')" },
@@ -2190,19 +2207,15 @@ name = "torchvision"
 version = "0.20.1"
 source = { registry = "https://download.pytorch.org/whl/cpu" }
 resolution-markers = [
-    "sys_platform == 'darwin' and extra != 'extra-6-mussel-tensorflow-cpu' and extra != 'extra-6-mussel-tensorflow-gpu' and extra == 'extra-6-mussel-torch-cpu' and extra != 'extra-6-mussel-torch-gpu'",
-    "platform_machine == 'aarch64' and sys_platform == 'linux' and extra != 'extra-6-mussel-tensorflow-cpu' and extra != 'extra-6-mussel-tensorflow-gpu' and extra == 'extra-6-mussel-torch-cpu' and extra != 'extra-6-mussel-torch-gpu'",
-    "python_full_version >= '3.13' and sys_platform == 'darwin' and extra != 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-tensorflow-gpu' and extra != 'extra-6-mussel-torch-cpu' and extra != 'extra-6-mussel-torch-gpu'",
-    "python_full_version < '3.13' and sys_platform == 'darwin' and extra != 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-tensorflow-gpu' and extra != 'extra-6-mussel-torch-cpu' and extra != 'extra-6-mussel-torch-gpu'",
-    "python_full_version >= '3.13' and platform_machine == 'aarch64' and sys_platform == 'linux' and extra != 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-tensorflow-gpu' and extra != 'extra-6-mussel-torch-cpu' and extra != 'extra-6-mussel-torch-gpu'",
-    "python_full_version < '3.13' and platform_machine == 'aarch64' and sys_platform == 'linux' and extra != 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-tensorflow-gpu' and extra != 'extra-6-mussel-torch-cpu' and extra != 'extra-6-mussel-torch-gpu'",
-    "python_full_version >= '3.13' and sys_platform == 'darwin' and extra == 'extra-6-mussel-tensorflow-cpu' and extra != 'extra-6-mussel-tensorflow-gpu' and extra != 'extra-6-mussel-torch-cpu' and extra != 'extra-6-mussel-torch-gpu'",
-    "python_full_version < '3.13' and sys_platform == 'darwin' and extra == 'extra-6-mussel-tensorflow-cpu' and extra != 'extra-6-mussel-tensorflow-gpu' and extra != 'extra-6-mussel-torch-cpu' and extra != 'extra-6-mussel-torch-gpu'",
-    "python_full_version >= '3.13' and platform_machine == 'aarch64' and sys_platform == 'linux' and extra == 'extra-6-mussel-tensorflow-cpu' and extra != 'extra-6-mussel-tensorflow-gpu' and extra != 'extra-6-mussel-torch-cpu' and extra != 'extra-6-mussel-torch-gpu'",
-    "python_full_version < '3.13' and platform_machine == 'aarch64' and sys_platform == 'linux' and extra == 'extra-6-mussel-tensorflow-cpu' and extra != 'extra-6-mussel-tensorflow-gpu' and extra != 'extra-6-mussel-torch-cpu' and extra != 'extra-6-mussel-torch-gpu'",
+    "(platform_machine == 'aarch64' and sys_platform == 'linux' and extra != 'extra-6-mussel-tensorflow-cpu' and extra != 'extra-6-mussel-tensorflow-gpu' and extra == 'extra-6-mussel-torch-cpu' and extra != 'extra-6-mussel-torch-gpu') or (sys_platform == 'darwin' and extra != 'extra-6-mussel-tensorflow-cpu' and extra != 'extra-6-mussel-tensorflow-gpu' and extra == 'extra-6-mussel-torch-cpu' and extra != 'extra-6-mussel-torch-gpu')",
+    "(python_full_version >= '3.13' and platform_machine == 'aarch64' and sys_platform == 'linux' and extra != 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-tensorflow-gpu' and extra != 'extra-6-mussel-torch-cpu' and extra != 'extra-6-mussel-torch-gpu') or (python_full_version >= '3.13' and sys_platform == 'darwin' and extra != 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-tensorflow-gpu' and extra != 'extra-6-mussel-torch-cpu' and extra != 'extra-6-mussel-torch-gpu')",
+    "(python_full_version < '3.13' and platform_machine == 'aarch64' and sys_platform == 'linux' and extra != 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-tensorflow-gpu' and extra != 'extra-6-mussel-torch-cpu' and extra != 'extra-6-mussel-torch-gpu') or (python_full_version < '3.13' and sys_platform == 'darwin' and extra != 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-tensorflow-gpu' and extra != 'extra-6-mussel-torch-cpu' and extra != 'extra-6-mussel-torch-gpu')",
+    "(python_full_version >= '3.13' and platform_machine == 'aarch64' and sys_platform == 'linux' and extra == 'extra-6-mussel-tensorflow-cpu' and extra != 'extra-6-mussel-tensorflow-gpu' and extra != 'extra-6-mussel-torch-cpu' and extra != 'extra-6-mussel-torch-gpu') or (python_full_version >= '3.13' and sys_platform == 'darwin' and extra == 'extra-6-mussel-tensorflow-cpu' and extra != 'extra-6-mussel-tensorflow-gpu' and extra != 'extra-6-mussel-torch-cpu' and extra != 'extra-6-mussel-torch-gpu')",
+    "(python_full_version < '3.13' and platform_machine == 'aarch64' and sys_platform == 'linux' and extra == 'extra-6-mussel-tensorflow-cpu' and extra != 'extra-6-mussel-tensorflow-gpu' and extra != 'extra-6-mussel-torch-cpu' and extra != 'extra-6-mussel-torch-gpu') or (python_full_version < '3.13' and sys_platform == 'darwin' and extra == 'extra-6-mussel-tensorflow-cpu' and extra != 'extra-6-mussel-tensorflow-gpu' and extra != 'extra-6-mussel-torch-cpu' and extra != 'extra-6-mussel-torch-gpu')",
 ]
 dependencies = [
-    { name = "numpy", marker = "(platform_machine == 'aarch64' and sys_platform == 'linux' and extra == 'extra-6-mussel-tensorflow-cpu') or (platform_machine == 'aarch64' and sys_platform == 'linux' and extra == 'extra-6-mussel-tensorflow-gpu') or (platform_machine == 'aarch64' and sys_platform == 'linux' and extra == 'extra-6-mussel-torch-cpu') or (platform_machine != 'aarch64' and extra == 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-tensorflow-gpu') or (platform_machine != 'aarch64' and extra == 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-torch-cpu') or (platform_machine != 'aarch64' and extra == 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-torch-gpu') or (platform_machine != 'aarch64' and extra == 'extra-6-mussel-tensorflow-gpu' and extra == 'extra-6-mussel-torch-cpu') or (platform_machine != 'aarch64' and extra == 'extra-6-mussel-tensorflow-gpu' and extra == 'extra-6-mussel-torch-gpu') or (platform_machine != 'aarch64' and extra == 'extra-6-mussel-torch-cpu' and extra == 'extra-6-mussel-torch-gpu') or (sys_platform == 'darwin' and extra == 'extra-6-mussel-tensorflow-cpu') or (sys_platform == 'darwin' and extra == 'extra-6-mussel-tensorflow-gpu') or (sys_platform == 'darwin' and extra == 'extra-6-mussel-torch-cpu') or (sys_platform != 'linux' and extra == 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-tensorflow-gpu') or (sys_platform != 'linux' and extra == 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-torch-cpu') or (sys_platform != 'linux' and extra == 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-torch-gpu') or (sys_platform != 'linux' and extra == 'extra-6-mussel-tensorflow-gpu' and extra == 'extra-6-mussel-torch-cpu') or (sys_platform != 'linux' and extra == 'extra-6-mussel-tensorflow-gpu' and extra == 'extra-6-mussel-torch-gpu') or (sys_platform != 'linux' and extra == 'extra-6-mussel-torch-cpu' and extra == 'extra-6-mussel-torch-gpu')" },
+    { name = "numpy", version = "2.1.3", source = { registry = "https://pypi.org/simple" }, marker = "(platform_machine == 'aarch64' and sys_platform == 'linux' and extra == 'extra-6-mussel-tensorflow-cpu') or (platform_machine == 'aarch64' and sys_platform == 'linux' and extra == 'extra-6-mussel-tensorflow-gpu') or (platform_machine != 'aarch64' and extra == 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-tensorflow-gpu') or (platform_machine != 'aarch64' and extra == 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-torch-cpu') or (platform_machine != 'aarch64' and extra == 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-torch-gpu') or (platform_machine != 'aarch64' and extra == 'extra-6-mussel-tensorflow-gpu' and extra == 'extra-6-mussel-torch-cpu') or (platform_machine != 'aarch64' and extra == 'extra-6-mussel-tensorflow-gpu' and extra == 'extra-6-mussel-torch-gpu') or (platform_machine != 'aarch64' and extra == 'extra-6-mussel-torch-cpu' and extra == 'extra-6-mussel-torch-gpu') or (sys_platform == 'darwin' and extra == 'extra-6-mussel-tensorflow-cpu') or (sys_platform == 'darwin' and extra == 'extra-6-mussel-tensorflow-gpu') or (sys_platform != 'linux' and extra == 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-tensorflow-gpu') or (sys_platform != 'linux' and extra == 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-torch-cpu') or (sys_platform != 'linux' and extra == 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-torch-gpu') or (sys_platform != 'linux' and extra == 'extra-6-mussel-tensorflow-gpu' and extra == 'extra-6-mussel-torch-cpu') or (sys_platform != 'linux' and extra == 'extra-6-mussel-tensorflow-gpu' and extra == 'extra-6-mussel-torch-gpu') or (sys_platform != 'linux' and extra == 'extra-6-mussel-torch-cpu' and extra == 'extra-6-mussel-torch-gpu') or (sys_platform == 'darwin' and extra == 'extra-6-mussel-torch-cpu' and extra == 'extra-6-mussel-torch-gpu') or (extra != 'extra-6-mussel-tensorflow-cpu' and extra != 'extra-6-mussel-tensorflow-gpu' and extra == 'extra-6-mussel-torch-cpu' and extra == 'extra-6-mussel-torch-gpu')" },
+    { name = "numpy", version = "2.2.6", source = { registry = "https://pypi.org/simple" }, marker = "(platform_machine == 'aarch64' and sys_platform == 'linux' and extra == 'extra-6-mussel-torch-cpu') or (platform_machine != 'aarch64' and extra == 'extra-6-mussel-torch-cpu' and extra == 'extra-6-mussel-torch-gpu') or (sys_platform == 'darwin' and extra == 'extra-6-mussel-torch-cpu') or (sys_platform != 'linux' and extra == 'extra-6-mussel-torch-cpu' and extra == 'extra-6-mussel-torch-gpu') or (extra == 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-tensorflow-gpu') or (extra == 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-torch-cpu') or (extra == 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-torch-gpu') or (extra == 'extra-6-mussel-tensorflow-gpu' and extra == 'extra-6-mussel-torch-cpu') or (extra == 'extra-6-mussel-tensorflow-gpu' and extra == 'extra-6-mussel-torch-gpu')" },
     { name = "pillow", marker = "(platform_machine == 'aarch64' and sys_platform == 'linux' and extra == 'extra-6-mussel-tensorflow-cpu') or (platform_machine == 'aarch64' and sys_platform == 'linux' and extra == 'extra-6-mussel-tensorflow-gpu') or (platform_machine == 'aarch64' and sys_platform == 'linux' and extra == 'extra-6-mussel-torch-cpu') or (platform_machine != 'aarch64' and extra == 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-tensorflow-gpu') or (platform_machine != 'aarch64' and extra == 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-torch-cpu') or (platform_machine != 'aarch64' and extra == 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-torch-gpu') or (platform_machine != 'aarch64' and extra == 'extra-6-mussel-tensorflow-gpu' and extra == 'extra-6-mussel-torch-cpu') or (platform_machine != 'aarch64' and extra == 'extra-6-mussel-tensorflow-gpu' and extra == 'extra-6-mussel-torch-gpu') or (platform_machine != 'aarch64' and extra == 'extra-6-mussel-torch-cpu' and extra == 'extra-6-mussel-torch-gpu') or (sys_platform == 'darwin' and extra == 'extra-6-mussel-tensorflow-cpu') or (sys_platform == 'darwin' and extra == 'extra-6-mussel-tensorflow-gpu') or (sys_platform == 'darwin' and extra == 'extra-6-mussel-torch-cpu') or (sys_platform != 'linux' and extra == 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-tensorflow-gpu') or (sys_platform != 'linux' and extra == 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-torch-cpu') or (sys_platform != 'linux' and extra == 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-torch-gpu') or (sys_platform != 'linux' and extra == 'extra-6-mussel-tensorflow-gpu' and extra == 'extra-6-mussel-torch-cpu') or (sys_platform != 'linux' and extra == 'extra-6-mussel-tensorflow-gpu' and extra == 'extra-6-mussel-torch-gpu') or (sys_platform != 'linux' and extra == 'extra-6-mussel-torch-cpu' and extra == 'extra-6-mussel-torch-gpu')" },
     { name = "torch", version = "2.5.1", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "(platform_machine == 'aarch64' and sys_platform == 'linux' and extra == 'extra-6-mussel-tensorflow-cpu') or (platform_machine == 'aarch64' and sys_platform == 'linux' and extra == 'extra-6-mussel-tensorflow-gpu') or (platform_machine == 'aarch64' and sys_platform == 'linux' and extra == 'extra-6-mussel-torch-cpu') or (platform_machine != 'aarch64' and extra == 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-tensorflow-gpu') or (platform_machine != 'aarch64' and extra == 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-torch-cpu') or (platform_machine != 'aarch64' and extra == 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-torch-gpu') or (platform_machine != 'aarch64' and extra == 'extra-6-mussel-tensorflow-gpu' and extra == 'extra-6-mussel-torch-cpu') or (platform_machine != 'aarch64' and extra == 'extra-6-mussel-tensorflow-gpu' and extra == 'extra-6-mussel-torch-gpu') or (platform_machine != 'aarch64' and extra == 'extra-6-mussel-torch-cpu' and extra == 'extra-6-mussel-torch-gpu') or (sys_platform == 'darwin' and extra == 'extra-6-mussel-tensorflow-cpu') or (sys_platform == 'darwin' and extra == 'extra-6-mussel-tensorflow-gpu') or (sys_platform == 'darwin' and extra == 'extra-6-mussel-torch-cpu') or (sys_platform != 'linux' and extra == 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-tensorflow-gpu') or (sys_platform != 'linux' and extra == 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-torch-cpu') or (sys_platform != 'linux' and extra == 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-torch-gpu') or (sys_platform != 'linux' and extra == 'extra-6-mussel-tensorflow-gpu' and extra == 'extra-6-mussel-torch-cpu') or (sys_platform != 'linux' and extra == 'extra-6-mussel-tensorflow-gpu' and extra == 'extra-6-mussel-torch-gpu') or (sys_platform != 'linux' and extra == 'extra-6-mussel-torch-cpu' and extra == 'extra-6-mussel-torch-gpu')" },
 ]
@@ -2223,7 +2236,8 @@ resolution-markers = [
     "(python_full_version < '3.13' and platform_machine != 'aarch64' and sys_platform == 'linux' and extra == 'extra-6-mussel-tensorflow-cpu' and extra != 'extra-6-mussel-tensorflow-gpu' and extra != 'extra-6-mussel-torch-cpu' and extra != 'extra-6-mussel-torch-gpu') or (python_full_version < '3.13' and sys_platform != 'darwin' and sys_platform != 'linux' and extra == 'extra-6-mussel-tensorflow-cpu' and extra != 'extra-6-mussel-tensorflow-gpu' and extra != 'extra-6-mussel-torch-cpu' and extra != 'extra-6-mussel-torch-gpu')",
 ]
 dependencies = [
-    { name = "numpy", marker = "(platform_machine != 'aarch64' and sys_platform == 'linux' and extra == 'extra-6-mussel-tensorflow-cpu') or (platform_machine != 'aarch64' and sys_platform == 'linux' and extra == 'extra-6-mussel-tensorflow-gpu') or (platform_machine != 'aarch64' and sys_platform == 'linux' and extra == 'extra-6-mussel-torch-cpu') or (sys_platform != 'darwin' and sys_platform != 'linux' and extra == 'extra-6-mussel-tensorflow-cpu') or (sys_platform != 'darwin' and sys_platform != 'linux' and extra == 'extra-6-mussel-tensorflow-gpu') or (sys_platform != 'darwin' and sys_platform != 'linux' and extra == 'extra-6-mussel-torch-cpu') or (sys_platform == 'darwin' and extra == 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-tensorflow-gpu') or (sys_platform == 'darwin' and extra == 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-torch-cpu') or (sys_platform == 'darwin' and extra == 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-torch-gpu') or (sys_platform == 'darwin' and extra == 'extra-6-mussel-tensorflow-gpu' and extra == 'extra-6-mussel-torch-cpu') or (sys_platform == 'darwin' and extra == 'extra-6-mussel-tensorflow-gpu' and extra == 'extra-6-mussel-torch-gpu') or (sys_platform == 'darwin' and extra == 'extra-6-mussel-torch-cpu' and extra == 'extra-6-mussel-torch-gpu') or (sys_platform == 'linux' and extra == 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-tensorflow-gpu') or (sys_platform == 'linux' and extra == 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-torch-cpu') or (sys_platform == 'linux' and extra == 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-torch-gpu') or (sys_platform == 'linux' and extra == 'extra-6-mussel-tensorflow-gpu' and extra == 'extra-6-mussel-torch-cpu') or (sys_platform == 'linux' and extra == 'extra-6-mussel-tensorflow-gpu' and extra == 'extra-6-mussel-torch-gpu') or (sys_platform == 'linux' and extra == 'extra-6-mussel-torch-cpu' and extra == 'extra-6-mussel-torch-gpu')" },
+    { name = "numpy", version = "2.1.3", source = { registry = "https://pypi.org/simple" }, marker = "(platform_machine != 'aarch64' and sys_platform == 'linux' and extra == 'extra-6-mussel-tensorflow-cpu') or (platform_machine != 'aarch64' and sys_platform == 'linux' and extra == 'extra-6-mussel-tensorflow-gpu') or (sys_platform != 'darwin' and sys_platform != 'linux' and extra == 'extra-6-mussel-tensorflow-cpu') or (sys_platform != 'darwin' and sys_platform != 'linux' and extra == 'extra-6-mussel-tensorflow-gpu') or (sys_platform == 'darwin' and extra == 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-tensorflow-gpu') or (sys_platform == 'darwin' and extra == 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-torch-cpu') or (sys_platform == 'darwin' and extra == 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-torch-gpu') or (sys_platform == 'darwin' and extra == 'extra-6-mussel-tensorflow-gpu' and extra == 'extra-6-mussel-torch-cpu') or (sys_platform == 'darwin' and extra == 'extra-6-mussel-tensorflow-gpu' and extra == 'extra-6-mussel-torch-gpu') or (sys_platform == 'darwin' and extra == 'extra-6-mussel-torch-cpu' and extra == 'extra-6-mussel-torch-gpu') or (sys_platform == 'linux' and extra == 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-tensorflow-gpu') or (sys_platform == 'linux' and extra == 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-torch-cpu') or (sys_platform == 'linux' and extra == 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-torch-gpu') or (sys_platform == 'linux' and extra == 'extra-6-mussel-tensorflow-gpu' and extra == 'extra-6-mussel-torch-cpu') or (sys_platform == 'linux' and extra == 'extra-6-mussel-tensorflow-gpu' and extra == 'extra-6-mussel-torch-gpu') or (extra != 'extra-6-mussel-tensorflow-cpu' and extra != 'extra-6-mussel-tensorflow-gpu' and extra == 'extra-6-mussel-torch-cpu' and extra == 'extra-6-mussel-torch-gpu')" },
+    { name = "numpy", version = "2.2.6", source = { registry = "https://pypi.org/simple" }, marker = "(platform_machine != 'aarch64' and sys_platform == 'linux' and extra == 'extra-6-mussel-torch-cpu') or (sys_platform != 'darwin' and sys_platform != 'linux' and extra == 'extra-6-mussel-torch-cpu') or (sys_platform == 'darwin' and extra == 'extra-6-mussel-torch-cpu' and extra == 'extra-6-mussel-torch-gpu') or (sys_platform == 'linux' and extra == 'extra-6-mussel-torch-cpu' and extra == 'extra-6-mussel-torch-gpu') or (extra == 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-tensorflow-gpu') or (extra == 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-torch-cpu') or (extra == 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-torch-gpu') or (extra == 'extra-6-mussel-tensorflow-gpu' and extra == 'extra-6-mussel-torch-cpu') or (extra == 'extra-6-mussel-tensorflow-gpu' and extra == 'extra-6-mussel-torch-gpu')" },
     { name = "pillow", marker = "(platform_machine != 'aarch64' and sys_platform == 'linux' and extra == 'extra-6-mussel-tensorflow-cpu') or (platform_machine != 'aarch64' and sys_platform == 'linux' and extra == 'extra-6-mussel-tensorflow-gpu') or (platform_machine != 'aarch64' and sys_platform == 'linux' and extra == 'extra-6-mussel-torch-cpu') or (sys_platform != 'darwin' and sys_platform != 'linux' and extra == 'extra-6-mussel-tensorflow-cpu') or (sys_platform != 'darwin' and sys_platform != 'linux' and extra == 'extra-6-mussel-tensorflow-gpu') or (sys_platform != 'darwin' and sys_platform != 'linux' and extra == 'extra-6-mussel-torch-cpu') or (sys_platform == 'darwin' and extra == 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-tensorflow-gpu') or (sys_platform == 'darwin' and extra == 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-torch-cpu') or (sys_platform == 'darwin' and extra == 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-torch-gpu') or (sys_platform == 'darwin' and extra == 'extra-6-mussel-tensorflow-gpu' and extra == 'extra-6-mussel-torch-cpu') or (sys_platform == 'darwin' and extra == 'extra-6-mussel-tensorflow-gpu' and extra == 'extra-6-mussel-torch-gpu') or (sys_platform == 'darwin' and extra == 'extra-6-mussel-torch-cpu' and extra == 'extra-6-mussel-torch-gpu') or (sys_platform == 'linux' and extra == 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-tensorflow-gpu') or (sys_platform == 'linux' and extra == 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-torch-cpu') or (sys_platform == 'linux' and extra == 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-torch-gpu') or (sys_platform == 'linux' and extra == 'extra-6-mussel-tensorflow-gpu' and extra == 'extra-6-mussel-torch-cpu') or (sys_platform == 'linux' and extra == 'extra-6-mussel-tensorflow-gpu' and extra == 'extra-6-mussel-torch-gpu') or (sys_platform == 'linux' and extra == 'extra-6-mussel-torch-cpu' and extra == 'extra-6-mussel-torch-gpu')" },
     { name = "torch", version = "2.5.1+cpu", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "(platform_machine != 'aarch64' and sys_platform == 'linux' and extra == 'extra-6-mussel-tensorflow-cpu') or (platform_machine != 'aarch64' and sys_platform == 'linux' and extra == 'extra-6-mussel-tensorflow-gpu') or (platform_machine != 'aarch64' and sys_platform == 'linux' and extra == 'extra-6-mussel-torch-cpu') or (sys_platform != 'darwin' and sys_platform != 'linux' and extra == 'extra-6-mussel-tensorflow-cpu') or (sys_platform != 'darwin' and sys_platform != 'linux' and extra == 'extra-6-mussel-tensorflow-gpu') or (sys_platform != 'darwin' and sys_platform != 'linux' and extra == 'extra-6-mussel-torch-cpu') or (sys_platform == 'darwin' and extra == 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-tensorflow-gpu') or (sys_platform == 'darwin' and extra == 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-torch-cpu') or (sys_platform == 'darwin' and extra == 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-torch-gpu') or (sys_platform == 'darwin' and extra == 'extra-6-mussel-tensorflow-gpu' and extra == 'extra-6-mussel-torch-cpu') or (sys_platform == 'darwin' and extra == 'extra-6-mussel-tensorflow-gpu' and extra == 'extra-6-mussel-torch-gpu') or (sys_platform == 'darwin' and extra == 'extra-6-mussel-torch-cpu' and extra == 'extra-6-mussel-torch-gpu') or (sys_platform == 'linux' and extra == 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-tensorflow-gpu') or (sys_platform == 'linux' and extra == 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-torch-cpu') or (sys_platform == 'linux' and extra == 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-torch-gpu') or (sys_platform == 'linux' and extra == 'extra-6-mussel-tensorflow-gpu' and extra == 'extra-6-mussel-torch-cpu') or (sys_platform == 'linux' and extra == 'extra-6-mussel-tensorflow-gpu' and extra == 'extra-6-mussel-torch-gpu') or (sys_platform == 'linux' and extra == 'extra-6-mussel-torch-cpu' and extra == 'extra-6-mussel-torch-gpu')" },
 ]
@@ -2236,13 +2250,8 @@ wheels = [
 name = "torchvision"
 version = "0.20.1+cu121"
 source = { registry = "https://download.pytorch.org/whl/cu121" }
-resolution-markers = [
-    "sys_platform == 'darwin'",
-    "platform_machine == 'aarch64' and sys_platform == 'linux'",
-    "(platform_machine != 'aarch64' and sys_platform == 'linux') or (sys_platform != 'darwin' and sys_platform != 'linux')",
-]
 dependencies = [
-    { name = "numpy", marker = "(extra == 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-tensorflow-gpu') or (extra == 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-torch-cpu') or (extra == 'extra-6-mussel-tensorflow-gpu' and extra == 'extra-6-mussel-torch-cpu') or (extra != 'extra-6-mussel-torch-cpu' and extra == 'extra-6-mussel-torch-gpu') or (extra != 'extra-6-mussel-tensorflow-cpu' and extra != 'extra-6-mussel-tensorflow-gpu' and extra == 'extra-6-mussel-torch-gpu')" },
+    { name = "numpy", version = "2.2.6", source = { registry = "https://pypi.org/simple" }, marker = "(extra == 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-tensorflow-gpu') or (extra == 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-torch-cpu') or (extra == 'extra-6-mussel-tensorflow-gpu' and extra == 'extra-6-mussel-torch-cpu') or (extra != 'extra-6-mussel-torch-cpu' and extra == 'extra-6-mussel-torch-gpu') or (extra != 'extra-6-mussel-tensorflow-cpu' and extra != 'extra-6-mussel-tensorflow-gpu' and extra == 'extra-6-mussel-torch-gpu')" },
     { name = "pillow", marker = "(extra == 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-tensorflow-gpu') or (extra == 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-torch-cpu') or (extra == 'extra-6-mussel-tensorflow-gpu' and extra == 'extra-6-mussel-torch-cpu') or (extra != 'extra-6-mussel-torch-cpu' and extra == 'extra-6-mussel-torch-gpu') or (extra != 'extra-6-mussel-tensorflow-cpu' and extra != 'extra-6-mussel-tensorflow-gpu' and extra == 'extra-6-mussel-torch-gpu')" },
     { name = "torch", version = "2.5.1+cu121", source = { registry = "https://download.pytorch.org/whl/cu121" }, marker = "(extra == 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-tensorflow-gpu') or (extra == 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-torch-cpu') or (extra == 'extra-6-mussel-tensorflow-gpu' and extra == 'extra-6-mussel-torch-cpu') or (extra != 'extra-6-mussel-torch-cpu' and extra == 'extra-6-mussel-torch-gpu') or (extra != 'extra-6-mussel-tensorflow-cpu' and extra != 'extra-6-mussel-tensorflow-gpu' and extra == 'extra-6-mussel-torch-gpu')" },
 ]
@@ -2264,6 +2273,28 @@ wheels = [
 ]
 
 [[package]]
+name = "transformers"
+version = "4.53.2"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "filelock" },
+    { name = "huggingface-hub" },
+    { name = "numpy", version = "2.1.3", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'extra-6-mussel-tensorflow-cpu' or extra == 'extra-6-mussel-tensorflow-gpu' or (extra == 'extra-6-mussel-torch-cpu' and extra == 'extra-6-mussel-torch-gpu')" },
+    { name = "numpy", version = "2.2.6", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'extra-6-mussel-torch-cpu' or extra == 'extra-6-mussel-torch-gpu' or (extra == 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-tensorflow-gpu') or (extra != 'extra-6-mussel-tensorflow-cpu' and extra != 'extra-6-mussel-tensorflow-gpu')" },
+    { name = "packaging" },
+    { name = "pyyaml" },
+    { name = "regex" },
+    { name = "requests" },
+    { name = "safetensors" },
+    { name = "tokenizers" },
+    { name = "tqdm" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/4c/67/80f51466ec447028fd84469b208eb742533ce06cc8fad2e3181380199e5c/transformers-4.53.2.tar.gz", hash = "sha256:6c3ed95edfb1cba71c4245758f1b4878c93bf8cde77d076307dacb2cbbd72be2", size = 9201233, upload-time = "2025-07-11T12:39:08.742Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/96/88/beb33a79a382fcd2aed0be5222bdc47f41e4bfe7aaa90ae1374f1d8ea2af/transformers-4.53.2-py3-none-any.whl", hash = "sha256:db8f4819bb34f000029c73c3c557e7d06fc1b8e612ec142eecdae3947a9c78bf", size = 10826609, upload-time = "2025-07-11T12:39:05.461Z" },
+]
+
+[[package]]
 name = "transpath"
 version = "0.1.0"
 source = { git = "https://github.com/msk-mind/TransPath/#0ec9625987807a4d566960240823efc7b42699a9" }
@@ -2273,7 +2304,7 @@ name = "triton"
 version = "3.1.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "filelock", marker = "(platform_machine != 'aarch64' and sys_platform == 'linux' and extra == 'extra-6-mussel-torch-gpu') or (sys_platform != 'darwin' and sys_platform != 'linux' and extra == 'extra-6-mussel-torch-gpu') or (sys_platform == 'darwin' and extra == 'extra-6-mussel-torch-cpu' and extra == 'extra-6-mussel-torch-gpu') or (sys_platform == 'linux' and extra == 'extra-6-mussel-torch-cpu' and extra == 'extra-6-mussel-torch-gpu') or (extra == 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-tensorflow-gpu') or (extra == 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-torch-cpu') or (extra == 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-torch-gpu') or (extra == 'extra-6-mussel-tensorflow-gpu' and extra == 'extra-6-mussel-torch-cpu') or (extra == 'extra-6-mussel-tensorflow-gpu' and extra == 'extra-6-mussel-torch-gpu')" },
+    { name = "filelock", marker = "(extra == 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-tensorflow-gpu') or (extra == 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-torch-cpu') or (extra == 'extra-6-mussel-tensorflow-gpu' and extra == 'extra-6-mussel-torch-cpu') or (extra != 'extra-6-mussel-torch-cpu' and extra == 'extra-6-mussel-torch-gpu') or (extra != 'extra-6-mussel-tensorflow-cpu' and extra != 'extra-6-mussel-tensorflow-gpu' and extra == 'extra-6-mussel-torch-gpu')" },
 ]
 wheels = [
     { url = "https://files.pythonhosted.org/packages/78/eb/65f5ba83c2a123f6498a3097746607e5b2f16add29e36765305e4ac7fdd8/triton-3.1.0-cp312-cp312-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:c8182f42fd8080a7d39d666814fa36c5e30cc00ea7eeeb1a2983dbb4c99a0fdc", size = 209551444, upload-time = "2024-10-14T16:05:53.433Z" },
@@ -2395,7 +2426,8 @@ dependencies = [
     { name = "asciitree" },
     { name = "fasteners", marker = "sys_platform != 'emscripten' or (extra == 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-tensorflow-gpu') or (extra == 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-torch-cpu') or (extra == 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-torch-gpu') or (extra == 'extra-6-mussel-tensorflow-gpu' and extra == 'extra-6-mussel-torch-cpu') or (extra == 'extra-6-mussel-tensorflow-gpu' and extra == 'extra-6-mussel-torch-gpu') or (extra == 'extra-6-mussel-torch-cpu' and extra == 'extra-6-mussel-torch-gpu')" },
     { name = "numcodecs" },
-    { name = "numpy" },
+    { name = "numpy", version = "2.1.3", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'extra-6-mussel-tensorflow-cpu' or extra == 'extra-6-mussel-tensorflow-gpu' or (extra == 'extra-6-mussel-torch-cpu' and extra == 'extra-6-mussel-torch-gpu')" },
+    { name = "numpy", version = "2.2.6", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'extra-6-mussel-torch-cpu' or extra == 'extra-6-mussel-torch-gpu' or (extra == 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-tensorflow-gpu') or (extra != 'extra-6-mussel-tensorflow-cpu' and extra != 'extra-6-mussel-tensorflow-gpu')" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/da/1d/01cf9e3ab2d85190278efc3fca9f68563de35ae30ee59e7640e3af98abe3/zarr-2.18.7.tar.gz", hash = "sha256:b2b8f66f14dac4af66b180d2338819981b981f70e196c9a66e6bfaa9e59572f5", size = 3604558, upload-time = "2025-04-09T07:59:28.482Z" }
 wheels = [
