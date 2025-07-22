@@ -1,7 +1,5 @@
 # Mussel
 
-<img src="docs/mussel.jpg" width="300px" />
-
 This is a fork of Faisal Mahmood's [CLAM repository](https://github.com/mahmoodlab/CLAM)
  (GPL v3 license), with a handful of modifications:
 - Added additional foundation models for generating embeddings
