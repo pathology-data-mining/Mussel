@@ -65,7 +65,7 @@ To use H-Optimus-0, for example,
 ```bash
 extract_features \
     slide_path=tests/testdata/948176.svs \
-    patch_h5_path=948176_coord.h5 \
+    patch_h5_path=tests/testdata/948176.patch.h5 \
     model_type=OPTIMUS \
     output_h5_path=948176_feat.h5 \
     output_pt_path=948176_embed.pt
