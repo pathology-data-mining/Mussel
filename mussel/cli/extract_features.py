@@ -13,6 +13,7 @@ from loguru import logger
 from omegaconf import MISSING
 from torch.utils.data import DataLoader
 from torchvision.datasets import ImageFolder
+import numpy as np
 
 import hydra
 from mussel.datasets.h5 import Whole_Slide_Bag_FP
@@ -139,7 +140,12 @@ def compute_w_loader(
         features = features.numpy()
         if patch_path is not None and os.path.isdir(patch_path):
             labels = labels.numpy()
-            asset_dict = {"features": features, "class": labels}
+            asset_dict = {
+                "features": features,
+                "class": labels,
+                "image_paths": np.array([x[0] for x in dataset.imgs]).astype('T'),
+                "class_to_idx": np.array([np.asarray([k, v], dtype='T') for k, v in dataset.class_to_idx.items()]),
+            }
             save_hdf5(
                 output_h5_path,
                 asset_dict,
