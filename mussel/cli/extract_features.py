@@ -53,7 +53,7 @@ class ExtractFeaturesConfig:
     use_gpu: bool = True
     gpu_device_id: Optional[int] = None
     gpu_device_ids: Optional[List[int]] = None
-    num_workers: int = 32
+    num_workers: int = 16
 
 
 @timed
