@@ -13,6 +13,7 @@ from loguru import logger
 from omegaconf import MISSING
 from torch.utils.data import DataLoader
 from torchvision.datasets import ImageFolder
+import numpy as np
 
 import hydra
 from mussel.datasets.h5 import Whole_Slide_Bag_FP
@@ -52,7 +53,7 @@ class ExtractFeaturesConfig:
     use_gpu: bool = True
     gpu_device_id: Optional[int] = None
     gpu_device_ids: Optional[List[int]] = None
-    num_workers: int = 32
+    num_workers: int = 16
 
 
 @timed
@@ -61,6 +62,7 @@ def compute_w_loader(
     output_h5_path,
     wsi_path,
     model_fun,
+    output_pt_path=None,
     patch_path=None,
     batch_size=64,
     verbose=0,
@@ -89,15 +91,12 @@ def compute_w_loader(
             transform=preprocess,
         )
 
-        # override batch_size for filepath based feature extraction
-        batch_size = 1
 
         loader = DataLoader(
             dataset=dataset,
             batch_size=batch_size,
             num_workers=num_workers,
             pin_memory=pin_memory,
-            collate_fn=None,
             worker_init_fn=None,
             shuffle=False,
         )
@@ -128,7 +127,7 @@ def compute_w_loader(
 
     mode = "w"
 
-    for count, (batch, coords) in enumerate(loader):
+    for count, (batch, labels) in enumerate(loader):
         if count % print_every == 0:
             logger.info(
                 "batch {}/{}, {} tiles processed".format(
@@ -140,18 +139,35 @@ def compute_w_loader(
 
         features = features.numpy()
         if patch_path is not None and os.path.isdir(patch_path):
-            asset_dict = {"features": features}
-            fname = os.path.splitext(os.path.basename(dataset.imgs[count][0]))[0]
+            labels = labels.numpy()
+            asset_dict = {
+                "features": features,
+                "class": labels,
+                "image_paths": np.array([x[0] for x in dataset.imgs]).astype('T'),
+                "class_to_idx": np.array([np.asarray([k, v], dtype='T') for k, v in dataset.class_to_idx.items()]),
+            }
             save_hdf5(
-                os.path.join(output_h5_path, f"{fname}.h5"),
+                output_h5_path,
                 asset_dict,
                 attr_h5_path=None,
                 mode=mode,
             )
         else:
-            asset_dict = {"features": features, "coords": coords}
+            asset_dict = {"features": features, "coords": labels}
             save_hdf5(output_h5_path, asset_dict, attr_h5_path=file_path, mode=mode)
         mode = "a"
+
+    with h5py.File(output_h5_path, "r") as file:
+        features = file["features"][:]
+        logger.info(f"features size: {features.shape} ")
+        # logger.info(f'coordinates size: {file["coords"].shape} ')
+
+        features = torch.from_numpy(features)
+        if patch_path is not None and os.path.isdir(patch_path):
+            classes = file["class"][:]
+            torch.save({"features": features, "class": classes}, output_pt_path)
+        else:
+            torch.save(features, output_pt_path)
 
     return output_h5_path
 
@@ -203,9 +219,10 @@ def main(cfg: ExtractFeaturesConfig):
     preprocessing = model.get_preprocessing_fun()
 
     # extract features
-    output_file_path = compute_w_loader(
+    compute_w_loader(
         file_path=cfg.patch_h5_path,
         output_h5_path=cfg.output_h5_path,
+        output_pt_path=cfg.output_pt_path,
         wsi_path=cfg.slide_path,
         model_fun=model.get_model_fun(),
         preprocess=preprocessing,
@@ -218,22 +235,6 @@ def main(cfg: ExtractFeaturesConfig):
         num_workers=cfg.num_workers,
     )
 
-    if output_file_path is None:
-        logger.info("No features found")
-        return
-
-    # TODO: potentially output .pt files for folder based feature extraction if needed
-    if cfg.patch_path is not None and os.path.isdir(cfg.patch_path):
-        return
-    else:
-        file = h5py.File(output_file_path, "r")
-        features = file["features"][:]
-        logger.info(f"features size: {features.shape} ")
-        # logger.info(f'coordinates size: {file["coords"].shape} ')
-        file.close()
-
-        features = torch.from_numpy(features)
-        torch.save(features, cfg.output_pt_path)
 
 
 if __name__ == "__main__":
