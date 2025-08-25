@@ -57,19 +57,79 @@ class ExtractFeaturesConfig:
 
 
 @timed
-def compute_w_loader(
+def extract_features_from_patch_dir(
+    patch_path,
+    output_h5_path,
+    model_fun,
+    batch_size=64,
+    verbose=0,
+    print_every=20,
+    preprocess=None,
+    num_workers=16,
+    pin_memory=True,
+):
+
+    dataset = ImageFolder(
+        root=patch_path,
+        transform=preprocess,
+    )
+
+    loader = DataLoader(
+        dataset=dataset,
+        batch_size=batch_size,
+        num_workers=num_workers,
+        pin_memory=pin_memory,
+        worker_init_fn=None,
+        shuffle=False,
+    )
+
+    if verbose > 0:
+        logger.info(
+            "processing {}: total of {} batches".format(patch_path, len(loader))
+        )
+
+    if len(loader) == 0:
+        return None
+
+    mode = "w"
+
+    for count, (batch, labels) in enumerate(loader):
+        labels = labels.numpy()
+        if count % print_every == 0:
+            logger.info(
+                "batch {}/{}, {} tiles processed".format(
+                    count, len(loader), count * batch_size
+                )
+            )
+
+        features = model_fun(batch)
+
+        features = features.numpy()
+        asset_dict = {
+            "features": features,
+            "class": labels,
+            "image_paths": np.array([x[0] for x in dataset.imgs]).astype("T"),
+            "class_to_idx": np.array(
+                [np.asarray([k, v], dtype="T") for k, v in dataset.class_to_idx.items()]
+            ),
+        }
+        save_hdf5(output_h5_path, asset_dict, attr_h5_path=None, mode=mode)
+        mode = "a"
+
+
+@timed
+def extract_features(
     file_path,
     output_h5_path,
     wsi_path,
     model_fun,
-    output_pt_path=None,
     patch_path=None,
     batch_size=64,
     verbose=0,
     print_every=20,
     use_imagenet_rgb_dist=True,
     preprocess=None,
-    num_workers=32,
+    num_workers=16,
     pin_memory=True,
 ):
     """
@@ -82,41 +142,22 @@ def compute_w_loader(
             pretrained: use weights pretrained on imagenet
     """
 
-    # if patch_path is a directory, assume it is a directory of pre-tiled images
-    # that can be processed independently and collated as-needed.
-    if patch_path is not None and os.path.isdir(patch_path):
+    dataset = Whole_Slide_Bag_FP(
+        file_path=file_path,
+        wsi_path=wsi_path,
+        use_imagenet_rgb_dist=use_imagenet_rgb_dist,
+        preprocess=preprocess,
+    )
 
-        dataset = ImageFolder(
-            root=patch_path,
-            transform=preprocess,
-        )
-
-        loader = DataLoader(
-            dataset=dataset,
-            batch_size=batch_size,
-            num_workers=num_workers,
-            pin_memory=pin_memory,
-            worker_init_fn=None,
-            shuffle=False,
-        )
-    else:
-
-        dataset = Whole_Slide_Bag_FP(
-            file_path=file_path,
-            wsi_path=wsi_path,
-            use_imagenet_rgb_dist=use_imagenet_rgb_dist,
-            preprocess=preprocess,
-        )
-
-        loader = DataLoader(
-            dataset=dataset,
-            batch_size=batch_size,
-            num_workers=num_workers,
-            pin_memory=pin_memory,
-            collate_fn=collate_features,
-            worker_init_fn=dataset.worker_init,
-            shuffle=False,
-        )
+    loader = DataLoader(
+        dataset=dataset,
+        batch_size=batch_size,
+        num_workers=num_workers,
+        pin_memory=pin_memory,
+        collate_fn=collate_features,
+        worker_init_fn=dataset.worker_init,
+        shuffle=False,
+    )
 
     if verbose > 0:
         logger.info("processing {}: total of {} batches".format(file_path, len(loader)))
@@ -126,7 +167,7 @@ def compute_w_loader(
 
     mode = "w"
 
-    for count, (batch, labels) in enumerate(loader):
+    for count, (batch, coords) in enumerate(loader):
         if count % print_every == 0:
             logger.info(
                 "batch {}/{}, {} tiles processed".format(
@@ -137,41 +178,9 @@ def compute_w_loader(
         features = model_fun(batch)
 
         features = features.numpy()
-        if patch_path is not None and os.path.isdir(patch_path):
-            labels = labels.numpy()
-            asset_dict = {
-                "features": features,
-                "class": labels,
-                "image_paths": np.array([x[0] for x in dataset.imgs]).astype("T"),
-                "class_to_idx": np.array(
-                    [
-                        np.asarray([k, v], dtype="T")
-                        for k, v in dataset.class_to_idx.items()
-                    ]
-                ),
-            }
-            save_hdf5(
-                output_h5_path,
-                asset_dict,
-                attr_h5_path=None,
-                mode=mode,
-            )
-        else:
-            asset_dict = {"features": features, "coords": labels}
-            save_hdf5(output_h5_path, asset_dict, attr_h5_path=file_path, mode=mode)
+        asset_dict = {"features": features, "coords": coords}
+        save_hdf5(output_h5_path, asset_dict, attr_h5_path=file_path, mode=mode)
         mode = "a"
-
-    with h5py.File(output_h5_path, "r") as file:
-        features = file["features"][:]
-        logger.info(f"features size: {features.shape} ")
-        # logger.info(f'coordinates size: {file["coords"].shape} ')
-
-        features = torch.from_numpy(features)
-        if patch_path is not None and os.path.isdir(patch_path):
-            classes = file["class"][:]
-            torch.save({"features": features, "class": classes}, output_pt_path)
-        else:
-            torch.save(features, output_pt_path)
 
     return output_h5_path
 
@@ -222,22 +231,40 @@ def main(cfg: ExtractFeaturesConfig):
     )
     preprocessing = model.get_preprocessing_fun()
 
-    # extract features
-    compute_w_loader(
-        file_path=cfg.patch_h5_path,
-        output_h5_path=cfg.output_h5_path,
-        output_pt_path=cfg.output_pt_path,
-        wsi_path=cfg.slide_path,
-        model_fun=model.get_model_fun(),
-        preprocess=preprocessing,
-        pin_memory=cfg.use_gpu,
-        patch_path=cfg.patch_path,
-        batch_size=cfg.batch_size,
-        verbose=1,
-        print_every=20,
-        use_imagenet_rgb_dist=preprocessing is None,
-        num_workers=cfg.num_workers,
-    )
+    if cfg.patch_path:
+        extract_features_from_patch_dir(
+            patch_path=cfg.patch_path,
+            output_h5_path=cfg.output_h5_path,
+            model_fun=model.get_model_fun(),
+            preprocess=preprocessing,
+            pin_memory=cfg.use_gpu,
+            batch_size=cfg.batch_size,
+            verbose=1,
+            print_every=20,
+            num_workers=cfg.num_workers,
+        )
+    else:
+        extract_features(
+            file_path=cfg.patch_h5_path,
+            output_h5_path=cfg.output_h5_path,
+            wsi_path=cfg.slide_path,
+            model_fun=model.get_model_fun(),
+            preprocess=preprocessing,
+            pin_memory=cfg.use_gpu,
+            batch_size=cfg.batch_size,
+            verbose=1,
+            print_every=20,
+            use_imagenet_rgb_dist=preprocessing is None,
+            num_workers=cfg.num_workers,
+        )
+
+    with h5py.File(cfg.output_h5_path, "r") as file:
+        features = file["features"][:]
+        logger.info(f"features size: {features.shape} ")
+        # logger.info(f'coordinates size: {file["coords"].shape} ')
+
+        features = torch.from_numpy(features)
+        torch.save(features, cfg.output_pt_path)
 
 
 if __name__ == "__main__":
