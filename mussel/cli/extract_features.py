@@ -5,6 +5,8 @@ from dataclasses import dataclass
 from typing import List, Optional
 
 import h5py
+import hydra
+import numpy as np
 import tiffslide as openslide
 import torch
 from hydra.conf import HelpConf, HydraConf
@@ -13,9 +15,7 @@ from loguru import logger
 from omegaconf import MISSING
 from torch.utils.data import DataLoader
 from torchvision.datasets import ImageFolder
-import numpy as np
 
-import hydra
 from mussel.datasets.h5 import Whole_Slide_Bag_FP
 from mussel.models.model_factory import ModelType, get_model_factory
 from mussel.utils.file import save_hdf5
@@ -91,7 +91,6 @@ def compute_w_loader(
             transform=preprocess,
         )
 
-
         loader = DataLoader(
             dataset=dataset,
             batch_size=batch_size,
@@ -143,8 +142,13 @@ def compute_w_loader(
             asset_dict = {
                 "features": features,
                 "class": labels,
-                "image_paths": np.array([x[0] for x in dataset.imgs]).astype('T'),
-                "class_to_idx": np.array([np.asarray([k, v], dtype='T') for k, v in dataset.class_to_idx.items()]),
+                "image_paths": np.array([x[0] for x in dataset.imgs]).astype("T"),
+                "class_to_idx": np.array(
+                    [
+                        np.asarray([k, v], dtype="T")
+                        for k, v in dataset.class_to_idx.items()
+                    ]
+                ),
             }
             save_hdf5(
                 output_h5_path,
@@ -234,7 +238,6 @@ def main(cfg: ExtractFeaturesConfig):
         use_imagenet_rgb_dist=preprocessing is None,
         num_workers=cfg.num_workers,
     )
-
 
 
 if __name__ == "__main__":

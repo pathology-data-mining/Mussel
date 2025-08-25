@@ -21,6 +21,8 @@ dependencies = [
   "timm_ctranspath@git+https://github.com/msk-mind/timm-ctranspath",
   "shapely>=2.0.7",
   "conch",
+  "einops>=0.8.1",
+  "einops-exts>=0.0.4",
 ]
 
 [dependency-groups]
