@@ -1,23 +1,31 @@
+import json
 from abc import ABC, abstractmethod
 from enum import Enum
-from typing import Callable, List
+from functools import partial
 from pathlib import Path
-import json
+from typing import Callable, List
 
 import open_clip
 import timm
 import torch
 import torch.nn as nn
+from conch.open_clip_custom import (OPENAI_DATASET_MEAN, OPENAI_DATASET_STD,
+                                    CoCa, load_checkpoint)
+from conch.open_clip_custom.factory import read_state_dict
+from conch.open_clip_custom.transform import image_transform
+from huggingface_hub import hf_hub_download
 from timm.data import resolve_data_config
 from timm.data.transforms_factory import create_transform
 from timm.layers import SwiGLUPacked
 from torchvision import transforms
-from conch.open_clip_custom import load_checkpoint, CoCa, OPENAI_DATASET_MEAN, OPENAI_DATASET_STD
-from conch.open_clip_custom.factory import read_state_dict
-from conch.open_clip_custom.transform import image_transform
-from huggingface_hub import hf_hub_download
+from transformers import AutoModel
 
-CFG_DIR = Path(__file__).parent / 'configs'
+CFG_DIR = Path(__file__).parent / "configs"
+
+IMAGENET_MEAN = [0.485, 0.456, 0.406]
+
+IMAGENET_STD = [0.229, 0.224, 0.225]
+
 
 class ModelType(Enum):
     def __init__(self, id, code, hf_path):
@@ -135,7 +143,8 @@ class TorchModel(Model):
 
         return model_fun
 
-class ConchModel(TorchModel):
+
+class ConchTorchModel(TorchModel):
 
     def __init__(
         self,
@@ -145,29 +154,32 @@ class ConchModel(TorchModel):
         gpu_device_id: int | List[int] | None = None,
     ):
         model_cfg_path = CFG_DIR / "conch_ViT-B-16.json"
-        with open(model_cfg_path, 'r') as f:
+        with open(model_cfg_path, "r") as f:
             model_cfg = json.load(f)
 
-        _ = model_cfg.pop('custom_text', None)
+        _ = model_cfg.pop("custom_text", None)
         model_obj = CoCa(**model_cfg)
 
-        if model_path.startswith("hf-hub:"): 
-            _ = hf_hub_download(model_path[len("hf-hub:"):], 
-                                filename="meta.yaml")
-            model_path = hf_hub_download(model_path[len("hf-hub:"):], 
-                                              filename="pytorch_model.bin")
+        if model_path.startswith("hf-hub:"):
+            _ = hf_hub_download(model_path[len("hf-hub:") :], filename="meta.yaml")
+            model_path = hf_hub_download(
+                model_path[len("hf-hub:") :], filename="pytorch_model.bin"
+            )
 
         load_checkpoint(model_obj, model_path)
 
         model_obj.visual.image_mean = OPENAI_DATASET_MEAN
         model_obj.visual.image_std = OPENAI_DATASET_STD
 
+        model_obj.forward = partial(
+            model_obj.encode_image, proj_contrast=False, normalize=False
+        )
+
         super().__init__(model_obj, use_gpu, gpu_device_id)
 
-
     def get_preprocessing_fun(self) -> Callable:
-        image_mean = getattr(self.obj.visual, 'image_mean', None)
-        image_std = getattr(self.obj.visual, 'image_std', None)
+        image_mean = getattr(self.obj.visual, "image_mean", None)
+        image_std = getattr(self.obj.visual, "image_std", None)
 
         return image_transform(
             self.obj.visual.image_size,
@@ -175,19 +187,8 @@ class ConchModel(TorchModel):
             std=image_std,
         )
 
-    def get_model_fun(self) -> Callable:
-        def model_fun(x):
-            with (
-                torch.no_grad(),
-                torch.inference_mode(),
-                torch.autocast(device_type=self.device.type, dtype=torch.float16),
-            ):
-                x = x.to(self.device, non_blocking=True)
-                return self.obj.encode_image(x).cpu()
 
-        return model_fun
-
-class Conch15Model(ConchModel):
+class Conch15TorchModel(TorchModel):
     def __init__(
         self,
         model_path,
@@ -195,22 +196,21 @@ class Conch15Model(ConchModel):
         use_gpu: bool = True,
         gpu_device_id: int | List[int] | None = None,
     ):
-        model_cfg_path = CFG_DIR / "conch_ViT-B-16.json"
-        with open(model_cfg_path, 'r') as f:
-            model_cfg = json.load(f)
+        titan = AutoModel.from_pretrained("MahmoodLab/TITAN", trust_remote_code=True)
+        model_obj, _ = titan.return_conch()
+        super().__init__(model_obj, use_gpu, gpu_device_id)
 
-        _ = model_cfg.pop('custom_text', None)
-        model_obj = CoCa(**model_cfg)
-        if model_path.startswith("hf-hub:"): 
-            _ = hf_hub_download(model_path[len("hf-hub:"):], 
-                                filename="meta.yaml")
-            model_path = hf_hub_download(model_path[len("hf-hub:"):], 
-                                         filename="pytorch_model_vision.bin")
-
-        state_dict = read_state_dict(model_path)
-        model_obj.load_state_dict(state_dict, strict=False)
-
-        TorchModel.__init__(self, model_obj, use_gpu, gpu_device_id)
+    def get_preprocessing_fun(self) -> Callable:
+        preprocessing = transforms.Compose(
+            [
+                transforms.Resize(
+                    448,
+                ),
+                transforms.ToTensor(),
+                transforms.Normalize(mean=IMAGENET_MEAN, std=IMAGENET_STD),
+            ]
+        )
+        return preprocessing
 
 
 class GigapathTorchModel(TorchModel):
@@ -232,9 +232,7 @@ class GigapathTorchModel(TorchModel):
                     224, interpolation=transforms.InterpolationMode.BICUBIC
                 ),
                 transforms.ToTensor(),
-                transforms.Normalize(
-                    mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225)
-                ),
+                transforms.Normalize(mean=IMAGENET_MEAN, std=IMAGENET_STD),
             ]
         )
         return preprocessing
@@ -309,19 +307,8 @@ class ClipTorchModel(TorchModel):
         model_obj, _, self.preprocessing = open_clip.create_model_and_transforms(
             model_path,
         )
+        model_obj.forward = partial(model_obj.encode_image)
         super().__init__(model_obj, use_gpu, gpu_device_id)
-
-    def get_model_fun(self) -> Callable:
-        def model_fun(x):
-            with (
-                torch.no_grad(),
-                torch.inference_mode(),
-                torch.autocast(device_type=self.device.type, dtype=torch.float16),
-            ):
-                x = x.to(self.device, non_blocking=True)
-                return self.obj.encode_image(x).cpu()
-
-        return model_fun
 
     def get_preprocessing_fun(self) -> Callable:
         return self.preprocessing
@@ -414,6 +401,7 @@ class VirchowModelFactory(ModelFactory):
     ):
         return VirchowTorchModel(model_path, model_obj, use_gpu, gpu_device_id)
 
+
 @register_model_factory(ModelType.VIRCHOW2)
 class Virchow2ModelFactory(ModelFactory):
     def get_model(
@@ -421,12 +409,13 @@ class Virchow2ModelFactory(ModelFactory):
     ):
         return VirchowTorchModel(model_path, model_obj, use_gpu, gpu_device_id)
 
+
 @register_model_factory(ModelType.CONCH)
 class ConchModelFactory(ModelFactory):
     def get_model(
         self, model_path=None, model_obj=None, use_gpu=True, gpu_device_id=None
     ):
-        return ConchModel(model_path, model_obj, use_gpu, gpu_device_id)
+        return ConchTorchModel(model_path, model_obj, use_gpu, gpu_device_id)
 
 
 @register_model_factory(ModelType.CONCH1_5)
@@ -434,7 +423,8 @@ class Conch15ModelFactory(ModelFactory):
     def get_model(
         self, model_path=None, model_obj=None, use_gpu=True, gpu_device_id=None
     ):
-        return Conch15Model(model_path, model_obj, use_gpu, gpu_device_id)
+        return Conch15TorchModel(model_path, model_obj, use_gpu, gpu_device_id)
+
 
 @register_model_factory(ModelType.OPTIMUS)
 class OptimusModelFactory(ModelFactory):
