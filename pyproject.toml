@@ -20,7 +20,6 @@ dependencies = [
   "transpath@git+https://github.com/msk-mind/TransPath/",
   "timm_ctranspath@git+https://github.com/msk-mind/timm-ctranspath",
   "shapely>=2.0.7",
-  "conch",
   "einops>=0.8.1",
   "einops-exts>=0.0.4",
 ]
@@ -84,7 +83,6 @@ torchvision = [
   { index = "torch-cpu", extra = "torch-cpu" },
   { index = "torch-gpu", extra = "torch-gpu" },
 ]
-conch = { git = "https://github.com/mahmoodlab/CONCH.git" }
 
 [[tool.uv.index]]
 name = "torch-cpu"
