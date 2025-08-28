@@ -1,7 +1,7 @@
 import os
-import pickle
 import ssl
 from dataclasses import dataclass
+from pathlib import Path
 from typing import List, Optional
 
 import h5py
@@ -48,6 +48,7 @@ class ExtractFeaturesConfig:
     output_pt_path: str = MISSING
     model_type: ModelType = ModelType.CLIP
     model_path: Optional[str] = None
+    model_save_path: Optional[str] = None
     patch_path: Optional[str] = None
     batch_size: int = 64
     use_gpu: bool = True
@@ -215,20 +216,14 @@ def main(cfg: ExtractFeaturesConfig):
 
     logger.info("loading model checkpoint")
 
-    if cfg.model_path is None:
-        cfg.model_path = cfg.model_type.hf_path
-
-    model_obj = None
-    if cfg.model_path.endswith(".pkl"):
-        with open(cfg.model_path, "rb") as f:
-            model_obj = pickle.load(f)
-
     model_factory = get_model_factory(cfg.model_type)
     if model_factory is None:
         raise ValueError("model not recognized")
-    model = model_factory.get_model(
-        cfg.model_path, model_obj, cfg.use_gpu, gpu_device_id
-    )
+    model = model_factory.get_model(cfg.model_path, cfg.use_gpu, gpu_device_id)
+    if cfg.model_save_path is not None:
+        Path(cfg.model_save_path).parent.mkdir(parents=True, exist_ok=True)
+        logger.info(f"saving model to {cfg.model_save_path}")
+        model.save(cfg.model_save_path)
     preprocessing = model.get_preprocessing_fun()
 
     if cfg.patch_path:

@@ -1,13 +1,13 @@
 from dataclasses import dataclass
 from typing import List, Optional
 
+import hydra
 import open_clip
 import torch
 from hydra.conf import HelpConf, HydraConf
 from hydra.core.config_store import ConfigStore
 from omegaconf import MISSING
 
-import hydra
 from mussel.models.model_factory import ModelType
 
 
@@ -48,7 +48,7 @@ cs.store(name="class_embedding_config", node=ClassEmbeddingConfig)
 @hydra.main(config_path=".", config_name="class_embedding_config", version_base=None)
 def main(cfg: ClassEmbeddingConfig):
     if cfg.model_path is None:
-        cfg.model_path = cfg.model_type.hf_path
+        cfg.model_path = cfg.model_type.path
     model, _, _ = open_clip.create_model_and_transforms(cfg.model_path)
     tokenizer = open_clip.get_tokenizer(cfg.model_path)
 
