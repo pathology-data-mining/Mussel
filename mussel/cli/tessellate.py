@@ -203,12 +203,15 @@ def main(
         )
         return
 
-    polygon, grid, coords = segment_tissue(
+    if values := segment_tissue(
         wsi,
         slide_id=slide_id,
         output_h5_path=cfg.output_h5_path,
         **OmegaConf.to_container(cfg.seg_config),
-    )
+        ):
+        polygon, grid, coords = values
+    else:
+        return
 
     if cfg.output_mask_path:
         mask = draw_slide_mask(
