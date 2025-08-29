@@ -22,7 +22,22 @@ class SaveModelConfig:
     output_path: str = MISSING
 
 
+desc_doc = """== ${hydra.help.app_name} ==
+
+Save a machine learning model to a specified path.
+"""
+
+parameter_doc = f"""== Available Parameters ==
+{SaveModelConfig.__doc__}
+"""
+
 cs = ConfigStore.instance()
+cs.store(
+    group="hydra",
+    name="config",
+    node=HydraConf(help=HelpConf(header=desc_doc, footer=parameter_doc)),
+    provider="hydra",
+)
 cs.store(name="save_model_config", node=SaveModelConfig)
 
 

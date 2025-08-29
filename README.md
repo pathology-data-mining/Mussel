@@ -137,6 +137,7 @@ The tools currently available from Mussel are,
 * `filter_features` - filter features using a classifier model
 * `merge_annotation_features` - merge tile features with annotations from a BMP file.
 * `linear_probe_benchmark` - benchmark a linear probe classifier on features extracted from a slide
+* `save_model` - download and save a foundation model locally
 
 These are described, with examples, in the accompanying document, [README-commands.md](README-commands.md)
 
