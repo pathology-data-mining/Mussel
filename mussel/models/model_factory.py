@@ -1,15 +1,26 @@
+import json
 from abc import ABC, abstractmethod
 from enum import Enum
+from functools import partial
+from pathlib import Path
 from typing import Callable, List
 
 import open_clip
 import timm
 import torch
 import torch.nn as nn
+from huggingface_hub import hf_hub_download
 from timm.data import resolve_data_config
 from timm.data.transforms_factory import create_transform
 from timm.layers import SwiGLUPacked
 from torchvision import transforms
+from transformers import AutoModel
+
+CFG_DIR = Path(__file__).parent / "configs"
+
+IMAGENET_MEAN = [0.485, 0.456, 0.406]
+
+IMAGENET_STD = [0.229, 0.224, 0.225]
 
 
 class ModelType(Enum):
@@ -25,6 +36,8 @@ class ModelType(Enum):
     OPTIMUS = 5, "optimus", "hf-hub:bioptimus/H-optimus-0"
     CLIP = 6, "clip", "hf-hub:wisdomik/QuiltNet-B-16-PMB"
     GOOGLEPATH = 7, "googlepath", "google/path-foundation"
+    CONCH1_5 = 8, "conch1_5", "hf-hub:MahmoodLab/conchv1_5"
+    VIRCHOW2 = 9, "virchow2", "hf-hub:paige-ai/Virchow2"
 
 
 class Model:
@@ -126,6 +139,32 @@ class TorchModel(Model):
         return model_fun
 
 
+
+class Conch15TorchModel(TorchModel):
+    def __init__(
+        self,
+        model_path,
+        model_obj=None,
+        use_gpu: bool = True,
+        gpu_device_id: int | List[int] | None = None,
+    ):
+        titan = AutoModel.from_pretrained("MahmoodLab/TITAN", trust_remote_code=True)
+        model_obj, _ = titan.return_conch()
+        super().__init__(model_obj, use_gpu, gpu_device_id)
+
+    def get_preprocessing_fun(self) -> Callable:
+        preprocessing = transforms.Compose(
+            [
+                transforms.Resize(
+                    448,
+                ),
+                transforms.ToTensor(),
+                transforms.Normalize(mean=IMAGENET_MEAN, std=IMAGENET_STD),
+            ]
+        )
+        return preprocessing
+
+
 class GigapathTorchModel(TorchModel):
     def __init__(
         self,
@@ -145,9 +184,7 @@ class GigapathTorchModel(TorchModel):
                     224, interpolation=transforms.InterpolationMode.BICUBIC
                 ),
                 transforms.ToTensor(),
-                transforms.Normalize(
-                    mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225)
-                ),
+                transforms.Normalize(mean=IMAGENET_MEAN, std=IMAGENET_STD),
             ]
         )
         return preprocessing
@@ -222,19 +259,8 @@ class ClipTorchModel(TorchModel):
         model_obj, _, self.preprocessing = open_clip.create_model_and_transforms(
             model_path,
         )
+        model_obj.forward = partial(model_obj.encode_image)
         super().__init__(model_obj, use_gpu, gpu_device_id)
-
-    def get_model_fun(self) -> Callable:
-        def model_fun(x):
-            with (
-                torch.no_grad(),
-                torch.inference_mode(),
-                torch.autocast(device_type=self.device.type, dtype=torch.float16),
-            ):
-                x = x.to(self.device, non_blocking=True)
-                return self.obj.encode_image(x).cpu()
-
-        return model_fun
 
     def get_preprocessing_fun(self) -> Callable:
         return self.preprocessing
@@ -326,6 +352,22 @@ class VirchowModelFactory(ModelFactory):
         self, model_path=None, model_obj=None, use_gpu=True, gpu_device_id=None
     ):
         return VirchowTorchModel(model_path, model_obj, use_gpu, gpu_device_id)
+
+
+@register_model_factory(ModelType.VIRCHOW2)
+class Virchow2ModelFactory(ModelFactory):
+    def get_model(
+        self, model_path=None, model_obj=None, use_gpu=True, gpu_device_id=None
+    ):
+        return VirchowTorchModel(model_path, model_obj, use_gpu, gpu_device_id)
+
+
+@register_model_factory(ModelType.CONCH1_5)
+class Conch15ModelFactory(ModelFactory):
+    def get_model(
+        self, model_path=None, model_obj=None, use_gpu=True, gpu_device_id=None
+    ):
+        return Conch15TorchModel(model_path, model_obj, use_gpu, gpu_device_id)
 
 
 @register_model_factory(ModelType.OPTIMUS)
