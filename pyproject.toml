@@ -4,7 +4,7 @@ version = "1.0.1"
 description = "weakly supervised computational pathology on whole slide images"
 license = {text = "GPL-3.0 license"}
 readme = "README.md"
-requires-python = ">=3.12, <3.13"
+requires-python = ">=3.11, <3.12"
 dependencies = [
   "pandas",
   "numpy<2.3",
@@ -34,9 +34,10 @@ dev = [
 
 [project.optional-dependencies]
 "tensorflow-gpu" = [
-  "tensorflow[and-cuda]",
+  "tensorflow[and-cuda]<=2.19.0",
   "keras",
   "tf-keras",
+  "huggingface_hub<0.20",
   "torch < 2.6",
   "torchvision",
   "open-clip-torch",

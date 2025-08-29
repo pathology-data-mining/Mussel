@@ -68,6 +68,7 @@ class GooglePathModel(Model):
         gpu_device_id: int | List[int] | None = None,
     ):
         import tensorflow as tf
+        from huggingface_hub import from_pretrained_keras
 
         if model_path is None:
             model_path = ModelType.GOOGLEPATH.path
@@ -83,12 +84,7 @@ class GooglePathModel(Model):
                 devices = tf.config.list_physical_devices("GPU")[gpu_device_id]
             tf.config.set_visible_devices(devices)
 
-        if model_path.startswith("hf-hub:"):
-            from huggingface_hub import from_pretrained_keras
-
-            model_obj = from_pretrained_keras(model_path)
-        elif Path(model_path).is_file():
-            model_obj = tf.keras.models.load_model(model_path)
+        model_obj = from_pretrained_keras(model_path)
 
         super().__init__(model_obj)
 
@@ -106,9 +102,7 @@ class GooglePathModel(Model):
         return model_fun
 
     def save(self, save_path: str):
-        import tensorflow as tf
-
-        tf.keras.models.save_model(self.obj, save_path)
+        raise NotImplementedError("GooglePath model saving not implemented yet")
 
 
 class TorchModel(Model):
@@ -172,10 +166,6 @@ class TorchModel(Model):
 
         return model_fun
 
-    def save(self, save_path: str):
-        with open(save_path, "wb") as f:
-            pickle.dump(self.obj, f)
-
 
 class Conch15TorchModel(TorchModel):
     def __init__(
@@ -215,7 +205,7 @@ class GigapathTorchModel(TorchModel):
         if model_path is None:
             model_path = ModelType.GIGAPATH.path
         model_obj = None
-        if model_obj.startswith("hf-hub:"):
+        if model_path.startswith("hf-hub:"):
             model_obj = timm.create_model(model_path, pretrained=True)
         super().__init__(model_path, model_obj, use_gpu, gpu_device_id)
 
@@ -322,6 +312,8 @@ class TransPathTorchModel(TorchModel):
         use_gpu: bool = True,
         gpu_device_id: int | List[int] | None = None,
     ):
+        if model_path is None:
+            raise ValueError("model_path must be provided for TransPath model")
         from transpath.ctran import ctranspath
 
         model_obj = ctranspath()

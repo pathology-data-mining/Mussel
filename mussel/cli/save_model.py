@@ -28,7 +28,7 @@ cs.store(name="save_model_config", node=SaveModelConfig)
 
 def save_model(cfg: SaveModelConfig):
     model_factory = get_model_factory(cfg.model_type)
-    model = model_factory.get_model(cfg.model_path)
+    model = model_factory.get_model(cfg.model_path, use_gpu=False)
     model.save(cfg.output_path)
     print(f"Model saved to {cfg.output_path}")
 
