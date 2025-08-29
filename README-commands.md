@@ -56,11 +56,13 @@ The following models are currently supported,
 | TransPath     | CTRANSPATH  | https://github.com/Xiyue-Wang/TransPath |
 | Prov-GigaPath | GIGAPATH    | https://github.com/prov-gigapath/prov-gigapath |
 | Virchow       | VIRCHOW     | https://huggingface.co/paige-ai/Virchow |
+| Virchow2       | VIRCHOW2     | https://huggingface.co/paige-ai/Virchow2 |
 | H-Optimus-0   | OPTIMUS     | https://huggingface.co/bioptimus/H-optimus-0 |
 | OpenCLIP      | CLIP        | https://github.com/mlfoundations/open_clip |
 | GooglePath    | GOOGLEPATH  | https://huggingface.co/google/path-foundation | 
+| Conch v1.5 | CONCH1_5   | https://huggingface.co/MahmoodLab/conchv1_5 |
 
-OpenCLIP is used by default.  Use the `model_type` parameter to specify a different model.
+OpenCLIP is used by default, with the default model being [QuiltNet-B-16-PMB](https://huggingface.co/wisdomik/QuiltNet-B-16-PMB).  Use the `model_type` parameter to specify a different model.
 To use H-Optimus-0, for example,
 
 ```bash

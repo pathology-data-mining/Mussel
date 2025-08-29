@@ -63,7 +63,7 @@ uv sync --extra torch-cpu
 Mussel doesn't currently support Apple Metal GPUs, so this is what you'd use to install on a modern MacBook.
 
 #### TensorFlow
-TesnorFlow is required to run the Google Path Foundation model,
+TensorFlow is required to run the Google Path Foundation model,
 
 * [Google Path Foundation](https://huggingface.co/google/path-foundation)
 
