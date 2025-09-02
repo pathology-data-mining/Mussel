@@ -1,4 +1,5 @@
 import json
+import pickle
 from abc import ABC, abstractmethod
 from enum import Enum
 from functools import partial
@@ -24,10 +25,10 @@ IMAGENET_STD = [0.229, 0.224, 0.225]
 
 
 class ModelType(Enum):
-    def __init__(self, id, code, hf_path):
+    def __init__(self, id, code, path):
         self.id = id
         self.code = code
-        self.hf_path = hf_path
+        self.path = path
 
     RESNET50 = 1, "resnet50", ""
     CTRANSPATH = 2, "ctranspath", ""
@@ -36,7 +37,7 @@ class ModelType(Enum):
     OPTIMUS = 5, "optimus", "hf-hub:bioptimus/H-optimus-0"
     CLIP = 6, "clip", "hf-hub:wisdomik/QuiltNet-B-16-PMB"
     GOOGLEPATH = 7, "googlepath", "google/path-foundation"
-    CONCH1_5 = 8, "conch1_5", "hf-hub:MahmoodLab/conchv1_5"
+    CONCH1_5 = 8, "conch1_5", "MahmoodLab/TITAN"
     VIRCHOW2 = 9, "virchow2", "hf-hub:paige-ai/Virchow2"
 
 
@@ -55,16 +56,22 @@ class Model:
     def get_preprocessing_fun(self) -> Callable:
         return None
 
+    def save(self, save_path: str):
+        pass
+
 
 class GooglePathModel(Model):
     def __init__(
         self,
         model_path,
-        model_obj=None,
         use_gpu: bool = True,
         gpu_device_id: int | List[int] | None = None,
     ):
         import tensorflow as tf
+        from huggingface_hub import from_pretrained_keras
+
+        if model_path is None:
+            model_path = ModelType.GOOGLEPATH.path
 
         if use_gpu and len(tf.config.list_physical_devices("GPU")) == 0:
             raise OSError("cuda not available")
@@ -77,10 +84,7 @@ class GooglePathModel(Model):
                 devices = tf.config.list_physical_devices("GPU")[gpu_device_id]
             tf.config.set_visible_devices(devices)
 
-        if not model_obj:
-            from huggingface_hub import from_pretrained_keras
-
-            model_obj = from_pretrained_keras(model_path)
+        model_obj = from_pretrained_keras(model_path)
 
         super().__init__(model_obj)
 
@@ -97,14 +101,38 @@ class GooglePathModel(Model):
 
         return model_fun
 
+    def save(self, save_path: str):
+        raise NotImplementedError("GooglePath model saving not implemented yet")
+
 
 class TorchModel(Model):
     def __init__(
         self,
-        model_obj,
+        model_path,
+        model_obj=None,
         use_gpu: bool = True,
         gpu_device_id: int | List[int] | None = None,
     ):
+        if model_obj is None:
+            if model_path.startswith("hf-hub:"):
+                repo_id = model_path.replace("hf-hub:", "")
+                config_file = hf_hub_download(
+                    repo_id=repo_id,
+                    filename="config.json",
+                )
+                with open(config_file, "r") as f:
+                    config = json.load(f)
+                model_name = config.get("model_name", None)
+                if not model_name:
+                    raise ValueError(
+                        f"model_name not found in config.json from {repo_id}"
+                    )
+                model_obj = timm.create_model(model_name, pretrained=True)
+            elif Path(model_path).is_file():
+                with open(model_path, "rb") as f:
+                    model_obj = pickle.load(f)
+            else:
+                raise ValueError(f"invalid model_path: {model_path}")
         super().__init__(model_obj)
         if use_gpu and not torch.cuda.is_available():
             raise OSError("cuda not available")
@@ -139,18 +167,20 @@ class TorchModel(Model):
         return model_fun
 
 
-
 class Conch15TorchModel(TorchModel):
     def __init__(
         self,
         model_path,
-        model_obj=None,
         use_gpu: bool = True,
         gpu_device_id: int | List[int] | None = None,
     ):
-        titan = AutoModel.from_pretrained("MahmoodLab/TITAN", trust_remote_code=True)
-        model_obj, _ = titan.return_conch()
-        super().__init__(model_obj, use_gpu, gpu_device_id)
+        if model_path is None:
+            model_path = ModelType.CONCH1_5.path
+        model_obj = None
+        if not Path(model_path).is_file():
+            titan = AutoModel.from_pretrained(model_path, trust_remote_code=True)
+            model_obj, _ = titan.return_conch()
+        super().__init__(model_path, model_obj, use_gpu, gpu_device_id)
 
     def get_preprocessing_fun(self) -> Callable:
         preprocessing = transforms.Compose(
@@ -169,13 +199,15 @@ class GigapathTorchModel(TorchModel):
     def __init__(
         self,
         model_path,
-        model_obj=None,
         use_gpu: bool = True,
         gpu_device_id: int | List[int] | None = None,
     ):
-        if model_obj is None:
+        if model_path is None:
+            model_path = ModelType.GIGAPATH.path
+        model_obj = None
+        if model_path.startswith("hf-hub:"):
             model_obj = timm.create_model(model_path, pretrained=True)
-        super().__init__(model_obj, use_gpu, gpu_device_id)
+        super().__init__(model_path, model_obj, use_gpu, gpu_device_id)
 
     def get_preprocessing_fun(self) -> Callable:
         preprocessing = transforms.Compose(
@@ -195,18 +227,20 @@ class OptimusTorchModel(TorchModel):
     def __init__(
         self,
         model_path,
-        model_obj=None,
         use_gpu: bool = True,
         gpu_device_id: int | List[int] | None = None,
     ):
-        if not model_obj:
+        if model_path is None:
+            model_path = ModelType.OPTIMUS.path
+        model_obj = None
+        if model_path.startswith("hf-hub:"):
             model_obj = timm.create_model(
                 model_path,
                 pretrained=True,
                 init_values=1e-5,
                 dynamic_img_size=False,
             )
-        super().__init__(model_obj, use_gpu, gpu_device_id)
+        super().__init__(model_path, model_obj, use_gpu, gpu_device_id)
 
     def get_preprocessing_fun(self) -> Callable:
         preprocessing = transforms.Compose(
@@ -228,18 +262,20 @@ class VirchowTorchModel(TorchModel):
     def __init__(
         self,
         model_path,
-        model_obj=None,
         use_gpu: bool = True,
         gpu_device_id: int | List[int] | None = None,
     ):
-        if not model_obj:
+        if model_path is None:
+            model_path = ModelType.VIRCHOW.path
+        model_obj = None
+        if model_path.startswith("hf-hub:"):
             model_obj = timm.create_model(
                 model_path,
                 pretrained=True,
                 mlp_layer=SwiGLUPacked,
                 act_layer=torch.nn.SiLU,
             )
-        super().__init__(model_obj, use_gpu, gpu_device_id)
+        super().__init__(model_path, model_obj, use_gpu, gpu_device_id)
 
     def get_preprocessing_fun(self) -> Callable:
         preprocessing = create_transform(
@@ -252,15 +288,18 @@ class ClipTorchModel(TorchModel):
     def __init__(
         self,
         model_path,
-        model_obj=None,
         use_gpu: bool = True,
         gpu_device_id: int | List[int] | None = None,
     ):
-        model_obj, _, self.preprocessing = open_clip.create_model_and_transforms(
-            model_path,
-        )
-        model_obj.forward = partial(model_obj.encode_image)
-        super().__init__(model_obj, use_gpu, gpu_device_id)
+        if model_path is None:
+            model_path = ModelType.CLIP.path
+        model_obj = None
+        if model_path.startswith("hf-hub:"):
+            model_obj, _, self.preprocessing = open_clip.create_model_and_transforms(
+                model_path,
+            )
+            model_obj.forward = partial(model_obj.encode_image)
+        super().__init__(model_path, model_obj, use_gpu, gpu_device_id)
 
     def get_preprocessing_fun(self) -> Callable:
         return self.preprocessing
@@ -270,20 +309,20 @@ class TransPathTorchModel(TorchModel):
     def __init__(
         self,
         model_path,
-        model_obj=None,
         use_gpu: bool = True,
         gpu_device_id: int | List[int] | None = None,
     ):
-        if not model_obj:
-            from transpath.ctran import ctranspath
+        if model_path is None:
+            raise ValueError("model_path must be provided for TransPath model")
+        from transpath.ctran import ctranspath
 
-            model_obj = ctranspath()
-            model_obj.head = nn.Identity()
-            td = torch.load(model_path, weights_only=True)
-            model_obj.load_state_dict(td["model"], strict=True)
+        model_obj = ctranspath()
+        model_obj.head = nn.Identity()
+        td = torch.load(model_path, weights_only=True)
+        model_obj.load_state_dict(td["model"], strict=True)
         # ctranspath() module has required torch transforms built in so
         # preprocessing should be None here
-        super().__init__(model_obj, use_gpu, gpu_device_id)
+        super().__init__(model_path, model_obj, use_gpu, gpu_device_id)
 
 
 class ResnetTorchModel(TorchModel):
@@ -293,7 +332,7 @@ class ResnetTorchModel(TorchModel):
         from mussel.models.resnet_custom import resnet50_baseline
 
         model_obj = resnet50_baseline(pretrained=True)
-        super().__init__(model_obj, use_gpu, gpu_device_id)
+        super().__init__(None, model_obj, use_gpu, gpu_device_id)
 
 
 MODEL_FACTORIES = {}
@@ -310,80 +349,62 @@ def register_model_factory(model_type: ModelType):
 class ModelFactory(ABC):
 
     @abstractmethod
-    def get_model(self, model_path, model_obj, use_gpu, gpu_device_id) -> Model:
+    def get_model(self, model_path, use_gpu, gpu_device_id) -> Model:
         pass
 
 
 @register_model_factory(ModelType.GOOGLEPATH)
 class GooglePathModelFactory(ModelFactory):
-    def get_model(
-        self, model_path, model_obj=None, use_gpu=True, gpu_device_id=None
-    ) -> Model:
-        return GooglePathModel(model_path, model_obj, use_gpu, gpu_device_id)
+    def get_model(self, model_path, use_gpu=True, gpu_device_id=None) -> Model:
+        return GooglePathModel(model_path, use_gpu, gpu_device_id)
 
 
 @register_model_factory(ModelType.RESNET50)
 class Resnet50ModelFactory(ModelFactory):
-    def get_model(
-        self, model_path=None, model_obj=None, use_gpu=True, gpu_device_id=None
-    ):
+    def get_model(self, model_path=None, use_gpu=True, gpu_device_id=None):
         return ResnetTorchModel(use_gpu, gpu_device_id)
 
 
 @register_model_factory(ModelType.CTRANSPATH)
 class CTransPathModelFactory(ModelFactory):
-    def get_model(
-        self, model_path=None, model_obj=None, use_gpu=True, gpu_device_id=None
-    ):
-        return TransPathTorchModel(model_path, model_obj, use_gpu, gpu_device_id)
+    def get_model(self, model_path=None, use_gpu=True, gpu_device_id=None):
+        return TransPathTorchModel(model_path, use_gpu, gpu_device_id)
 
 
 @register_model_factory(ModelType.GIGAPATH)
 class GigapathModelFactory(ModelFactory):
-    def get_model(
-        self, model_path=None, model_obj=None, use_gpu=True, gpu_device_id=None
-    ):
-        return GigapathTorchModel(model_path, model_obj, use_gpu, gpu_device_id)
+    def get_model(self, model_path=None, use_gpu=True, gpu_device_id=None):
+        return GigapathTorchModel(model_path, use_gpu, gpu_device_id)
 
 
 @register_model_factory(ModelType.VIRCHOW)
 class VirchowModelFactory(ModelFactory):
-    def get_model(
-        self, model_path=None, model_obj=None, use_gpu=True, gpu_device_id=None
-    ):
-        return VirchowTorchModel(model_path, model_obj, use_gpu, gpu_device_id)
+    def get_model(self, model_path=None, use_gpu=True, gpu_device_id=None):
+        return VirchowTorchModel(model_path, use_gpu, gpu_device_id)
 
 
 @register_model_factory(ModelType.VIRCHOW2)
 class Virchow2ModelFactory(ModelFactory):
-    def get_model(
-        self, model_path=None, model_obj=None, use_gpu=True, gpu_device_id=None
-    ):
-        return VirchowTorchModel(model_path, model_obj, use_gpu, gpu_device_id)
+    def get_model(self, model_path=None, use_gpu=True, gpu_device_id=None):
+        return VirchowTorchModel(model_path, use_gpu, gpu_device_id)
 
 
 @register_model_factory(ModelType.CONCH1_5)
 class Conch15ModelFactory(ModelFactory):
-    def get_model(
-        self, model_path=None, model_obj=None, use_gpu=True, gpu_device_id=None
-    ):
-        return Conch15TorchModel(model_path, model_obj, use_gpu, gpu_device_id)
+    def get_model(self, model_path=None, use_gpu=True, gpu_device_id=None):
+        return Conch15TorchModel(model_path, use_gpu, gpu_device_id)
 
 
 @register_model_factory(ModelType.OPTIMUS)
 class OptimusModelFactory(ModelFactory):
-    def get_model(
-        self, model_path=None, model_obj=None, use_gpu=True, gpu_device_id=None
-    ):
-        return OptimusTorchModel(model_path, model_obj, use_gpu, gpu_device_id)
+    def get_model(self, model_path=None, use_gpu=True, gpu_device_id=None):
+        return OptimusTorchModel(model_path, use_gpu, gpu_device_id)
 
 
 @register_model_factory(ModelType.CLIP)
 class ClipModelFactory(ModelFactory):
-    def get_model(
-        self, model_path=None, model_obj=None, use_gpu=True, gpu_device_id=None
-    ):
-        return ClipTorchModel(model_path, model_obj, use_gpu, gpu_device_id)
+    def get_model(self, model_path=None, use_gpu=True, gpu_device_id=None):
+        return ClipTorchModel(model_path, use_gpu, gpu_device_id)
 
 
 def get_model_factory(model_type: ModelType = ModelType.CTRANSPATH) -> ModelFactory:

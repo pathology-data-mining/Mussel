@@ -16,6 +16,7 @@ slides, and generating feature embeddings with pathology foundation models.
 * `filter_features` - filter features using a classifier model
 * `merge_annotation_features` - merge tile features with annotations from a BMP file.
 * `linear_probe_benchmark` - benchmark a linear probe classifier on features extracted from a slide
+* `save_model` - download and save a foundation model locally
 
 Each of these commands is configurable with a number of different parameters.
 You can always get a quick list of the parameters and default values for a given tool
@@ -153,6 +154,13 @@ cache_tiles \
 
 *This takes about ten seconds for an example slide.*
 
+### `save_model`
+
+You can download and save a foundation model locally with the `save_model` command.
+
+```bash
+save_model model_type=OPTIMUS output_path=optimus.pkl
+``` 
 
 
 
