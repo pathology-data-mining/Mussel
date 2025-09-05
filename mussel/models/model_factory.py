@@ -407,5 +407,10 @@ class ClipModelFactory(ModelFactory):
         return ClipTorchModel(model_path, use_gpu, gpu_device_id)
 
 
-def get_model_factory(model_type: ModelType = ModelType.CTRANSPATH) -> ModelFactory:
+def get_model_factory(model_type: ModelType | str = ModelType.CTRANSPATH) -> ModelFactory:
+    if isinstance(model_type, str):
+        try:
+            model_type = ModelType[model_type.upper()]
+        except KeyError:
+            raise ValueError(f"unknown model type: {model_type}")
     return MODEL_FACTORIES.get(model_type)()
