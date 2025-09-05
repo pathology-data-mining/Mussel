@@ -19,17 +19,17 @@ logger = logging.getLogger(__name__)
 
 def extract_features(
     slide_path,
-    gpu_device_id,
     model_type,
-    model_path,
-    use_gpu,
     output_h5_path,
-    output_pt_path,
+    model_path=None,
+    output_pt_path=None,
+    use_gpu=True,
     patch_h5_path=None,
     patch_path=None,
     model_save_path=None,
     batch_size=64,
     num_workers=16,
+    gpu_device_id=None,
     gpu_device_ids=None,
 ):
     if gpu_device_ids:
@@ -76,13 +76,14 @@ def extract_features(
     else:
         raise ValueError("Either patch_path or patch_h5_path must be provided")
 
-    with h5py.File(output_h5_path, "r") as file:
-        features = file["features"][:]
-        logger.info(f"features size: {features.shape} ")
-        # logger.info(f'coordinates size: {file["coords"].shape} ')
+    if output_pt_path is not None:
+        with h5py.File(output_h5_path, "r") as file:
+            features = file["features"][:]
+            logger.info(f"features size: {features.shape} ")
+            # logger.info(f'coordinates size: {file["coords"].shape} ')
 
-        features = torch.from_numpy(features)
-        torch.save(features, output_pt_path)
+            features = torch.from_numpy(features)
+            torch.save(features, output_pt_path)
 
 
 @timed
