@@ -1,0 +1,66 @@
+import functools
+import logging
+import os
+from concurrent import futures
+
+import h5py
+import numpy as np
+import tiffslide
+from tqdm import tqdm
+
+from mussel.utils.segment import is_black_patch, is_white_patch
+from mussel.utils.timer import timed
+
+log = logging.getLogger(__name__)
+
+
+def export_tile(
+    tile_coords: np.ndarray,
+    wsi_object: tiffslide.TiffSlide,
+    patch_size: int,
+    output_path: str,
+) -> None:
+    """Utility function to export tile to .png file"""
+    patch = wsi_object.read_region(tile_coords, 0, (patch_size, patch_size)).convert(
+        "RGB"
+    )
+    if is_white_patch(np.array(patch)) or is_black_patch(np.array(patch)):
+        return
+    file_path = os.path.join(output_path, f"{tile_coords[0]}_{tile_coords[1]}.png")
+    patch.save(file_path, "png")
+
+
+@timed
+def export_tiles(
+    patch_h5_path: str,
+    slide_path: str,
+    output_png_path: str,
+    patch_size: int = 256,
+    mpp: float = 0.5,
+    num_workers: int = 16,
+) -> None:
+
+    log.info(f"Loading .patches.h5 file: {cfg.patch_h5_path}")
+
+    with h5py.File(patch_h5_path, "r") as patches_h5:
+        tile_coords = np.array(patches_h5["coords"])
+
+    # Init whole slide image
+    wsi = tiffslide.TiffSlide(slide_path)
+    slide_mpp = float(wsi.properties[tiffslide.PROPERTY_NAME_MPP_X])
+
+    native_patch_size = get_native_size(patch_size, mpp, slide_mpp)
+    log.info(
+        f"Exporting approx. {len(tile_coords)} tiles as .png files to {cfg.output_png_path}"
+    )
+    n_tiles = len(tile_coords)
+
+    partial = functools.partial(
+        export_tile,
+        wsi_object=wsi,
+        patch_size=native_patch_size,
+        output_path=cfg.output_png_path,
+    )
+
+    with futures.ThreadPoolExecutor(num_workers) as executor:
+        list(tqdm(executor.map(partial, tile_coords), total=n_tiles))

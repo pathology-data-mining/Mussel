@@ -2,6 +2,7 @@ from dataclasses import dataclass
 from typing import Optional
 
 import geopandas as gpd
+import hydra
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
@@ -10,16 +11,9 @@ from hydra.core.config_store import ConfigStore
 from loguru import logger
 from omegaconf import MISSING, OmegaConf
 from sklearn.linear_model import LogisticRegression
-from sklearn.metrics import (
-    ConfusionMatrixDisplay,
-    accuracy_score,
-    classification_report,
-    confusion_matrix,
-    f1_score,
-)
+from sklearn.metrics import (ConfusionMatrixDisplay, accuracy_score,
+                             classification_report, confusion_matrix, f1_score)
 from sklearn.model_selection import train_test_split
-
-import hydra
 
 
 @dataclass

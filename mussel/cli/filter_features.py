@@ -4,6 +4,7 @@ from dataclasses import dataclass, field
 from typing import Optional
 
 import h5py
+import hydra
 import numpy as np
 import torch
 from hydra.conf import HelpConf, HydraConf
@@ -11,7 +12,6 @@ from hydra.core.config_store import ConfigStore
 from loguru import logger
 from omegaconf import MISSING, OmegaConf
 
-import hydra
 from mussel.utils.file import save_hdf5
 
 

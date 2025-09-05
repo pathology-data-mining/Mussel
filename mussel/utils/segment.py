@@ -1,4 +1,5 @@
 import functools
+import logging
 import multiprocessing as mp
 from dataclasses import dataclass
 from pathlib import Path
@@ -8,7 +9,6 @@ import cv2
 import numpy as np
 import shapely
 import tiffslide
-from loguru import logger
 from PIL import Image, ImageDraw
 from shapely.geometry import MultiPolygon, Polygon
 from shapely.ops import transform
@@ -18,6 +18,8 @@ from mussel.utils.file import save_hdf5
 from mussel.utils.timer import timed
 
 Image.MAX_IMAGE_PIXELS = None
+
+logger = logging.getLogger(__name__)
 
 
 def is_white_patch(patch, satThresh=5):
@@ -242,8 +244,8 @@ def _filter_contours(
 
 @timed
 def segment_tissue(
-    wsi: tiffslide.TiffSlide,
-    slide_id: str,
+    slide_path: str,
+    slide_id: Optional[str] = None,
     seg_level: int = 0,
     segment_threshold: int = 20,
     segment_max_value: int = 255,
@@ -264,6 +266,24 @@ def segment_tissue(
     """
     Segment the tissue via HSV -> Median thresholding -> Binary threshold
     """
+    wsi = tiffslide.open_slide(slide_path)
+    if slide_id is None:
+        slide_id = Path(slide_path).stem
+
+    if seg_level < 0:
+        if len(wsi.level_dimensions) == 1:
+            seg_level = 0
+        else:
+            seg_level = wsi.get_best_level_for_downsample(64)
+
+    w, h = wsi.level_dimensions[seg_level]
+    if w * h > 1e12:
+        logger.error(
+            "level_dim {} x {} is likely too large for successful segmentation, aborting".format(
+                w, h
+            )
+        )
+        return
 
     if step_size is None:
         step_size = patch_size
@@ -371,11 +391,13 @@ def segment_tissue(
         save_hdf5(output_h5_path, asset_dict, attr_dict, mode="w")
         logger.info(f"Writing to {output_h5_path}")
 
+    wsi.close()
+
     return polygon, grid, coords
 
 
 def draw_slide_mask(
-    wsi,
+    slide_path: str,
     polygons: shapely.geometry | List[shapely.geometry],
     vis_level=0,
     outline="black",
@@ -386,6 +408,13 @@ def draw_slide_mask(
     """
     Draw slide mask with polygon contours or list of grid polygons
     """
+    wsi = tiffslide.open_slide(slide_path)
+
+    if vis_level < 0:
+        if len(wsi.level_dimensions) == 1:
+            vis_level = 0
+        else:
+            vis_level = wsi.get_best_level_for_downsample(64)
 
     if type(polygons) != list:
         polygons = [polygons]
@@ -416,6 +445,8 @@ def draw_slide_mask(
     if max_size is not None and (w > max_size or h > max_size):
         resizeFactor = max_size / w if w > h else max_size / h
         img = img.resize((int(w * resizeFactor), int(h * resizeFactor)))
+
+    wsi.close()
 
     return img
 
@@ -454,7 +485,7 @@ def get_patch_generator(
 
 
 def save_patches_png(
-    wsi: tiffslide.TiffSlide,
+    slide_path: str,
     coords: list,
     save_dir: str,
     mpp=0.5,
@@ -467,6 +498,7 @@ def save_patches_png(
     """
     Save patches as png
     """
+    wsi = tiffslide.open_slide(slide_path)
 
     slide_mpp = float(wsi.properties[tiffslide.PROPERTY_NAME_MPP_X])
     native_patch_size = get_native_size(patch_size, mpp, slide_mpp)
@@ -492,3 +524,4 @@ def save_patches_png(
         patch_gen,
     )
     pool.close()
+    wsi.close()

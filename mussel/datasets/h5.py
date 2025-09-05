@@ -22,28 +22,28 @@ def eval_transforms(use_imagenet_rgb_dist=False):
     return trnsfrms_val
 
 
-class Whole_Slide_Bag_FP(Dataset):
+class WholeSlideImageTileDataset(Dataset):
     def __init__(
         self,
-        file_path,
-        wsi_path,
+        h5_path,
+        slide_path,
         use_imagenet_rgb_dist=True,
         preprocess=None,
         limit_to_indices=None,
     ):
         """
         Args:
-                file_path (string): Path to the .h5 file containing patched data.
+                h5_path (string): Path to the .h5 file containing patched data.
                 pretrained (bool): Use ImageNet transforms
                 target_patch_size (int): Custom defined image size before embedding
         """
         self.use_imagenet_rgb_dist = use_imagenet_rgb_dist
-        self.wsi_path = wsi_path
+        self.slide_path = slide_path
         self.wsi = None
         self.limit_to_indices = limit_to_indices
-        self.file_path = file_path
+        self.h5_path = h5_path
 
-        with h5py.File(self.file_path, "r") as f:
+        with h5py.File(self.h5_path, "r") as f:
             self.patch_size = f["coords"].attrs["patch_size"]
             self.patch_level = f["coords"].attrs["patch_level"]
             self.scaled_patch_size = int(
@@ -72,7 +72,7 @@ class Whole_Slide_Bag_FP(Dataset):
         return self.length
 
     def summary(self):
-        hdf5_file = h5py.File(self.file_path, "r")
+        hdf5_file = h5py.File(self.h5_path, "r")
         dset = hdf5_file["coords"]
         for name, value in dset.attrs.items():
             logger.info(f"{name} {value}")
@@ -90,7 +90,7 @@ class Whole_Slide_Bag_FP(Dataset):
         else:
             idx = idx_
 
-        with h5py.File(self.file_path, "r") as hdf5_file:
+        with h5py.File(self.h5_path, "r") as hdf5_file:
             coord = hdf5_file["coords"][idx]
             img = self.wsi.read_region(
                 coord, self.patch_level, (self.patch_size, self.patch_size)
@@ -105,4 +105,4 @@ class Whole_Slide_Bag_FP(Dataset):
         from this TiffSlide github issue:
         https://github.com/Bayer-Group/tiffslide/issues/57
         """
-        self.wsi = openslide.open_slide(self.wsi_path)
+        self.wsi = openslide.open_slide(self.slide_path)

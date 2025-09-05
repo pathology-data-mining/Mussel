@@ -7,6 +7,7 @@ from io import BytesIO
 from typing import List, Optional
 
 import h5py
+import hydra
 import pandas as pd
 import tiffslide as openslide
 import torch
@@ -14,8 +15,6 @@ from hydra.conf import HelpConf, HydraConf
 from hydra.core.config_store import ConfigStore
 from loguru import logger
 from omegaconf import MISSING
-
-import hydra
 
 
 @dataclass
@@ -48,7 +47,9 @@ def interrogate_function(slide_path, patch_path, interrogation_report_path, df):
         patch_size = f["coords"].attrs["patch_size"]
         patch_level = f["coords"].attrs["patch_level"]
         logger.info(len(f["coords"]))
-        assert len(f["coords"]) == len(df), f"{len(f['coords'])} vs {len(df)} tiles, aborting"
+        assert len(f["coords"]) == len(
+            df
+        ), f"{len(f['coords'])} vs {len(df)} tiles, aborting"
         coords = f["coords"][:]
 
     df["tile_index"] = df.index
