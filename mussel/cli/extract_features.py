@@ -21,7 +21,7 @@ class ExtractFeaturesConfig:
     patch_h5_path (str): Path to the HDF5 file containing patches.
     slide_path (str): Path to the whole slide image.
     output_h5_path (str): Path to save the computed features in HDF5 format.
-    output_pt_path (str): Path to save the computed features in PyTorch format.
+    output_pt_path (Optional[str]): Path to save the computed features in PyTorch format.
     model_type (ModelType): Type of model to use for feature extraction.
     model_path (Optional[str]): Path to the model weights, if applicable.
     patch_path (Optional[str]): Directory containing pre-tiled images, if applicable.
@@ -35,7 +35,7 @@ class ExtractFeaturesConfig:
     patch_h5_path: str = MISSING
     slide_path: str = MISSING
     output_h5_path: str = MISSING
-    output_pt_path: str = MISSING
+    output_pt_path: str = None
     model_type: ModelType = ModelType.CLIP
     model_path: Optional[str] = None
     model_save_path: Optional[str] = None
