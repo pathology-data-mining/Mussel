@@ -131,10 +131,8 @@ def get_features(
 
     dataset = WholeSlideImageTileCoordDataset(
         coords=coords,
+        attrs=attrs,
         slide_path=slide_path,
-        patch_size=attrs["patch_size"],
-        patch_level=attrs["patch_level"],
-        scaled_patch_size=attrs["scaled_patch_size"],
         use_imagenet_rgb_dist=use_imagenet_rgb_dist,
         preprocess=model.get_preprocessing_fun(),
     )
