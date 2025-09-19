@@ -19,7 +19,7 @@ from loguru import logger
 from omegaconf import MISSING
 from torch.utils.data import DataLoader
 
-from mussel.datasets.h5 import WholeSlideImageTileDataset
+from mussel.datasets.h5 import WholeSlideImageH5Dataset
 from mussel.utils.ml import collate_features
 
 
@@ -76,7 +76,7 @@ def main(cfg: CacheTilesConfig):
         indices = annot[annot["class"].isin(cfg.limit_to_class)].index.tolist()
         logger.info(f"limiting to class {cfg.limit_to_class} with {len(indices)} tiles")
 
-    dataset = WholeSlideImageTileDataset(
+    dataset = WholeSlideImageH5Dataset(
         h5_path=cfg.patch_h5_path,
         slide_path=cfg.slide_path,
         use_imagenet_rgb_dist=True,

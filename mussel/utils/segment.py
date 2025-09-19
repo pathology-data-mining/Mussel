@@ -16,6 +16,7 @@ from shapely.prepared import prep
 
 from mussel.utils.file import save_hdf5
 from mussel.utils.timer import timed
+from mussel.datasets import WholeSlideImageTileCoordDataset
 
 Image.MAX_IMAGE_PIXELS = None
 

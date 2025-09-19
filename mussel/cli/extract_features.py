@@ -10,7 +10,7 @@ from loguru import logger
 from omegaconf import MISSING
 
 from mussel.models import ModelType
-from mussel.utils import extract_features
+from mussel.utils import save_features
 
 ssl._create_default_https_context = ssl._create_unverified_context
 
@@ -70,7 +70,7 @@ cs.store(name="extract_features_config", node=ExtractFeaturesConfig)
 
 @hydra.main(version_base=None, config_path=".", config_name="extract_features_config")
 def main(cfg: ExtractFeaturesConfig):
-    extract_features(
+    save_features(
         slide_path=cfg.slide_path,
         gpu_device_id=cfg.gpu_device_id,
         model_type=cfg.model_type,
