@@ -365,27 +365,27 @@ def segment_tissue(
     coords = [g.exterior.coords[0] for g in grid]
     logger.info(f"Total number of patches: {len(coords)}")
 
+    attrs = {
+        "seg_level": seg_level,
+        "segment_threshold": segment_threshold,
+        "segment_max_value": segment_max_value,
+        "median_blur_ksize": median_blur_ksize,
+        "morphology_ex_kernel": morphology_ex_kernel,
+        "use_otsu": use_otsu,
+        "tissue_area_threshold": tissue_area_threshold,
+        "hole_area_threshold": hole_area_threshold,
+        "max_num_holes": max_num_holes,
+        "ref_patch_size": ref_patch_size,
+        "patch_size": native_patch_size,
+        "step_size": native_step_size,
+        "patch_size_to_resize_to_for_desired_mpp": patch_size,
+        "patch_level": 0,
+        "mpp": mpp,
+        "native_mpp": slide_mpp,
+        "level_dim": wsi.level_dimensions[0],
+        "name": slide_id,
+    }
     if output_h5_path:
-        attrs = {
-            "seg_level": seg_level,
-            "segment_threshold": segment_threshold,
-            "segment_max_value": segment_max_value,
-            "median_blur_ksize": median_blur_ksize,
-            "morphology_ex_kernel": morphology_ex_kernel,
-            "use_otsu": use_otsu,
-            "tissue_area_threshold": tissue_area_threshold,
-            "hole_area_threshold": hole_area_threshold,
-            "max_num_holes": max_num_holes,
-            "ref_patch_size": ref_patch_size,
-            "patch_size": native_patch_size,
-            "step_size": native_step_size,
-            "patch_size_to_resize_to_for_desired_mpp": patch_size,
-            "patch_level": 0,
-            "mpp": mpp,
-            "native_mpp": slide_mpp,
-            "level_dim": wsi.level_dimensions[0],
-            "name": slide_id,
-        }
 
         asset_dict = {"coords": np.array(coords)}
         attr_dict = {"coords": attrs}
