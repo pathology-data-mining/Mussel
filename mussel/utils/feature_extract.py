@@ -110,7 +110,6 @@ def get_features(
     attrs,
     model_type=ModelType.CLIP,
     model_path=None,
-    use_imagenet_rgb_dist=True,
     batch_size=64,
     use_gpu=True,
     gpu_device_id=None,
@@ -128,13 +127,14 @@ def get_features(
     if model_factory is None:
         raise ValueError("model not recognized")
     model = model_factory.get_model(model_path, use_gpu, gpu_device_id)
+    preprocessing = model.get_preprocessing_fun(),
 
     dataset = WholeSlideImageTileCoordDataset(
         coords=coords,
         attrs=attrs,
         slide_path=slide_path,
-        use_imagenet_rgb_dist=use_imagenet_rgb_dist,
-        preprocess=model.get_preprocessing_fun(),
+        use_imagenet_rgb_dist=preprocessing is None,
+        preprocess=preprocessing
     )
 
     loader = DataLoader(
@@ -186,7 +186,7 @@ def save_features(
     if patch_path:
         dataset = ImageFolder(
             root=patch_path,
-            transform=preprocess,
+            transform=preprocessing,
         )
 
         loader = DataLoader(
@@ -202,7 +202,8 @@ def save_features(
             h5_path=patch_h5_path,
             slide_path=slide_path,
             use_imagenet_rgb_dist=use_imagenet_rgb_dist,
-            preprocess=preprocess,
+            preprocess=preprocessing,
+            use_imagenet_rb_dist=preprocessing is None,
         )
 
         loader = DataLoader(
