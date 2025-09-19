@@ -1,3 +1,7 @@
+import tiffslide as openslide
+from loguru import logger
+from torch.utils.data import Dataset
+from torchvision import transforms
 
 class WholeSlideImageTileCoordDataset(Dataset):
     def __init__(
