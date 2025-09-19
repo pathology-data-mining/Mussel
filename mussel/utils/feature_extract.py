@@ -44,8 +44,8 @@ def _(dataset: WholeSlideImageTileCoordDataset, loader, model_fun, patch_h5_path
     for count, (batch, labels) in enumerate(loader):
         if count % print_every == 0:
             logger.info(
-                "batch {}/{}, {} tiles processed".format(
-                    count, len(loader), count * batch_size
+                "batch {}/{} tiles processed".format(
+                    count, len(loader)
                 )
             )
 
@@ -70,8 +70,8 @@ def _(dataset: ImageFolder, loader, model_fun, patch_h5_path=None, output_h5_pat
         labels = labels.numpy()
         if count % print_every == 0:
             logger.info(
-                "batch {}/{}, {} tiles processed".format(
-                    count, len(loader), count * batch_size
+                "batch {}/{} processed".format(
+                    count, len(loader)
                 )
             )
 
@@ -90,8 +90,8 @@ def _(dataset: WholeSlideImageH5Dataset, loader, model_fun, patch_h5_path=None, 
     for count, (batch, coords) in enumerate(loader):
         if count % print_every == 0:
             logger.info(
-                "batch {}/{}, {} tiles processed".format(
-                    count, len(loader), count * batch_size
+                "batch {}/{} tiles processed".format(
+                    count, len(loader)
                 )
             )
 
@@ -127,7 +127,7 @@ def get_features(
     if model_factory is None:
         raise ValueError("model not recognized")
     model = model_factory.get_model(model_path, use_gpu, gpu_device_id)
-    preprocessing = model.get_preprocessing_fun(),
+    preprocessing = model.get_preprocessing_fun()
 
     dataset = WholeSlideImageTileCoordDataset(
         coords=coords,

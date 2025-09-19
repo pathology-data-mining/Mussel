@@ -31,7 +31,7 @@ class WholeSlideImageTileCoordDataset(Dataset):
         self.coords = coords
         self.patch_size = attrs["patch_size"]
         self.patch_level = attrs["patch_level"]
-        self.scaled_patch_size = attrs["patch_size_to_resize_to_for_desired_mpp"]
+        self.scaled_patch_size = int(attrs["patch_size_to_resize_to_for_desired_mpp"])
 
         self.length = (
             len(limit_to_indices) if limit_to_indices else len(coords)
@@ -71,7 +71,6 @@ class WholeSlideImageTileCoordDataset(Dataset):
         img = self.wsi.read_region(
             coord, self.patch_level, (self.patch_size, self.patch_size)
         ).convert("RGB")
-
         img = self.roi_transforms(img).unsqueeze(0)
         return img, coord
 
