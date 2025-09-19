@@ -7,10 +7,8 @@ class WholeSlideImageTileCoordDataset(Dataset):
     def __init__(
         self,
         coords,
+        attrs,
         slide_path,
-        patch_size,
-        patch_level,
-        scaled_patch_size,
         use_imagenet_rgb_dist=True,
         preprocess=None,
         limit_to_indices=None,
@@ -18,10 +16,8 @@ class WholeSlideImageTileCoordDataset(Dataset):
         """
         Args:
                 coords (list of tuples): List of (x, y) coordinates for patches.
+                attrs (dict): Attributes including 'patch_size', 'patch_level', and 'scaled_patch_size'.
                 slide_path (string): Path to the whole slide image file.
-                patch_size (int): Size of the patch to extract from the WSI.
-                patch_level (int): Level of the WSI to extract patches from.
-                scaled_patch_size (int): Size to which patches are resized before embedding.
                 use_imagenet_rgb_dist (bool): Use ImageNet RGB distribution for normalization.
                 preprocess (callable, optional): Custom preprocessing function. Defaults to None.
                 limit_to_indices (list of int, optional): Limit dataset to these indices. Defaults to None.
@@ -31,9 +27,9 @@ class WholeSlideImageTileCoordDataset(Dataset):
         self.wsi = None
         self.limit_to_indices = limit_to_indices
         self.coords = coords
-        self.patch_size = patch_size
-        self.scaled_patch_size = scaled_patch_size
-        self.patch_level = patch_level
+        self.patch_size = attrs["patch_size"]
+        self.patch_level = attrs["patch_level"]
+        self.scaled_patch_size = attrs["patch_size_to_resize_to_for_desired_mpp"]
 
         self.length = (
             len(limit_to_indices) if limit_to_indices else len(coords)

@@ -394,7 +394,7 @@ def segment_tissue(
 
     wsi.close()
 
-    return polygon, grid, coords
+    return polygon, grid, coords, attrs
 
 
 def draw_slide_mask(
