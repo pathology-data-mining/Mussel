@@ -104,10 +104,10 @@ def _(dataset: WholeSlideImageH5Dataset, loader, model_fun, patch_h5_path=None, 
 
 
 
-@timed
 def get_features(
     coords,
     slide_path,
+    attrs,
     model_type=ModelType.CLIP,
     model_path=None,
     use_imagenet_rgb_dist=True,
@@ -132,6 +132,9 @@ def get_features(
     dataset = WholeSlideImageTileCoordDataset(
         coords=coords,
         slide_path=slide_path,
+        patch_size=attrs["patch_size"],
+        patch_level=attrs["patch_level"],
+        scaled_patch_size=attrs["scaled_patch_size"],
         use_imagenet_rgb_dist=use_imagenet_rgb_dist,
         preprocess=model.get_preprocessing_fun(),
     )
