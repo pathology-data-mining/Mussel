@@ -3,6 +3,8 @@ from loguru import logger
 from torch.utils.data import Dataset
 from torchvision import transforms
 
+from .utils import eval_transforms
+
 class WholeSlideImageTileCoordDataset(Dataset):
     def __init__(
         self,
