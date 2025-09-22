@@ -51,7 +51,7 @@ def _(dataset: WholeSlideImageTileCoordDataset, loader, model_fun, patch_h5_path
 
         features = model_fun(batch)
         all_features.append(features.numpy())
-        all_labels.append(labels.numpy())
+        all_labels.append(labels)
     all_features = np.concatenate(all_features, axis=0)
     all_labels = np.concatenate(all_labels, axis=0)
     return all_features, all_labels
@@ -142,6 +142,7 @@ def get_features(
         num_workers=num_workers,
         pin_memory=pin_memory,
         worker_init_fn=dataset.worker_init,
+        collate_fn=collate_features,
         shuffle=False,
     )
 
