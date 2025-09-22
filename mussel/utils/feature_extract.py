@@ -50,11 +50,10 @@ def _(dataset: WholeSlideImageTileCoordDataset, loader, model_fun, patch_h5_path
             )
 
         features = model_fun(batch)
-        features = features.numpy()
-        all_features.append(features)
+        all_features.append(features.numpy())
         all_labels.append(labels.numpy())
-    all_features = np.vstack(all_features) if all_features else None
-    all_labels = np.hstack(all_labels) if all_labels else None
+    all_features = np.concatenate(all_features, axis=0)
+    all_labels = np.concatenate(all_labels, axis=0)
     return all_features, all_labels
 
 @process_dataset.register(ImageFolder)
@@ -166,6 +165,8 @@ def save_features(
     gpu_device_id=None,
     gpu_device_ids=None,
     num_workers=16,
+    pin_memory=True,
+    print_every=20,
 ):
 
     if gpu_device_ids:
@@ -201,9 +202,8 @@ def save_features(
         dataset = WholeSlideImageH5Dataset(
             h5_path=patch_h5_path,
             slide_path=slide_path,
-            use_imagenet_rgb_dist=use_imagenet_rgb_dist,
             preprocess=preprocessing,
-            use_imagenet_rb_dist=preprocessing is None,
+            use_imagenet_rgb_dist=preprocessing is None,
         )
 
         loader = DataLoader(

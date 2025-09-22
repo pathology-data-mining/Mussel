@@ -71,7 +71,7 @@ class WholeSlideImageTileCoordDataset(Dataset):
         img = self.wsi.read_region(
             coord, self.patch_level, (self.patch_size, self.patch_size)
         ).convert("RGB")
-        img = self.roi_transforms(img).unsqueeze(0)
+        img = self.roi_transforms(img)
         return img, coord
 
     def worker_init(self, *args):

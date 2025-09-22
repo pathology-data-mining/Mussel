@@ -35,7 +35,7 @@ class ExtractFeaturesConfig:
     patch_h5_path: str = MISSING
     slide_path: str = MISSING
     output_h5_path: str = MISSING
-    output_pt_path: str = None
+    output_pt_path: Optional[str] = None
     model_type: ModelType = ModelType.CLIP
     model_path: Optional[str] = None
     model_save_path: Optional[str] = None
