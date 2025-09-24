@@ -38,7 +38,7 @@ def process_dataset(
     pass
 
 @process_dataset.register(WholeSlideImageTileCoordDataset)
-def _(dataset: WholeSlideImageTileCoordDataset, loader, model_fun, patch_h5_path=None, output_h5_path=None, print_every=20):
+def _(dataset: WholeSlideImageTileCoordDataset, loader, model_fun, print_every=20):
     all_features = []
     all_labels = []
     for count, (batch, labels) in enumerate(loader):
@@ -229,3 +229,17 @@ def save_features(
 
             features = torch.from_numpy(features)
             torch.save(features, output_pt_path)
+
+
+@timed
+def filter_features(
+    features: torch.Tensor,
+    classifier,
+    threshold: float,
+):
+    logger.info("Predicting probabilities...")
+    inclusion_mask = classifier.predict_proba(features)[:, 1] > threshold
+    logger.info(f"{sum(inclusion_mask)} tiles above {threshold} threshold")
+    return features[inclusion_mask], inclusion_mask
+)
+

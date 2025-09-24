@@ -12,7 +12,7 @@ from hydra.core.config_store import ConfigStore
 from loguru import logger
 from omegaconf import MISSING, OmegaConf
 
-from mussel.utils.file import save_hdf5
+from mussel.utils import save_hdf5, filter_features
 
 
 @dataclass
@@ -60,7 +60,7 @@ def main(
 ):
     logger.info(f"loading model pkl {cfg.classifier_pkl}")
     with open(cfg.classifier_pkl, "rb") as f:
-        clf = pickle.load(f)
+        classifier = pickle.load(f)
 
     with h5py.File(cfg.features_h5_path, "r") as features_h5:
         if cfg.features_pt_path:
@@ -68,13 +68,13 @@ def main(
         else:
             features = np.array(features_h5["features"])
             features = torch.Tensor(features)
-        logger.info("Predicting probabilities...")
-        inclusion_mask = clf.predict_proba(features)[:, 1] > cfg.classifier_threshold
-        logger.info(
-            f"{sum(inclusion_mask)} tiles above {cfg.classifier_threshold} threshold"
+        logger.info(f"Loaded {features.shape[0]} features of dimension {features.shape[1]}")
+        features, coords = filter_features(
+            features,
+            features_h5["coords"][:],
+            classifier,
+            cfg.classifier_threshold,
         )
-        features = features[inclusion_mask]
-        coords = features_h5["coords"][inclusion_mask]
 
         logger.info(f"Saving to {cfg.output_h5_path}")
         save_hdf5(
