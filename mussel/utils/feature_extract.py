@@ -241,5 +241,5 @@ def filter_features(
     logger.info("Predicting probabilities...")
     inclusion_mask = classifier.predict_proba(features)[:, 1] > threshold
     logger.info(f"{sum(inclusion_mask)} tiles above {threshold} threshold")
-    return features[inclusion_mask], coords[inclusion_mask]
+    return features[inclusion_mask], np.array(coords)[inclusion_mask]
 
