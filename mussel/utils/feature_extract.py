@@ -234,12 +234,12 @@ def save_features(
 @timed
 def filter_features(
     features: torch.Tensor,
+    coords,
     classifier,
     threshold: float,
 ):
     logger.info("Predicting probabilities...")
     inclusion_mask = classifier.predict_proba(features)[:, 1] > threshold
     logger.info(f"{sum(inclusion_mask)} tiles above {threshold} threshold")
-    return features[inclusion_mask], inclusion_mask
-)
+    return features[inclusion_mask], coords[inclusion_mask]
 
