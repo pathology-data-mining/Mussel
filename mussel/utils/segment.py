@@ -399,7 +399,7 @@ def segment_tissue(
 
 def draw_slide_mask(
     slide_path: str,
-    polygons: shapely.geometry | List[shapely.geometry],
+    polygons: shapely.Geometry | List[shapely.Geometry],
     vis_level=0,
     outline="black",
     fill=(255, 0, 0, 80),
