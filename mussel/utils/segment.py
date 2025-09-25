@@ -115,7 +115,7 @@ def contours_to_polygon(foreground_contours, hole_contours=None) -> MultiPolygon
     return polygon
 
 
-def grid_bounds(geometry: shapely.geometry, step_size: int, patch_size: int):
+def grid_bounds(geometry: shapely.Geometry, step_size: int, patch_size: int):
     """
     Create grid encompassing geometry
     """
@@ -139,7 +139,7 @@ def grid_bounds(geometry: shapely.geometry, step_size: int, patch_size: int):
     return grid
 
 
-def partition(geometry: shapely.geometry, step_size: int, patch_size: int):
+def partition(geometry: shapely.Geometry, step_size: int, patch_size: int):
     """
     Partition geometry into a grid
     """
