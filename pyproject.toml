@@ -30,6 +30,7 @@ dev = [
     "isort",
     "black",
     "pytest",
+    "ipython>=8.37.0",
 ]
 
 [project.optional-dependencies]

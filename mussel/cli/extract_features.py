@@ -45,6 +45,7 @@ class ExtractFeaturesConfig:
     gpu_device_id: Optional[int] = None
     gpu_device_ids: Optional[List[int]] = None
     num_workers: int = 16
+    is_test_run: bool = False
 
 
 desc_doc = """== ${hydra.help.app_name} ==
@@ -84,6 +85,7 @@ def main(cfg: ExtractFeaturesConfig):
         batch_size=cfg.batch_size,
         num_workers=cfg.num_workers,
         gpu_device_ids=cfg.gpu_device_ids,
+        is_test_run=cfg.is_test_run,
     )
 
 

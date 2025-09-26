@@ -38,10 +38,12 @@ def process_dataset(
     pass
 
 @process_dataset.register(WholeSlideImageTileCoordDataset)
-def _(dataset: WholeSlideImageTileCoordDataset, loader, model_fun, print_every=20):
+def _(dataset: WholeSlideImageTileCoordDataset, loader, model_fun, print_every=20, is_test_run=False):
     all_features = []
     all_labels = []
     for count, (batch, labels) in enumerate(loader):
+        if is_test_run and count > 2:
+            break
         if count % print_every == 0:
             logger.info(
                 "batch {}/{} tiles processed".format(
@@ -57,7 +59,7 @@ def _(dataset: WholeSlideImageTileCoordDataset, loader, model_fun, print_every=2
     return all_features, all_labels
 
 @process_dataset.register(ImageFolder)
-def _(dataset: ImageFolder, loader, model_fun, patch_h5_path=None, output_h5_path=None, print_every=20):
+def _(dataset: ImageFolder, loader, model_fun, patch_h5_path=None, output_h5_path=None, print_every=20, is_test_run=False):
     asset_dict = {
         "image_paths": np.array([x[0] for x in dataset.imgs]).astype("T"),
         "class_to_idx": np.array(
@@ -66,6 +68,8 @@ def _(dataset: ImageFolder, loader, model_fun, patch_h5_path=None, output_h5_pat
     }
     save_hdf5(output_h5_path, asset_dict, attr_h5_path=None, mode="w")
     for count, (batch, labels) in enumerate(loader):
+        if is_test_run and count > 2:
+            break
         labels = labels.numpy()
         if count % print_every == 0:
             logger.info(
@@ -84,9 +88,11 @@ def _(dataset: ImageFolder, loader, model_fun, patch_h5_path=None, output_h5_pat
     return output_h5_path
 
 @process_dataset.register(WholeSlideImageH5Dataset)
-def _(dataset: WholeSlideImageH5Dataset, loader, model_fun, patch_h5_path=None, output_h5_path=None, print_every=20):
+def _(dataset: WholeSlideImageH5Dataset, loader, model_fun, patch_h5_path=None, output_h5_path=None, print_every=20, is_test_run=False):
     mode = "w"
     for count, (batch, coords) in enumerate(loader):
+        if is_test_run and count > 2:
+            break
         if count % print_every == 0:
             logger.info(
                 "batch {}/{} tiles processed".format(
@@ -116,6 +122,7 @@ def get_features(
     pin_memory=True,
     num_workers=16,
     print_every=20,
+    is_test_run=False,
 ):
     logger.info("loading model checkpoint")
 
@@ -133,7 +140,8 @@ def get_features(
         attrs=attrs,
         slide_path=slide_path,
         use_imagenet_rgb_dist=preprocessing is None,
-        preprocess=preprocessing
+        preprocess=preprocessing,
+        init_wsi_in_worker = num_workers > 0,
     )
 
     loader = DataLoader(
@@ -141,12 +149,12 @@ def get_features(
         batch_size=batch_size,
         num_workers=num_workers,
         pin_memory=pin_memory,
-        worker_init_fn=dataset.worker_init,
+        worker_init_fn=dataset.worker_init if num_workers > 0 else None,
         collate_fn=collate_features,
         shuffle=False,
     )
 
-    features, labels = process_dataset(dataset, loader, model_fun=model.get_model_fun(), print_every=print_every)
+    features, labels = process_dataset(dataset, loader, model_fun=model.get_model_fun(), print_every=print_every, is_test_run=is_test_run)
 
     return features, labels
 
@@ -168,6 +176,7 @@ def save_features(
     num_workers=16,
     pin_memory=True,
     print_every=20,
+    is_test_run=False,
 ):
 
     if gpu_device_ids:
@@ -205,6 +214,7 @@ def save_features(
             slide_path=slide_path,
             preprocess=preprocessing,
             use_imagenet_rgb_dist=preprocessing is None,
+            init_wsi_in_worker = num_workers > 0,
         )
 
         loader = DataLoader(
@@ -213,13 +223,13 @@ def save_features(
             num_workers=num_workers,
             pin_memory=pin_memory,
             collate_fn=collate_features,
-            worker_init_fn=dataset.worker_init,
+            worker_init_fn=dataset.worker_init if num_workers > 0 else None,
             shuffle=False,
         )
     else:
         raise ValueError("Either patch_path or patch_h5_path must be provided")
 
-    process_dataset(dataset, loader, model_fun=model.get_model_fun(), patch_h5_path=patch_h5_path, output_h5_path=output_h5_path, print_every=print_every)
+    process_dataset(dataset, loader, model_fun=model.get_model_fun(), patch_h5_path=patch_h5_path, output_h5_path=output_h5_path, print_every=print_every, is_test_run=is_test_run)
 
     if output_pt_path is not None:
         with h5py.File(output_h5_path, "r") as file:

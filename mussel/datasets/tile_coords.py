@@ -14,6 +14,7 @@ class WholeSlideImageTileCoordDataset(Dataset):
         use_imagenet_rgb_dist=True,
         preprocess=None,
         limit_to_indices=None,
+        init_wsi_in_worker=True,
     ):
         """
         Args:
@@ -27,6 +28,8 @@ class WholeSlideImageTileCoordDataset(Dataset):
         self.use_imagenet_rgb_dist = use_imagenet_rgb_dist
         self.slide_path = slide_path
         self.wsi = None
+        if not init_wsi_in_worker:
+            self.wsi = openslide.open_slide(self.slide_path)
         self.limit_to_indices = limit_to_indices
         self.coords = coords
         self.patch_size = attrs["patch_size"]

@@ -48,6 +48,15 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/2d/6a/885bc91484e1aa8f618f6f0228d76d0e67000b0fdd6090673b777e311913/asciitree-0.3.3.tar.gz", hash = "sha256:4aa4b9b649f85e3fcb343363d97564aa1fb62e249677f2e18a96765145cc0f6e", size = 3951 }
 
 [[package]]
+name = "asttokens"
+version = "3.0.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/4a/e7/82da0a03e7ba5141f05cce0d302e6eed121ae055e0456ca228bf693984bc/asttokens-3.0.0.tar.gz", hash = "sha256:0dcd8baa8d62b0c1d118b399b2ddba3c4aff271d0d7a9e0d4c1681c79035bbc7", size = 61978 }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/25/8a/c46dcc25341b5bce5472c718902eb3d38600a903b14fa6aeecef3f21a46f/asttokens-3.0.0-py3-none-any.whl", hash = "sha256:e3078351a059199dd5138cb1c706e6430c05eff2ff136af5eb4790f9d28932e2", size = 26918 },
+]
+
+[[package]]
 name = "astunparse"
 version = "1.6.3"
 source = { registry = "https://pypi.org/simple" }
@@ -199,6 +208,15 @@ wheels = [
 ]
 
 [[package]]
+name = "decorator"
+version = "5.2.1"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/43/fa/6d96a0978d19e17b68d634497769987b16c8f4cd0a7a05048bec693caa6b/decorator-5.2.1.tar.gz", hash = "sha256:65f266143752f734b0a7cc83c46f4618af75b8c5911b00ccb61d0ac9b6da0360", size = 56711 }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/4e/8c/f3147f5c4b73e7550fe5f9352eaa956ae838d5c51eb58e7a25b9f3e2643b/decorator-5.2.1-py3-none-any.whl", hash = "sha256:d316bb415a2d9e2d2b3abcc4084c6502fc09240e292cd76a76afc106a1c8e04a", size = 9190 },
+]
+
+[[package]]
 name = "deprecated"
 version = "1.2.18"
 source = { registry = "https://pypi.org/simple" }
@@ -241,6 +259,15 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/0b/9f/a65090624ecf468cdca03533906e7c69ed7588582240cfe7cc9e770b50eb/exceptiongroup-1.3.0.tar.gz", hash = "sha256:b241f5885f560bc56a59ee63ca4c6a8bfa46ae4ad651af316d4e81817bb9fd88", size = 29749 }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/36/f4/c6e662dade71f56cd2f3735141b265c3c79293c109549c1e6933b0651ffc/exceptiongroup-1.3.0-py3-none-any.whl", hash = "sha256:4d111e6e0c13d0644cad6ddaa7ed0261a0b36971f6d23e7ec9b4b9097da78a10", size = 16674 },
+]
+
+[[package]]
+name = "executing"
+version = "2.2.1"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/cc/28/c14e053b6762b1044f34a13aab6859bbf40456d37d23aa286ac24cfd9a5d/executing-2.2.1.tar.gz", hash = "sha256:3632cc370565f6648cc328b32435bd120a1e4ebb20c77e3fdde9a13cd1e533c4", size = 1129488 }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/c1/ea/53f2148663b321f21b5a606bd5f191517cf40b7072c0497d3c92c4a13b1e/executing-2.2.1-py2.py3-none-any.whl", hash = "sha256:760643d3452b4d777d295bb167ccc74c64a81df23fb5e08eff250c425a4b2017", size = 28317 },
 ]
 
 [[package]]
@@ -535,12 +562,100 @@ wheels = [
 ]
 
 [[package]]
+name = "ipython"
+version = "8.37.0"
+source = { registry = "https://pypi.org/simple" }
+resolution-markers = [
+    "python_full_version < '3.11' and extra != 'extra-6-mussel-tensorflow-cpu' and extra != 'extra-6-mussel-tensorflow-gpu' and extra != 'extra-6-mussel-torch-cpu' and extra == 'extra-6-mussel-torch-gpu'",
+    "(python_full_version < '3.11' and platform_machine != 'aarch64' and sys_platform == 'linux' and extra != 'extra-6-mussel-tensorflow-cpu' and extra != 'extra-6-mussel-tensorflow-gpu' and extra == 'extra-6-mussel-torch-cpu' and extra != 'extra-6-mussel-torch-gpu') or (python_full_version < '3.11' and sys_platform != 'darwin' and sys_platform != 'linux' and extra != 'extra-6-mussel-tensorflow-cpu' and extra != 'extra-6-mussel-tensorflow-gpu' and extra == 'extra-6-mussel-torch-cpu' and extra != 'extra-6-mussel-torch-gpu')",
+    "(python_full_version < '3.11' and platform_machine == 'aarch64' and sys_platform == 'linux' and extra != 'extra-6-mussel-tensorflow-cpu' and extra != 'extra-6-mussel-tensorflow-gpu' and extra == 'extra-6-mussel-torch-cpu' and extra != 'extra-6-mussel-torch-gpu') or (python_full_version < '3.11' and sys_platform == 'darwin' and extra != 'extra-6-mussel-tensorflow-cpu' and extra != 'extra-6-mussel-tensorflow-gpu' and extra == 'extra-6-mussel-torch-cpu' and extra != 'extra-6-mussel-torch-gpu')",
+    "(python_full_version < '3.11' and platform_machine != 'aarch64' and sys_platform == 'linux' and extra != 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-tensorflow-gpu' and extra != 'extra-6-mussel-torch-cpu' and extra != 'extra-6-mussel-torch-gpu') or (python_full_version < '3.11' and sys_platform != 'darwin' and sys_platform != 'linux' and extra != 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-tensorflow-gpu' and extra != 'extra-6-mussel-torch-cpu' and extra != 'extra-6-mussel-torch-gpu')",
+    "(python_full_version < '3.11' and platform_machine == 'aarch64' and sys_platform == 'linux' and extra != 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-tensorflow-gpu' and extra != 'extra-6-mussel-torch-cpu' and extra != 'extra-6-mussel-torch-gpu') or (python_full_version < '3.11' and sys_platform == 'darwin' and extra != 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-tensorflow-gpu' and extra != 'extra-6-mussel-torch-cpu' and extra != 'extra-6-mussel-torch-gpu')",
+    "(python_full_version < '3.11' and platform_machine != 'aarch64' and sys_platform == 'linux' and extra == 'extra-6-mussel-tensorflow-cpu' and extra != 'extra-6-mussel-tensorflow-gpu' and extra != 'extra-6-mussel-torch-cpu' and extra != 'extra-6-mussel-torch-gpu') or (python_full_version < '3.11' and sys_platform != 'darwin' and sys_platform != 'linux' and extra == 'extra-6-mussel-tensorflow-cpu' and extra != 'extra-6-mussel-tensorflow-gpu' and extra != 'extra-6-mussel-torch-cpu' and extra != 'extra-6-mussel-torch-gpu')",
+    "(python_full_version < '3.11' and platform_machine == 'aarch64' and sys_platform == 'linux' and extra == 'extra-6-mussel-tensorflow-cpu' and extra != 'extra-6-mussel-tensorflow-gpu' and extra != 'extra-6-mussel-torch-cpu' and extra != 'extra-6-mussel-torch-gpu') or (python_full_version < '3.11' and sys_platform == 'darwin' and extra == 'extra-6-mussel-tensorflow-cpu' and extra != 'extra-6-mussel-tensorflow-gpu' and extra != 'extra-6-mussel-torch-cpu' and extra != 'extra-6-mussel-torch-gpu')",
+    "python_full_version < '3.11' and extra != 'extra-6-mussel-tensorflow-cpu' and extra != 'extra-6-mussel-tensorflow-gpu' and extra != 'extra-6-mussel-torch-cpu' and extra != 'extra-6-mussel-torch-gpu'",
+]
+dependencies = [
+    { name = "colorama", marker = "(python_full_version < '3.11' and sys_platform == 'win32') or (python_full_version >= '3.11' and extra == 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-tensorflow-gpu') or (python_full_version >= '3.11' and extra == 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-torch-cpu') or (python_full_version >= '3.11' and extra == 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-torch-gpu') or (python_full_version >= '3.11' and extra == 'extra-6-mussel-tensorflow-gpu' and extra == 'extra-6-mussel-torch-cpu') or (python_full_version >= '3.11' and extra == 'extra-6-mussel-tensorflow-gpu' and extra == 'extra-6-mussel-torch-gpu') or (python_full_version >= '3.11' and extra == 'extra-6-mussel-torch-cpu' and extra == 'extra-6-mussel-torch-gpu') or (sys_platform != 'win32' and extra == 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-tensorflow-gpu') or (sys_platform != 'win32' and extra == 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-torch-cpu') or (sys_platform != 'win32' and extra == 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-torch-gpu') or (sys_platform != 'win32' and extra == 'extra-6-mussel-tensorflow-gpu' and extra == 'extra-6-mussel-torch-cpu') or (sys_platform != 'win32' and extra == 'extra-6-mussel-tensorflow-gpu' and extra == 'extra-6-mussel-torch-gpu') or (sys_platform != 'win32' and extra == 'extra-6-mussel-torch-cpu' and extra == 'extra-6-mussel-torch-gpu')" },
+    { name = "decorator", marker = "python_full_version < '3.11' or (extra == 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-tensorflow-gpu') or (extra == 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-torch-cpu') or (extra == 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-torch-gpu') or (extra == 'extra-6-mussel-tensorflow-gpu' and extra == 'extra-6-mussel-torch-cpu') or (extra == 'extra-6-mussel-tensorflow-gpu' and extra == 'extra-6-mussel-torch-gpu') or (extra == 'extra-6-mussel-torch-cpu' and extra == 'extra-6-mussel-torch-gpu')" },
+    { name = "exceptiongroup", marker = "python_full_version < '3.11' or (extra == 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-tensorflow-gpu') or (extra == 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-torch-cpu') or (extra == 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-torch-gpu') or (extra == 'extra-6-mussel-tensorflow-gpu' and extra == 'extra-6-mussel-torch-cpu') or (extra == 'extra-6-mussel-tensorflow-gpu' and extra == 'extra-6-mussel-torch-gpu') or (extra == 'extra-6-mussel-torch-cpu' and extra == 'extra-6-mussel-torch-gpu')" },
+    { name = "jedi", marker = "python_full_version < '3.11' or (extra == 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-tensorflow-gpu') or (extra == 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-torch-cpu') or (extra == 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-torch-gpu') or (extra == 'extra-6-mussel-tensorflow-gpu' and extra == 'extra-6-mussel-torch-cpu') or (extra == 'extra-6-mussel-tensorflow-gpu' and extra == 'extra-6-mussel-torch-gpu') or (extra == 'extra-6-mussel-torch-cpu' and extra == 'extra-6-mussel-torch-gpu')" },
+    { name = "matplotlib-inline", marker = "python_full_version < '3.11' or (extra == 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-tensorflow-gpu') or (extra == 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-torch-cpu') or (extra == 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-torch-gpu') or (extra == 'extra-6-mussel-tensorflow-gpu' and extra == 'extra-6-mussel-torch-cpu') or (extra == 'extra-6-mussel-tensorflow-gpu' and extra == 'extra-6-mussel-torch-gpu') or (extra == 'extra-6-mussel-torch-cpu' and extra == 'extra-6-mussel-torch-gpu')" },
+    { name = "pexpect", marker = "(python_full_version < '3.11' and sys_platform != 'emscripten' and sys_platform != 'win32') or (python_full_version >= '3.11' and extra == 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-tensorflow-gpu') or (python_full_version >= '3.11' and extra == 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-torch-cpu') or (python_full_version >= '3.11' and extra == 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-torch-gpu') or (python_full_version >= '3.11' and extra == 'extra-6-mussel-tensorflow-gpu' and extra == 'extra-6-mussel-torch-cpu') or (python_full_version >= '3.11' and extra == 'extra-6-mussel-tensorflow-gpu' and extra == 'extra-6-mussel-torch-gpu') or (python_full_version >= '3.11' and extra == 'extra-6-mussel-torch-cpu' and extra == 'extra-6-mussel-torch-gpu') or (sys_platform == 'emscripten' and extra == 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-tensorflow-gpu') or (sys_platform == 'emscripten' and extra == 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-torch-cpu') or (sys_platform == 'emscripten' and extra == 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-torch-gpu') or (sys_platform == 'emscripten' and extra == 'extra-6-mussel-tensorflow-gpu' and extra == 'extra-6-mussel-torch-cpu') or (sys_platform == 'emscripten' and extra == 'extra-6-mussel-tensorflow-gpu' and extra == 'extra-6-mussel-torch-gpu') or (sys_platform == 'emscripten' and extra == 'extra-6-mussel-torch-cpu' and extra == 'extra-6-mussel-torch-gpu') or (sys_platform == 'win32' and extra == 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-tensorflow-gpu') or (sys_platform == 'win32' and extra == 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-torch-cpu') or (sys_platform == 'win32' and extra == 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-torch-gpu') or (sys_platform == 'win32' and extra == 'extra-6-mussel-tensorflow-gpu' and extra == 'extra-6-mussel-torch-cpu') or (sys_platform == 'win32' and extra == 'extra-6-mussel-tensorflow-gpu' and extra == 'extra-6-mussel-torch-gpu') or (sys_platform == 'win32' and extra == 'extra-6-mussel-torch-cpu' and extra == 'extra-6-mussel-torch-gpu')" },
+    { name = "prompt-toolkit", marker = "python_full_version < '3.11' or (extra == 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-tensorflow-gpu') or (extra == 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-torch-cpu') or (extra == 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-torch-gpu') or (extra == 'extra-6-mussel-tensorflow-gpu' and extra == 'extra-6-mussel-torch-cpu') or (extra == 'extra-6-mussel-tensorflow-gpu' and extra == 'extra-6-mussel-torch-gpu') or (extra == 'extra-6-mussel-torch-cpu' and extra == 'extra-6-mussel-torch-gpu')" },
+    { name = "pygments", marker = "python_full_version < '3.11' or (extra == 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-tensorflow-gpu') or (extra == 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-torch-cpu') or (extra == 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-torch-gpu') or (extra == 'extra-6-mussel-tensorflow-gpu' and extra == 'extra-6-mussel-torch-cpu') or (extra == 'extra-6-mussel-tensorflow-gpu' and extra == 'extra-6-mussel-torch-gpu') or (extra == 'extra-6-mussel-torch-cpu' and extra == 'extra-6-mussel-torch-gpu')" },
+    { name = "stack-data", marker = "python_full_version < '3.11' or (extra == 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-tensorflow-gpu') or (extra == 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-torch-cpu') or (extra == 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-torch-gpu') or (extra == 'extra-6-mussel-tensorflow-gpu' and extra == 'extra-6-mussel-torch-cpu') or (extra == 'extra-6-mussel-tensorflow-gpu' and extra == 'extra-6-mussel-torch-gpu') or (extra == 'extra-6-mussel-torch-cpu' and extra == 'extra-6-mussel-torch-gpu')" },
+    { name = "traitlets", marker = "python_full_version < '3.11' or (extra == 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-tensorflow-gpu') or (extra == 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-torch-cpu') or (extra == 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-torch-gpu') or (extra == 'extra-6-mussel-tensorflow-gpu' and extra == 'extra-6-mussel-torch-cpu') or (extra == 'extra-6-mussel-tensorflow-gpu' and extra == 'extra-6-mussel-torch-gpu') or (extra == 'extra-6-mussel-torch-cpu' and extra == 'extra-6-mussel-torch-gpu')" },
+    { name = "typing-extensions", marker = "python_full_version < '3.11' or (extra == 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-tensorflow-gpu') or (extra == 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-torch-cpu') or (extra == 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-torch-gpu') or (extra == 'extra-6-mussel-tensorflow-gpu' and extra == 'extra-6-mussel-torch-cpu') or (extra == 'extra-6-mussel-tensorflow-gpu' and extra == 'extra-6-mussel-torch-gpu') or (extra == 'extra-6-mussel-torch-cpu' and extra == 'extra-6-mussel-torch-gpu')" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/85/31/10ac88f3357fc276dc8a64e8880c82e80e7459326ae1d0a211b40abf6665/ipython-8.37.0.tar.gz", hash = "sha256:ca815841e1a41a1e6b73a0b08f3038af9b2252564d01fc405356d34033012216", size = 5606088 }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/91/d0/274fbf7b0b12643cbbc001ce13e6a5b1607ac4929d1b11c72460152c9fc3/ipython-8.37.0-py3-none-any.whl", hash = "sha256:ed87326596b878932dbcb171e3e698845434d8c61b8d8cd474bf663041a9dcf2", size = 831864 },
+]
+
+[[package]]
+name = "ipython"
+version = "9.5.0"
+source = { registry = "https://pypi.org/simple" }
+resolution-markers = [
+    "python_full_version >= '3.11' and extra != 'extra-6-mussel-tensorflow-cpu' and extra != 'extra-6-mussel-tensorflow-gpu' and extra != 'extra-6-mussel-torch-cpu' and extra == 'extra-6-mussel-torch-gpu'",
+    "(python_full_version >= '3.11' and platform_machine != 'aarch64' and sys_platform == 'linux' and extra != 'extra-6-mussel-tensorflow-cpu' and extra != 'extra-6-mussel-tensorflow-gpu' and extra == 'extra-6-mussel-torch-cpu' and extra != 'extra-6-mussel-torch-gpu') or (python_full_version >= '3.11' and sys_platform != 'darwin' and sys_platform != 'linux' and extra != 'extra-6-mussel-tensorflow-cpu' and extra != 'extra-6-mussel-tensorflow-gpu' and extra == 'extra-6-mussel-torch-cpu' and extra != 'extra-6-mussel-torch-gpu')",
+    "(python_full_version >= '3.11' and platform_machine == 'aarch64' and sys_platform == 'linux' and extra != 'extra-6-mussel-tensorflow-cpu' and extra != 'extra-6-mussel-tensorflow-gpu' and extra == 'extra-6-mussel-torch-cpu' and extra != 'extra-6-mussel-torch-gpu') or (python_full_version >= '3.11' and sys_platform == 'darwin' and extra != 'extra-6-mussel-tensorflow-cpu' and extra != 'extra-6-mussel-tensorflow-gpu' and extra == 'extra-6-mussel-torch-cpu' and extra != 'extra-6-mussel-torch-gpu')",
+    "(python_full_version >= '3.11' and platform_machine != 'aarch64' and sys_platform == 'linux' and extra != 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-tensorflow-gpu' and extra != 'extra-6-mussel-torch-cpu' and extra != 'extra-6-mussel-torch-gpu') or (python_full_version >= '3.11' and sys_platform != 'darwin' and sys_platform != 'linux' and extra != 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-tensorflow-gpu' and extra != 'extra-6-mussel-torch-cpu' and extra != 'extra-6-mussel-torch-gpu')",
+    "(python_full_version >= '3.11' and platform_machine == 'aarch64' and sys_platform == 'linux' and extra != 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-tensorflow-gpu' and extra != 'extra-6-mussel-torch-cpu' and extra != 'extra-6-mussel-torch-gpu') or (python_full_version >= '3.11' and sys_platform == 'darwin' and extra != 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-tensorflow-gpu' and extra != 'extra-6-mussel-torch-cpu' and extra != 'extra-6-mussel-torch-gpu')",
+    "(python_full_version >= '3.11' and platform_machine != 'aarch64' and sys_platform == 'linux' and extra == 'extra-6-mussel-tensorflow-cpu' and extra != 'extra-6-mussel-tensorflow-gpu' and extra != 'extra-6-mussel-torch-cpu' and extra != 'extra-6-mussel-torch-gpu') or (python_full_version >= '3.11' and sys_platform != 'darwin' and sys_platform != 'linux' and extra == 'extra-6-mussel-tensorflow-cpu' and extra != 'extra-6-mussel-tensorflow-gpu' and extra != 'extra-6-mussel-torch-cpu' and extra != 'extra-6-mussel-torch-gpu')",
+    "(python_full_version >= '3.11' and platform_machine == 'aarch64' and sys_platform == 'linux' and extra == 'extra-6-mussel-tensorflow-cpu' and extra != 'extra-6-mussel-tensorflow-gpu' and extra != 'extra-6-mussel-torch-cpu' and extra != 'extra-6-mussel-torch-gpu') or (python_full_version >= '3.11' and sys_platform == 'darwin' and extra == 'extra-6-mussel-tensorflow-cpu' and extra != 'extra-6-mussel-tensorflow-gpu' and extra != 'extra-6-mussel-torch-cpu' and extra != 'extra-6-mussel-torch-gpu')",
+    "python_full_version >= '3.11' and extra != 'extra-6-mussel-tensorflow-cpu' and extra != 'extra-6-mussel-tensorflow-gpu' and extra != 'extra-6-mussel-torch-cpu' and extra != 'extra-6-mussel-torch-gpu'",
+]
+dependencies = [
+    { name = "colorama", marker = "(python_full_version >= '3.11' and sys_platform == 'win32') or (python_full_version < '3.11' and extra == 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-tensorflow-gpu') or (python_full_version < '3.11' and extra == 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-torch-cpu') or (python_full_version < '3.11' and extra == 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-torch-gpu') or (python_full_version < '3.11' and extra == 'extra-6-mussel-tensorflow-gpu' and extra == 'extra-6-mussel-torch-cpu') or (python_full_version < '3.11' and extra == 'extra-6-mussel-tensorflow-gpu' and extra == 'extra-6-mussel-torch-gpu') or (python_full_version < '3.11' and extra == 'extra-6-mussel-torch-cpu' and extra == 'extra-6-mussel-torch-gpu') or (sys_platform != 'win32' and extra == 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-tensorflow-gpu') or (sys_platform != 'win32' and extra == 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-torch-cpu') or (sys_platform != 'win32' and extra == 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-torch-gpu') or (sys_platform != 'win32' and extra == 'extra-6-mussel-tensorflow-gpu' and extra == 'extra-6-mussel-torch-cpu') or (sys_platform != 'win32' and extra == 'extra-6-mussel-tensorflow-gpu' and extra == 'extra-6-mussel-torch-gpu') or (sys_platform != 'win32' and extra == 'extra-6-mussel-torch-cpu' and extra == 'extra-6-mussel-torch-gpu')" },
+    { name = "decorator", marker = "python_full_version >= '3.11' or (extra == 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-tensorflow-gpu') or (extra == 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-torch-cpu') or (extra == 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-torch-gpu') or (extra == 'extra-6-mussel-tensorflow-gpu' and extra == 'extra-6-mussel-torch-cpu') or (extra == 'extra-6-mussel-tensorflow-gpu' and extra == 'extra-6-mussel-torch-gpu') or (extra == 'extra-6-mussel-torch-cpu' and extra == 'extra-6-mussel-torch-gpu')" },
+    { name = "ipython-pygments-lexers", marker = "python_full_version >= '3.11' or (extra == 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-tensorflow-gpu') or (extra == 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-torch-cpu') or (extra == 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-torch-gpu') or (extra == 'extra-6-mussel-tensorflow-gpu' and extra == 'extra-6-mussel-torch-cpu') or (extra == 'extra-6-mussel-tensorflow-gpu' and extra == 'extra-6-mussel-torch-gpu') or (extra == 'extra-6-mussel-torch-cpu' and extra == 'extra-6-mussel-torch-gpu')" },
+    { name = "jedi", marker = "python_full_version >= '3.11' or (extra == 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-tensorflow-gpu') or (extra == 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-torch-cpu') or (extra == 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-torch-gpu') or (extra == 'extra-6-mussel-tensorflow-gpu' and extra == 'extra-6-mussel-torch-cpu') or (extra == 'extra-6-mussel-tensorflow-gpu' and extra == 'extra-6-mussel-torch-gpu') or (extra == 'extra-6-mussel-torch-cpu' and extra == 'extra-6-mussel-torch-gpu')" },
+    { name = "matplotlib-inline", marker = "python_full_version >= '3.11' or (extra == 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-tensorflow-gpu') or (extra == 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-torch-cpu') or (extra == 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-torch-gpu') or (extra == 'extra-6-mussel-tensorflow-gpu' and extra == 'extra-6-mussel-torch-cpu') or (extra == 'extra-6-mussel-tensorflow-gpu' and extra == 'extra-6-mussel-torch-gpu') or (extra == 'extra-6-mussel-torch-cpu' and extra == 'extra-6-mussel-torch-gpu')" },
+    { name = "pexpect", marker = "(python_full_version >= '3.11' and sys_platform != 'emscripten' and sys_platform != 'win32') or (python_full_version < '3.11' and extra == 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-tensorflow-gpu') or (python_full_version < '3.11' and extra == 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-torch-cpu') or (python_full_version < '3.11' and extra == 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-torch-gpu') or (python_full_version < '3.11' and extra == 'extra-6-mussel-tensorflow-gpu' and extra == 'extra-6-mussel-torch-cpu') or (python_full_version < '3.11' and extra == 'extra-6-mussel-tensorflow-gpu' and extra == 'extra-6-mussel-torch-gpu') or (python_full_version < '3.11' and extra == 'extra-6-mussel-torch-cpu' and extra == 'extra-6-mussel-torch-gpu') or (sys_platform == 'emscripten' and extra == 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-tensorflow-gpu') or (sys_platform == 'emscripten' and extra == 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-torch-cpu') or (sys_platform == 'emscripten' and extra == 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-torch-gpu') or (sys_platform == 'emscripten' and extra == 'extra-6-mussel-tensorflow-gpu' and extra == 'extra-6-mussel-torch-cpu') or (sys_platform == 'emscripten' and extra == 'extra-6-mussel-tensorflow-gpu' and extra == 'extra-6-mussel-torch-gpu') or (sys_platform == 'emscripten' and extra == 'extra-6-mussel-torch-cpu' and extra == 'extra-6-mussel-torch-gpu') or (sys_platform == 'win32' and extra == 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-tensorflow-gpu') or (sys_platform == 'win32' and extra == 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-torch-cpu') or (sys_platform == 'win32' and extra == 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-torch-gpu') or (sys_platform == 'win32' and extra == 'extra-6-mussel-tensorflow-gpu' and extra == 'extra-6-mussel-torch-cpu') or (sys_platform == 'win32' and extra == 'extra-6-mussel-tensorflow-gpu' and extra == 'extra-6-mussel-torch-gpu') or (sys_platform == 'win32' and extra == 'extra-6-mussel-torch-cpu' and extra == 'extra-6-mussel-torch-gpu')" },
+    { name = "prompt-toolkit", marker = "python_full_version >= '3.11' or (extra == 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-tensorflow-gpu') or (extra == 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-torch-cpu') or (extra == 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-torch-gpu') or (extra == 'extra-6-mussel-tensorflow-gpu' and extra == 'extra-6-mussel-torch-cpu') or (extra == 'extra-6-mussel-tensorflow-gpu' and extra == 'extra-6-mussel-torch-gpu') or (extra == 'extra-6-mussel-torch-cpu' and extra == 'extra-6-mussel-torch-gpu')" },
+    { name = "pygments", marker = "python_full_version >= '3.11' or (extra == 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-tensorflow-gpu') or (extra == 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-torch-cpu') or (extra == 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-torch-gpu') or (extra == 'extra-6-mussel-tensorflow-gpu' and extra == 'extra-6-mussel-torch-cpu') or (extra == 'extra-6-mussel-tensorflow-gpu' and extra == 'extra-6-mussel-torch-gpu') or (extra == 'extra-6-mussel-torch-cpu' and extra == 'extra-6-mussel-torch-gpu')" },
+    { name = "stack-data", marker = "python_full_version >= '3.11' or (extra == 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-tensorflow-gpu') or (extra == 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-torch-cpu') or (extra == 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-torch-gpu') or (extra == 'extra-6-mussel-tensorflow-gpu' and extra == 'extra-6-mussel-torch-cpu') or (extra == 'extra-6-mussel-tensorflow-gpu' and extra == 'extra-6-mussel-torch-gpu') or (extra == 'extra-6-mussel-torch-cpu' and extra == 'extra-6-mussel-torch-gpu')" },
+    { name = "traitlets", marker = "python_full_version >= '3.11' or (extra == 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-tensorflow-gpu') or (extra == 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-torch-cpu') or (extra == 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-torch-gpu') or (extra == 'extra-6-mussel-tensorflow-gpu' and extra == 'extra-6-mussel-torch-cpu') or (extra == 'extra-6-mussel-tensorflow-gpu' and extra == 'extra-6-mussel-torch-gpu') or (extra == 'extra-6-mussel-torch-cpu' and extra == 'extra-6-mussel-torch-gpu')" },
+    { name = "typing-extensions", marker = "python_full_version >= '3.11' or (extra == 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-tensorflow-gpu') or (extra == 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-torch-cpu') or (extra == 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-torch-gpu') or (extra == 'extra-6-mussel-tensorflow-gpu' and extra == 'extra-6-mussel-torch-cpu') or (extra == 'extra-6-mussel-tensorflow-gpu' and extra == 'extra-6-mussel-torch-gpu') or (extra == 'extra-6-mussel-torch-cpu' and extra == 'extra-6-mussel-torch-gpu')" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/6e/71/a86262bf5a68bf211bcc71fe302af7e05f18a2852fdc610a854d20d085e6/ipython-9.5.0.tar.gz", hash = "sha256:129c44b941fe6d9b82d36fc7a7c18127ddb1d6f02f78f867f402e2e3adde3113", size = 4389137 }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/08/2a/5628a99d04acb2d2f2e749cdf4ea571d2575e898df0528a090948018b726/ipython-9.5.0-py3-none-any.whl", hash = "sha256:88369ffa1d5817d609120daa523a6da06d02518e582347c29f8451732a9c5e72", size = 612426 },
+]
+
+[[package]]
+name = "ipython-pygments-lexers"
+version = "1.1.1"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "pygments", marker = "python_full_version >= '3.11' or (extra == 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-tensorflow-gpu') or (extra == 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-torch-cpu') or (extra == 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-torch-gpu') or (extra == 'extra-6-mussel-tensorflow-gpu' and extra == 'extra-6-mussel-torch-cpu') or (extra == 'extra-6-mussel-tensorflow-gpu' and extra == 'extra-6-mussel-torch-gpu') or (extra == 'extra-6-mussel-torch-cpu' and extra == 'extra-6-mussel-torch-gpu')" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/ef/4c/5dd1d8af08107f88c7f741ead7a40854b8ac24ddf9ae850afbcf698aa552/ipython_pygments_lexers-1.1.1.tar.gz", hash = "sha256:09c0138009e56b6854f9535736f4171d855c8c08a563a0dcd8022f78355c7e81", size = 8393 }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/d9/33/1f075bf72b0b747cb3288d011319aaf64083cf2efef8354174e3ed4540e2/ipython_pygments_lexers-1.1.1-py3-none-any.whl", hash = "sha256:a9462224a505ade19a605f71f8fa63c2048833ce50abc86768a0d81d876dc81c", size = 8074 },
+]
+
+[[package]]
 name = "isort"
 version = "6.0.1"
 source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/b8/21/1e2a441f74a653a144224d7d21afe8f4169e6c7c20bb13aec3a2dc3815e0/isort-6.0.1.tar.gz", hash = "sha256:1cb5df28dfbc742e490c5e41bad6da41b805b0a8be7bc93cd0fb2a8a890ac450", size = 821955 }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/c1/11/114d0a5f4dabbdcedc1125dee0888514c3c3b16d3e9facad87ed96fad97c/isort-6.0.1-py3-none-any.whl", hash = "sha256:2dc5d7f65c9678d94c88dfc29161a320eec67328bc97aad576874cb4be1e9615", size = 94186 },
+]
+
+[[package]]
+name = "jedi"
+version = "0.19.2"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "parso" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/72/3a/79a912fbd4d8dd6fbb02bf69afd3bb72cf0c729bb3063c6f4498603db17a/jedi-0.19.2.tar.gz", hash = "sha256:4770dc3de41bde3966b02eb84fbcf557fb33cce26ad23da12c742fb50ecb11f0", size = 1231287 }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/c0/5a/9cac0c82afec3d09ccd97c8b6502d48f165f9124db81b4bcb90b4af974ee/jedi-0.19.2-py2.py3-none-any.whl", hash = "sha256:a8ef22bde8490f57fe5c7681a3c83cb58874daf72b4784de3cce5b6ef6edb5b9", size = 1572278 },
 ]
 
 [[package]]
@@ -743,6 +858,18 @@ wheels = [
 ]
 
 [[package]]
+name = "matplotlib-inline"
+version = "0.1.7"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "traitlets" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/99/5b/a36a337438a14116b16480db471ad061c36c3694df7c2084a0da7ba538b7/matplotlib_inline-0.1.7.tar.gz", hash = "sha256:8423b23ec666be3d16e16b60bdd8ac4e86e840ebd1dd11a30b9f117f2fa0ab90", size = 8159 }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/8f/8e/9ad090d3553c280a8060fbf6e24dc1c0c29704ee7d1c372f0c174aa59285/matplotlib_inline-0.1.7-py3-none-any.whl", hash = "sha256:df192d39a4ff8f21b1895d72e6a13f5fcc5099f00fa84384e0ea28c2cc0653ca", size = 9899 },
+]
+
+[[package]]
 name = "mdurl"
 version = "0.1.2"
 source = { registry = "https://pypi.org/simple" }
@@ -843,6 +970,8 @@ torch-gpu = [
 [package.dev-dependencies]
 dev = [
     { name = "black" },
+    { name = "ipython", version = "8.37.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11' or (extra == 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-tensorflow-gpu') or (extra == 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-torch-cpu') or (extra == 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-torch-gpu') or (extra == 'extra-6-mussel-tensorflow-gpu' and extra == 'extra-6-mussel-torch-cpu') or (extra == 'extra-6-mussel-tensorflow-gpu' and extra == 'extra-6-mussel-torch-gpu') or (extra == 'extra-6-mussel-torch-cpu' and extra == 'extra-6-mussel-torch-gpu')" },
+    { name = "ipython", version = "9.5.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11' or (extra == 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-tensorflow-gpu') or (extra == 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-torch-cpu') or (extra == 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-torch-gpu') or (extra == 'extra-6-mussel-tensorflow-gpu' and extra == 'extra-6-mussel-torch-cpu') or (extra == 'extra-6-mussel-tensorflow-gpu' and extra == 'extra-6-mussel-torch-gpu') or (extra == 'extra-6-mussel-torch-cpu' and extra == 'extra-6-mussel-torch-gpu')" },
     { name = "isort" },
     { name = "mypy" },
     { name = "pytest" },
@@ -891,6 +1020,7 @@ provides-extras = ["tensorflow-gpu", "tensorflow-cpu", "torch-cpu", "torch-gpu"]
 [package.metadata.requires-dev]
 dev = [
     { name = "black" },
+    { name = "ipython", specifier = ">=8.37.0" },
     { name = "isort" },
     { name = "mypy" },
     { name = "pytest" },
@@ -1622,12 +1752,33 @@ wheels = [
 ]
 
 [[package]]
+name = "parso"
+version = "0.8.5"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/d4/de/53e0bcf53d13e005bd8c92e7855142494f41171b34c2536b86187474184d/parso-0.8.5.tar.gz", hash = "sha256:034d7354a9a018bdce352f48b2a8a450f05e9d6ee85db84764e9b6bd96dafe5a", size = 401205 }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/16/32/f8e3c85d1d5250232a5d3477a2a28cc291968ff175caeadaf3cc19ce0e4a/parso-0.8.5-py2.py3-none-any.whl", hash = "sha256:646204b5ee239c396d040b90f9e272e9a8017c630092bf59980beb62fd033887", size = 106668 },
+]
+
+[[package]]
 name = "pathspec"
 version = "0.12.1"
 source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/ca/bc/f35b8446f4531a7cb215605d100cd88b7ac6f44ab3fc94870c120ab3adbf/pathspec-0.12.1.tar.gz", hash = "sha256:a482d51503a1ab33b1c67a6c3813a26953dbdc71c31dacaef9a838c4e29f5712", size = 51043 }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/cc/20/ff623b09d963f88bfde16306a54e12ee5ea43e9b597108672ff3a408aad6/pathspec-0.12.1-py3-none-any.whl", hash = "sha256:a0d503e138a4c123b27490a4f7beda6a01c6f288df0e4a8b79c7eb0dc7b4cc08", size = 31191 },
+]
+
+[[package]]
+name = "pexpect"
+version = "4.9.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "ptyprocess" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/42/92/cc564bf6381ff43ce1f4d06852fc19a2f11d180f23dc32d9588bee2f149d/pexpect-4.9.0.tar.gz", hash = "sha256:ee7d41123f3c9911050ea2c2dac107568dc43b2d3b0c7557a33212c398ead30f", size = 166450 }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/9e/c3/059298687310d527a58bb01f3b1965787ee3b40dce76752eda8b44e9a2c5/pexpect-4.9.0-py2.py3-none-any.whl", hash = "sha256:7236d1e080e4936be2dc3e326cec0af72acf9212a7e1d060210e70a47e253523", size = 63772 },
 ]
 
 [[package]]
@@ -1693,6 +1844,18 @@ wheels = [
 ]
 
 [[package]]
+name = "prompt-toolkit"
+version = "3.0.52"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "wcwidth" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/a1/96/06e01a7b38dce6fe1db213e061a4602dd6032a8a97ef6c1a862537732421/prompt_toolkit-3.0.52.tar.gz", hash = "sha256:28cde192929c8e7321de85de1ddbe736f1375148b02f2e17edd840042b1be855", size = 434198 }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/84/03/0d3ce49e2505ae70cf43bc5bb3033955d2fc9f932163e84dc0779cc47f48/prompt_toolkit-3.0.52-py3-none-any.whl", hash = "sha256:9aac639a3bbd33284347de5ad8d68ecc044b91a762dc39b7c21095fcd6a19955", size = 391431 },
+]
+
+[[package]]
 name = "protobuf"
 version = "5.29.5"
 source = { registry = "https://pypi.org/simple" }
@@ -1704,6 +1867,24 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/6c/04/98f6f8cf5b07ab1294c13f34b4e69b3722bb609c5b701d6c169828f9f8aa/protobuf-5.29.5-cp38-abi3-manylinux2014_aarch64.whl", hash = "sha256:fa18533a299d7ab6c55a238bf8629311439995f2e7eca5caaff08663606e9015", size = 319824 },
     { url = "https://files.pythonhosted.org/packages/85/e4/07c80521879c2d15f321465ac24c70efe2381378c00bf5e56a0f4fbac8cd/protobuf-5.29.5-cp38-abi3-manylinux2014_x86_64.whl", hash = "sha256:63848923da3325e1bf7e9003d680ce6e14b07e55d0473253a690c3a8b8fd6e61", size = 319942 },
     { url = "https://files.pythonhosted.org/packages/7e/cc/7e77861000a0691aeea8f4566e5d3aa716f2b1dece4a24439437e41d3d25/protobuf-5.29.5-py3-none-any.whl", hash = "sha256:6cf42630262c59b2d8de33954443d94b746c952b01434fc58a417fdbd2e84bd5", size = 172823 },
+]
+
+[[package]]
+name = "ptyprocess"
+version = "0.7.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/20/e5/16ff212c1e452235a90aeb09066144d0c5a6a8c0834397e03f5224495c4e/ptyprocess-0.7.0.tar.gz", hash = "sha256:5c5d0a3b48ceee0b48485e0c26037c0acd7d29765ca3fbb5cb3831d347423220", size = 70762 }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/22/a6/858897256d0deac81a172289110f31629fc4cee19b6f01283303e18c8db3/ptyprocess-0.7.0-py2.py3-none-any.whl", hash = "sha256:4b41f3967fce3af57cc7e94b888626c18bf37a083e3651ca8feeb66d492fef35", size = 13993 },
+]
+
+[[package]]
+name = "pure-eval"
+version = "0.2.3"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/cd/05/0a34433a064256a578f1783a10da6df098ceaa4a57bbeaa96a6c0352786b/pure_eval-0.2.3.tar.gz", hash = "sha256:5f4e983f40564c576c7c8635ae88db5956bb2229d7e9237d03b3c0b0190eaf42", size = 19752 }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/8e/37/efad0257dc6e593a18957422533ff0f87ede7c9c6ea010a2177d738fb82f/pure_eval-0.2.3-py3-none-any.whl", hash = "sha256:1db8e35b67b3d218d818ae653e27f06c3aa420901fa7b081ca98cbedc874e0d0", size = 11842 },
 ]
 
 [[package]]
@@ -2073,6 +2254,20 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/94/e7/b2c673351809dca68a0e064b6af791aa332cf192da575fd474ed7d6f16a2/six-1.17.0.tar.gz", hash = "sha256:ff70335d468e7eb6ec65b95b99d3a2836546063f63acc5171de367e834932a81", size = 34031 }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/b7/ce/149a00dd41f10bc29e5921b496af8b574d8413afcd5e30dfa0ed46c2cc5e/six-1.17.0-py2.py3-none-any.whl", hash = "sha256:4721f391ed90541fddacab5acf947aa0d3dc7d27b2e1e8eda2be8970586c3274", size = 11050 },
+]
+
+[[package]]
+name = "stack-data"
+version = "0.6.3"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "asttokens" },
+    { name = "executing" },
+    { name = "pure-eval" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/28/e3/55dcc2cfbc3ca9c29519eb6884dd1415ecb53b0e934862d3559ddcb7e20b/stack_data-0.6.3.tar.gz", hash = "sha256:836a778de4fec4dcd1dcd89ed8abff8a221f58308462e1c4aa2a3cf30148f0b9", size = 44707 }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/f1/7b/ce1eafaf1a76852e2ec9b22edecf1daa58175c090266e9f6c64afcd81d91/stack_data-0.6.3-py3-none-any.whl", hash = "sha256:d5558e0c25a4cb0853cddad3d77da9891a08cb85dd9f9f91b9f8cd66e511e695", size = 24521 },
 ]
 
 [[package]]
@@ -2639,6 +2834,15 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/a8/4b/29b4ef32e036bb34e4ab51796dd745cdba7ed47ad142a9f4a1eb8e0c744d/tqdm-4.67.1.tar.gz", hash = "sha256:f8aef9c52c08c13a65f30ea34f4e5aac3fd1a34959879d7e59e63027286627f2", size = 169737 }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/d0/30/dc54f88dd4a2b5dc8a0279bdd7270e735851848b762aeb1c1184ed1f6b14/tqdm-4.67.1-py3-none-any.whl", hash = "sha256:26445eca388f82e72884e0d580d5464cd801a3ea01e63e5601bdff9ba6a48de2", size = 78540 },
+]
+
+[[package]]
+name = "traitlets"
+version = "5.14.3"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/eb/79/72064e6a701c2183016abbbfedaba506d81e30e232a68c9f0d6f6fcd1574/traitlets-5.14.3.tar.gz", hash = "sha256:9ed0579d3502c94b4b3732ac120375cda96f923114522847de4b3bb98b96b6b7", size = 161621 }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/00/c0/8f5d070730d7836adc9c9b6408dec68c6ced86b304a9b26a14df072a6e8c/traitlets-5.14.3-py3-none-any.whl", hash = "sha256:b74e89e397b1ed28cc831db7aea759ba6640cb3de13090ca145426688ff1ac4f", size = 85359 },
 ]
 
 [[package]]
