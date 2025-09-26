@@ -112,7 +112,7 @@ def contours_to_polygon(foreground_contours, hole_contours=None) -> MultiPolygon
     return polygon
 
 
-def grid_bounds(geometry: shapely.geometry, step_size: int, patch_size: int):
+def grid_bounds(geometry: shapely.Geometry, step_size: int, patch_size: int):
     """
     Create grid encompassing geometry
     """
@@ -136,7 +136,7 @@ def grid_bounds(geometry: shapely.geometry, step_size: int, patch_size: int):
     return grid
 
 
-def partition(geometry: shapely.geometry, step_size: int, patch_size: int):
+def partition(geometry: shapely.Geometry, step_size: int, patch_size: int):
     """
     Partition geometry into a grid
     """
@@ -376,7 +376,7 @@ def segment_tissue(
 
 def draw_slide_mask(
     wsi,
-    polygons: shapely.geometry | List[shapely.geometry],
+    polygons: shapely.Geometry | List[shapely.Geometry],
     vis_level=0,
     outline="black",
     fill=(255, 0, 0, 80),
