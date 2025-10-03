@@ -14,8 +14,7 @@ from hydra.core.hydra_config import HydraConfig
 from loguru import logger
 from omegaconf import MISSING, OmegaConf
 
-from mussel.utils.segment import (draw_slide_mask, save_patches_png,
-                                  segment_tissue)
+from mussel.utils.segment import draw_slide_mask, save_patches_png, segment_tissue
 
 
 @dataclass
@@ -181,14 +180,13 @@ cs.store(name="tessellate_config", node=TessellateConfig)
 def main(
     cfg: TessellateConfig,
 ):
-
     if values := segment_tissue(
         slide_path=cfg.slide_path,
         slide_id=cfg.slide_id,
         output_h5_path=cfg.output_h5_path,
         **OmegaConf.to_container(cfg.seg_config),
     ):
-        polygon, grid, coords = values
+        polygon, grid, coords, _ = values
     else:
         return
 
