@@ -1,5 +1,6 @@
 import base64
 import json
+import logger
 import os
 from argparse import ArgumentParser
 from dataclasses import dataclass
@@ -16,6 +17,9 @@ from loguru import logger
 from omegaconf import MISSING
 
 import hydra
+
+# restrict verbose logging from aiobotocore
+logging.getLogger('aiobotocore').setLevel(logging.CRITICAL)
 
 
 @dataclass

@@ -2,12 +2,12 @@
 Inputs: slide_file_path, patch_file_path, annotation_csv_path
 Results in .pt file with N_tiles x 3 x img_size x img_size tensor
 """
-
 import argparse
 import json
 import time
 from dataclasses import dataclass, field
 from typing import List, Optional
+import logger
 
 import pandas as pd
 import tiffslide as openslide
@@ -21,6 +21,9 @@ from torch.utils.data import DataLoader
 import hydra
 from mussel.datasets.h5 import Whole_Slide_Bag_FP
 from mussel.utils.ml import collate_features
+
+# restrict verbose logging from aiobotocore
+logging.getLogger('aiobotocore').setLevel(logging.CRITICAL)
 
 
 @dataclass

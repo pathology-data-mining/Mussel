@@ -1,3 +1,4 @@
+import logging
 import os
 import ssl
 from dataclasses import dataclass
@@ -23,6 +24,8 @@ from mussel.utils.ml import collate_features
 from mussel.utils.timer import timed
 
 ssl._create_default_https_context = ssl._create_unverified_context
+# restrict verbose logging from aiobotocore
+logging.getLogger('aiobotocore').setLevel(logging.CRITICAL)
 
 
 @dataclass
