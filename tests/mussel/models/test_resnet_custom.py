@@ -1,17 +1,17 @@
 import torch
 
 from mussel.models.resnet_custom import (
-    Bottleneck_Baseline,
-    ResNet_Baseline,
+    BottleneckBaseline,
+    ResNetBaseline,
     resnet50_baseline,
 )
 
 
 def test_bottleneck_baseline_forward():
-    """Test Bottleneck_Baseline forward pass"""
+    """Test BottleneckBaseline forward pass"""
     # Create bottleneck block with matching input/output channels
     # inplanes must equal planes * expansion for residual connection to work
-    block = Bottleneck_Baseline(inplanes=256, planes=64)
+    block = BottleneckBaseline(inplanes=256, planes=64)
     
     # Create random input
     x = torch.randn(1, 256, 56, 56)
@@ -24,14 +24,14 @@ def test_bottleneck_baseline_forward():
 
 
 def test_bottleneck_baseline_with_downsample():
-    """Test Bottleneck_Baseline with downsampling"""
+    """Test BottleneckBaseline with downsampling"""
     # Create downsample layer
     downsample = torch.nn.Sequential(
         torch.nn.Conv2d(64, 128, kernel_size=1, stride=2, bias=False),
         torch.nn.BatchNorm2d(128)
     )
     
-    block = Bottleneck_Baseline(inplanes=64, planes=32, stride=2, downsample=downsample)
+    block = BottleneckBaseline(inplanes=64, planes=32, stride=2, downsample=downsample)
     
     x = torch.randn(1, 64, 56, 56)
     output = block(x)
@@ -41,8 +41,8 @@ def test_bottleneck_baseline_with_downsample():
 
 
 def test_resnet_baseline_forward():
-    """Test ResNet_Baseline forward pass"""
-    model = ResNet_Baseline(Bottleneck_Baseline, [3, 4, 6, 3])
+    """Test ResNetBaseline forward pass"""
+    model = ResNetBaseline(BottleneckBaseline, [3, 4, 6, 3])
     
     # Create random input (batch_size=2, channels=3, height=224, width=224)
     x = torch.randn(2, 3, 224, 224)
@@ -60,7 +60,7 @@ def test_resnet50_baseline_creation():
     model = resnet50_baseline(pretrained=False)
     
     # Check model is created
-    assert isinstance(model, ResNet_Baseline)
+    assert isinstance(model, ResNetBaseline)
     
     # Test forward pass
     x = torch.randn(1, 3, 224, 224)
@@ -71,8 +71,8 @@ def test_resnet50_baseline_creation():
 
 
 def test_resnet_baseline_layers():
-    """Test that ResNet_Baseline has expected layers"""
-    model = ResNet_Baseline(Bottleneck_Baseline, [3, 4, 6, 3])
+    """Test that ResNetBaseline has expected layers"""
+    model = ResNetBaseline(BottleneckBaseline, [3, 4, 6, 3])
     
     # Check that required layers exist
     assert hasattr(model, 'conv1')
@@ -88,7 +88,7 @@ def test_resnet_baseline_layers():
 def test_bottleneck_baseline_residual_connection():
     """Test that residual connection works correctly"""
     # Create bottleneck without stride change
-    block = Bottleneck_Baseline(inplanes=256, planes=64)
+    block = BottleneckBaseline(inplanes=256, planes=64)
     
     x = torch.randn(1, 256, 28, 28)
     
