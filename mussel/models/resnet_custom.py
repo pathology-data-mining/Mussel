@@ -13,11 +13,11 @@ model_urls = {
 }
 
 
-class Bottleneck_Baseline(nn.Module):
+class BottleneckBaseline(nn.Module):
     expansion = 4
 
     def __init__(self, inplanes, planes, stride=1, downsample=None):
-        super(Bottleneck_Baseline, self).__init__()
+        super(BottleneckBaseline, self).__init__()
         self.conv1 = nn.Conv2d(inplanes, planes, kernel_size=1, bias=False)
         self.bn1 = nn.BatchNorm2d(planes)
         self.conv2 = nn.Conv2d(
@@ -55,10 +55,10 @@ class Bottleneck_Baseline(nn.Module):
         return out
 
 
-class ResNet_Baseline(nn.Module):
+class ResNetBaseline(nn.Module):
     def __init__(self, block, layers):
         self.inplanes = 64
-        super(ResNet_Baseline, self).__init__()
+        super(ResNetBaseline, self).__init__()
         self.conv1 = nn.Conv2d(3, 64, kernel_size=7, stride=2, padding=3, bias=False)
         self.bn1 = nn.BatchNorm2d(64)
         self.relu = nn.ReLU(inplace=True)
@@ -118,7 +118,7 @@ def resnet50_baseline(pretrained=False):
     Args:
         pretrained (bool): If True, returns a model pre-trained on ImageNet
     """
-    model = ResNet_Baseline(Bottleneck_Baseline, [3, 4, 6, 3])
+    model = ResNetBaseline(BottleneckBaseline, [3, 4, 6, 3])
     if pretrained:
         model = load_pretrained_weights(model, "resnet50")
     return model

@@ -1,12 +1,12 @@
 import numpy as np
 from PIL import Image
 
-from mussel.utils.wsi_classes import Mosaic_Canvas
+from mussel.utils.wsi_classes import MosaicCanvas
 
 
 def test_mosaic_canvas_initialization():
-    """Test Mosaic_Canvas initialization"""
-    canvas = Mosaic_Canvas(patch_size=256, n=100, downscale=4, n_per_row=10)
+    """Test MosaicCanvas initialization"""
+    canvas = MosaicCanvas(patch_size=256, num_patches=100, downscale=4, patches_per_row=10)
     
     assert canvas.patch_size == 256
     assert canvas.downscaled_patch_size == 64
@@ -17,8 +17,8 @@ def test_mosaic_canvas_initialization():
 
 
 def test_mosaic_canvas_coord_increment():
-    """Test coordinate increment in Mosaic_Canvas"""
-    canvas = Mosaic_Canvas(patch_size=256, n=9, downscale=4, n_per_row=3)
+    """Test coordinate increment in MosaicCanvas"""
+    canvas = MosaicCanvas(patch_size=256, num_patches=9, downscale=4, patches_per_row=3)
     
     # Initial coordinates
     assert np.array_equal(canvas.coord, [0, 0])
@@ -37,8 +37,8 @@ def test_mosaic_canvas_coord_increment():
 
 
 def test_mosaic_canvas_paste_patch():
-    """Test pasting patches to Mosaic_Canvas"""
-    canvas = Mosaic_Canvas(patch_size=256, n=4, downscale=4, n_per_row=2)
+    """Test pasting patches to MosaicCanvas"""
+    canvas = MosaicCanvas(patch_size=256, num_patches=4, downscale=4, patches_per_row=2)
     
     # Create a test patch
     test_patch = Image.new('RGB', (256, 256), color='red')
@@ -51,8 +51,8 @@ def test_mosaic_canvas_paste_patch():
 
 
 def test_mosaic_canvas_reset_coord():
-    """Test resetting coordinates in Mosaic_Canvas"""
-    canvas = Mosaic_Canvas(patch_size=256, n=4, downscale=4, n_per_row=2)
+    """Test resetting coordinates in MosaicCanvas"""
+    canvas = MosaicCanvas(patch_size=256, num_patches=4, downscale=4, patches_per_row=2)
     
     # Move coordinates
     canvas.increment_coord()
@@ -64,9 +64,9 @@ def test_mosaic_canvas_reset_coord():
 
 
 def test_mosaic_canvas_with_alpha():
-    """Test Mosaic_Canvas with alpha channel"""
-    canvas = Mosaic_Canvas(
-        patch_size=256, n=4, downscale=4, n_per_row=2, alpha=0.5
+    """Test MosaicCanvas with alpha channel"""
+    canvas = MosaicCanvas(
+        patch_size=256, num_patches=4, downscale=4, patches_per_row=2, alpha=0.5
     )
     
     # Canvas should be RGBA mode with alpha
@@ -74,8 +74,8 @@ def test_mosaic_canvas_with_alpha():
 
 
 def test_mosaic_canvas_save(tmp_path):
-    """Test saving Mosaic_Canvas to file"""
-    canvas = Mosaic_Canvas(patch_size=256, n=4, downscale=4, n_per_row=2)
+    """Test saving MosaicCanvas to file"""
+    canvas = MosaicCanvas(patch_size=256, num_patches=4, downscale=4, patches_per_row=2)
     
     output_file = tmp_path / "mosaic.png"
     canvas.save(output_file)
@@ -85,7 +85,7 @@ def test_mosaic_canvas_save(tmp_path):
 
 def test_mosaic_canvas_get_painting():
     """Test getting the canvas image"""
-    canvas = Mosaic_Canvas(patch_size=256, n=4, downscale=4, n_per_row=2)
+    canvas = MosaicCanvas(patch_size=256, num_patches=4, downscale=4, patches_per_row=2)
     
     painting = canvas.get_painting()
     assert isinstance(painting, Image.Image)

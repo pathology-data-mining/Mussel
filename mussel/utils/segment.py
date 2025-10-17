@@ -23,43 +23,71 @@ Image.MAX_IMAGE_PIXELS = None
 logger = logging.getLogger(__name__)
 
 
-def is_white_patch(patch, satThresh=5):
+def is_white_patch(patch, saturation_threshold=5):
     """
-    Determine if patch is white
+    Determine if patch is white based on HSV saturation threshold.
+    
+    Args:
+        patch: RGB patch array
+        saturation_threshold: Saturation threshold for white detection
+        
+    Returns:
+        True if patch is white, False otherwise
     """
     patch_hsv = cv2.cvtColor(patch, cv2.COLOR_RGB2HSV)
-    return True if np.mean(patch_hsv[:, :, 1]) < satThresh else False
+    mean_saturation = np.mean(patch_hsv[:, :, 1])
+    return mean_saturation < saturation_threshold
 
 
-def is_black_patch(patch, rgbThresh=40):
+def is_black_patch(patch, rgb_threshold=40):
     """
-    Determine if patch is black
+    Determine if patch is black based on RGB threshold.
+    
+    Args:
+        patch: RGB patch array
+        rgb_threshold: RGB threshold for black detection
+        
+    Returns:
+        True if patch is black, False otherwise
     """
-    return True if np.all(np.mean(patch, axis=(0, 1)) < rgbThresh) else False
+    mean_rgb = np.mean(patch, axis=(0, 1))
+    return np.all(mean_rgb < rgb_threshold)
 
 
-def is_black_patch_S(patch, rgbThresh=20, percentage=0.05):
+def is_black_patch_S(patch, rgb_threshold=20, percentage=0.05):
     """
-    Determine if percentage of patch is black
+    Determine if percentage of patch is black.
+    
+    Args:
+        patch: PIL Image patch
+        rgb_threshold: RGB threshold for black detection
+        percentage: Minimum percentage of black pixels required
+        
+    Returns:
+        True if percentage of patch is black, False otherwise
     """
     num_pixels = patch.size[0] * patch.size[1]
-    return (
-        True
-        if np.all(np.array(patch) < rgbThresh, axis=(2)).sum() > num_pixels * percentage
-        else False
-    )
+    patch_array = np.array(patch)
+    black_pixels = np.all(patch_array < rgb_threshold, axis=2).sum()
+    return black_pixels > num_pixels * percentage
 
 
-def is_white_patch_S(patch, rgbThresh=220, percentage=0.2):
+def is_white_patch_S(patch, rgb_threshold=220, percentage=0.2):
     """
-    Determine if percentage of patch is white
+    Determine if percentage of patch is white.
+    
+    Args:
+        patch: PIL Image patch
+        rgb_threshold: RGB threshold for white detection
+        percentage: Minimum percentage of white pixels required
+        
+    Returns:
+        True if percentage of patch is white, False otherwise
     """
     num_pixels = patch.size[0] * patch.size[1]
-    return (
-        True
-        if np.all(np.array(patch) > rgbThresh, axis=(2)).sum() > num_pixels * percentage
-        else False
-    )
+    patch_array = np.array(patch)
+    white_pixels = np.all(patch_array > rgb_threshold, axis=2).sum()
+    return white_pixels > num_pixels * percentage
 
 
 def scale_geometry(geometry: shapely.Geometry, scale_factor: float):
@@ -120,19 +148,17 @@ def grid_bounds(geometry: shapely.Geometry, step_size: int, patch_size: int):
     Create grid encompassing geometry
     """
     minx, miny, maxx, maxy = geometry.bounds
-    gx = np.arange(minx, maxx, step=step_size)
-    gy = np.arange(miny, maxy, step=step_size)
-    # x_coords, y_coords = np.meshgrid(x_range, y_range, indexing="ij")
-    # gx, gy = np.linspace(minx,maxx,nx), np.linspace(miny,maxy,ny)
+    grid_x_coords = np.arange(minx, maxx, step=step_size)
+    grid_y_coords = np.arange(miny, maxy, step=step_size)
     grid = []
-    for i in range(len(gx) - 1):
-        for j in range(len(gy) - 1):
+    for i in range(len(grid_x_coords) - 1):
+        for j in range(len(grid_y_coords) - 1):
             poly_ij = Polygon(
                 [
-                    [gx[i], gy[j]],
-                    [gx[i], gy[j] + patch_size],
-                    [gx[i] + patch_size, gy[j] + patch_size],
-                    [gx[i] + patch_size, gy[j]],
+                    [grid_x_coords[i], grid_y_coords[j]],
+                    [grid_x_coords[i], grid_y_coords[j] + patch_size],
+                    [grid_x_coords[i] + patch_size, grid_y_coords[j] + patch_size],
+                    [grid_x_coords[i] + patch_size, grid_y_coords[j]],
                 ]
             )
             grid.append(poly_ij)
@@ -196,7 +222,7 @@ def _filter_contours(
     max_num_holes: int,
 ):
     """
-    Filter contours by: area.
+    Filter contours by area.
     """
     filtered = []
 
@@ -207,18 +233,18 @@ def _filter_contours(
     # loop through foreground contour indices
     for cont_idx in hierarchy_1:
         # actual contour
-        cont = contours[cont_idx]
+        contour = contours[cont_idx]
         # indices of holes contained in this contour (children of parent contour)
         holes = np.flatnonzero(hierarchy[:, 1] == cont_idx)
         # take contour area (includes holes)
-        a = cv2.contourArea(cont)
+        contour_area = cv2.contourArea(contour)
         # calculate the contour area of each hole
         hole_areas = [cv2.contourArea(contours[hole_idx]) for hole_idx in holes]
         # actual area of foreground contour region
-        a = a - np.array(hole_areas).sum()
-        if a == 0:
+        contour_area = contour_area - np.array(hole_areas).sum()
+        if contour_area == 0:
             continue
-        if tuple((tissue_area_threshold,)) < tuple((a,)):
+        if tuple((tissue_area_threshold,)) < tuple((contour_area,)):
             filtered.append(cont_idx)
             all_holes.append(holes)
 
@@ -228,13 +254,13 @@ def _filter_contours(
 
     for hole_ids in all_holes:
         unfiltered_holes = [contours[idx] for idx in hole_ids]
-        unfilered_holes = sorted(unfiltered_holes, key=cv2.contourArea, reverse=True)
+        unfiltered_holes = sorted(unfiltered_holes, key=cv2.contourArea, reverse=True)
         # take max_n_holes largest holes by area
-        unfilered_holes = unfilered_holes[:max_num_holes]
+        unfiltered_holes = unfiltered_holes[:max_num_holes]
         filtered_holes = []
 
         # filter these holes
-        for hole in unfilered_holes:
+        for hole in unfiltered_holes:
             if cv2.contourArea(hole) > hole_area_threshold:
                 filtered_holes.append(hole)
 
@@ -277,11 +303,11 @@ def segment_tissue(
         else:
             seg_level = wsi.get_best_level_for_downsample(64)
 
-    w, h = wsi.level_dimensions[seg_level]
-    if w * h > 1e12:
+    width, height = wsi.level_dimensions[seg_level]
+    if width * height > 1e12:
         logger.error(
             "level_dim {} x {} is likely too large for successful segmentation, aborting".format(
-                w, h
+                width, height
             )
         )
         return
@@ -439,13 +465,13 @@ def draw_slide_mask(
         else:
             draw.polygon(scaled_polygon.exterior.coords, outline="black", fill=fill)
 
-    w, h = img.size
+    image_width, image_height = img.size
     if custom_downsample and custom_downsample > 1:
-        img = img.resize((int(w / custom_downsample), int(h / custom_downsample)))
+        img = img.resize((int(image_width / custom_downsample), int(image_height / custom_downsample)))
 
-    if max_size is not None and (w > max_size or h > max_size):
-        resizeFactor = max_size / w if w > h else max_size / h
-        img = img.resize((int(w * resizeFactor), int(h * resizeFactor)))
+    if max_size is not None and (image_width > max_size or image_height > max_size):
+        resize_factor = max_size / image_width if image_width > image_height else max_size / image_height
+        img = img.resize((int(image_width * resize_factor), int(image_height * resize_factor)))
 
     wsi.close()
 

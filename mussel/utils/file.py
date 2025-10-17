@@ -6,15 +6,13 @@ import h5py
 
 
 def save_pkl(filename, save_object):
-    writer = open(filename, "wb")
-    pickle.dump(save_object, writer)
-    writer.close()
+    with open(filename, "wb") as writer:
+        pickle.dump(save_object, writer)
 
 
 def load_pkl(filename):
-    loader = open(filename, "rb")
-    file = pickle.load(loader)
-    loader.close()
+    with open(filename, "rb") as loader:
+        file = pickle.load(loader)
     return file
 
 
