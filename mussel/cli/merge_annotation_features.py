@@ -4,6 +4,7 @@ from typing import Optional
 import cv2
 import geopandas as gpd
 import h5py
+import hydra
 import numpy as np
 import pandas as pd
 import yaml
@@ -14,7 +15,6 @@ from omegaconf import MISSING, OmegaConf
 from PIL import Image
 from shapely.geometry import MultiPolygon, Polygon
 
-import hydra
 from mussel.utils.segment import contours_to_polygon
 
 Image.MAX_IMAGE_PIXELS = None

@@ -3,7 +3,10 @@ from omegaconf import OmegaConf
 
 import mussel.cli.extract_features
 from mussel.cli.extract_features import ExtractFeaturesConfig
+from mussel.models import ModelType
 
+import ssl
+ssl._create_default_https_context = ssl._create_unverified_context
 
 def test_extract_features(tmp_path):
     slide_path = "tests/testdata/948176.svs"
@@ -16,6 +19,7 @@ def test_extract_features(tmp_path):
         output_h5_path=output_h5_path,
         output_pt_path=output_pt_path,
         num_workers=1,
+        model_type=ModelType.RESNET50
     )
     mussel.cli.extract_features.main(OmegaConf.create(cfg))
     assert os.path.exists(output_h5_path)

@@ -17,8 +17,6 @@ from timm.layers import SwiGLUPacked
 from torchvision import transforms
 from transformers import AutoModel
 
-CFG_DIR = Path(__file__).parent / "configs"
-
 IMAGENET_MEAN = [0.485, 0.456, 0.406]
 
 IMAGENET_STD = [0.229, 0.224, 0.225]
@@ -113,6 +111,7 @@ class TorchModel(Model):
         use_gpu: bool = True,
         gpu_device_id: int | List[int] | None = None,
     ):
+        self.use_gpu = use_gpu
         if model_obj is None:
             if model_path.startswith("hf-hub:"):
                 repo_id = model_path.replace("hf-hub:", "")
@@ -159,12 +158,16 @@ class TorchModel(Model):
             with (
                 torch.no_grad(),
                 torch.inference_mode(),
-                torch.autocast(device_type=self.device.type, dtype=torch.float16),
+                torch.autocast(device_type=self.device.type, dtype=torch.float16)
             ):
                 x = x.to(self.device, non_blocking=True)
                 return self.obj(x).cpu()
 
         return model_fun
+
+    def save(self, save_path: str):
+        with open(save_path, "wb") as f:
+            pickle.dump(self.obj, f)
 
 
 class Conch15TorchModel(TorchModel):
@@ -407,5 +410,10 @@ class ClipModelFactory(ModelFactory):
         return ClipTorchModel(model_path, use_gpu, gpu_device_id)
 
 
-def get_model_factory(model_type: ModelType = ModelType.CTRANSPATH) -> ModelFactory:
+def get_model_factory(model_type: ModelType | str = ModelType.CTRANSPATH) -> ModelFactory:
+    if isinstance(model_type, str):
+        try:
+            model_type = ModelType[model_type.upper()]
+        except KeyError:
+            raise ValueError(f"unknown model type: {model_type}")
     return MODEL_FACTORIES.get(model_type)()

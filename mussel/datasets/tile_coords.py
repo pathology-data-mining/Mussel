@@ -1,19 +1,15 @@
-import h5py
 import tiffslide as openslide
 from loguru import logger
-from PIL import Image
 from torch.utils.data import Dataset
 from torchvision import transforms
 
 from .utils import eval_transforms
 
-
-
-
-class WholeSlideImageH5Dataset(Dataset):
+class WholeSlideImageTileCoordDataset(Dataset):
     def __init__(
         self,
-        h5_path,
+        coords,
+        attrs,
         slide_path,
         use_imagenet_rgb_dist=True,
         preprocess=None,
@@ -22,9 +18,12 @@ class WholeSlideImageH5Dataset(Dataset):
     ):
         """
         Args:
-                h5_path (string): Path to the .h5 file containing patched data.
-                pretrained (bool): Use ImageNet transforms
-                target_patch_size (int): Custom defined image size before embedding
+                coords (list of tuples): List of (x, y) coordinates for patches.
+                attrs (dict): Attributes including 'patch_size', 'patch_level', and 'scaled_patch_size'.
+                slide_path (string): Path to the whole slide image file.
+                use_imagenet_rgb_dist (bool): Use ImageNet RGB distribution for normalization.
+                preprocess (callable, optional): Custom preprocessing function. Defaults to None.
+                limit_to_indices (list of int, optional): Limit dataset to these indices. Defaults to None.
         """
         self.use_imagenet_rgb_dist = use_imagenet_rgb_dist
         self.slide_path = slide_path
@@ -32,17 +31,14 @@ class WholeSlideImageH5Dataset(Dataset):
         if not init_wsi_in_worker:
             self.wsi = openslide.open_slide(self.slide_path)
         self.limit_to_indices = limit_to_indices
-        self.h5_path = h5_path
+        self.coords = coords
+        self.patch_size = attrs["patch_size"]
+        self.patch_level = attrs["patch_level"]
+        self.scaled_patch_size = int(attrs["patch_size_to_resize_to_for_desired_mpp"])
 
-        with h5py.File(self.h5_path, "r") as f:
-            self.patch_size = f["coords"].attrs["patch_size"]
-            self.patch_level = f["coords"].attrs["patch_level"]
-            self.scaled_patch_size = int(
-                f["coords"].attrs["patch_size_to_resize_to_for_desired_mpp"]
-            )
-            self.length = (
-                len(limit_to_indices) if limit_to_indices else len(f["coords"])
-            )
+        self.length = (
+            len(limit_to_indices) if limit_to_indices else len(coords)
+        )
 
         if preprocess is not None:
             assert (
@@ -63,13 +59,6 @@ class WholeSlideImageH5Dataset(Dataset):
         return self.length
 
     def summary(self):
-        hdf5_file = h5py.File(self.h5_path, "r")
-        dset = hdf5_file["coords"]
-        for name, value in dset.attrs.items():
-            logger.info(f"{name} {value}")
-
-        hdf5_file.close()
-
         logger.info("\nfeature extraction settings")
         logger.info("target patch size: " + str(self.scaled_patch_size))
         logger.info("use_imagenet_rgb_dist: " + str(self.use_imagenet_rgb_dist))
@@ -81,12 +70,10 @@ class WholeSlideImageH5Dataset(Dataset):
         else:
             idx = idx_
 
-        with h5py.File(self.h5_path, "r") as hdf5_file:
-            coord = hdf5_file["coords"][idx]
-            img = self.wsi.read_region(
-                coord, self.patch_level, (self.patch_size, self.patch_size)
-            ).convert("RGB")
-
+        coord = self.coords[idx]
+        img = self.wsi.read_region(
+            coord, self.patch_level, (self.patch_size, self.patch_size)
+        ).convert("RGB")
         img = self.roi_transforms(img).unsqueeze(0)
         return img, coord
 

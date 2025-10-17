@@ -1,7 +1,8 @@
+import logging
 import time
 from functools import wraps
 
-from loguru import logger
+logger = logging.getLogger(__name__)
 
 
 def timed(func):
