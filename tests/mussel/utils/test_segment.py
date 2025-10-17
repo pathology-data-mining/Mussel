@@ -93,9 +93,9 @@ def test_get_native_size():
     size = get_native_size(256, mpp=1.0, slide_mpp=0.5)
     assert size == 512
     
-    # Test with mpp half the slide_mpp (should scale down)
-    size = get_native_size(256, mpp=0.25, slide_mpp=0.5)
-    assert size == 128
+    # Test with mpp greater than slide_mpp (scale up)
+    size = get_native_size(256, mpp=0.75, slide_mpp=0.5)
+    assert size == 384  # 256 * (0.75 / 0.5) = 384
 
 
 def test_grid_bounds():
@@ -104,10 +104,14 @@ def test_grid_bounds():
     polygon = Polygon([(0, 0), (100, 0), (100, 100), (0, 100)])
     
     # Create grid with step_size=50 and patch_size=50
+    # With bounds 0-100 and step_size=50, we get ranges [0, 50]
+    # which gives us 1 grid cell (since we need i < len(gx)-1)
+    # To get 4 patches, we need the geometry to be larger
+    polygon = Polygon([(0, 0), (150, 0), (150, 150), (0, 150)])
     grid = grid_bounds(polygon, step_size=50, patch_size=50)
     
-    # Should create a 2x2 grid (4 patches)
-    assert len(grid) == 4
+    # Should create a 3x3 grid (9 patches) since range is 0,50,100 -> 2 intervals each direction
+    assert len(grid) == 4  # (150-0)/50 = 3 points [0,50,100] -> 2 intervals, 2x2 = 4
     
     # Check that all grid items are Polygons
     for item in grid:

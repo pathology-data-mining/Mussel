@@ -9,11 +9,12 @@ from mussel.models.resnet_custom import (
 
 def test_bottleneck_baseline_forward():
     """Test Bottleneck_Baseline forward pass"""
-    # Create bottleneck block
-    block = Bottleneck_Baseline(inplanes=64, planes=64)
+    # Create bottleneck block with matching input/output channels
+    # inplanes must equal planes * expansion for residual connection to work
+    block = Bottleneck_Baseline(inplanes=256, planes=64)
     
     # Create random input
-    x = torch.randn(1, 64, 56, 56)
+    x = torch.randn(1, 256, 56, 56)
     
     # Forward pass
     output = block(x)

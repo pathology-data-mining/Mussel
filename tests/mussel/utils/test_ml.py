@@ -81,16 +81,19 @@ def test_calculate_error():
 
 def test_nth():
     """Test nth function for getting nth element from iterator"""
+    import collections
+    
     iterator = iter([10, 20, 30, 40, 50])
     
     # Get 2nd element (0-indexed)
     result = nth(iterator, 2)
     assert result == 30
     
-    # Test with None (consume iterator)
+    # Test with None (consume iterator and return empty deque)
     iterator2 = iter([1, 2, 3])
     result = nth(iterator2, None)
-    assert result is None
+    assert isinstance(result, collections.deque)
+    assert len(result) == 0
     
     # Test with default value when index is out of range
     iterator3 = iter([1, 2])
