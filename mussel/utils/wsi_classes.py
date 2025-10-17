@@ -3,38 +3,37 @@ import numpy as np
 from PIL import Image
 
 
-class Mosaic_Canvas(object):
+class MosaicCanvas(object):
     def __init__(
         self,
         patch_size=256,
-        n=100,
+        num_patches=100,
         downscale=4,
-        n_per_row=10,
+        patches_per_row=10,
         bg_color=(0, 0, 0),
         alpha=-1,
     ):
         self.patch_size = patch_size
         self.downscaled_patch_size = int(np.ceil(patch_size / downscale))
-        self.n_rows = int(np.ceil(n / n_per_row))
-        self.n_cols = n_per_row
-        w = self.n_cols * self.downscaled_patch_size
-        h = self.n_rows * self.downscaled_patch_size
+        self.n_rows = int(np.ceil(num_patches / patches_per_row))
+        self.n_cols = patches_per_row
+        canvas_width = self.n_cols * self.downscaled_patch_size
+        canvas_height = self.n_rows * self.downscaled_patch_size
         if alpha < 0:
-            canvas = Image.new(size=(w, h), mode="RGB", color=bg_color)
+            canvas = Image.new(size=(canvas_width, canvas_height), mode="RGB", color=bg_color)
         else:
             canvas = Image.new(
-                size=(w, h), mode="RGBA", color=bg_color + (int(255 * alpha),)
+                size=(canvas_width, canvas_height), mode="RGBA", color=bg_color + (int(255 * alpha),)
             )
 
         self.canvas = canvas
-        self.dimensions = np.array([w, h])
+        self.dimensions = np.array([canvas_width, canvas_height])
         self.reset_coord()
 
     def reset_coord(self):
         self.coord = np.array([0, 0])
 
     def increment_coord(self):
-        # print('current coord: {} x {} / {} x {}'.format(self.coord[0], self.coord[1], self.dimensions[0], self.dimensions[1]))
         assert np.all(self.coord <= self.dimensions)
         if (
             self.coord[0] + self.downscaled_patch_size
@@ -63,46 +62,45 @@ class Mosaic_Canvas(object):
         return self.canvas
 
 
-class Contour_Checking_fn(object):
-    # Defining __call__ method
+class ContourCheckingFunction(object):
     def __call__(self, pt):
         raise NotImplementedError
 
 
-class isInContourV1(Contour_Checking_fn):
+class IsInContourV1(ContourCheckingFunction):
     def __init__(self, contour):
-        self.cont = contour
+        self.contour = contour
 
     def __call__(self, pt):
         return (
             1
-            if cv2.pointPolygonTest(self.cont, tuple(np.array(pt).astype(float)), False)
+            if cv2.pointPolygonTest(self.contour, tuple(np.array(pt).astype(float)), False)
             >= 0
             else 0
         )
 
 
-class isInContourV2(Contour_Checking_fn):
+class IsInContourV2(ContourCheckingFunction):
     def __init__(self, contour, patch_size):
-        self.cont = contour
+        self.contour = contour
         self.patch_size = patch_size
 
     def __call__(self, pt):
-        pt = np.array(
+        center_point = np.array(
             (pt[0] + self.patch_size // 2, pt[1] + self.patch_size // 2)
         ).astype(float)
         return (
             1
-            if cv2.pointPolygonTest(self.cont, tuple(np.array(pt).astype(float)), False)
+            if cv2.pointPolygonTest(self.contour, tuple(center_point), False)
             >= 0
             else 0
         )
 
 
 # Easy version of 4pt contour checking function - 1 of 4 points need to be in the contour for test to pass
-class isInContourV3_Easy(Contour_Checking_fn):
+class IsInContourV3Easy(ContourCheckingFunction):
     def __init__(self, contour, patch_size, center_shift=0.5):
-        self.cont = contour
+        self.contour = contour
         self.patch_size = patch_size
         self.shift = int(patch_size // 2 * center_shift)
 
@@ -118,10 +116,10 @@ class isInContourV3_Easy(Contour_Checking_fn):
         else:
             all_points = [center]
 
-        for points in all_points:
+        for point in all_points:
             if (
                 cv2.pointPolygonTest(
-                    self.cont, tuple(np.array(points).astype(float)), False
+                    self.contour, tuple(np.array(point).astype(float)), False
                 )
                 >= 0
             ):
@@ -130,9 +128,9 @@ class isInContourV3_Easy(Contour_Checking_fn):
 
 
 # Hard version of 4pt contour checking function - all 4 points need to be in the contour for test to pass
-class isInContourV3_Hard(Contour_Checking_fn):
+class IsInContourV3Hard(ContourCheckingFunction):
     def __init__(self, contour, patch_size, center_shift=0.5):
-        self.cont = contour
+        self.contour = contour
         self.patch_size = patch_size
         self.shift = int(patch_size // 2 * center_shift)
 
@@ -148,10 +146,10 @@ class isInContourV3_Hard(Contour_Checking_fn):
         else:
             all_points = [center]
 
-        for points in all_points:
+        for point in all_points:
             if (
                 cv2.pointPolygonTest(
-                    self.cont, tuple(np.array(points).astype(float)), False
+                    self.contour, tuple(np.array(point).astype(float)), False
                 )
                 < 0
             ):
