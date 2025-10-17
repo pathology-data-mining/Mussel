@@ -23,43 +23,71 @@ Image.MAX_IMAGE_PIXELS = None
 logger = logging.getLogger(__name__)
 
 
-def is_white_patch(patch, satThresh=5):
+def is_white_patch(patch, saturation_threshold=5):
     """
-    Determine if patch is white
+    Determine if patch is white based on HSV saturation threshold.
+    
+    Args:
+        patch: RGB patch array
+        saturation_threshold: Saturation threshold for white detection
+        
+    Returns:
+        True if patch is white, False otherwise
     """
     patch_hsv = cv2.cvtColor(patch, cv2.COLOR_RGB2HSV)
-    return True if np.mean(patch_hsv[:, :, 1]) < satThresh else False
+    mean_saturation = np.mean(patch_hsv[:, :, 1])
+    return mean_saturation < saturation_threshold
 
 
-def is_black_patch(patch, rgbThresh=40):
+def is_black_patch(patch, rgb_threshold=40):
     """
-    Determine if patch is black
+    Determine if patch is black based on RGB threshold.
+    
+    Args:
+        patch: RGB patch array
+        rgb_threshold: RGB threshold for black detection
+        
+    Returns:
+        True if patch is black, False otherwise
     """
-    return True if np.all(np.mean(patch, axis=(0, 1)) < rgbThresh) else False
+    mean_rgb = np.mean(patch, axis=(0, 1))
+    return np.all(mean_rgb < rgb_threshold)
 
 
-def is_black_patch_S(patch, rgbThresh=20, percentage=0.05):
+def is_black_patch_S(patch, rgb_threshold=20, percentage=0.05):
     """
-    Determine if percentage of patch is black
+    Determine if percentage of patch is black.
+    
+    Args:
+        patch: PIL Image patch
+        rgb_threshold: RGB threshold for black detection
+        percentage: Minimum percentage of black pixels required
+        
+    Returns:
+        True if percentage of patch is black, False otherwise
     """
     num_pixels = patch.size[0] * patch.size[1]
-    return (
-        True
-        if np.all(np.array(patch) < rgbThresh, axis=(2)).sum() > num_pixels * percentage
-        else False
-    )
+    patch_array = np.array(patch)
+    black_pixels = np.all(patch_array < rgb_threshold, axis=2).sum()
+    return black_pixels > num_pixels * percentage
 
 
-def is_white_patch_S(patch, rgbThresh=220, percentage=0.2):
+def is_white_patch_S(patch, rgb_threshold=220, percentage=0.2):
     """
-    Determine if percentage of patch is white
+    Determine if percentage of patch is white.
+    
+    Args:
+        patch: PIL Image patch
+        rgb_threshold: RGB threshold for white detection
+        percentage: Minimum percentage of white pixels required
+        
+    Returns:
+        True if percentage of patch is white, False otherwise
     """
     num_pixels = patch.size[0] * patch.size[1]
-    return (
-        True
-        if np.all(np.array(patch) > rgbThresh, axis=(2)).sum() > num_pixels * percentage
-        else False
-    )
+    patch_array = np.array(patch)
+    white_pixels = np.all(patch_array > rgb_threshold, axis=2).sum()
+    return white_pixels > num_pixels * percentage
 
 
 def scale_geometry(geometry: shapely.Geometry, scale_factor: float):

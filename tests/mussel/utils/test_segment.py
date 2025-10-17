@@ -19,23 +19,23 @@ def test_is_white_patch():
     """Test is_white_patch function"""
     # Create a white patch (low saturation)
     white_patch = np.ones((256, 256, 3), dtype=np.uint8) * 255
-    assert is_white_patch(white_patch, satThresh=5) == True
+    assert is_white_patch(white_patch, saturation_threshold=5) == True
     
     # Create a colored patch (high saturation)
     colored_patch = np.zeros((256, 256, 3), dtype=np.uint8)
     colored_patch[:, :, 0] = 255  # Red channel
-    assert is_white_patch(colored_patch, satThresh=5) == False
+    assert is_white_patch(colored_patch, saturation_threshold=5) == False
 
 
 def test_is_black_patch():
     """Test is_black_patch function"""
     # Create a black patch
     black_patch = np.zeros((256, 256, 3), dtype=np.uint8)
-    assert is_black_patch(black_patch, rgbThresh=40) == True
+    assert is_black_patch(black_patch, rgb_threshold=40) == True
     
     # Create a bright patch
     bright_patch = np.ones((256, 256, 3), dtype=np.uint8) * 200
-    assert is_black_patch(bright_patch, rgbThresh=40) == False
+    assert is_black_patch(bright_patch, rgb_threshold=40) == False
 
 
 def test_scale_geometry():
