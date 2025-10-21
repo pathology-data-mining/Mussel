@@ -4,6 +4,14 @@ import pandas as pd
 
 
 def get_paths(args):
+    """Get file paths for a slide in a reef directory structure.
+    
+    Args:
+        args: Dictionary containing reef_dir, image_id, mpp, patch_size, step_size, and model_name.
+        
+    Returns:
+        Dictionary of file paths or None if slide not found in inventory.
+    """
     paths = {}
 
     slide_inventory = pd.read_csv(os.path.join(args["reef_dir"], "slide_directory.csv"))
@@ -57,6 +65,19 @@ def check_reef_status(
     step_size=896,
     reef_dir="/gpfs/mskmind_ess/pdm/reef",
 ):
+    """Check the processing status of a slide in the reef directory.
+    
+    Args:
+        slide_id: Slide identifier.
+        model_name: Name of the model (default: "quilt").
+        mpp: Microns per pixel (default: 1.0).
+        patch_size: Patch size in pixels (default: 224).
+        step_size: Step size in pixels (default: 896).
+        reef_dir: Path to reef directory (default: "/gpfs/mskmind_ess/pdm/reef").
+        
+    Returns:
+        Tuple of (status dict, paths dict) or (None, None) if slide not found.
+    """
     status = {}
     args = {
         "image_id": slide_id,

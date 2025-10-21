@@ -60,6 +60,7 @@ cs.store(name="merge_annotation_features_config", node=MergeAnnotationFeaturesCo
     version_base=None, config_path=".", config_name="merge_annotation_features_config"
 )
 def main(cfg: MergeAnnotationFeaturesConfig):
+    """Merge tile features with annotations from a BMP file."""
     with open(cfg.features_h5_path, "rb") as f:
         logger.info(f"Reading features from {cfg.features_h5_path}...")
         tiles_h5 = h5py.File(f, "r")

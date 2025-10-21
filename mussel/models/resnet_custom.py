@@ -17,6 +17,14 @@ class BottleneckBaseline(nn.Module):
     expansion = 4
 
     def __init__(self, inplanes, planes, stride=1, downsample=None):
+        """Initialize a bottleneck block.
+        
+        Args:
+            inplanes: Number of input channels.
+            planes: Number of output channels.
+            stride: Stride for convolution (default: 1).
+            downsample: Optional downsampling layer (default: None).
+        """
         super(BottleneckBaseline, self).__init__()
         self.conv1 = nn.Conv2d(inplanes, planes, kernel_size=1, bias=False)
         self.bn1 = nn.BatchNorm2d(planes)
@@ -33,6 +41,14 @@ class BottleneckBaseline(nn.Module):
         self.stride = stride
 
     def forward(self, x):
+        """Forward pass through the bottleneck block.
+        
+        Args:
+            x: Input tensor.
+            
+        Returns:
+            Output tensor.
+        """
         residual = x
 
         out = self.conv1(x)
@@ -57,6 +73,12 @@ class BottleneckBaseline(nn.Module):
 
 class ResNetBaseline(nn.Module):
     def __init__(self, block, layers):
+        """Initialize ResNet baseline model.
+        
+        Args:
+            block: Block class to use (e.g., BottleneckBaseline).
+            layers: List of layer counts for each stage.
+        """
         self.inplanes = 64
         super(ResNetBaseline, self).__init__()
         self.conv1 = nn.Conv2d(3, 64, kernel_size=7, stride=2, padding=3, bias=False)
@@ -76,6 +98,17 @@ class ResNetBaseline(nn.Module):
                 nn.init.constant_(m.bias, 0)
 
     def _make_layer(self, block, planes, blocks, stride=1):
+        """Create a layer with multiple blocks.
+        
+        Args:
+            block: Block class to use.
+            planes: Number of output channels.
+            blocks: Number of blocks in the layer.
+            stride: Stride for the first block (default: 1).
+            
+        Returns:
+            Sequential container of blocks.
+        """
         downsample = None
         if stride != 1 or self.inplanes != planes * block.expansion:
             downsample = nn.Sequential(
@@ -98,6 +131,14 @@ class ResNetBaseline(nn.Module):
         return nn.Sequential(*layers)
 
     def forward(self, x):
+        """Forward pass through the ResNet model.
+        
+        Args:
+            x: Input tensor.
+            
+        Returns:
+            Output feature tensor.
+        """
         x = self.conv1(x)
         x = self.bn1(x)
         x = self.relu(x)
@@ -125,6 +166,15 @@ def resnet50_baseline(pretrained=False):
 
 
 def load_pretrained_weights(model, name):
+    """Load pretrained weights from PyTorch model zoo.
+    
+    Args:
+        model: PyTorch model to load weights into.
+        name: Name of the pretrained model (e.g., 'resnet50').
+        
+    Returns:
+        Model with loaded pretrained weights.
+    """
     pretrained_dict = model_zoo.load_url(model_urls[name])
     model.load_state_dict(pretrained_dict, strict=False)
     return model

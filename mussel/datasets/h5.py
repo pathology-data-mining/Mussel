@@ -60,9 +60,11 @@ class WholeSlideImageH5Dataset(Dataset):
         self.summary()
 
     def __len__(self):
+        """Return the number of patches in the dataset."""
         return self.length
 
     def summary(self):
+        """Print a summary of the dataset attributes and settings."""
         hdf5_file = h5py.File(self.h5_path, "r")
         dset = hdf5_file["coords"]
         for name, value in dset.attrs.items():
@@ -76,6 +78,14 @@ class WholeSlideImageH5Dataset(Dataset):
         logger.info("transformations: " + str(self.roi_transforms))
 
     def __getitem__(self, idx_):
+        """Get a patch and its coordinates by index.
+        
+        Args:
+            idx_: Index of the patch to retrieve.
+            
+        Returns:
+            Tuple of (transformed image tensor, coordinates).
+        """
         if self.limit_to_indices:
             idx = self.limit_to_indices[idx_]
         else:

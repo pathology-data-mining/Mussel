@@ -39,6 +39,16 @@ def export_tiles(
     mpp: float = 0.5,
     num_workers: int = 16,
 ) -> None:
+    """Export tiles from a whole slide image to individual PNG files.
+    
+    Args:
+        patch_h5_path: Path to HDF5 file containing tile coordinates.
+        slide_path: Path to the whole slide image.
+        output_png_path: Directory to save PNG files.
+        patch_size: Patch size in pixels (default: 256).
+        mpp: Microns per pixel (default: 0.5).
+        num_workers: Number of worker threads (default: 16).
+    """
 
     log.info(f"Loading .patches.h5 file: {cfg.patch_h5_path}")
 

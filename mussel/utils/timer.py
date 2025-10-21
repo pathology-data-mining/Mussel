@@ -10,6 +10,7 @@ def timed(func):
 
     @wraps(func)
     def wrapper(*args, **kwargs):
+        """Wrapper function that times the execution."""
         start_time = time.time()
         result = func(*args, **kwargs)
         end_time = time.time()
