@@ -1,22 +1,46 @@
 # Mussel
 
-This is a fork of Faisal Mahmood's [CLAM repository](https://github.com/mahmoodlab/CLAM)
- (GPL v3 license), with a handful of modifications:
-- Added additional foundation models for generating embeddings
-- Added zero-shot tissue-type annotation of tiles
-- Added caching of images for inference right on the tiles (rather than on embeddings)
-- Added microns per pixel (mpp) as parameter for tiling, supported regardless of native slide resolution
-- Made usable for job submission (one script run, one slide)
-- Removed modeling
-- Updated the tiling algorithm
+**Mussel** is a comprehensive toolkit for computational pathology on whole-slide images (WSI). It provides efficient tools for tiling, feature extraction using pathology foundation models, and zero-shot tissue classification.
+
+## Table of Contents
+
+- [Overview](#overview)
+- [Key Features](#key-features)
+- [Installation](#installation)
+- [Quick Start](#quick-start)
+- [Command-Line Interface](#command-line-interface)
+- [Development Notes](#development-notes)
+- [Contributing](#contributing)
+- [Troubleshooting](#troubleshooting)
+- [License](#license)
+- [Reference](#reference)
+
+## Overview
+
+This is a fork of Faisal Mahmood's [CLAM repository](https://github.com/mahmoodlab/CLAM) (GPL v3 license), enhanced with modern pathology foundation models and streamlined for high-throughput processing.
+
+## Key Features
+
+- **Multiple Foundation Models**: Support for ResNet-50, TransPath, Prov-GigaPath, Virchow, Virchow2, H-Optimus-0, OpenCLIP (QuiltNet), GooglePath, and Conch v1.5
+- **Zero-Shot Classification**: Annotate tissue tiles using natural language descriptions without training
+- **Flexible Tiling**: Microns per pixel (mpp) specification for tiling, independent of native slide resolution
+- **Efficient Processing**: Optimized for batch processing and job submission systems
+- **Caching Support**: Fast tile access for I/O-intensive operations like training
+- **Multi-GPU Support**: Scale feature extraction across multiple GPUs
 
 ## Installation
 
-### System requirements
+### System Requirements
 
-Supported systems:
-* Mac OS (x86 and ARM) (cpu only)
-* Linux (x86) (cpu and gpu)
+**Supported Operating Systems:**
+* Linux (x86_64) - CPU and GPU support
+* macOS (x86 and ARM/Apple Silicon) - CPU only
+
+**Hardware Requirements:**
+* GPU (recommended): NVIDIA GPU with CUDA support for fast feature extraction
+* CPU: Modern multi-core processor (minimum 4 cores recommended)
+* RAM: At least 16GB recommended for processing large slides
+* Storage: Varies by dataset size; whole-slide images can be several GB each
 
 ### Pre-requisites
 - [uv](https://docs.astral.sh/uv/)
@@ -62,6 +86,62 @@ uv sync --extra torch-cpu
 ```
 Mussel doesn't currently support Apple Metal GPUs, so this is what you'd use to install on a modern MacBook.
 
+## Quick Start
+
+Here's a simple workflow to process a whole-slide image and extract features:
+
+### 1. Install Mussel with PyTorch GPU support
+```bash
+uv sync --extra torch-gpu
+```
+
+### 2. Activate the virtual environment
+After installation, activate the virtual environment:
+```bash
+source .venv/bin/activate
+```
+
+Alternatively, you can prefix commands with `uv run` without activating:
+```bash
+uv run tessellate --help
+```
+
+### 3. Tile a whole-slide image
+```bash
+tessellate \
+    slide_path=path/to/your/slide.svs \
+    output_h5_path=slide_tiles.h5 \
+    seg_config.segment_threshold=0 \
+    num_workers=4
+```
+
+### 4. Extract features using a foundation model
+```bash
+extract_features \
+    slide_path=path/to/your/slide.svs \
+    patch_h5_path=slide_tiles.h5 \
+    model_type=CLIP \
+    output_h5_path=slide_features.h5 \
+    output_pt_path=slide_features.pt
+```
+
+### 5. Annotate tiles with tissue types (zero-shot)
+```bash
+# Create embeddings for your tissue types
+create_class_embeddings \
+    classes='["tumor","stroma","necrosis","lymphocytes"]' \
+    output_pt_path=class_embeddings.pt
+
+# Annotate tiles
+annotate \
+    features_pt_path=slide_features.pt \
+    class_embedding_pt_path=class_embeddings.pt \
+    classes='["tumor","stroma","necrosis","lymphocytes"]' \
+    output_csv_path=annotations.csv
+```
+
+For more detailed examples and command options, see [README-commands.md](README-commands.md).
+
 #### TensorFlow
 TensorFlow is required to run the Google Path Foundation model,
 
@@ -94,7 +174,28 @@ source .venv/bin/activate
 
 (The example commands in README-commands.md all expect you to have a activated python environment, so that `uv run` isn't necessary.)
 
-### Modifying package requirements
+## Contributing
+
+We welcome contributions from the community! Whether you want to:
+
+- Report a bug
+- Suggest a new feature
+- Add support for a new foundation model
+- Improve documentation
+- Submit a bug fix
+
+Please see our [CONTRIBUTING.md](CONTRIBUTING.md) guide for detailed information on how to contribute.
+
+Quick contribution steps:
+1. Fork the repository
+2. Create a feature branch
+3. Make your changes with tests
+4. Run tests and linting
+5. Submit a pull request
+
+For questions or discussions, please open an issue or start a discussion on GitHub.
+
+### Modifying Package Requirements
 
 * Use `uv sync --extra <extra-deps>` to install this project and its dependencies into the project's virtual environment,
   where <extra-deps> is one of `torch-gpu`, `tensorflow-gpu`, `torch-cpu`, or `tensorflow-cpu`
@@ -140,6 +241,52 @@ The tools currently available from Mussel are,
 * `save_model` - download and save a foundation model locally
 
 These are described, with examples, in the accompanying document, [README-commands.md](README-commands.md)
+
+## Troubleshooting
+
+### Installation Issues
+
+**Issue**: `uv: command not found`
+- **Solution**: Install uv using the command provided in the Pre-requisites section. Make sure to restart your terminal after installation.
+
+**Issue**: CUDA/GPU not detected
+- **Solution**: 
+  - Verify your NVIDIA drivers are installed: `nvidia-smi`
+  - Ensure you installed the `torch-gpu` extra: `uv sync --extra torch-gpu`
+  - Check that CUDA is available in Python:
+    ```python
+    import torch
+    print(torch.cuda.is_available())
+    ```
+
+**Issue**: Conflicting dependencies between PyTorch and TensorFlow
+- **Solution**: Choose either PyTorch OR TensorFlow installation, not both. They cannot be installed in the same environment.
+
+### Runtime Issues
+
+**Issue**: Out of memory errors during feature extraction
+- **Solution**: 
+  - Reduce batch size: Add `batch_size=32` (or lower) to your command
+  - Reduce number of workers: Add `num_workers=4` (or lower)
+  - For very large slides, process on a machine with more RAM or use a smaller tile size
+
+**Issue**: HuggingFace gated model access denied (Prov-GigaPath, GooglePath, Virchow)
+- **Solution**: 
+  1. Visit the model page on HuggingFace
+  2. Sign the access agreement
+  3. Generate an access token from your HuggingFace account settings
+  4. Set the token: `export HF_TOKEN=your_token_here`
+
+**Issue**: Slide file format not supported
+- **Solution**: Mussel uses tiffslide for reading slides. Supported formats include .svs, .tif, .tiff, and other formats supported by the OpenSlide library.
+
+**Issue**: Command not found after installation
+- **Solution**: Make sure your virtual environment is activated:
+  ```bash
+  source .venv/bin/activate
+  ```
+  Or use `uv run` before commands: `uv run tessellate --help`
+
 
 
 ## License
