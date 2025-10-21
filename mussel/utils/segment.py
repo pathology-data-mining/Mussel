@@ -95,7 +95,16 @@ def scale_geometry(geometry: shapely.Geometry, scale_factor: float):
     scale geometry by scale factor
     """
 
-    def scale_coords(x, y):
+def scale_coords(x, y):
+        """Apply scaling to coordinates.
+        
+        Args:
+            x: X coordinate.
+            y: Y coordinate.
+            
+        Returns:
+            Tuple of scaled (x, y) coordinates.
+        """
         return x * scale_factor, y * scale_factor
 
     return transform(scale_coords, geometry)
@@ -108,6 +117,14 @@ def contours_to_polygon(foreground_contours, hole_contours=None) -> MultiPolygon
     polygon = MultiPolygon()
 
     def create_polygon(contour):
+        """Create a valid shapely polygon from a contour.
+        
+        Args:
+            contour: Contour array.
+            
+        Returns:
+            Valid shapely Polygon or None if contour is too small.
+        """
         contour = np.squeeze(contour)
         if len(contour) < 4:  # Need at least 4 coordinates
             return None
@@ -177,16 +194,42 @@ def partition(geometry: shapely.Geometry, step_size: int, patch_size: int):
 
 
 def scale_contour_dim(contours, scale):
+    """Scale contour dimensions by a scale factor.
+    
+    Args:
+        contours: List of contour arrays.
+        scale: Scale factor to apply.
+        
+    Returns:
+        List of scaled contour arrays.
+    """
     return [np.array(cont * scale, dtype="int32") for cont in contours]
 
 
 def scale_holes_dim(contours, scale):
+    """Scale hole contour dimensions by a scale factor.
+    
+    Args:
+        contours: List of hole contour lists.
+        scale: Scale factor to apply.
+        
+    Returns:
+        List of scaled hole contour lists.
+    """
     return [
         [np.array(hole * scale, dtype="int32") for hole in holes] for holes in contours
     ]
 
 
 def _assert_level_downsamples(wsi):
+    """Calculate level downsamples from WSI dimensions.
+    
+    Args:
+        wsi: Whole slide image object.
+        
+    Returns:
+        List of downsampling factors as tuples for each level.
+    """
     level_downsamples = []
     dim_0 = wsi.level_dimensions[0]
 
@@ -206,6 +249,16 @@ def _assert_level_downsamples(wsi):
 
 
 def get_native_size(size, mpp, slide_mpp):
+    """Calculate native pixel size for a desired microns-per-pixel resolution.
+    
+    Args:
+        size: Desired size in pixels.
+        mpp: Desired microns per pixel.
+        slide_mpp: Native slide microns per pixel.
+        
+    Returns:
+        Native pixel size as integer.
+    """
     assert mpp >= slide_mpp - 0.01, "mpp must be greater than or equal to mpp_wsi"
     scale_factor = mpp / slide_mpp
     logger.debug(

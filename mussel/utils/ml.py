@@ -21,28 +21,61 @@ class SubsetSequentialSampler(Sampler):
     """
 
     def __init__(self, indices):
+        """Initialize the sampler with a list of indices.
+        
+        Args:
+            indices: A sequence of indices to sample from.
+        """
         self.indices = indices
 
     def __iter__(self):
+        """Return an iterator over the indices."""
         return iter(self.indices)
 
     def __len__(self):
+        """Return the number of indices."""
         return len(self.indices)
 
 
 def collate_MIL(batch):
+    """Collate function for Multiple Instance Learning (MIL) batches.
+    
+    Args:
+        batch: List of tuples containing (image, label) pairs.
+        
+    Returns:
+        List containing [concatenated images, labels tensor].
+    """
     img = torch.cat([item[0] for item in batch], dim=0)
     label = torch.LongTensor([item[1] for item in batch])
     return [img, label]
 
 
 def collate_features(batch):
+    """Collate function for feature batches with coordinates.
+    
+    Args:
+        batch: List of tuples containing (features, coordinates) pairs.
+        
+    Returns:
+        List containing [concatenated features, stacked coordinates].
+    """
     img = torch.cat([item[0] for item in batch], dim=0)
     coords = np.vstack([item[1] for item in batch])
     return [img, coords]
 
 
 def get_simple_loader(dataset, batch_size=1, num_workers=1):
+    """Create a simple DataLoader with sequential sampling.
+    
+    Args:
+        dataset: Dataset to load.
+        batch_size: Number of samples per batch (default: 1).
+        num_workers: Number of worker processes for data loading (default: 1).
+        
+    Returns:
+        DataLoader instance.
+    """
     kwargs = (
         {"num_workers": num_workers, "pin_memory": False}
         if device.type == "cuda"
@@ -98,6 +131,18 @@ def get_split_loader(split_dataset, training=False, testing=False, weighted=Fals
 
 
 def get_optim(model, args):
+    """Create an optimizer for the model.
+    
+    Args:
+        model: The neural network model.
+        args: Arguments object containing opt (optimizer type), lr (learning rate), and reg (weight decay).
+        
+    Returns:
+        Optimizer instance (Adam or SGD).
+        
+    Raises:
+        NotImplementedError: If optimizer type is not supported.
+    """
     if args.opt == "adam":
         optimizer = optim.Adam(
             filter(lambda p: p.requires_grad, model.parameters()),
@@ -117,6 +162,11 @@ def get_optim(model, args):
 
 
 def print_network(net):
+    """Print network architecture and parameter counts.
+    
+    Args:
+        net: Neural network model to analyze.
+    """
     num_params = 0
     num_params_train = 0
     logger.info(net)
@@ -141,6 +191,21 @@ def generate_split(
     label_frac=1.0,
     custom_test_ids=None,
 ):
+    """Generate train/validation/test splits for cross-validation.
+    
+    Args:
+        cls_ids: List of arrays containing indices for each class.
+        val_num: List of validation sample counts per class.
+        test_num: List of test sample counts per class.
+        samples: Total number of samples.
+        n_splits: Number of cross-validation splits (default: 5).
+        seed: Random seed for reproducibility (default: 7).
+        label_frac: Fraction of training labels to use (default: 1.0).
+        custom_test_ids: Optional pre-defined test indices.
+        
+    Yields:
+        Tuple of (train_ids, val_ids, test_ids) for each split.
+    """
     indices = np.arange(samples).astype(int)
 
     if custom_test_ids is not None:
@@ -185,6 +250,16 @@ def generate_split(
 
 
 def nth(iterator, n, default=None):
+    """Return the nth item from an iterator or default if exhausted.
+    
+    Args:
+        iterator: Iterator to consume.
+        n: Index of item to return (0-based). If None, exhausts the iterator.
+        default: Value to return if iterator is exhausted (default: None).
+        
+    Returns:
+        The nth item from the iterator or default.
+    """
     if n is None:
         return collections.deque(iterator, maxlen=0)
     else:
@@ -192,11 +267,28 @@ def nth(iterator, n, default=None):
 
 
 def calculate_error(Y_hat, Y):
+    """Calculate classification error rate.
+    
+    Args:
+        Y_hat: Predicted labels tensor.
+        Y: Ground truth labels tensor.
+        
+    Returns:
+        Error rate as a float (1.0 - accuracy).
+    """
     error = 1.0 - Y_hat.float().eq(Y.float()).float().mean().item()
     return error
 
 
 def make_weights_for_balanced_classes_split(dataset):
+    """Create sample weights for balanced class sampling.
+    
+    Args:
+        dataset: Dataset with slide_cls_ids attribute and getlabel method.
+        
+    Returns:
+        Tensor of sample weights for balanced sampling.
+    """
     num_samples = float(len(dataset))
     num_classes = len(dataset.slide_cls_ids)
     weight_per_class = [
@@ -211,6 +303,11 @@ def make_weights_for_balanced_classes_split(dataset):
 
 
 def initialize_weights(module):
+    """Initialize weights for linear and batch norm layers.
+    
+    Args:
+        module: Neural network module to initialize.
+    """
     for m in module.modules():
         if isinstance(m, nn.Linear):
             nn.init.xavier_normal_(m.weight)

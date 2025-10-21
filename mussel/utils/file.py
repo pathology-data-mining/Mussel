@@ -6,17 +6,43 @@ import h5py
 
 
 def save_pkl(filename, save_object):
+    """Save a Python object to a pickle file.
+    
+    Args:
+        filename: Path to the output pickle file.
+        save_object: Python object to serialize and save.
+    """
     with open(filename, "wb") as writer:
         pickle.dump(save_object, writer)
 
 
 def load_pkl(filename):
+    """Load a Python object from a pickle file.
+    
+    Args:
+        filename: Path to the pickle file to load.
+        
+    Returns:
+        The deserialized Python object.
+    """
     with open(filename, "rb") as loader:
         file = pickle.load(loader)
     return file
 
 
 def save_hdf5(output_path, asset_dict, attr_dict=None, attr_h5_path=None, mode="a"):
+    """Save data to an HDF5 file with optional attributes.
+    
+    Args:
+        output_path: Path to the output HDF5 file.
+        asset_dict: Dictionary mapping dataset names to numpy arrays.
+        attr_dict: Optional dictionary mapping dataset names to attribute dictionaries.
+        attr_h5_path: Optional path to an HDF5 file to copy attributes from.
+        mode: File mode ('a' for append, 'w' for write).
+        
+    Returns:
+        The output path.
+    """
     if "w" in mode:
         Path(output_path).unlink(missing_ok=True)
     with ExitStack() as stack:
