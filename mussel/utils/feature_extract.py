@@ -40,6 +40,17 @@ def process_dataset(
 
 @process_dataset.register(WholeSlideImageTileCoordDataset)
 def _(dataset: WholeSlideImageTileCoordDataset, loader, model_fun, is_test_run=False):
+    """Process a WholeSlideImageTileCoordDataset to extract features.
+    
+    Args:
+        dataset: WholeSlideImageTileCoordDataset instance.
+        loader: DataLoader for the dataset.
+        model_fun: Function to extract features from a batch of images.
+        is_test_run: If True, only process first 3 batches (default: False).
+        
+    Returns:
+        Tuple of (features array, labels array).
+    """
     all_features = []
     all_labels = []
     for count, (batch, labels) in enumerate(tqdm(loader, desc="Extracting features")):
@@ -63,6 +74,19 @@ def _(
     output_h5_path=None,
     is_test_run=False,
 ):
+    """Process an ImageFolder dataset to extract features and save to HDF5.
+    
+    Args:
+        dataset: ImageFolder instance.
+        loader: DataLoader for the dataset.
+        model_fun: Function to extract features from a batch of images.
+        patch_h5_path: Path to the h5 file containing patch coordinates (unused).
+        output_h5_path: Path to save the extracted features.
+        is_test_run: If True, only process first 3 batches (default: False).
+        
+    Returns:
+        Path to the output HDF5 file.
+    """
     asset_dict = {
         "image_paths": np.array([x[0] for x in dataset.imgs]).astype("T"),
         "class_to_idx": np.array(
@@ -94,6 +118,19 @@ def _(
     output_h5_path=None,
     is_test_run=False,
 ):
+    """Process a WholeSlideImageH5Dataset to extract features and save to HDF5.
+    
+    Args:
+        dataset: WholeSlideImageH5Dataset instance.
+        loader: DataLoader for the dataset.
+        model_fun: Function to extract features from a batch of images.
+        patch_h5_path: Path to the h5 file containing patch coordinates.
+        output_h5_path: Path to save the extracted features.
+        is_test_run: If True, only process first 3 batches (default: False).
+        
+    Returns:
+        Path to the output HDF5 file.
+    """
     mode = "w"
     for count, (batch, labels) in enumerate(tqdm(loader, desc="Extracting features")):
         if is_test_run and count > 2:
@@ -121,6 +158,25 @@ def get_features(
     num_workers=16,
     is_test_run=False,
 ):
+    """Extract features from whole slide image tiles.
+    
+    Args:
+        coords: Tile coordinates array.
+        slide_path: Path to the whole slide image.
+        attrs: Dictionary of tile attributes (patch_size, patch_level, mpp, etc.).
+        model_type: Type of foundation model to use (default: ModelType.CLIP).
+        model_path: Optional path to model weights.
+        batch_size: Batch size for feature extraction (default: 64).
+        use_gpu: Whether to use GPU for inference (default: True).
+        gpu_device_id: GPU device ID to use.
+        gpu_device_ids: List of GPU device IDs for multi-GPU.
+        pin_memory: Whether to pin memory for data loading (default: True).
+        num_workers: Number of worker processes for data loading (default: 16).
+        is_test_run: If True, only process first 3 batches (default: False).
+        
+    Returns:
+        Tuple of (features array, labels array).
+    """
     logger.info("loading model checkpoint")
 
     if gpu_device_ids:
@@ -176,6 +232,25 @@ def save_features(
     pin_memory=True,
     is_test_run=False,
 ):
+    """Extract features from whole slide image and save to HDF5 and PyTorch formats.
+    
+    Args:
+        patch_h5_path: Path to the h5 file containing patch coordinates.
+        slide_path: Path to the whole slide image.
+        output_h5_path: Path to save the extracted features in HDF5 format.
+        output_pt_path: Optional path to save features in PyTorch format.
+        model_type: Type of foundation model to use (default: ModelType.CLIP).
+        model_path: Optional path to model weights.
+        model_save_path: Optional path to save the model.
+        patch_path: Optional path to folder with pre-extracted patches.
+        batch_size: Batch size for feature extraction (default: 64).
+        use_gpu: Whether to use GPU for inference (default: True).
+        gpu_device_id: GPU device ID to use.
+        gpu_device_ids: List of GPU device IDs for multi-GPU.
+        num_workers: Number of worker processes for data loading (default: 16).
+        pin_memory: Whether to pin memory for data loading (default: True).
+        is_test_run: If True, only process first 3 batches (default: False).
+    """
     if gpu_device_ids:
         gpu_device_id = gpu_device_ids
 
@@ -252,6 +327,17 @@ def filter_features(
     classifier,
     threshold: float,
 ):
+    """Filter features based on classifier predictions.
+    
+    Args:
+        features: Feature tensor to filter.
+        coords: Coordinate array corresponding to features.
+        classifier: Classifier with predict_proba method.
+        threshold: Probability threshold for filtering.
+        
+    Returns:
+        Tuple of (filtered features, filtered coords).
+    """
     logger.info("Predicting probabilities...")
     inclusion_mask = classifier.predict_proba(features)[:, 1] > threshold
     logger.info(f"{sum(inclusion_mask)} tiles above {threshold} threshold")
