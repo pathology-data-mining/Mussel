@@ -63,6 +63,7 @@ cs.store(name="export_tiles_config", node=ExportTilesConfig)
 
 @hydra.main(config_path=".", config_name="export_tiles_config", version_base=None)
 def main(cfg: ExportTilesConfig):
+    """Export tiles from a whole slide image to individual PNG files."""
     export_tiles(
         patch_h5_path=cfg.patch_h5_path,
         slide_path=cfg.slide_path,

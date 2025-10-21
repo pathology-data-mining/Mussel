@@ -58,6 +58,7 @@ cs.store(name="filter_features_config", node=FilterFeaturesConfig)
 def main(
     cfg: FilterFeaturesConfig,
 ):
+    """Filter features using a classifier model."""
     logger.info(f"loading model pkl {cfg.classifier_pkl}")
     with open(cfg.classifier_pkl, "rb") as f:
         classifier = pickle.load(f)

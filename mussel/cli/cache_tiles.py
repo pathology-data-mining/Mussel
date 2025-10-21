@@ -68,6 +68,7 @@ cs.store(
 
 @hydra.main(config_path=".", config_name="cache_tiles_config", version_base=None)
 def main(cfg: CacheTilesConfig):
+    """Cache tiles from a whole slide image to a PyTorch tensor file."""
     time_start = time.time()
     indices = None
     if cfg.limit_to_class and cfg.annotation_csv_path:

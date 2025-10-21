@@ -42,6 +42,11 @@ cs.store(name="save_model_config", node=SaveModelConfig)
 
 
 def save_model(cfg: SaveModelConfig):
+    """Load and save a foundation model to disk.
+    
+    Args:
+        cfg: Configuration with model_type, model_path, and output_path.
+    """
     model_factory = get_model_factory(cfg.model_type)
     model = model_factory.get_model(cfg.model_path, use_gpu=False)
     model.save(cfg.output_path)
@@ -50,6 +55,7 @@ def save_model(cfg: SaveModelConfig):
 
 @hydra.main(version_base=None, config_path=".", config_name="save_model_config")
 def main(cfg: SaveModelConfig):
+    """Download and save a foundation model locally."""
     save_model(cfg)
 
 

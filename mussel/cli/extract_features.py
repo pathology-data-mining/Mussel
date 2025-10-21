@@ -71,6 +71,7 @@ cs.store(name="extract_features_config", node=ExtractFeaturesConfig)
 
 @hydra.main(version_base=None, config_path=".", config_name="extract_features_config")
 def main(cfg: ExtractFeaturesConfig):
+    """Extract features from whole slide image using a foundation model."""
     save_features(
         slide_path=cfg.slide_path,
         gpu_device_id=cfg.gpu_device_id,

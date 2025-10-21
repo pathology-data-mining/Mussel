@@ -66,6 +66,7 @@ cs.store(name="linear_probe_benchmark_config", node=LinearProbeBenchmarkConfig)
     version_base=None, config_path=".", config_name="linear_probe_benchmark_config"
 )
 def main(cfg: LinearProbeBenchmarkConfig):
+    """Benchmark a linear probe classifier on extracted features."""
     df = gpd.read_parquet(cfg.features_annotation_parquet_path)
 
     df_filtered = df.query(

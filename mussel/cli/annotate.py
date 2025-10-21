@@ -41,6 +41,14 @@ class AnnotateConfig:
 
 
 def interrogate_function(slide_path, patch_path, interrogation_report_path, df):
+    """Generate an HTML interrogation report showing tiles grouped by class.
+    
+    Args:
+        slide_path: Path to the whole slide image.
+        patch_path: Path to the HDF5 file containing patch coordinates.
+        interrogation_report_path: Path to save the HTML report.
+        df: DataFrame containing classification results with 'class' column.
+    """
     slide = openslide.OpenSlide(slide_path)
 
     with h5py.File(patch_path, "r") as f:

@@ -180,6 +180,7 @@ cs.store(name="tessellate_config", node=TessellateConfig)
 def main(
     cfg: TessellateConfig,
 ):
+    """Tile a whole slide image and perform tissue segmentation."""
     if values := segment_tissue(
         slide_path=cfg.slide_path,
         slide_id=cfg.slide_id,
