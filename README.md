@@ -95,7 +95,18 @@ Here's a simple workflow to process a whole-slide image and extract features:
 uv sync --extra torch-gpu
 ```
 
-### 2. Tile a whole-slide image
+### 2. Activate the virtual environment
+After installation, activate the virtual environment:
+```bash
+source .venv/bin/activate
+```
+
+Alternatively, you can prefix commands with `uv run` without activating:
+```bash
+uv run tessellate --help
+```
+
+### 3. Tile a whole-slide image
 ```bash
 tessellate \
     slide_path=path/to/your/slide.svs \
@@ -104,7 +115,7 @@ tessellate \
     num_workers=4
 ```
 
-### 3. Extract features using a foundation model
+### 4. Extract features using a foundation model
 ```bash
 extract_features \
     slide_path=path/to/your/slide.svs \
@@ -114,7 +125,7 @@ extract_features \
     output_pt_path=slide_features.pt
 ```
 
-### 4. Annotate tiles with tissue types (zero-shot)
+### 5. Annotate tiles with tissue types (zero-shot)
 ```bash
 # Create embeddings for your tissue types
 create_class_embeddings \
