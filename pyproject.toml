@@ -1,8 +1,8 @@
 [project]
 name = "mussel"
-version = "1.0.1"
+version = "1.0.2"
 description = "weakly supervised computational pathology on whole slide images"
-license = {text = "GPL-3.0 license"}
+license = { text = "GPL-3.0 license" }
 readme = "README.md"
 requires-python = ">=3.10, <3.12"
 dependencies = [
@@ -25,13 +25,7 @@ dependencies = [
 ]
 
 [dependency-groups]
-dev = [
-    "mypy",
-    "isort",
-    "black",
-    "pytest",
-    "ipython>=8.37.0",
-]
+dev = ["mypy", "isort", "black", "pytest", "ipython>=8.37.0"]
 
 [project.optional-dependencies]
 "tensorflow-gpu" = [
@@ -51,25 +45,17 @@ dev = [
   "torchvision",
   "open-clip-torch",
 ]
-"torch-cpu" = [
-  "torch < 2.6",
-  "torchvision",
-  "open-clip-torch",
-]
-"torch-gpu" = [
-  "torch < 2.6",
-  "torchvision",
-  "open-clip-torch",
-]
+"torch-cpu" = ["torch < 2.6", "torchvision", "open-clip-torch"]
+"torch-gpu" = ["torch < 2.6", "torchvision", "open-clip-torch"]
 
 [tool.uv]
 conflicts = [
-    [
-      { extra = "tensorflow-gpu" },
-      { extra = "tensorflow-cpu" },
-      { extra = "torch-cpu" },
-      { extra = "torch-gpu" },
-    ],
+  [
+    { extra = "tensorflow-gpu" },
+    { extra = "tensorflow-cpu" },
+    { extra = "torch-cpu" },
+    { extra = "torch-gpu" },
+  ],
 ]
 
 [tool.uv.sources]
