@@ -8,7 +8,7 @@ import numpy as np
 import tiffslide
 from tqdm import tqdm
 
-from mussel.utils.segment import is_black_patch, is_white_patch
+from mussel.utils.segment import is_black_patch, is_white_patch, get_native_size
 from mussel.utils.timer import timed
 
 log = logging.getLogger(__name__)
@@ -40,7 +40,7 @@ def export_tiles(
     num_workers: int = 16,
 ) -> None:
     """Export tiles from a whole slide image to individual PNG files.
-    
+
     Args:
         patch_h5_path: Path to HDF5 file containing tile coordinates.
         slide_path: Path to the whole slide image.
@@ -50,7 +50,7 @@ def export_tiles(
         num_workers: Number of worker threads (default: 16).
     """
 
-    log.info(f"Loading .patches.h5 file: {cfg.patch_h5_path}")
+    log.info(f"Loading .patches.h5 file: {patch_h5_path}")
 
     with h5py.File(patch_h5_path, "r") as patches_h5:
         tile_coords = np.array(patches_h5["coords"])
@@ -61,7 +61,7 @@ def export_tiles(
 
     native_patch_size = get_native_size(patch_size, mpp, slide_mpp)
     log.info(
-        f"Exporting approx. {len(tile_coords)} tiles as .png files to {cfg.output_png_path}"
+        f"Exporting approx. {len(tile_coords)} tiles as .png files to {output_png_path}"
     )
     n_tiles = len(tile_coords)
 
@@ -69,7 +69,7 @@ def export_tiles(
         export_tile,
         wsi_object=wsi,
         patch_size=native_patch_size,
-        output_path=cfg.output_png_path,
+        output_path=output_png_path,
     )
 
     with futures.ThreadPoolExecutor(num_workers) as executor:
