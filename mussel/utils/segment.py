@@ -4,6 +4,7 @@ import multiprocessing as mp
 from dataclasses import dataclass
 from pathlib import Path
 from typing import List, Optional
+import time
 
 import cv2
 import numpy as np
@@ -26,11 +27,11 @@ logger = logging.getLogger(__name__)
 def is_white_patch(patch, saturation_threshold=5):
     """
     Determine if patch is white based on HSV saturation threshold.
-    
+
     Args:
         patch: RGB patch array
         saturation_threshold: Saturation threshold for white detection
-        
+
     Returns:
         True if patch is white, False otherwise
     """
@@ -42,11 +43,11 @@ def is_white_patch(patch, saturation_threshold=5):
 def is_black_patch(patch, rgb_threshold=40):
     """
     Determine if patch is black based on RGB threshold.
-    
+
     Args:
         patch: RGB patch array
         rgb_threshold: RGB threshold for black detection
-        
+
     Returns:
         True if patch is black, False otherwise
     """
@@ -57,12 +58,12 @@ def is_black_patch(patch, rgb_threshold=40):
 def is_black_patch_S(patch, rgb_threshold=20, percentage=0.05):
     """
     Determine if percentage of patch is black.
-    
+
     Args:
         patch: PIL Image patch
         rgb_threshold: RGB threshold for black detection
         percentage: Minimum percentage of black pixels required
-        
+
     Returns:
         True if percentage of patch is black, False otherwise
     """
@@ -75,12 +76,12 @@ def is_black_patch_S(patch, rgb_threshold=20, percentage=0.05):
 def is_white_patch_S(patch, rgb_threshold=220, percentage=0.2):
     """
     Determine if percentage of patch is white.
-    
+
     Args:
         patch: PIL Image patch
         rgb_threshold: RGB threshold for white detection
         percentage: Minimum percentage of white pixels required
-        
+
     Returns:
         True if percentage of patch is white, False otherwise
     """
@@ -95,13 +96,13 @@ def scale_geometry(geometry: shapely.Geometry, scale_factor: float):
     scale geometry by scale factor
     """
 
-def scale_coords(x, y):
+    def scale_coords(x, y):
         """Apply scaling to coordinates.
-        
+
         Args:
             x: X coordinate.
             y: Y coordinate.
-            
+
         Returns:
             Tuple of scaled (x, y) coordinates.
         """
@@ -118,10 +119,10 @@ def contours_to_polygon(foreground_contours, hole_contours=None) -> MultiPolygon
 
     def create_polygon(contour):
         """Create a valid shapely polygon from a contour.
-        
+
         Args:
             contour: Contour array.
-            
+
         Returns:
             Valid shapely Polygon or None if contour is too small.
         """
@@ -195,11 +196,11 @@ def partition(geometry: shapely.Geometry, step_size: int, patch_size: int):
 
 def scale_contour_dim(contours, scale):
     """Scale contour dimensions by a scale factor.
-    
+
     Args:
         contours: List of contour arrays.
         scale: Scale factor to apply.
-        
+
     Returns:
         List of scaled contour arrays.
     """
@@ -208,11 +209,11 @@ def scale_contour_dim(contours, scale):
 
 def scale_holes_dim(contours, scale):
     """Scale hole contour dimensions by a scale factor.
-    
+
     Args:
         contours: List of hole contour lists.
         scale: Scale factor to apply.
-        
+
     Returns:
         List of scaled hole contour lists.
     """
@@ -223,10 +224,10 @@ def scale_holes_dim(contours, scale):
 
 def _assert_level_downsamples(wsi):
     """Calculate level downsamples from WSI dimensions.
-    
+
     Args:
         wsi: Whole slide image object.
-        
+
     Returns:
         List of downsampling factors as tuples for each level.
     """
@@ -250,12 +251,12 @@ def _assert_level_downsamples(wsi):
 
 def get_native_size(size, mpp, slide_mpp):
     """Calculate native pixel size for a desired microns-per-pixel resolution.
-    
+
     Args:
         size: Desired size in pixels.
         mpp: Desired microns per pixel.
         slide_mpp: Native slide microns per pixel.
-        
+
     Returns:
         Native pixel size as integer.
     """
@@ -326,7 +327,7 @@ def _filter_contours(
 def segment_tissue(
     slide_path: str,
     slide_id: Optional[str] = None,
-    seg_level: int = 0,
+    seg_level: int = -1,
     segment_threshold: int = 20,
     segment_max_value: int = 255,
     median_blur_ksize: int = 7,
@@ -356,6 +357,7 @@ def segment_tissue(
         else:
             seg_level = wsi.get_best_level_for_downsample(64)
 
+    logger.info(f"Using level {seg_level} for segmentation")
     width, height = wsi.level_dimensions[seg_level]
     if width * height > 1e12:
         logger.error(
@@ -465,7 +467,6 @@ def segment_tissue(
         "name": slide_id,
     }
     if output_h5_path:
-
         asset_dict = {"coords": np.array(coords)}
         attr_dict = {"coords": attrs}
         save_hdf5(output_h5_path, asset_dict, attr_dict, mode="w")
@@ -514,17 +515,28 @@ def draw_slide_mask(
         scaled_polygon = scale_geometry(polygon, scale[0])
         if isinstance(polygon, MultiPolygon):
             for geom in scaled_polygon.geoms:
-                draw.polygon(geom.exterior.coords, outline="black", fill=fill)
+                draw.polygon(geom.exterior.coords, outline=outline, fill=fill)
         else:
-            draw.polygon(scaled_polygon.exterior.coords, outline="black", fill=fill)
+            draw.polygon(scaled_polygon.exterior.coords, outline=outline, fill=fill)
 
     image_width, image_height = img.size
     if custom_downsample and custom_downsample > 1:
-        img = img.resize((int(image_width / custom_downsample), int(image_height / custom_downsample)))
+        img = img.resize(
+            (
+                int(image_width / custom_downsample),
+                int(image_height / custom_downsample),
+            )
+        )
 
     if max_size is not None and (image_width > max_size or image_height > max_size):
-        resize_factor = max_size / image_width if image_width > image_height else max_size / image_height
-        img = img.resize((int(image_width * resize_factor), int(image_height * resize_factor)))
+        resize_factor = (
+            max_size / image_width
+            if image_width > image_height
+            else max_size / image_height
+        )
+        img = img.resize(
+            (int(image_width * resize_factor), int(image_height * resize_factor))
+        )
 
     wsi.close()
 

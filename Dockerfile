@@ -33,7 +33,7 @@ RUN curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2
 RUN unzip awscliv2.zip
 RUN ./aws/install
 
-ADD . /code/mussel
+COPY . /code/mussel
 WORKDIR /code/mussel
 
 RUN uv sync --frozen --extra $BACKEND

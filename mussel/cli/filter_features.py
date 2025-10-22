@@ -24,6 +24,7 @@ class FilterFeaturesConfig:
     output_pt_path (str): Path to save the filtered features in PyTorch format.
     classifier_pkl (str): Path to the classifier model in pickle format.
     classifier_threshold (float): Threshold for the classifier to filter features.
+    save_features_to_h5 (bool): Whether to save the filtered features to HDF5.
     """
 
     features_h5_path: str = MISSING
@@ -32,6 +33,7 @@ class FilterFeaturesConfig:
     output_pt_path: str = MISSING
     classifier_pkl: str = MISSING
     classifier_threshold: float = 0.75
+    save_features_to_h5: bool = False
 
 
 desc_doc = """== ${hydra.help.app_name} ==
@@ -69,7 +71,9 @@ def main(
         else:
             features = np.array(features_h5["features"])
             features = torch.Tensor(features)
-        logger.info(f"Loaded {features.shape[0]} features of dimension {features.shape[1]}")
+        logger.info(
+            f"Loaded {features.shape[0]} features of dimension {features.shape[1]}"
+        )
         features, coords = filter_features(
             features,
             features_h5["coords"][:],
@@ -78,9 +82,12 @@ def main(
         )
 
         logger.info(f"Saving to {cfg.output_h5_path}")
+        asset_dict = {"coords": coords}
+        if cfg.save_features_to_h5:
+            asset_dict["features"] = features.numpy()
         save_hdf5(
             cfg.output_h5_path,
-            {"coords": coords},
+            asset_dict,
             attr_h5_path=cfg.features_h5_path,
             mode="w",
         )

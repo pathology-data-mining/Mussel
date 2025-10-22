@@ -41,13 +41,13 @@ def process_dataset(
 @process_dataset.register(WholeSlideImageTileCoordDataset)
 def _(dataset: WholeSlideImageTileCoordDataset, loader, model_fun, is_test_run=False):
     """Process a WholeSlideImageTileCoordDataset to extract features.
-    
+
     Args:
         dataset: WholeSlideImageTileCoordDataset instance.
         loader: DataLoader for the dataset.
         model_fun: Function to extract features from a batch of images.
         is_test_run: If True, only process first 3 batches (default: False).
-        
+
     Returns:
         Tuple of (features array, labels array).
     """
@@ -75,7 +75,7 @@ def _(
     is_test_run=False,
 ):
     """Process an ImageFolder dataset to extract features and save to HDF5.
-    
+
     Args:
         dataset: ImageFolder instance.
         loader: DataLoader for the dataset.
@@ -83,7 +83,7 @@ def _(
         patch_h5_path: Path to the h5 file containing patch coordinates (unused).
         output_h5_path: Path to save the extracted features.
         is_test_run: If True, only process first 3 batches (default: False).
-        
+
     Returns:
         Path to the output HDF5 file.
     """
@@ -119,7 +119,7 @@ def _(
     is_test_run=False,
 ):
     """Process a WholeSlideImageH5Dataset to extract features and save to HDF5.
-    
+
     Args:
         dataset: WholeSlideImageH5Dataset instance.
         loader: DataLoader for the dataset.
@@ -127,12 +127,12 @@ def _(
         patch_h5_path: Path to the h5 file containing patch coordinates.
         output_h5_path: Path to save the extracted features.
         is_test_run: If True, only process first 3 batches (default: False).
-        
+
     Returns:
         Path to the output HDF5 file.
     """
     mode = "w"
-    for count, (batch, labels) in enumerate(tqdm(loader, desc="Extracting features")):
+    for count, (batch, coords) in enumerate(tqdm(loader, desc="Extracting features")):
         if is_test_run and count > 2:
             break
 
@@ -159,7 +159,7 @@ def get_features(
     is_test_run=False,
 ):
     """Extract features from whole slide image tiles.
-    
+
     Args:
         coords: Tile coordinates array.
         slide_path: Path to the whole slide image.
@@ -173,7 +173,7 @@ def get_features(
         pin_memory: Whether to pin memory for data loading (default: True).
         num_workers: Number of worker processes for data loading (default: 16).
         is_test_run: If True, only process first 3 batches (default: False).
-        
+
     Returns:
         Tuple of (features array, labels array).
     """
@@ -233,7 +233,7 @@ def save_features(
     is_test_run=False,
 ):
     """Extract features from whole slide image and save to HDF5 and PyTorch formats.
-    
+
     Args:
         patch_h5_path: Path to the h5 file containing patch coordinates.
         slide_path: Path to the whole slide image.
@@ -328,13 +328,13 @@ def filter_features(
     threshold: float,
 ):
     """Filter features based on classifier predictions.
-    
+
     Args:
         features: Feature tensor to filter.
         coords: Coordinate array corresponding to features.
         classifier: Classifier with predict_proba method.
         threshold: Probability threshold for filtering.
-        
+
     Returns:
         Tuple of (filtered features, filtered coords).
     """
