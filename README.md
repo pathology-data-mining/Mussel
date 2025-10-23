@@ -95,15 +95,16 @@ Pre-built Docker images are available on Docker Hub with different backend confi
 
 ```bash
 # Pull the latest torch-gpu image (default)
-docker pull <username>/mussel:latest-torch-gpu
+# Note: Replace YOUR_DOCKERHUB_USERNAME with the actual DockerHub organization/username
+docker pull YOUR_DOCKERHUB_USERNAME/mussel:latest-torch-gpu
 
 # Pull specific version
-docker pull <username>/mussel:v1.1.1-torch-gpu
+docker pull YOUR_DOCKERHUB_USERNAME/mussel:v1.1.1-torch-gpu
 
 # Other available backends
-docker pull <username>/mussel:latest-torch-cpu
-docker pull <username>/mussel:latest-tensorflow-gpu
-docker pull <username>/mussel:latest-tensorflow-cpu
+docker pull YOUR_DOCKERHUB_USERNAME/mussel:latest-torch-cpu
+docker pull YOUR_DOCKERHUB_USERNAME/mussel:latest-tensorflow-gpu
+docker pull YOUR_DOCKERHUB_USERNAME/mussel:latest-tensorflow-cpu
 ```
 
 See [.github/GITHUB_ACTIONS.md](.github/GITHUB_ACTIONS.md) for more details on Docker image tags and building custom images.
