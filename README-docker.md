@@ -14,6 +14,8 @@ The Docker setup provides:
 
 ### 1. Build the Docker Image
 
+**Option 1: Using the wrapper script (Recommended)**
+
 Build with GPU support (default):
 ```bash
 ./mussel-docker build
@@ -27,6 +29,25 @@ MUSSEL_BACKEND=torch-cpu ./mussel-docker build
 Build with TensorFlow GPU support:
 ```bash
 MUSSEL_BACKEND=tensorflow-gpu ./mussel-docker build
+```
+
+**Option 2: Using Make**
+
+```bash
+# Build with PyTorch GPU (default)
+make build
+
+# Build with PyTorch CPU
+make build-cpu
+
+# Build with TensorFlow GPU
+make build-tf
+
+# Build with TensorFlow CPU
+make build-tf-cpu
+
+# See all available commands
+make help
 ```
 
 ### 2. Run Mussel Commands

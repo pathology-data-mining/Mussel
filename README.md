@@ -53,6 +53,7 @@ cd Mussel
 2. Build the Docker image:
 ```bash
 ./mussel-docker build
+# Or using Make: make build
 ```
 
 3. Run Mussel commands:
