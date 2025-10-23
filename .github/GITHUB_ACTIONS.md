@@ -26,21 +26,23 @@ This repository uses GitHub Actions for continuous integration and Docker image 
 
 ## Required GitHub Secrets
 
-To enable Docker image deployment, you need to set up the following secret in your GitHub repository:
+To enable Docker image deployment, you need to set up the following secrets in your GitHub repository:
 
-1. **DOCKERHUB_TOKEN**: A DockerHub access token (not your password) for the `mskmind` organization
+1. **DOCKERHUB_USERNAME**: DockerHub username with push access to the `mskmind` organization
+2. **DOCKERHUB_TOKEN**: A DockerHub access token (not your password)
 
-### Setting up DockerHub Secret
+### Setting up DockerHub Secrets
 
 1. Go to your GitHub repository settings
 2. Navigate to **Settings > Secrets and variables > Actions**
 3. Click **New repository secret**
-4. Add the following secret:
-   - Name: `DOCKERHUB_TOKEN`, Value: Your DockerHub access token for the mskmind organization
+4. Add the following secrets:
+   - Name: `DOCKERHUB_USERNAME`, Value: DockerHub username with access to push to the mskmind organization
+   - Name: `DOCKERHUB_TOKEN`, Value: DockerHub access token for the above username
 
 ### Creating a DockerHub Access Token
 
-1. Log in to [Docker Hub](https://hub.docker.com/) with credentials for the `mskmind` organization
+1. Log in to [Docker Hub](https://hub.docker.com/) with a user account that has push access to the `mskmind` organization
 2. Go to **Account Settings > Security**
 3. Click **New Access Token**
 4. Give it a descriptive name (e.g., "GitHub Actions")
