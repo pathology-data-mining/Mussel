@@ -5,6 +5,7 @@ from torchvision import transforms
 
 from .utils import eval_transforms
 
+
 class WholeSlideImageTileCoordDataset(Dataset):
     def __init__(
         self,
@@ -36,14 +37,12 @@ class WholeSlideImageTileCoordDataset(Dataset):
         self.patch_level = attrs["patch_level"]
         self.scaled_patch_size = int(attrs["patch_size_to_resize_to_for_desired_mpp"])
 
-        self.length = (
-            len(limit_to_indices) if limit_to_indices else len(coords)
-        )
+        self.length = len(limit_to_indices) if limit_to_indices else len(coords)
 
         if preprocess is not None:
-            assert (
-                use_imagenet_rgb_dist == False
-            ), "Cannot use custom preprocess with ImageNet RGB dist"
+            assert not use_imagenet_rgb_dist, (
+                "Cannot use custom preprocess with ImageNet RGB dist"
+            )
             self.roi_transforms = preprocess
         else:
             self.roi_transforms = eval_transforms(
@@ -68,10 +67,10 @@ class WholeSlideImageTileCoordDataset(Dataset):
 
     def __getitem__(self, idx_):
         """Get a patch and its coordinates by index.
-        
+
         Args:
             idx_: Index of the patch to retrieve.
-            
+
         Returns:
             Tuple of (transformed image tensor, coordinates).
         """

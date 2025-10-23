@@ -40,6 +40,6 @@ License:
     Forked from CLAM © Mahmood Lab
 """
 
-__version__ = "1.0.1"
+__version__ = "1.1.1"
 __author__ = "Pathology Data Mining Team"
 __license__ = "GPL-3.0"
