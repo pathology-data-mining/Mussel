@@ -26,23 +26,21 @@ This repository uses GitHub Actions for continuous integration and Docker image 
 
 ## Required GitHub Secrets
 
-To enable Docker image deployment, you need to set up the following secrets in your GitHub repository:
+To enable Docker image deployment, you need to set up the following secret in your GitHub repository:
 
-1. **DOCKERHUB_USERNAME**: Your DockerHub username
-2. **DOCKERHUB_TOKEN**: A DockerHub access token (not your password)
+1. **DOCKERHUB_TOKEN**: A DockerHub access token (not your password) for the `mskmind` organization
 
-### Setting up DockerHub Secrets
+### Setting up DockerHub Secret
 
 1. Go to your GitHub repository settings
 2. Navigate to **Settings > Secrets and variables > Actions**
 3. Click **New repository secret**
-4. Add the following secrets:
-   - Name: `DOCKERHUB_USERNAME`, Value: Your DockerHub username
-   - Name: `DOCKERHUB_TOKEN`, Value: Your DockerHub access token
+4. Add the following secret:
+   - Name: `DOCKERHUB_TOKEN`, Value: Your DockerHub access token for the mskmind organization
 
 ### Creating a DockerHub Access Token
 
-1. Log in to [Docker Hub](https://hub.docker.com/)
+1. Log in to [Docker Hub](https://hub.docker.com/) with credentials for the `mskmind` organization
 2. Go to **Account Settings > Security**
 3. Click **New Access Token**
 4. Give it a descriptive name (e.g., "GitHub Actions")
@@ -61,14 +59,13 @@ Docker images are tagged using the following scheme:
 
 ```bash
 # Pull latest torch-gpu image
-# Note: Replace YOUR_DOCKERHUB_USERNAME with the actual DockerHub organization/username
-docker pull YOUR_DOCKERHUB_USERNAME/mussel:latest-torch-gpu
+docker pull mskmind/mussel:latest-torch-gpu
 
 # Pull specific version with torch-cpu
-docker pull YOUR_DOCKERHUB_USERNAME/mussel:v1.1.1-torch-cpu
+docker pull mskmind/mussel:v1.1.1-torch-cpu
 
 # Pull tensorflow-gpu image
-docker pull YOUR_DOCKERHUB_USERNAME/mussel:latest-tensorflow-gpu
+docker pull mskmind/mussel:latest-tensorflow-gpu
 ```
 
 ## Local Testing
