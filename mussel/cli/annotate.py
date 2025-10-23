@@ -1,6 +1,6 @@
 import base64
 import json
-import logger
+import logging
 import os
 from argparse import ArgumentParser
 from dataclasses import dataclass

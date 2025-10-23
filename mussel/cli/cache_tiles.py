@@ -7,7 +7,7 @@ import json
 import time
 from dataclasses import dataclass, field
 from typing import List, Optional
-import logger
+import logging
 
 import pandas as pd
 import tiffslide as openslide

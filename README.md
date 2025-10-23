@@ -106,6 +106,7 @@ uv sync --extra torch-gpu
 
 ### Cloud/Remote slide processing
 Mussel can process slides stored on the cloud or remote object stores via the `tiffslide` and `fsspec` packages. In order to properly configure mussel for this use case ensure that you: 
+* Install additional packages via `uv sync --extra remote`
 * Have a valid cloud profile set up on your machine (e.g. you have an access key and secret key for your profile stored in your `~/.aws/credentials`)
 * Have a valid configuration for `fsspec` defined in your configuration in `~/.config/fsspec/` directory (e.g. you have a `~/.config/fsspec/s3.json` file with the profile set to the profile defined in `~/.aws/credentials` and all required `client_kwargs` are specified)
 
