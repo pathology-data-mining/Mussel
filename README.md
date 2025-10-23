@@ -7,6 +7,8 @@
 - [Overview](#overview)
 - [Key Features](#key-features)
 - [Installation](#installation)
+  - [Native Installation](#native-installation)
+  - [Docker Installation](#docker-installation)
 - [Quick Start](#quick-start)
 - [Command-Line Interface](#command-line-interface)
 - [Development Notes](#development-notes)
@@ -29,6 +31,39 @@ This is a fork of Faisal Mahmood's [CLAM repository](https://github.com/mahmoodl
 - **Multi-GPU Support**: Scale feature extraction across multiple GPUs
 
 ## Installation
+
+You can install Mussel either natively on your system or use Docker for a containerized environment.
+
+### Docker Installation
+
+**Recommended for:** Easy setup, reproducible environments, deployment on servers/HPC clusters.
+
+#### Prerequisites
+- [Docker](https://docs.docker.com/get-docker/) installed and running
+- [NVIDIA Docker runtime](https://github.com/NVIDIA/nvidia-docker) (for GPU support)
+
+#### Quick Start with Docker
+
+1. Clone the repository:
+```bash
+git clone https://github.com/pathology-data-mining/Mussel.git
+cd Mussel
+```
+
+2. Build the Docker image:
+```bash
+./mussel-docker build
+```
+
+3. Run Mussel commands:
+```bash
+./mussel-docker tessellate slide_path=slide.svs output_h5_path=tiles.h5
+./mussel-docker extract_features slide_path=slide.svs patch_h5_path=tiles.h5 output_h5_path=features.h5
+```
+
+For detailed Docker usage instructions, see [README-docker.md](README-docker.md).
+
+### Native Installation
 
 ### System Requirements
 
