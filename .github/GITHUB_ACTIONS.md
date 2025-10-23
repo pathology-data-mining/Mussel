@@ -61,13 +61,14 @@ Docker images are tagged using the following scheme:
 
 ```bash
 # Pull latest torch-gpu image
-docker pull <username>/mussel:latest-torch-gpu
+# Note: Replace YOUR_DOCKERHUB_USERNAME with the actual DockerHub organization/username
+docker pull YOUR_DOCKERHUB_USERNAME/mussel:latest-torch-gpu
 
 # Pull specific version with torch-cpu
-docker pull <username>/mussel:v1.1.1-torch-cpu
+docker pull YOUR_DOCKERHUB_USERNAME/mussel:v1.1.1-torch-cpu
 
 # Pull tensorflow-gpu image
-docker pull <username>/mussel:latest-tensorflow-gpu
+docker pull YOUR_DOCKERHUB_USERNAME/mussel:latest-tensorflow-gpu
 ```
 
 ## Local Testing
