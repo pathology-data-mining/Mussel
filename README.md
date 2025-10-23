@@ -1,5 +1,8 @@
 # Mussel
 
+[![CI](https://github.com/pathology-data-mining/Mussel/actions/workflows/ci.yml/badge.svg)](https://github.com/pathology-data-mining/Mussel/actions/workflows/ci.yml)
+[![Docker](https://github.com/pathology-data-mining/Mussel/actions/workflows/docker.yml/badge.svg)](https://github.com/pathology-data-mining/Mussel/actions/workflows/docker.yml)
+
 **Mussel** is a comprehensive toolkit for computational pathology on whole-slide images (WSI). It provides efficient tools for tiling, feature extraction using pathology foundation models, and zero-shot tissue classification.
 
 ## Table of Contents
@@ -85,6 +88,25 @@ If you just want CPU support for a PyTorch model, you can create your Mussel env
 uv sync --extra torch-cpu
 ```
 Mussel doesn't currently support Apple Metal GPUs, so this is what you'd use to install on a modern MacBook.
+
+#### Docker
+
+Pre-built Docker images are available on Docker Hub with different backend configurations:
+
+```bash
+# Pull the latest torch-gpu image (default)
+docker pull mskmind/mussel:latest-torch-gpu
+
+# Pull specific version
+docker pull mskmind/mussel:v1.1.1-torch-gpu
+
+# Other available backends
+docker pull mskmind/mussel:latest-torch-cpu
+docker pull mskmind/mussel:latest-tensorflow-gpu
+docker pull mskmind/mussel:latest-tensorflow-cpu
+```
+
+See [.github/GITHUB_ACTIONS.md](.github/GITHUB_ACTIONS.md) for more details on Docker image tags and building custom images.
 
 ## Quick Start
 
@@ -185,6 +207,8 @@ We welcome contributions from the community! Whether you want to:
 - Submit a bug fix
 
 Please see our [CONTRIBUTING.md](CONTRIBUTING.md) guide for detailed information on how to contribute.
+
+For information about GitHub Actions CI/CD pipelines, see [.github/GITHUB_ACTIONS.md](.github/GITHUB_ACTIONS.md).
 
 Quick contribution steps:
 1. Fork the repository
