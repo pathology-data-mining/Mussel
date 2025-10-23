@@ -9,6 +9,27 @@ set -e
 echo "=== Testing mussel-docker wrapper ==="
 echo ""
 
+# Check prerequisites
+if [ ! -f "./mussel-docker" ]; then
+    echo "✗ Error: mussel-docker script not found in current directory"
+    exit 1
+fi
+
+if [ ! -x "./mussel-docker" ]; then
+    echo "✗ Error: mussel-docker script is not executable"
+    exit 1
+fi
+
+if [ ! -f "./docker-example.sh" ]; then
+    echo "✗ Error: docker-example.sh script not found in current directory"
+    exit 1
+fi
+
+if [ ! -x "./docker-example.sh" ]; then
+    echo "✗ Error: docker-example.sh script is not executable"
+    exit 1
+fi
+
 # Test 1: Help command
 echo "Test 1: Help command"
 output=$(./mussel-docker help 2>&1)
@@ -74,11 +95,19 @@ echo "✓ Environment variables recognized"
 
 # Test 6: Bash syntax
 echo "Test 6: Bash syntax check"
-bash -n ./mussel-docker
-echo "✓ Bash syntax is valid"
+if bash -n ./mussel-docker; then
+    echo "✓ mussel-docker bash syntax is valid"
+else
+    echo "✗ mussel-docker has bash syntax errors"
+    exit 1
+fi
 
-bash -n ./docker-example.sh
-echo "✓ docker-example.sh syntax is valid"
+if bash -n ./docker-example.sh; then
+    echo "✓ docker-example.sh bash syntax is valid"
+else
+    echo "✗ docker-example.sh has bash syntax errors"
+    exit 1
+fi
 
 echo ""
 echo "=== All tests passed! ==="
