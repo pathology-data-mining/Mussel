@@ -113,8 +113,10 @@ Working directory to mount into the container
 The wrapper script automatically mounts your current working directory into the container at `/data`. This means:
 
 - All file paths in commands should be relative to your current directory
-- Output files will be written to your current directory
+- Output files will be written to your current directory with your user's ownership
 - You can access any files in subdirectories
+
+**Important:** The Docker container runs with your user ID and group ID, ensuring that all files created by the container have the correct ownership on the host system. This prevents permission issues when accessing output files.
 
 ### Example Workflow
 
@@ -157,6 +159,7 @@ If you need to access files from different directories, use the interactive shel
 
 ```bash
 docker run --rm -it \
+    --user $(id -u):$(id -g) \
     -v /path/to/slides:/slides \
     -v /path/to/output:/output \
     --gpus all \
@@ -169,6 +172,8 @@ Then inside the container:
 uv run tessellate slide_path=/slides/slide.svs output_h5_path=/output/tiles.h5
 ```
 
+**Note:** The `--user $(id -u):$(id -g)` flag ensures files are created with your user's ownership.
+
 ### GPU Configuration
 
 Check if GPUs are available:
@@ -179,6 +184,7 @@ docker run --rm --gpus all nvidia/cuda:12.1.1-cudnn8-devel-ubuntu22.04 nvidia-sm
 Run with specific GPUs:
 ```bash
 docker run --rm --gpus '"device=0,1"' \
+    --user $(id -u):$(id -g) \
     -v $(pwd):/data -w /data \
     mussel:latest \
     uv run extract_features ...

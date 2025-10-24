@@ -135,6 +135,9 @@ start_shell() {
     local work_dir="${MUSSEL_WORK_DIR:-$(pwd)}"
     local docker_args="-it --rm"
     
+    # Run as current user to preserve file ownership
+    docker_args="$docker_args --user $(id -u):$(id -g)"
+    
     # Add GPU support if requested
     if [ "$USE_GPU" = "true" ]; then
         if docker run --rm --gpus all ubuntu:22.04 nvidia-smi &> /dev/null; then
@@ -163,6 +166,9 @@ run_command() {
     
     local work_dir="${MUSSEL_WORK_DIR:-$(pwd)}"
     local docker_args="--rm"
+    
+    # Run as current user to preserve file ownership
+    docker_args="$docker_args --user $(id -u):$(id -g)"
     
     # Add GPU support if requested
     if [ "$USE_GPU" = "true" ]; then
