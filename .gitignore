@@ -25,3 +25,5 @@ outputs/
 tmp*
 *~
 *.swp
+docker-example-output/
+*-output/

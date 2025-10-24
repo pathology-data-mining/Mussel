@@ -27,3 +27,5 @@ outputs/
 *.h5
 *.bmp
 *.npy
+docker-example-output/
+*-output/
