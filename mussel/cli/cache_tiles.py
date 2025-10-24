@@ -2,12 +2,12 @@
 Inputs: slide_file_path, patch_file_path, annotation_csv_path
 Results in .pt file with N_tiles x 3 x img_size x img_size tensor
 """
-
 import argparse
 import json
 import time
 from dataclasses import dataclass, field
 from typing import List, Optional
+import logging
 
 import pandas as pd
 import tiffslide as openslide
@@ -69,6 +69,10 @@ cs.store(
 @hydra.main(config_path=".", config_name="cache_tiles_config", version_base=None)
 def main(cfg: CacheTilesConfig):
     time_start = time.time()
+
+    # restrict verbose logging from aiobotocore
+    logging.getLogger('aiobotocore').setLevel(logging.CRITICAL)
+
     indices = None
     if cfg.limit_to_class and cfg.annotation_csv_path:
         annot = pd.read_csv(cfg.annotation_csv_path)

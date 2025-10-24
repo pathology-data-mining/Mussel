@@ -1,9 +1,11 @@
+import logging
 import os
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, List, Optional
 
+import hydra
 import numpy as np
 import pandas as pd
 import tiffslide
@@ -13,8 +15,8 @@ from hydra.core.hydra_config import HydraConfig
 from loguru import logger
 from omegaconf import MISSING, OmegaConf
 
-import hydra
-from mussel.utils.segment import draw_slide_mask, save_patches_png, segment_tissue
+from mussel.utils.segment import (draw_slide_mask, save_patches_png,
+                                  segment_tissue)
 
 
 @dataclass
@@ -178,6 +180,10 @@ cs.store(name="tessellate_config", node=TessellateConfig)
 def main(
     cfg: TessellateConfig,
 ):
+    
+    # restrict verbose logging from aiobotocore
+    logging.getLogger('aiobotocore').setLevel(logging.CRITICAL)
+
     # Inialize WSI
     slide_id = os.path.splitext(os.path.basename(cfg.slide_path))[0]
     wsi = tiffslide.open_slide(cfg.slide_path)

@@ -1,3 +1,4 @@
+import logging
 import os
 import ssl
 from dataclasses import dataclass
@@ -209,6 +210,9 @@ cs.store(name="extract_features_config", node=ExtractFeaturesConfig)
 
 @hydra.main(version_base=None, config_path=".", config_name="extract_features_config")
 def main(cfg: ExtractFeaturesConfig):
+
+    # restrict verbose logging from aiobotocore
+    logging.getLogger('aiobotocore').setLevel(logging.CRITICAL)
 
     gpu_device_id = cfg.gpu_device_id
     if cfg.gpu_device_ids:
