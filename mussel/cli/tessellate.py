@@ -18,8 +18,6 @@ from omegaconf import MISSING, OmegaConf
 from mussel.utils.segment import (draw_slide_mask, save_patches_png,
                                   segment_tissue)
 
-# restrict verbose logging from aiobotocore
-logging.getLogger('aiobotocore').setLevel(logging.CRITICAL)
 
 @dataclass
 class SegConfig:
@@ -182,6 +180,10 @@ cs.store(name="tessellate_config", node=TessellateConfig)
 def main(
     cfg: TessellateConfig,
 ):
+    
+    # restrict verbose logging from aiobotocore
+    logging.getLogger('aiobotocore').setLevel(logging.CRITICAL)
+
     # Inialize WSI
     slide_id = os.path.splitext(os.path.basename(cfg.slide_path))[0]
     wsi = tiffslide.open_slide(cfg.slide_path)

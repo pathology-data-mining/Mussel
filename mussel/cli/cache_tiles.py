@@ -22,9 +22,6 @@ import hydra
 from mussel.datasets.h5 import Whole_Slide_Bag_FP
 from mussel.utils.ml import collate_features
 
-# restrict verbose logging from aiobotocore
-logging.getLogger('aiobotocore').setLevel(logging.CRITICAL)
-
 
 @dataclass
 class CacheTilesConfig:
@@ -72,6 +69,10 @@ cs.store(
 @hydra.main(config_path=".", config_name="cache_tiles_config", version_base=None)
 def main(cfg: CacheTilesConfig):
     time_start = time.time()
+
+    # restrict verbose logging from aiobotocore
+    logging.getLogger('aiobotocore').setLevel(logging.CRITICAL)
+
     indices = None
     if cfg.limit_to_class and cfg.annotation_csv_path:
         annot = pd.read_csv(cfg.annotation_csv_path)

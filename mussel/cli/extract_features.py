@@ -24,8 +24,6 @@ from mussel.utils.ml import collate_features
 from mussel.utils.timer import timed
 
 ssl._create_default_https_context = ssl._create_unverified_context
-# restrict verbose logging from aiobotocore
-logging.getLogger('aiobotocore').setLevel(logging.CRITICAL)
 
 
 @dataclass
@@ -212,6 +210,9 @@ cs.store(name="extract_features_config", node=ExtractFeaturesConfig)
 
 @hydra.main(version_base=None, config_path=".", config_name="extract_features_config")
 def main(cfg: ExtractFeaturesConfig):
+
+    # restrict verbose logging from aiobotocore
+    logging.getLogger('aiobotocore').setLevel(logging.CRITICAL)
 
     gpu_device_id = cfg.gpu_device_id
     if cfg.gpu_device_ids:

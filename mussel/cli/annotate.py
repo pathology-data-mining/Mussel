@@ -18,9 +18,6 @@ from omegaconf import MISSING
 
 import hydra
 
-# restrict verbose logging from aiobotocore
-logging.getLogger('aiobotocore').setLevel(logging.CRITICAL)
-
 
 @dataclass
 class AnnotateConfig:
@@ -108,6 +105,10 @@ cs.store(name="annotate_config", node=AnnotateConfig)
 @hydra.main(config_path=".", config_name="annotate_config", version_base=None)
 def main(cfg: AnnotateConfig):
     """Do zero shot classification on specified classes"""
+
+    # restrict verbose logging from aiobotocore
+    logging.getLogger('aiobotocore').setLevel(logging.CRITICAL)
+
     # load precomputed embeddings
     class_emb = torch.load(cfg.class_embedding_pt_path, weights_only=True)
 
