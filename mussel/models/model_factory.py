@@ -367,11 +367,25 @@ class TitanSlideEncoderModel(TorchModel):
             model_path = ModelType.TITAN_SLIDE.path
         model_obj = None
         if not Path(model_path).is_file():
-            # Load the TITAN model and extract the slide encoder component
-            titan = AutoModel.from_pretrained(model_path, trust_remote_code=True)
-            # The slide encoder is the second component returned by return_conch()
-            _, model_obj = titan.return_conch()
+            # Load the TITAN model - we'll use the whole model
+            # and call encode_slide_from_patch_features on it
+            model_obj = AutoModel.from_pretrained(model_path, trust_remote_code=True)
         super().__init__(model_path, model_obj, use_gpu, gpu_device_id)
+
+    def get_model_fun(self) -> Callable:
+        """Get model inference function for TITAN slide encoder.
+        
+        The TITAN slide encoder uses encode_slide_from_patch_features method
+        to aggregate patch features into slide-level representations.
+        
+        Returns:
+            Callable that takes patch features and returns slide-level features.
+        """
+        def model_fun(patch_features):
+            """Run TITAN slide encoder on patch features."""
+            return self.obj.encode_slide_from_patch_features(patch_features)
+        
+        return model_fun
 
     def get_preprocessing_fun(self) -> Callable:
         """Get preprocessing function for slide encoder.
