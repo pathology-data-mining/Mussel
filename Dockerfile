@@ -33,7 +33,14 @@ RUN curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2
 RUN unzip awscliv2.zip
 RUN ./aws/install
 
-COPY . /code/mussel
+# Set working directory
 WORKDIR /code/mussel
 
+# Copy only dependency files first to leverage Docker cache
+COPY pyproject.toml uv.lock ./
+
+# Install dependencies (this layer will be cached if dependencies don't change)
 RUN uv sync --frozen --extra $BACKEND
+
+# Copy the rest of the application code
+COPY . .
