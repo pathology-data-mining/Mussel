@@ -45,11 +45,13 @@ class ModelType(Enum):
     CONCH1_5 = 8, "conch1_5", "MahmoodLab/TITAN"
     VIRCHOW2 = 9, "virchow2", "hf-hub:paige-ai/Virchow2"
     GIGAPATH_SLIDE = 10, "gigapath_slide", "hf-hub:prov-gigapath/prov-gigapath"
+    TITAN_SLIDE = 11, "titan_slide", "MahmoodLab/TITAN"
 
 
 # Mapping of slide encoder models to their compatible patch encoder models
 SLIDE_ENCODER_COMPATIBILITY = {
     ModelType.GIGAPATH_SLIDE: ModelType.GIGAPATH,
+    ModelType.TITAN_SLIDE: ModelType.CONCH1_5,
     # Add more slide encoder -> patch encoder mappings as they become available
 }
 
@@ -342,6 +344,44 @@ class Conch15TorchModel(TorchModel):
             ]
         )
         return preprocessing
+
+
+class TitanSlideEncoderModel(TorchModel):
+    def __init__(
+        self,
+        model_path,
+        use_gpu: bool = True,
+        gpu_device_id: int | List[int] | None = None,
+    ):
+        """Initialize TITAN slide encoder model.
+        
+        This is the slide-level encoder from MahmoodLab/TITAN that aggregates
+        CONCH patch-level features into slide-level representations.
+        
+        Args:
+            model_path: Path to slide encoder model file or HuggingFace repo ID.
+            use_gpu: Whether to use GPU (default: True).
+            gpu_device_id: GPU device ID or list of IDs for multi-GPU (default: None).
+        """
+        if model_path is None:
+            model_path = ModelType.TITAN_SLIDE.path
+        model_obj = None
+        if not Path(model_path).is_file():
+            # Load the TITAN model and extract the slide encoder component
+            titan = AutoModel.from_pretrained(model_path, trust_remote_code=True)
+            # The slide encoder is the second component returned by return_conch()
+            _, model_obj = titan.return_conch()
+        super().__init__(model_path, model_obj, use_gpu, gpu_device_id)
+
+    def get_preprocessing_fun(self) -> Callable:
+        """Get preprocessing function for slide encoder.
+        
+        Slide encoders work on patch features, not images, so no preprocessing needed.
+        
+        Returns:
+            None, as slide encoders don't preprocess images.
+        """
+        return None
 
 
 class GigapathTorchModel(TorchModel):
@@ -675,6 +715,13 @@ class Conch15ModelFactory(ModelFactory):
     def get_model(self, model_path=None, use_gpu=True, gpu_device_id=None):
         """Create CONCH v1.5 model instance."""
         return Conch15TorchModel(model_path, use_gpu, gpu_device_id)
+
+
+@register_model_factory(ModelType.TITAN_SLIDE)
+class TitanSlideEncoderModelFactory(ModelFactory):
+    def get_model(self, model_path=None, use_gpu=True, gpu_device_id=None):
+        """Create TITAN slide encoder model instance."""
+        return TitanSlideEncoderModel(model_path, use_gpu, gpu_device_id)
 
 
 @register_model_factory(ModelType.OPTIMUS)

@@ -159,3 +159,7 @@ def test_auto_infer_patch_encoder():
     # GIGAPATH_SLIDE should require GIGAPATH
     required = get_required_patch_encoder(ModelType.GIGAPATH_SLIDE)
     assert required == ModelType.GIGAPATH
+    
+    # TITAN_SLIDE should require CONCH1_5
+    required = get_required_patch_encoder(ModelType.TITAN_SLIDE)
+    assert required == ModelType.CONCH1_5

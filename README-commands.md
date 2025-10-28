@@ -205,6 +205,7 @@ When using `aggregation_method=model`, you must specify:
 
 **Important:** Each slide encoder is tied to a specific patch encoder:
 - `GIGAPATH_SLIDE` automatically uses `GIGAPATH` as the patch encoder
+- `TITAN_SLIDE` automatically uses `CONCH1_5` as the patch encoder
 - The required patch encoder is inferred automatically - no need to specify `model_type`
 - If you specify a different `model_type`, it will be overridden with the required patch encoder
 
