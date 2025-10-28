@@ -183,8 +183,8 @@ The two-step process:
 
 Available aggregation methods:
 - `identity`: No aggregation, keeps all patch features (default, backward compatible)
-- `mean`: Mean pooling across patches (future extension)
-- `max`: Max pooling across patches (future extension)
+- `mean`: Mean pooling across patches (creates single slide-level feature vector)
+- `max`: Max pooling across patches (creates single slide-level feature vector)
 
 **Output Files:**
 - `*.h5`: HDF5 file with features array and coordinate information
