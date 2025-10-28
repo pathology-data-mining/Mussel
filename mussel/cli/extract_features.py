@@ -30,6 +30,9 @@ class ExtractFeaturesConfig:
     gpu_device_id (Optional[int]): Specific GPU device ID to use, if applicable.
     gpu_device_ids (Optional[List[int]]): List of GPU device IDs to use, if applicable.
     num_workers (int): Number of worker threads for data loading.
+    use_two_step (bool): If True, use two-step process (patch encoding + slide aggregation).
+    intermediate_h5_path (Optional[str]): Path for intermediate patch features (two-step mode).
+    aggregation_method (str): Aggregation method for two-step mode (identity, mean, max).
     """
 
     patch_h5_path: str = MISSING
@@ -46,6 +49,9 @@ class ExtractFeaturesConfig:
     gpu_device_ids: Optional[List[int]] = None
     num_workers: int = 16
     is_test_run: bool = False
+    use_two_step: bool = False
+    intermediate_h5_path: Optional[str] = None
+    aggregation_method: str = "identity"
 
 
 desc_doc = """== ${hydra.help.app_name} ==
@@ -53,6 +59,12 @@ desc_doc = """== ${hydra.help.app_name} ==
 Extract features (embeddings) from whole slide images (WSI) or patches using a 
 pathology foundation model.  The embeddings are written to a PyTorch tensor file (.pt)
 and an HDF5 (.h5) file.
+
+This tool supports two modes:
+1. Legacy mode (default): Single-step feature extraction
+2. Two-step mode (use_two_step=True): 
+   - Step 1: Patch-level encoding (extract features from individual patches)
+   - Step 2: Slide-level aggregation (aggregate patch features to slide level)
 """
 
 parameter_doc = f"""== Available Parameters ==
@@ -87,6 +99,9 @@ def main(cfg: ExtractFeaturesConfig):
         num_workers=cfg.num_workers,
         gpu_device_ids=cfg.gpu_device_ids,
         is_test_run=cfg.is_test_run,
+        use_two_step=cfg.use_two_step,
+        intermediate_h5_path=cfg.intermediate_h5_path,
+        aggregation_method=cfg.aggregation_method,
     )
 
 

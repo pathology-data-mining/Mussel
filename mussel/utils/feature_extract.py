@@ -215,11 +215,10 @@ def get_features(
 
 
 @timed
-def save_features(
+def extract_patch_features(
     patch_h5_path,
     slide_path,
     output_h5_path,
-    output_pt_path=None,
     model_type=ModelType.CLIP,
     model_path=None,
     model_save_path=None,
@@ -232,13 +231,16 @@ def save_features(
     pin_memory=True,
     is_test_run=False,
 ):
-    """Extract features from whole slide image and save to HDF5 and PyTorch formats.
+    """Extract patch-level features from whole slide image (Step 1: Patch Encoding).
+
+    This function performs patch-level feature extraction, converting image patches
+    into feature embeddings using a foundation model. The output contains features
+    for individual patches/tiles.
 
     Args:
         patch_h5_path: Path to the h5 file containing patch coordinates.
         slide_path: Path to the whole slide image.
-        output_h5_path: Path to save the extracted features in HDF5 format.
-        output_pt_path: Optional path to save features in PyTorch format.
+        output_h5_path: Path to save the extracted patch-level features in HDF5 format.
         model_type: Type of foundation model to use (default: ModelType.CLIP).
         model_path: Optional path to model weights.
         model_save_path: Optional path to save the model.
@@ -250,10 +252,14 @@ def save_features(
         num_workers: Number of worker processes for data loading (default: 16).
         pin_memory: Whether to pin memory for data loading (default: True).
         is_test_run: If True, only process first 3 batches (default: False).
+    
+    Returns:
+        Path to the output HDF5 file containing patch-level features.
     """
     if gpu_device_ids:
         gpu_device_id = gpu_device_ids
 
+    logger.info("Step 1: Extracting patch-level features")
     logger.info("loading model checkpoint")
 
     model_factory = get_model_factory(model_type)
@@ -310,14 +316,226 @@ def save_features(
         is_test_run=is_test_run,
     )
 
-    if output_pt_path is not None:
-        with h5py.File(output_h5_path, "r") as file:
-            features = file["features"][:]
-            logger.info(f"features size: {features.shape} ")
-            # logger.info(f'coordinates size: {file["coords"].shape} ')
+    logger.info(f"Patch-level features saved to {output_h5_path}")
+    return output_h5_path
 
-            features = torch.from_numpy(features)
-            torch.save(features, output_pt_path)
+
+@timed
+def aggregate_slide_features(
+    patch_features_h5_path,
+    output_h5_path=None,
+    output_pt_path=None,
+    aggregation_method="identity",
+):
+    """Aggregate patch-level features to slide-level (Step 2: Slide Encoding).
+
+    This function takes patch-level features and aggregates them into slide-level
+    representations. Currently supports identity (no aggregation), but can be
+    extended to support mean pooling, attention-based aggregation, etc.
+
+    Args:
+        patch_features_h5_path: Path to HDF5 file with patch-level features.
+        output_h5_path: Optional path to save slide-level features in HDF5 format.
+        output_pt_path: Optional path to save slide-level features in PyTorch format.
+        aggregation_method: Method for aggregating features (default: "identity").
+            - "identity": No aggregation, keeps all patch features (current behavior)
+            - "mean": Mean pooling across patches (future extension)
+            - "max": Max pooling across patches (future extension)
+    
+    Returns:
+        Tuple of (output_h5_path, output_pt_path) if saving, otherwise features tensor.
+    """
+    logger.info("Step 2: Aggregating patch features to slide level")
+    
+    with h5py.File(patch_features_h5_path, "r") as file:
+        features = file["features"][:]
+        logger.info(f"Loaded patch features with shape: {features.shape}")
+        
+        # Apply aggregation method
+        if aggregation_method == "identity":
+            # No aggregation - keep all patch features (backward compatible)
+            aggregated_features = features
+            logger.info("Using identity aggregation (no aggregation)")
+        elif aggregation_method == "mean":
+            # Mean pooling across patches
+            aggregated_features = np.mean(features, axis=0, keepdims=True)
+            logger.info(f"Applied mean pooling: {features.shape} -> {aggregated_features.shape}")
+        elif aggregation_method == "max":
+            # Max pooling across patches
+            aggregated_features = np.max(features, axis=0, keepdims=True)
+            logger.info(f"Applied max pooling: {features.shape} -> {aggregated_features.shape}")
+        else:
+            raise ValueError(f"Unknown aggregation method: {aggregation_method}")
+        
+        # Save to HDF5 if requested
+        if output_h5_path is not None:
+            logger.info(f"Saving aggregated features to {output_h5_path}")
+            asset_dict = {"features": aggregated_features}
+            
+            # Copy coordinates if they exist and we're using identity
+            if aggregation_method == "identity" and "coords" in file:
+                asset_dict["coords"] = file["coords"][:]
+            
+            save_hdf5(output_h5_path, asset_dict, attr_h5_path=None, mode="w")
+        
+        # Save to PyTorch if requested
+        if output_pt_path is not None:
+            logger.info(f"Saving aggregated features to {output_pt_path}")
+            features_tensor = torch.from_numpy(aggregated_features)
+            torch.save(features_tensor, output_pt_path)
+    
+    return output_h5_path, output_pt_path
+
+
+@timed
+def save_features(
+    patch_h5_path,
+    slide_path,
+    output_h5_path,
+    output_pt_path=None,
+    model_type=ModelType.CLIP,
+    model_path=None,
+    model_save_path=None,
+    patch_path=None,
+    batch_size=64,
+    use_gpu=True,
+    gpu_device_id=None,
+    gpu_device_ids=None,
+    num_workers=16,
+    pin_memory=True,
+    is_test_run=False,
+    use_two_step=False,
+    intermediate_h5_path=None,
+    aggregation_method="identity",
+):
+    """Extract features from whole slide image and save to HDF5 and PyTorch formats.
+
+    This function can operate in two modes:
+    1. Legacy mode (use_two_step=False): Single-step feature extraction (backward compatible)
+    2. Two-step mode (use_two_step=True): Separate patch encoding and slide aggregation
+
+    Args:
+        patch_h5_path: Path to the h5 file containing patch coordinates.
+        slide_path: Path to the whole slide image.
+        output_h5_path: Path to save the extracted features in HDF5 format.
+        output_pt_path: Optional path to save features in PyTorch format.
+        model_type: Type of foundation model to use (default: ModelType.CLIP).
+        model_path: Optional path to model weights.
+        model_save_path: Optional path to save the model.
+        patch_path: Optional path to folder with pre-extracted patches.
+        batch_size: Batch size for feature extraction (default: 64).
+        use_gpu: Whether to use GPU for inference (default: True).
+        gpu_device_id: GPU device ID to use.
+        gpu_device_ids: List of GPU device IDs for multi-GPU.
+        num_workers: Number of worker processes for data loading (default: 16).
+        pin_memory: Whether to pin memory for data loading (default: True).
+        is_test_run: If True, only process first 3 batches (default: False).
+        use_two_step: If True, use two-step process (patch encoding + aggregation).
+        intermediate_h5_path: Path for intermediate patch features (two-step mode only).
+        aggregation_method: Aggregation method for two-step mode (default: "identity").
+    """
+    if use_two_step:
+        # Two-step process: patch encoding -> slide aggregation
+        logger.info("Using two-step feature extraction process")
+        
+        # Determine intermediate path
+        if intermediate_h5_path is None:
+            intermediate_h5_path = str(Path(output_h5_path).with_suffix(".patch.h5"))
+        
+        # Step 1: Extract patch-level features
+        extract_patch_features(
+            patch_h5_path=patch_h5_path,
+            slide_path=slide_path,
+            output_h5_path=intermediate_h5_path,
+            model_type=model_type,
+            model_path=model_path,
+            model_save_path=model_save_path,
+            patch_path=patch_path,
+            batch_size=batch_size,
+            use_gpu=use_gpu,
+            gpu_device_id=gpu_device_id,
+            gpu_device_ids=gpu_device_ids,
+            num_workers=num_workers,
+            pin_memory=pin_memory,
+            is_test_run=is_test_run,
+        )
+        
+        # Step 2: Aggregate to slide level
+        aggregate_slide_features(
+            patch_features_h5_path=intermediate_h5_path,
+            output_h5_path=output_h5_path,
+            output_pt_path=output_pt_path,
+            aggregation_method=aggregation_method,
+        )
+    else:
+        # Legacy single-step process (backward compatible)
+        if gpu_device_ids:
+            gpu_device_id = gpu_device_ids
+
+        logger.info("loading model checkpoint")
+
+        model_factory = get_model_factory(model_type)
+        if model_factory is None:
+            raise ValueError("model not recognized")
+        model = model_factory.get_model(model_path, use_gpu, gpu_device_id)
+        if model_save_path is not None:
+            Path(model_save_path).parent.mkdir(parents=True, exist_ok=True)
+            logger.info(f"saving model to {model_save_path}")
+            model.save(model_save_path)
+        preprocessing = model.get_preprocessing_fun()
+
+        if patch_path:
+            dataset = ImageFolder(
+                root=patch_path,
+                transform=preprocessing,
+            )
+
+            loader = DataLoader(
+                dataset=dataset,
+                batch_size=batch_size,
+                num_workers=num_workers,
+                pin_memory=pin_memory,
+                worker_init_fn=None,
+                shuffle=False,
+            )
+        elif patch_h5_path:
+            dataset = WholeSlideImageH5Dataset(
+                h5_path=patch_h5_path,
+                slide_path=slide_path,
+                preprocess=preprocessing,
+                use_imagenet_rgb_dist=preprocessing is None,
+                init_wsi_in_worker=num_workers > 0,
+            )
+
+            loader = DataLoader(
+                dataset=dataset,
+                batch_size=batch_size,
+                num_workers=num_workers,
+                pin_memory=pin_memory,
+                collate_fn=collate_features,
+                worker_init_fn=dataset.worker_init if num_workers > 0 else None,
+                shuffle=False,
+            )
+        else:
+            raise ValueError("Either patch_path or patch_h5_path must be provided")
+
+        process_dataset(
+            dataset,
+            loader,
+            model_fun=model.get_model_fun(),
+            patch_h5_path=patch_h5_path,
+            output_h5_path=output_h5_path,
+            is_test_run=is_test_run,
+        )
+
+        if output_pt_path is not None:
+            with h5py.File(output_h5_path, "r") as file:
+                features = file["features"][:]
+                logger.info(f"features size: {features.shape} ")
+                # logger.info(f'coordinates size: {file["coords"].shape} ')
+
+                features = torch.from_numpy(features)
+                torch.save(features, output_pt_path)
 
 
 @timed
