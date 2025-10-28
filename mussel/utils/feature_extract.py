@@ -153,6 +153,7 @@ def _apply_slide_aggregation(
     gpu_device_id=None,
     gpu_device_ids=None,
     coords=None,
+    patch_size=None,
 ):
     """Apply slide-level aggregation to patch features.
     
@@ -167,7 +168,8 @@ def _apply_slide_aggregation(
         use_gpu: Whether to use GPU for model-based aggregation (default: True).
         gpu_device_id: GPU device ID to use.
         gpu_device_ids: List of GPU device IDs for multi-GPU.
-        coords: Optional numpy array of patch coordinates (required for some slide encoders like GIGAPATH_SLIDE).
+        coords: Optional numpy array of patch coordinates (required for some slide encoders like GIGAPATH_SLIDE, TITAN_SLIDE).
+        patch_size: Optional patch size at level 0 (required for some slide encoders like TITAN_SLIDE).
         
     Returns:
         Numpy array of aggregated features.
@@ -206,13 +208,28 @@ def _apply_slide_aggregation(
         # Convert features to tensor and apply model
         features_tensor = torch.from_numpy(features).unsqueeze(0)  # Add batch dimension
         
-        # Some slide encoders (like GIGAPATH_SLIDE) require coordinates
-        # Pass coords as a keyword argument if the model function accepts it
+        # Some slide encoders require coordinates and/or patch size
+        # GIGAPATH_SLIDE: requires (features, coords)
+        # TITAN_SLIDE: requires (features, coords, patch_size)
         with torch.no_grad():
-            if coords is not None:
+            if slide_model_type == ModelType.TITAN_SLIDE:
+                # TITAN requires features, coords, and patch_size
+                if coords is None:
+                    raise ValueError("TITAN_SLIDE requires coordinates")
+                if patch_size is None:
+                    # Default patch size at level 0 (commonly 256 for TITAN/CONCH)
+                    patch_size = 256
+                    logger.warning(f"patch_size not provided, using default: {patch_size}")
+                coords_tensor = torch.from_numpy(coords).unsqueeze(0)  # Add batch dimension
+                aggregated_features = model_fun(features_tensor, coords_tensor, patch_size).cpu().numpy()
+            elif slide_model_type == ModelType.GIGAPATH_SLIDE:
+                # GIGAPATH requires features and coords
+                if coords is None:
+                    raise ValueError("GIGAPATH_SLIDE requires coordinates")
                 coords_tensor = torch.from_numpy(coords).unsqueeze(0)  # Add batch dimension
                 aggregated_features = model_fun(features_tensor, coords_tensor).cpu().numpy()
             else:
+                # Other slide encoders may only need features
                 aggregated_features = model_fun(features_tensor).cpu().numpy()
         
         logger.info(f"Applied model aggregation: {features.shape} -> {aggregated_features.shape}")

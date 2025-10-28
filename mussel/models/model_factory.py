@@ -376,14 +376,14 @@ class TitanSlideEncoderModel(TorchModel):
         """Get model inference function for TITAN slide encoder.
         
         The TITAN slide encoder uses encode_slide_from_patch_features method
-        to aggregate patch features into slide-level representations.
+        which requires patch features, coordinates, and patch size at level 0.
         
         Returns:
-            Callable that takes patch features and returns slide-level features.
+            Callable that takes patch features, coords, and patch_size, returns slide-level features.
         """
-        def model_fun(patch_features):
-            """Run TITAN slide encoder on patch features."""
-            return self.obj.encode_slide_from_patch_features(patch_features)
+        def model_fun(patch_features, coords, patch_size):
+            """Run TITAN slide encoder on patch features with coordinates and patch size."""
+            return self.obj.encode_slide_from_patch_features(patch_features, coords, patch_size)
         
         return model_fun
 
