@@ -169,7 +169,8 @@ def _apply_slide_aggregation(
         gpu_device_id: GPU device ID to use.
         gpu_device_ids: List of GPU device IDs for multi-GPU.
         coords: Optional numpy array of patch coordinates (required for some slide encoders like GIGAPATH_SLIDE, TITAN_SLIDE).
-        patch_size: Optional patch size at level 0 (required for some slide encoders like TITAN_SLIDE).
+        patch_size: Optional patch size at level 0 (required for TITAN_SLIDE). 
+            If not provided, will be extracted from h5 file 'coords' attributes or default to 256.
         
     Returns:
         Numpy array of aggregated features.
@@ -332,6 +333,12 @@ def get_features(
     # Apply slide-level encoding if requested
     if use_slide_encoder:
         logger.info("Applying slide-level encoding")
+        
+        # Extract patch_size from attrs if available
+        patch_size = attrs.get("patch_size") if attrs else None
+        if patch_size is not None:
+            logger.info(f"Using patch_size from attrs: {patch_size}")
+        
         features = _apply_slide_aggregation(
             features,
             aggregation_method=aggregation_method,
@@ -341,6 +348,7 @@ def get_features(
             gpu_device_id=gpu_device_id,
             gpu_device_ids=gpu_device_ids,
             coords=coords,
+            patch_size=patch_size,
         )
 
     return features, labels
@@ -497,6 +505,12 @@ def aggregate_slide_features(
         # Load coordinates if available
         coords = file["coords"][:] if "coords" in file else None
         
+        # Load patch_size from coords attributes if available
+        patch_size = None
+        if "coords" in file and "patch_size" in file["coords"].attrs:
+            patch_size = file["coords"].attrs["patch_size"]
+            logger.info(f"Loaded patch_size from h5 file: {patch_size}")
+        
         # Apply aggregation using shared helper function
         aggregated_features = _apply_slide_aggregation(
             features,
@@ -507,6 +521,7 @@ def aggregate_slide_features(
             gpu_device_id=gpu_device_id,
             gpu_device_ids=gpu_device_ids,
             coords=coords,
+            patch_size=patch_size,
         )
         
         # Save to HDF5 if requested
