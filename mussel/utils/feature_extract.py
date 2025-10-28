@@ -152,6 +152,7 @@ def _apply_slide_aggregation(
     use_gpu=True,
     gpu_device_id=None,
     gpu_device_ids=None,
+    coords=None,
 ):
     """Apply slide-level aggregation to patch features.
     
@@ -166,6 +167,7 @@ def _apply_slide_aggregation(
         use_gpu: Whether to use GPU for model-based aggregation (default: True).
         gpu_device_id: GPU device ID to use.
         gpu_device_ids: List of GPU device IDs for multi-GPU.
+        coords: Optional numpy array of patch coordinates (required for some slide encoders like GIGAPATH_SLIDE).
         
     Returns:
         Numpy array of aggregated features.
@@ -203,8 +205,15 @@ def _apply_slide_aggregation(
         
         # Convert features to tensor and apply model
         features_tensor = torch.from_numpy(features).unsqueeze(0)  # Add batch dimension
+        
+        # Some slide encoders (like GIGAPATH_SLIDE) require coordinates
+        # Pass coords as a keyword argument if the model function accepts it
         with torch.no_grad():
-            aggregated_features = model_fun(features_tensor).cpu().numpy()
+            if coords is not None:
+                coords_tensor = torch.from_numpy(coords).unsqueeze(0)  # Add batch dimension
+                aggregated_features = model_fun(features_tensor, coords_tensor).cpu().numpy()
+            else:
+                aggregated_features = model_fun(features_tensor).cpu().numpy()
         
         logger.info(f"Applied model aggregation: {features.shape} -> {aggregated_features.shape}")
         return aggregated_features
@@ -314,6 +323,7 @@ def get_features(
             use_gpu=use_gpu,
             gpu_device_id=gpu_device_id,
             gpu_device_ids=gpu_device_ids,
+            coords=coords,
         )
 
     return features, labels
@@ -467,6 +477,9 @@ def aggregate_slide_features(
         features = file["features"][:]
         logger.info(f"Loaded patch features with shape: {features.shape}")
         
+        # Load coordinates if available
+        coords = file["coords"][:] if "coords" in file else None
+        
         # Apply aggregation using shared helper function
         aggregated_features = _apply_slide_aggregation(
             features,
@@ -476,6 +489,7 @@ def aggregate_slide_features(
             use_gpu=use_gpu,
             gpu_device_id=gpu_device_id,
             gpu_device_ids=gpu_device_ids,
+            coords=coords,
         )
         
         # Save to HDF5 if requested

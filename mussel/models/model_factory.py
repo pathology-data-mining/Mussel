@@ -458,9 +458,25 @@ class GigapathSlideEncoderModel(TorchModel):
             model_path = ModelType.GIGAPATH_SLIDE.path
         model_obj = None
         if model_path.startswith("hf-hub:"):
-            # Load the slide encoder component from Prov-GigaPath
-            model_obj = timm.create_model(model_path, pretrained=True)
+            # Load the full GigaPath model which includes the slide encoder
+            repo_id = model_path.replace("hf-hub:", "")
+            model_obj = timm.create_model(repo_id, pretrained=True)
         super().__init__(model_path, model_obj, use_gpu, gpu_device_id)
+
+    def get_model_fun(self) -> Callable:
+        """Get model inference function for GigaPath slide encoder.
+        
+        The GigaPath slide encoder uses the slide_encoder method which
+        requires both tile embeddings and coordinates as arguments.
+        
+        Returns:
+            Callable that takes tile embeddings and coordinates, returns slide-level features.
+        """
+        def model_fun(tile_embeddings, coords):
+            """Run GigaPath slide encoder on tile embeddings with coordinates."""
+            return self.obj.slide_encoder(tile_embeddings, coords)
+        
+        return model_fun
 
     def get_preprocessing_fun(self) -> Callable:
         """Get preprocessing function for slide encoder.
