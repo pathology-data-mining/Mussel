@@ -47,6 +47,46 @@ class ModelType(Enum):
     GIGAPATH_SLIDE = 10, "gigapath_slide", "hf-hub:prov-gigapath/prov-gigapath"
 
 
+# Mapping of slide encoder models to their compatible patch encoder models
+SLIDE_ENCODER_COMPATIBILITY = {
+    ModelType.GIGAPATH_SLIDE: ModelType.GIGAPATH,
+    # Add more slide encoder -> patch encoder mappings as they become available
+}
+
+
+def validate_slide_encoder_compatibility(patch_encoder: ModelType, slide_encoder: ModelType) -> bool:
+    """Validate that a slide encoder is compatible with a patch encoder.
+    
+    Each slide encoder model is designed to work with features from a specific
+    patch encoder model. This function validates that the combination is valid.
+    
+    Args:
+        patch_encoder: The patch-level encoder model type.
+        slide_encoder: The slide-level encoder model type.
+        
+    Returns:
+        True if the slide encoder is compatible with the patch encoder.
+        
+    Raises:
+        ValueError: If the slide encoder is not compatible with the patch encoder.
+    """
+    if slide_encoder not in SLIDE_ENCODER_COMPATIBILITY:
+        raise ValueError(
+            f"Unknown slide encoder: {slide_encoder}. "
+            f"Available slide encoders: {list(SLIDE_ENCODER_COMPATIBILITY.keys())}"
+        )
+    
+    expected_patch_encoder = SLIDE_ENCODER_COMPATIBILITY[slide_encoder]
+    if patch_encoder != expected_patch_encoder:
+        raise ValueError(
+            f"Slide encoder {slide_encoder} requires patch encoder {expected_patch_encoder}, "
+            f"but {patch_encoder} was provided. Each slide encoder is tied to a specific "
+            f"patch encoder model."
+        )
+    
+    return True
+
+
 class Model:
     def __init__(
         self,

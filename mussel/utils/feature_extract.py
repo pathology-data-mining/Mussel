@@ -10,7 +10,7 @@ from functools import singledispatch
 from tqdm import tqdm
 
 from mussel.datasets import WholeSlideImageH5Dataset, WholeSlideImageTileCoordDataset
-from mussel.models import ModelType, get_model_factory
+from mussel.models import ModelType, get_model_factory, validate_slide_encoder_compatibility
 
 from .file import save_hdf5
 from .ml import collate_features
@@ -471,11 +471,17 @@ def save_features(
         aggregation_method: Aggregation method for two-step mode (default: "identity").
             Options: "identity", "mean", "max", "model".
         slide_model_type: Type of slide encoder model (only when aggregation_method="model").
+            Must be compatible with the patch encoder. For example, GIGAPATH_SLIDE
+            requires GIGAPATH as the patch encoder.
         slide_model_path: Optional path to slide encoder model weights.
     """
     if use_two_step:
         # Two-step process: patch encoding -> slide aggregation
         logger.info("Using two-step feature extraction process")
+        
+        # Validate slide encoder compatibility if using model-based aggregation
+        if aggregation_method == "model" and slide_model_type is not None:
+            validate_slide_encoder_compatibility(model_type, slide_model_type)
         
         # Determine intermediate path
         if intermediate_h5_path is None:

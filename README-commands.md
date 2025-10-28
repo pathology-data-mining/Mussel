@@ -204,6 +204,10 @@ When using `aggregation_method=model`, you must specify:
 - `slide_model_type`: The type of slide encoder model (e.g., GIGAPATH_SLIDE for Prov-GigaPath slide encoder)
 - `slide_model_path`: Optional path to slide encoder model weights
 
+**Important:** Each slide encoder is tied to a specific patch encoder:
+- `GIGAPATH_SLIDE` requires `GIGAPATH` as the patch encoder
+- The compatibility is validated automatically and will raise an error if mismatched
+
 **Output Files:**
 - `*.h5`: HDF5 file with features array and coordinate information
 - `*.pt`: PyTorch tensor file with features (can be loaded with `torch.load()`)

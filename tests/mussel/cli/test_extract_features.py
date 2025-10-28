@@ -1,9 +1,10 @@
 import os
+import pytest
 from omegaconf import OmegaConf
 
 import mussel.cli.extract_features
 from mussel.cli.extract_features import ExtractFeaturesConfig
-from mussel.models import ModelType
+from mussel.models import ModelType, validate_slide_encoder_compatibility
 from mussel.utils import extract_patch_features, aggregate_slide_features
 
 import ssl
@@ -139,3 +140,13 @@ def test_aggregate_slide_features_mean(tmp_path):
     assert os.path.exists(output_pt_path)
     assert h5_result == str(output_h5_path)
     assert pt_result == str(output_pt_path)
+
+
+def test_slide_encoder_compatibility_validation():
+    """Test that slide encoder compatibility validation works correctly."""
+    # Valid combination: GIGAPATH with GIGAPATH_SLIDE
+    validate_slide_encoder_compatibility(ModelType.GIGAPATH, ModelType.GIGAPATH_SLIDE)
+    
+    # Invalid combination: CLIP with GIGAPATH_SLIDE should raise ValueError
+    with pytest.raises(ValueError, match="requires patch encoder"):
+        validate_slide_encoder_compatibility(ModelType.CLIP, ModelType.GIGAPATH_SLIDE)
