@@ -183,6 +183,18 @@ extract_features \
     output_pt_path=slide_features.pt
 ```
 
+**Two-step extraction (optional):** For more control over the feature extraction process, you can use a two-step approach:
+```bash
+extract_features \
+    slide_path=path/to/your/slide.svs \
+    patch_h5_path=slide_tiles.h5 \
+    model_type=CLIP \
+    output_h5_path=slide_features.h5 \
+    output_pt_path=slide_features.pt \
+    use_two_step=True
+```
+This separates patch-level encoding from slide-level aggregation, allowing for intermediate processing steps.
+
 ### 5. Annotate tiles with tissue types (zero-shot)
 ```bash
 # Create embeddings for your tissue types

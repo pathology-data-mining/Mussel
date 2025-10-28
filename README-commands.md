@@ -163,9 +163,33 @@ extract_features \
     output_pt_path=None
 ```
 
+**Example - Two-step feature extraction:**
+The tool supports a two-step process that separates patch-level encoding from slide-level aggregation:
+```bash
+# Extract features with two-step process (identity aggregation)
+extract_features \
+    slide_path=tests/testdata/948176.svs \
+    patch_h5_path=tests/testdata/948176.patch.h5 \
+    output_h5_path=948176_feat.h5 \
+    output_pt_path=948176_embed.pt \
+    use_two_step=True \
+    intermediate_h5_path=948176_patch_feat.h5 \
+    aggregation_method=identity
+```
+
+The two-step process:
+1. **Step 1 (Patch Encoding)**: Extracts features from individual patches and saves to `intermediate_h5_path`
+2. **Step 2 (Slide Aggregation)**: Aggregates patch features to slide-level and saves to `output_h5_path`
+
+Available aggregation methods:
+- `identity`: No aggregation, keeps all patch features (default, backward compatible)
+- `mean`: Mean pooling across patches (future extension)
+- `max`: Max pooling across patches (future extension)
+
 **Output Files:**
 - `*.h5`: HDF5 file with features array and coordinate information
 - `*.pt`: PyTorch tensor file with features (can be loaded with `torch.load()`)
+- `*.patch.h5`: Intermediate patch-level features (when using two-step mode)
 
 **Tips:**
 - Use `batch_size=32` or lower if you encounter GPU memory errors
