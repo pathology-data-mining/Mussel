@@ -73,7 +73,7 @@ This tool supports two modes:
 Slide-level aggregation methods:
    - identity: Keep all patch features (no aggregation)
    - mean/max: Simple pooling aggregation
-   - model: Use a slide encoder model (e.g., Prov-GigaPath slide encoder)
+   - model: Use a slide encoder model (e.g., GIGAPATH_SLIDE for Prov-GigaPath)
 """
 
 parameter_doc = f"""== Available Parameters ==

@@ -186,7 +186,7 @@ extract_features \
     use_two_step=True \
     intermediate_h5_path=948176_patch_feat.h5 \
     aggregation_method=model \
-    slide_model_type=GIGAPATH \
+    slide_model_type=GIGAPATH_SLIDE \
     slide_model_path=path/to/slide_encoder_weights.pth
 ```
 
@@ -201,7 +201,7 @@ Available aggregation methods:
 - `model`: Use a slide encoder model for learned aggregation (e.g., Prov-GigaPath slide encoder)
 
 When using `aggregation_method=model`, you must specify:
-- `slide_model_type`: The type of slide encoder model (e.g., GIGAPATH)
+- `slide_model_type`: The type of slide encoder model (e.g., GIGAPATH_SLIDE for Prov-GigaPath slide encoder)
 - `slide_model_path`: Optional path to slide encoder model weights
 
 **Output Files:**

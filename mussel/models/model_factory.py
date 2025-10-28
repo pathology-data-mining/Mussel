@@ -44,6 +44,7 @@ class ModelType(Enum):
     GOOGLEPATH = 7, "googlepath", "google/path-foundation"
     CONCH1_5 = 8, "conch1_5", "MahmoodLab/TITAN"
     VIRCHOW2 = 9, "virchow2", "hf-hub:paige-ai/Virchow2"
+    GIGAPATH_SLIDE = 10, "gigapath_slide", "hf-hub:prov-gigapath/prov-gigapath"
 
 
 class Model:
@@ -318,6 +319,42 @@ class GigapathTorchModel(TorchModel):
         return preprocessing
 
 
+class GigapathSlideEncoderModel(TorchModel):
+    def __init__(
+        self,
+        model_path,
+        use_gpu: bool = True,
+        gpu_device_id: int | List[int] | None = None,
+    ):
+        """Initialize Prov-GigaPath slide encoder model.
+        
+        This is the slide-level encoder from Prov-GigaPath that aggregates
+        patch-level features into slide-level representations.
+        
+        Args:
+            model_path: Path to slide encoder model file or HuggingFace repo ID.
+            use_gpu: Whether to use GPU (default: True).
+            gpu_device_id: GPU device ID or list of IDs for multi-GPU (default: None).
+        """
+        if model_path is None:
+            model_path = ModelType.GIGAPATH_SLIDE.path
+        model_obj = None
+        if model_path.startswith("hf-hub:"):
+            # Load the slide encoder component from Prov-GigaPath
+            model_obj = timm.create_model(model_path, pretrained=True)
+        super().__init__(model_path, model_obj, use_gpu, gpu_device_id)
+
+    def get_preprocessing_fun(self) -> Callable:
+        """Get preprocessing function for slide encoder.
+        
+        Slide encoders work on patch features, not images, so no preprocessing needed.
+        
+        Returns:
+            None, as slide encoders don't preprocess images.
+        """
+        return None
+
+
 class OptimusTorchModel(TorchModel):
 
     def __init__(
@@ -546,6 +583,13 @@ class GigapathModelFactory(ModelFactory):
     def get_model(self, model_path=None, use_gpu=True, gpu_device_id=None):
         """Create Prov-GigaPath model instance."""
         return GigapathTorchModel(model_path, use_gpu, gpu_device_id)
+
+
+@register_model_factory(ModelType.GIGAPATH_SLIDE)
+class GigapathSlideEncoderModelFactory(ModelFactory):
+    def get_model(self, model_path=None, use_gpu=True, gpu_device_id=None):
+        """Create Prov-GigaPath slide encoder model instance."""
+        return GigapathSlideEncoderModel(model_path, use_gpu, gpu_device_id)
 
 
 @register_model_factory(ModelType.VIRCHOW)
