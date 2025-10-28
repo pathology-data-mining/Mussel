@@ -150,3 +150,12 @@ def test_slide_encoder_compatibility_validation():
     # Invalid combination: CLIP with GIGAPATH_SLIDE should raise ValueError
     with pytest.raises(ValueError, match="requires patch encoder"):
         validate_slide_encoder_compatibility(ModelType.CLIP, ModelType.GIGAPATH_SLIDE)
+
+
+def test_auto_infer_patch_encoder():
+    """Test that patch encoder is automatically inferred from slide encoder."""
+    from mussel.models import get_required_patch_encoder
+    
+    # GIGAPATH_SLIDE should require GIGAPATH
+    required = get_required_patch_encoder(ModelType.GIGAPATH_SLIDE)
+    assert required == ModelType.GIGAPATH

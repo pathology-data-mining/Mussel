@@ -10,7 +10,7 @@ from functools import singledispatch
 from tqdm import tqdm
 
 from mussel.datasets import WholeSlideImageH5Dataset, WholeSlideImageTileCoordDataset
-from mussel.models import ModelType, get_model_factory, validate_slide_encoder_compatibility
+from mussel.models import ModelType, get_model_factory, validate_slide_encoder_compatibility, get_required_patch_encoder
 
 from .file import save_hdf5
 from .ml import collate_features
@@ -169,6 +169,8 @@ def get_features(
         slide_path: Path to the whole slide image.
         attrs: Dictionary of tile attributes (patch_size, patch_level, mpp, etc.).
         model_type: Type of foundation model to use (default: ModelType.CLIP).
+            When using model-based aggregation with a slide encoder, this will be automatically
+            set to the required patch encoder if not already specified correctly.
         model_path: Optional path to model weights.
         batch_size: Batch size for feature extraction (default: 64).
         use_gpu: Whether to use GPU for inference (default: True).
@@ -179,7 +181,7 @@ def get_features(
         is_test_run: If True, only process first 3 batches (default: False).
         use_slide_encoder: If True, apply slide-level encoding after patch extraction.
         slide_model_type: Type of slide encoder model (only when use_slide_encoder=True).
-            Must be compatible with the patch encoder.
+            The required patch encoder will be automatically inferred and used.
         slide_model_path: Optional path to slide encoder model weights.
         aggregation_method: Aggregation method when using slide encoder (default: "identity").
             Options: "identity", "mean", "max", "model".
@@ -192,8 +194,16 @@ def get_features(
     if gpu_device_ids:
         gpu_device_id = gpu_device_ids
 
-    # Validate slide encoder compatibility if using model-based aggregation
+    # Auto-infer patch encoder from slide encoder if using model-based aggregation
     if use_slide_encoder and aggregation_method == "model" and slide_model_type is not None:
+        required_patch_encoder = get_required_patch_encoder(slide_model_type)
+        if model_type != required_patch_encoder:
+            logger.info(
+                f"Auto-selecting patch encoder {required_patch_encoder} "
+                f"as required by slide encoder {slide_model_type}"
+            )
+            model_type = required_patch_encoder
+        # Validate compatibility
         validate_slide_encoder_compatibility(model_type, slide_model_type)
 
     model_factory = get_model_factory(model_type)
@@ -508,6 +518,8 @@ def save_features(
         output_h5_path: Path to save the extracted features in HDF5 format.
         output_pt_path: Optional path to save features in PyTorch format.
         model_type: Type of foundation model to use for patch encoding (default: ModelType.CLIP).
+            When using model-based aggregation with a slide encoder, this will be automatically
+            set to the required patch encoder if not already specified correctly.
         model_path: Optional path to patch encoder model weights.
         model_save_path: Optional path to save the model.
         patch_path: Optional path to folder with pre-extracted patches.
@@ -523,16 +535,24 @@ def save_features(
         aggregation_method: Aggregation method for two-step mode (default: "identity").
             Options: "identity", "mean", "max", "model".
         slide_model_type: Type of slide encoder model (only when aggregation_method="model").
-            Must be compatible with the patch encoder. For example, GIGAPATH_SLIDE
-            requires GIGAPATH as the patch encoder.
+            The required patch encoder will be automatically inferred and used. For example,
+            specifying GIGAPATH_SLIDE will automatically use GIGAPATH as the patch encoder.
         slide_model_path: Optional path to slide encoder model weights.
     """
     if use_two_step:
         # Two-step process: patch encoding -> slide aggregation
         logger.info("Using two-step feature extraction process")
         
-        # Validate slide encoder compatibility if using model-based aggregation
+        # Auto-infer patch encoder from slide encoder if using model-based aggregation
         if aggregation_method == "model" and slide_model_type is not None:
+            required_patch_encoder = get_required_patch_encoder(slide_model_type)
+            if model_type != required_patch_encoder:
+                logger.info(
+                    f"Auto-selecting patch encoder {required_patch_encoder} "
+                    f"as required by slide encoder {slide_model_type}"
+                )
+                model_type = required_patch_encoder
+            # Validate compatibility
             validate_slide_encoder_compatibility(model_type, slide_model_type)
         
         # Determine intermediate path

@@ -54,6 +54,30 @@ SLIDE_ENCODER_COMPATIBILITY = {
 }
 
 
+def get_required_patch_encoder(slide_encoder: ModelType) -> ModelType:
+    """Get the required patch encoder for a given slide encoder.
+    
+    Each slide encoder model is designed to work with features from a specific
+    patch encoder model. This function returns the required patch encoder.
+    
+    Args:
+        slide_encoder: The slide-level encoder model type.
+        
+    Returns:
+        The required patch encoder model type.
+        
+    Raises:
+        ValueError: If the slide encoder is not recognized.
+    """
+    if slide_encoder not in SLIDE_ENCODER_COMPATIBILITY:
+        raise ValueError(
+            f"Unknown slide encoder: {slide_encoder}. "
+            f"Available slide encoders: {list(SLIDE_ENCODER_COMPATIBILITY.keys())}"
+        )
+    
+    return SLIDE_ENCODER_COMPATIBILITY[slide_encoder]
+
+
 def validate_slide_encoder_compatibility(patch_encoder: ModelType, slide_encoder: ModelType) -> bool:
     """Validate that a slide encoder is compatible with a patch encoder.
     
