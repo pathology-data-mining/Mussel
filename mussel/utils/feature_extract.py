@@ -326,21 +326,32 @@ def aggregate_slide_features(
     output_h5_path=None,
     output_pt_path=None,
     aggregation_method="identity",
+    model_type=None,
+    model_path=None,
+    use_gpu=True,
+    gpu_device_id=None,
+    gpu_device_ids=None,
 ):
     """Aggregate patch-level features to slide-level (Step 2: Slide Encoding).
 
     This function takes patch-level features and aggregates them into slide-level
-    representations. Currently supports identity (no aggregation), but can be
-    extended to support mean pooling, attention-based aggregation, etc.
+    representations. Supports simple aggregation methods (mean, max) or model-based
+    aggregation using a slide encoder model (e.g., Prov-GigaPath slide encoder).
 
     Args:
         patch_features_h5_path: Path to HDF5 file with patch-level features.
         output_h5_path: Optional path to save slide-level features in HDF5 format.
         output_pt_path: Optional path to save slide-level features in PyTorch format.
         aggregation_method: Method for aggregating features (default: "identity").
-            - "identity": No aggregation, keeps all patch features (current behavior)
-            - "mean": Mean pooling across patches (future extension)
-            - "max": Max pooling across patches (future extension)
+            - "identity": No aggregation, keeps all patch features (backward compatible)
+            - "mean": Mean pooling across patches
+            - "max": Max pooling across patches
+            - "model": Use a slide encoder model for aggregation
+        model_type: Type of slide encoder model to use (only when aggregation_method="model").
+        model_path: Optional path to slide encoder model weights.
+        use_gpu: Whether to use GPU for model-based aggregation (default: True).
+        gpu_device_id: GPU device ID to use.
+        gpu_device_ids: List of GPU device IDs for multi-GPU.
     
     Returns:
         Tuple of (output_h5_path, output_pt_path) if saving, otherwise features tensor.
@@ -364,6 +375,29 @@ def aggregate_slide_features(
             # Max pooling across patches
             aggregated_features = np.max(features, axis=0, keepdims=True)
             logger.info(f"Applied max pooling: {features.shape} -> {aggregated_features.shape}")
+        elif aggregation_method == "model":
+            # Model-based aggregation using a slide encoder
+            if model_type is None:
+                raise ValueError("model_type must be provided when using model-based aggregation")
+            
+            logger.info(f"Using model-based aggregation with {model_type}")
+            
+            if gpu_device_ids:
+                gpu_device_id = gpu_device_ids
+            
+            # Load the slide encoder model
+            model_factory = get_model_factory(model_type)
+            if model_factory is None:
+                raise ValueError(f"Model type {model_type} not recognized")
+            model = model_factory.get_model(model_path, use_gpu, gpu_device_id)
+            model_fun = model.get_model_fun()
+            
+            # Convert features to tensor and apply model
+            features_tensor = torch.from_numpy(features).unsqueeze(0)  # Add batch dimension
+            with torch.no_grad():
+                aggregated_features = model_fun(features_tensor).cpu().numpy()
+            
+            logger.info(f"Applied model aggregation: {features.shape} -> {aggregated_features.shape}")
         else:
             raise ValueError(f"Unknown aggregation method: {aggregation_method}")
         
@@ -407,6 +441,8 @@ def save_features(
     use_two_step=False,
     intermediate_h5_path=None,
     aggregation_method="identity",
+    slide_model_type=None,
+    slide_model_path=None,
 ):
     """Extract features from whole slide image and save to HDF5 and PyTorch formats.
 
@@ -419,8 +455,8 @@ def save_features(
         slide_path: Path to the whole slide image.
         output_h5_path: Path to save the extracted features in HDF5 format.
         output_pt_path: Optional path to save features in PyTorch format.
-        model_type: Type of foundation model to use (default: ModelType.CLIP).
-        model_path: Optional path to model weights.
+        model_type: Type of foundation model to use for patch encoding (default: ModelType.CLIP).
+        model_path: Optional path to patch encoder model weights.
         model_save_path: Optional path to save the model.
         patch_path: Optional path to folder with pre-extracted patches.
         batch_size: Batch size for feature extraction (default: 64).
@@ -433,6 +469,9 @@ def save_features(
         use_two_step: If True, use two-step process (patch encoding + aggregation).
         intermediate_h5_path: Path for intermediate patch features (two-step mode only).
         aggregation_method: Aggregation method for two-step mode (default: "identity").
+            Options: "identity", "mean", "max", "model".
+        slide_model_type: Type of slide encoder model (only when aggregation_method="model").
+        slide_model_path: Optional path to slide encoder model weights.
     """
     if use_two_step:
         # Two-step process: patch encoding -> slide aggregation
@@ -466,6 +505,11 @@ def save_features(
             output_h5_path=output_h5_path,
             output_pt_path=output_pt_path,
             aggregation_method=aggregation_method,
+            model_type=slide_model_type,
+            model_path=slide_model_path,
+            use_gpu=use_gpu,
+            gpu_device_id=gpu_device_id,
+            gpu_device_ids=gpu_device_ids,
         )
     else:
         # Legacy single-step process (backward compatible)

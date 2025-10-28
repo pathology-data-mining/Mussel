@@ -175,6 +175,19 @@ extract_features \
     use_two_step=True \
     intermediate_h5_path=948176_patch_feat.h5 \
     aggregation_method=identity
+
+# Extract features with model-based slide aggregation (e.g., Prov-GigaPath)
+extract_features \
+    slide_path=tests/testdata/948176.svs \
+    patch_h5_path=tests/testdata/948176.patch.h5 \
+    model_type=GIGAPATH \
+    output_h5_path=948176_feat.h5 \
+    output_pt_path=948176_embed.pt \
+    use_two_step=True \
+    intermediate_h5_path=948176_patch_feat.h5 \
+    aggregation_method=model \
+    slide_model_type=GIGAPATH \
+    slide_model_path=path/to/slide_encoder_weights.pth
 ```
 
 The two-step process:
@@ -185,6 +198,11 @@ Available aggregation methods:
 - `identity`: No aggregation, keeps all patch features (default, backward compatible)
 - `mean`: Mean pooling across patches (creates single slide-level feature vector)
 - `max`: Max pooling across patches (creates single slide-level feature vector)
+- `model`: Use a slide encoder model for learned aggregation (e.g., Prov-GigaPath slide encoder)
+
+When using `aggregation_method=model`, you must specify:
+- `slide_model_type`: The type of slide encoder model (e.g., GIGAPATH)
+- `slide_model_path`: Optional path to slide encoder model weights
 
 **Output Files:**
 - `*.h5`: HDF5 file with features array and coordinate information

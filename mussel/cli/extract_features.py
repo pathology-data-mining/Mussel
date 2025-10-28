@@ -22,8 +22,8 @@ class ExtractFeaturesConfig:
     slide_path (str): Path to the whole slide image.
     output_h5_path (str): Path to save the computed features in HDF5 format.
     output_pt_path (Optional[str]): Path to save the computed features in PyTorch format.
-    model_type (ModelType): Type of model to use for feature extraction.
-    model_path (Optional[str]): Path to the model weights, if applicable.
+    model_type (ModelType): Type of model to use for patch-level feature extraction.
+    model_path (Optional[str]): Path to the patch encoder model weights, if applicable.
     patch_path (Optional[str]): Directory containing pre-tiled images, if applicable.
     batch_size (int): Batch size for processing patches or tiles.
     use_gpu (bool): Whether to use GPU for computation.
@@ -32,7 +32,9 @@ class ExtractFeaturesConfig:
     num_workers (int): Number of worker threads for data loading.
     use_two_step (bool): If True, use two-step process (patch encoding + slide aggregation).
     intermediate_h5_path (Optional[str]): Path for intermediate patch features (two-step mode).
-    aggregation_method (str): Aggregation method for two-step mode (identity, mean, max).
+    aggregation_method (str): Aggregation method for two-step mode (identity, mean, max, model).
+    slide_model_type (Optional[ModelType]): Type of slide encoder model (when aggregation_method="model").
+    slide_model_path (Optional[str]): Path to slide encoder model weights.
     """
 
     patch_h5_path: str = MISSING
@@ -52,6 +54,8 @@ class ExtractFeaturesConfig:
     use_two_step: bool = False
     intermediate_h5_path: Optional[str] = None
     aggregation_method: str = "identity"
+    slide_model_type: Optional[ModelType] = None
+    slide_model_path: Optional[str] = None
 
 
 desc_doc = """== ${hydra.help.app_name} ==
@@ -65,6 +69,11 @@ This tool supports two modes:
 2. Two-step mode (use_two_step=True): 
    - Step 1: Patch-level encoding (extract features from individual patches)
    - Step 2: Slide-level aggregation (aggregate patch features to slide level)
+   
+Slide-level aggregation methods:
+   - identity: Keep all patch features (no aggregation)
+   - mean/max: Simple pooling aggregation
+   - model: Use a slide encoder model (e.g., Prov-GigaPath slide encoder)
 """
 
 parameter_doc = f"""== Available Parameters ==
@@ -102,6 +111,8 @@ def main(cfg: ExtractFeaturesConfig):
         use_two_step=cfg.use_two_step,
         intermediate_h5_path=cfg.intermediate_h5_path,
         aggregation_method=cfg.aggregation_method,
+        slide_model_type=cfg.slide_model_type,
+        slide_model_path=cfg.slide_model_path,
     )
 
 

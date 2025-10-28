@@ -107,3 +107,35 @@ def test_aggregate_slide_features_identity(tmp_path):
     assert os.path.exists(output_pt_path)
     assert h5_result == str(output_h5_path)
     assert pt_result == str(output_pt_path)
+
+
+def test_aggregate_slide_features_mean(tmp_path):
+    """Test aggregate_slide_features with mean pooling."""
+    slide_path = "tests/testdata/948176.svs"
+    patch_h5_path = "tests/testdata/948176.patch.h5"
+    patch_features_h5_path = tmp_path / "patch_features.h5"
+    output_h5_path = tmp_path / "slide_features_mean.h5"
+    output_pt_path = tmp_path / "slide_features_mean.pt"
+    
+    # First extract patch features
+    extract_patch_features(
+        patch_h5_path=patch_h5_path,
+        slide_path=slide_path,
+        output_h5_path=patch_features_h5_path,
+        model_type=ModelType.RESNET50,
+        use_gpu=False,
+        num_workers=1,
+    )
+    
+    # Then aggregate with mean pooling
+    h5_result, pt_result = aggregate_slide_features(
+        patch_features_h5_path=patch_features_h5_path,
+        output_h5_path=output_h5_path,
+        output_pt_path=output_pt_path,
+        aggregation_method="mean",
+    )
+    
+    assert os.path.exists(output_h5_path)
+    assert os.path.exists(output_pt_path)
+    assert h5_result == str(output_h5_path)
+    assert pt_result == str(output_pt_path)
