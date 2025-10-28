@@ -447,7 +447,7 @@ def save_features(
     """Extract features from whole slide image and save to HDF5 and PyTorch formats.
 
     This function can operate in two modes:
-    1. Legacy mode (use_two_step=False): Single-step feature extraction (backward compatible)
+    1. Single-step mode (use_two_step=False): Direct feature extraction (default, backward compatible)
     2. Two-step mode (use_two_step=True): Separate patch encoding and slide aggregation
 
     Args:
@@ -512,7 +512,7 @@ def save_features(
             gpu_device_ids=gpu_device_ids,
         )
     else:
-        # Legacy single-step process (backward compatible)
+        # Single-step process (backward compatible)
         if gpu_device_ids:
             gpu_device_id = gpu_device_ids
 

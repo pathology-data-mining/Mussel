@@ -65,7 +65,7 @@ pathology foundation model.  The embeddings are written to a PyTorch tensor file
 and an HDF5 (.h5) file.
 
 This tool supports two modes:
-1. Legacy mode (default): Single-step feature extraction
+1. Single-step mode (default): Direct feature extraction
 2. Two-step mode (use_two_step=True): 
    - Step 1: Patch-level encoding (extract features from individual patches)
    - Step 2: Slide-level aggregation (aggregate patch features to slide level)
