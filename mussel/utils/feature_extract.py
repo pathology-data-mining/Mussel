@@ -144,6 +144,74 @@ def _(
     return output_h5_path
 
 
+def _apply_slide_aggregation(
+    features,
+    aggregation_method="identity",
+    slide_model_type=None,
+    slide_model_path=None,
+    use_gpu=True,
+    gpu_device_id=None,
+    gpu_device_ids=None,
+):
+    """Apply slide-level aggregation to patch features.
+    
+    Helper function shared by get_features() and aggregate_slide_features().
+    
+    Args:
+        features: Numpy array of patch-level features.
+        aggregation_method: Method for aggregating features (default: "identity").
+            Options: "identity", "mean", "max", "model".
+        slide_model_type: Type of slide encoder model (only when aggregation_method="model").
+        slide_model_path: Optional path to slide encoder model weights.
+        use_gpu: Whether to use GPU for model-based aggregation (default: True).
+        gpu_device_id: GPU device ID to use.
+        gpu_device_ids: List of GPU device IDs for multi-GPU.
+        
+    Returns:
+        Numpy array of aggregated features.
+    """
+    if aggregation_method == "identity":
+        # No aggregation - keep all patch features
+        logger.info("Using identity aggregation (no aggregation)")
+        return features
+    elif aggregation_method == "mean":
+        # Mean pooling across patches
+        aggregated_features = np.mean(features, axis=0, keepdims=True)
+        logger.info(f"Applied mean pooling: {features.shape} -> {aggregated_features.shape}")
+        return aggregated_features
+    elif aggregation_method == "max":
+        # Max pooling across patches
+        aggregated_features = np.max(features, axis=0, keepdims=True)
+        logger.info(f"Applied max pooling: {features.shape} -> {aggregated_features.shape}")
+        return aggregated_features
+    elif aggregation_method == "model":
+        # Model-based aggregation using a slide encoder
+        if slide_model_type is None:
+            raise ValueError("slide_model_type must be provided when using model-based aggregation")
+        
+        logger.info(f"Using model-based aggregation with {slide_model_type}")
+        
+        if gpu_device_ids:
+            gpu_device_id = gpu_device_ids
+        
+        # Load the slide encoder model
+        model_factory = get_model_factory(slide_model_type)
+        if model_factory is None:
+            raise ValueError(f"Slide model type {slide_model_type} not recognized")
+        model = model_factory.get_model(slide_model_path, use_gpu, gpu_device_id)
+        model_fun = model.get_model_fun()
+        
+        # Convert features to tensor and apply model
+        features_tensor = torch.from_numpy(features).unsqueeze(0)  # Add batch dimension
+        with torch.no_grad():
+            aggregated_features = model_fun(features_tensor).cpu().numpy()
+        
+        logger.info(f"Applied model aggregation: {features.shape} -> {aggregated_features.shape}")
+        return aggregated_features
+    else:
+        raise ValueError(f"Unknown aggregation method: {aggregation_method}")
+
+
 def get_features(
     coords,
     slide_path,
@@ -238,40 +306,15 @@ def get_features(
     # Apply slide-level encoding if requested
     if use_slide_encoder:
         logger.info("Applying slide-level encoding")
-        
-        if aggregation_method == "identity":
-            # No aggregation - keep all patch features
-            pass
-        elif aggregation_method == "mean":
-            # Mean pooling across patches
-            features = np.mean(features, axis=0, keepdims=True)
-            logger.info(f"Applied mean pooling: {len(labels)} patches -> 1 slide feature")
-        elif aggregation_method == "max":
-            # Max pooling across patches
-            features = np.max(features, axis=0, keepdims=True)
-            logger.info(f"Applied max pooling: {len(labels)} patches -> 1 slide feature")
-        elif aggregation_method == "model":
-            # Model-based aggregation using a slide encoder
-            if slide_model_type is None:
-                raise ValueError("slide_model_type must be provided when using model-based aggregation")
-            
-            logger.info(f"Using model-based aggregation with {slide_model_type}")
-            
-            # Load the slide encoder model
-            slide_model_factory = get_model_factory(slide_model_type)
-            if slide_model_factory is None:
-                raise ValueError(f"Slide model type {slide_model_type} not recognized")
-            slide_model = slide_model_factory.get_model(slide_model_path, use_gpu, gpu_device_id)
-            slide_model_fun = slide_model.get_model_fun()
-            
-            # Convert features to tensor and apply model
-            features_tensor = torch.from_numpy(features).unsqueeze(0)  # Add batch dimension
-            with torch.no_grad():
-                features = slide_model_fun(features_tensor).cpu().numpy()
-            
-            logger.info(f"Applied model aggregation: {len(labels)} patches -> slide features")
-        else:
-            raise ValueError(f"Unknown aggregation method: {aggregation_method}")
+        features = _apply_slide_aggregation(
+            features,
+            aggregation_method=aggregation_method,
+            slide_model_type=slide_model_type,
+            slide_model_path=slide_model_path,
+            use_gpu=use_gpu,
+            gpu_device_id=gpu_device_id,
+            gpu_device_ids=gpu_device_ids,
+        )
 
     return features, labels
 
@@ -424,44 +467,16 @@ def aggregate_slide_features(
         features = file["features"][:]
         logger.info(f"Loaded patch features with shape: {features.shape}")
         
-        # Apply aggregation method
-        if aggregation_method == "identity":
-            # No aggregation - keep all patch features (backward compatible)
-            aggregated_features = features
-            logger.info("Using identity aggregation (no aggregation)")
-        elif aggregation_method == "mean":
-            # Mean pooling across patches
-            aggregated_features = np.mean(features, axis=0, keepdims=True)
-            logger.info(f"Applied mean pooling: {features.shape} -> {aggregated_features.shape}")
-        elif aggregation_method == "max":
-            # Max pooling across patches
-            aggregated_features = np.max(features, axis=0, keepdims=True)
-            logger.info(f"Applied max pooling: {features.shape} -> {aggregated_features.shape}")
-        elif aggregation_method == "model":
-            # Model-based aggregation using a slide encoder
-            if model_type is None:
-                raise ValueError("model_type must be provided when using model-based aggregation")
-            
-            logger.info(f"Using model-based aggregation with {model_type}")
-            
-            if gpu_device_ids:
-                gpu_device_id = gpu_device_ids
-            
-            # Load the slide encoder model
-            model_factory = get_model_factory(model_type)
-            if model_factory is None:
-                raise ValueError(f"Model type {model_type} not recognized")
-            model = model_factory.get_model(model_path, use_gpu, gpu_device_id)
-            model_fun = model.get_model_fun()
-            
-            # Convert features to tensor and apply model
-            features_tensor = torch.from_numpy(features).unsqueeze(0)  # Add batch dimension
-            with torch.no_grad():
-                aggregated_features = model_fun(features_tensor).cpu().numpy()
-            
-            logger.info(f"Applied model aggregation: {features.shape} -> {aggregated_features.shape}")
-        else:
-            raise ValueError(f"Unknown aggregation method: {aggregation_method}")
+        # Apply aggregation using shared helper function
+        aggregated_features = _apply_slide_aggregation(
+            features,
+            aggregation_method=aggregation_method,
+            slide_model_type=model_type,
+            slide_model_path=model_path,
+            use_gpu=use_gpu,
+            gpu_device_id=gpu_device_id,
+            gpu_device_ids=gpu_device_ids,
+        )
         
         # Save to HDF5 if requested
         if output_h5_path is not None:
