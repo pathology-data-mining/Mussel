@@ -157,6 +157,10 @@ def get_features(
     pin_memory=True,
     num_workers=16,
     is_test_run=False,
+    use_slide_encoder=False,
+    slide_model_type=None,
+    slide_model_path=None,
+    aggregation_method="identity",
 ):
     """Extract features from whole slide image tiles.
 
@@ -173,6 +177,12 @@ def get_features(
         pin_memory: Whether to pin memory for data loading (default: True).
         num_workers: Number of worker processes for data loading (default: 16).
         is_test_run: If True, only process first 3 batches (default: False).
+        use_slide_encoder: If True, apply slide-level encoding after patch extraction.
+        slide_model_type: Type of slide encoder model (only when use_slide_encoder=True).
+            Must be compatible with the patch encoder.
+        slide_model_path: Optional path to slide encoder model weights.
+        aggregation_method: Aggregation method when using slide encoder (default: "identity").
+            Options: "identity", "mean", "max", "model".
 
     Returns:
         Tuple of (features array, labels array).
@@ -181,6 +191,10 @@ def get_features(
 
     if gpu_device_ids:
         gpu_device_id = gpu_device_ids
+
+    # Validate slide encoder compatibility if using model-based aggregation
+    if use_slide_encoder and aggregation_method == "model" and slide_model_type is not None:
+        validate_slide_encoder_compatibility(model_type, slide_model_type)
 
     model_factory = get_model_factory(model_type)
     if model_factory is None:
@@ -210,6 +224,44 @@ def get_features(
     features, labels = process_dataset(
         dataset, loader, model_fun=model.get_model_fun(), is_test_run=is_test_run
     )
+
+    # Apply slide-level encoding if requested
+    if use_slide_encoder:
+        logger.info("Applying slide-level encoding")
+        
+        if aggregation_method == "identity":
+            # No aggregation - keep all patch features
+            pass
+        elif aggregation_method == "mean":
+            # Mean pooling across patches
+            features = np.mean(features, axis=0, keepdims=True)
+            logger.info(f"Applied mean pooling: {len(labels)} patches -> 1 slide feature")
+        elif aggregation_method == "max":
+            # Max pooling across patches
+            features = np.max(features, axis=0, keepdims=True)
+            logger.info(f"Applied max pooling: {len(labels)} patches -> 1 slide feature")
+        elif aggregation_method == "model":
+            # Model-based aggregation using a slide encoder
+            if slide_model_type is None:
+                raise ValueError("slide_model_type must be provided when using model-based aggregation")
+            
+            logger.info(f"Using model-based aggregation with {slide_model_type}")
+            
+            # Load the slide encoder model
+            slide_model_factory = get_model_factory(slide_model_type)
+            if slide_model_factory is None:
+                raise ValueError(f"Slide model type {slide_model_type} not recognized")
+            slide_model = slide_model_factory.get_model(slide_model_path, use_gpu, gpu_device_id)
+            slide_model_fun = slide_model.get_model_fun()
+            
+            # Convert features to tensor and apply model
+            features_tensor = torch.from_numpy(features).unsqueeze(0)  # Add batch dimension
+            with torch.no_grad():
+                features = slide_model_fun(features_tensor).cpu().numpy()
+            
+            logger.info(f"Applied model aggregation: {len(labels)} patches -> slide features")
+        else:
+            raise ValueError(f"Unknown aggregation method: {aggregation_method}")
 
     return features, labels
 
