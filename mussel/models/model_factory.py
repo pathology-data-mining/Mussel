@@ -44,6 +44,73 @@ class ModelType(Enum):
     GOOGLEPATH = 7, "googlepath", "google/path-foundation"
     CONCH1_5 = 8, "conch1_5", "MahmoodLab/TITAN"
     VIRCHOW2 = 9, "virchow2", "hf-hub:paige-ai/Virchow2"
+    GIGAPATH_SLIDE = 10, "gigapath_slide", "hf-hub:prov-gigapath/prov-gigapath"
+    TITAN_SLIDE = 11, "titan_slide", "MahmoodLab/TITAN"
+
+
+# Mapping of slide encoder models to their compatible patch encoder models
+SLIDE_ENCODER_COMPATIBILITY = {
+    ModelType.GIGAPATH_SLIDE: ModelType.GIGAPATH,
+    ModelType.TITAN_SLIDE: ModelType.CONCH1_5,
+    # Add more slide encoder -> patch encoder mappings as they become available
+}
+
+
+def get_required_patch_encoder(slide_encoder: ModelType) -> ModelType:
+    """Get the required patch encoder for a given slide encoder.
+    
+    Each slide encoder model is designed to work with features from a specific
+    patch encoder model. This function returns the required patch encoder.
+    
+    Args:
+        slide_encoder: The slide-level encoder model type.
+        
+    Returns:
+        The required patch encoder model type.
+        
+    Raises:
+        ValueError: If the slide encoder is not recognized.
+    """
+    if slide_encoder not in SLIDE_ENCODER_COMPATIBILITY:
+        raise ValueError(
+            f"Unknown slide encoder: {slide_encoder}. "
+            f"Available slide encoders: {list(SLIDE_ENCODER_COMPATIBILITY.keys())}"
+        )
+    
+    return SLIDE_ENCODER_COMPATIBILITY[slide_encoder]
+
+
+def validate_slide_encoder_compatibility(patch_encoder: ModelType, slide_encoder: ModelType) -> bool:
+    """Validate that a slide encoder is compatible with a patch encoder.
+    
+    Each slide encoder model is designed to work with features from a specific
+    patch encoder model. This function validates that the combination is valid.
+    
+    Args:
+        patch_encoder: The patch-level encoder model type.
+        slide_encoder: The slide-level encoder model type.
+        
+    Returns:
+        True if the slide encoder is compatible with the patch encoder.
+        
+    Raises:
+        ValueError: If the slide encoder is not compatible with the patch encoder.
+    """
+    if slide_encoder not in SLIDE_ENCODER_COMPATIBILITY:
+        raise ValueError(
+            f"Unknown slide encoder: {slide_encoder}. "
+            f"Available slide encoders: {list(SLIDE_ENCODER_COMPATIBILITY.keys())}"
+        )
+    
+    expected_patch_encoder = SLIDE_ENCODER_COMPATIBILITY[slide_encoder]
+    if patch_encoder != expected_patch_encoder:
+        raise ValueError(
+            f"Slide encoder {slide_encoder} requires patch encoder {expected_patch_encoder}, "
+            f"but {patch_encoder} was provided. Each slide encoder is tied to a specific "
+            f"patch encoder model."
+        )
+    
+    return True
 
 
 class Model:
@@ -279,6 +346,58 @@ class Conch15TorchModel(TorchModel):
         return preprocessing
 
 
+class TitanSlideEncoderModel(TorchModel):
+    def __init__(
+        self,
+        model_path,
+        use_gpu: bool = True,
+        gpu_device_id: int | List[int] | None = None,
+    ):
+        """Initialize TITAN slide encoder model.
+        
+        This is the slide-level encoder from MahmoodLab/TITAN that aggregates
+        CONCH patch-level features into slide-level representations.
+        
+        Args:
+            model_path: Path to slide encoder model file or HuggingFace repo ID.
+            use_gpu: Whether to use GPU (default: True).
+            gpu_device_id: GPU device ID or list of IDs for multi-GPU (default: None).
+        """
+        if model_path is None:
+            model_path = ModelType.TITAN_SLIDE.path
+        model_obj = None
+        if not Path(model_path).is_file():
+            # Load the TITAN model - we'll use the whole model
+            # and call encode_slide_from_patch_features on it
+            model_obj = AutoModel.from_pretrained(model_path, trust_remote_code=True)
+        super().__init__(model_path, model_obj, use_gpu, gpu_device_id)
+
+    def get_model_fun(self) -> Callable:
+        """Get model inference function for TITAN slide encoder.
+        
+        The TITAN slide encoder uses encode_slide_from_patch_features method
+        which requires patch features, coordinates, and patch size at level 0.
+        
+        Returns:
+            Callable that takes patch features, coords, and patch_size, returns slide-level features.
+        """
+        def model_fun(patch_features, coords, patch_size):
+            """Run TITAN slide encoder on patch features with coordinates and patch size."""
+            return self.obj.encode_slide_from_patch_features(patch_features, coords, patch_size)
+        
+        return model_fun
+
+    def get_preprocessing_fun(self) -> Callable:
+        """Get preprocessing function for slide encoder.
+        
+        Slide encoders work on patch features, not images, so no preprocessing needed.
+        
+        Returns:
+            None, as slide encoders don't preprocess images.
+        """
+        return None
+
+
 class GigapathTorchModel(TorchModel):
     def __init__(
         self,
@@ -316,6 +435,58 @@ class GigapathTorchModel(TorchModel):
             ]
         )
         return preprocessing
+
+
+class GigapathSlideEncoderModel(TorchModel):
+    def __init__(
+        self,
+        model_path,
+        use_gpu: bool = True,
+        gpu_device_id: int | List[int] | None = None,
+    ):
+        """Initialize Prov-GigaPath slide encoder model.
+        
+        This is the slide-level encoder from Prov-GigaPath that aggregates
+        patch-level features into slide-level representations.
+        
+        Args:
+            model_path: Path to slide encoder model file or HuggingFace repo ID.
+            use_gpu: Whether to use GPU (default: True).
+            gpu_device_id: GPU device ID or list of IDs for multi-GPU (default: None).
+        """
+        if model_path is None:
+            model_path = ModelType.GIGAPATH_SLIDE.path
+        model_obj = None
+        if model_path.startswith("hf-hub:"):
+            # Load the full GigaPath model which includes the slide encoder
+            repo_id = model_path.replace("hf-hub:", "")
+            model_obj = timm.create_model(repo_id, pretrained=True)
+        super().__init__(model_path, model_obj, use_gpu, gpu_device_id)
+
+    def get_model_fun(self) -> Callable:
+        """Get model inference function for GigaPath slide encoder.
+        
+        The GigaPath slide encoder uses the slide_encoder method which
+        requires both tile embeddings and coordinates as arguments.
+        
+        Returns:
+            Callable that takes tile embeddings and coordinates, returns slide-level features.
+        """
+        def model_fun(tile_embeddings, coords):
+            """Run GigaPath slide encoder on tile embeddings with coordinates."""
+            return self.obj.slide_encoder(tile_embeddings, coords)
+        
+        return model_fun
+
+    def get_preprocessing_fun(self) -> Callable:
+        """Get preprocessing function for slide encoder.
+        
+        Slide encoders work on patch features, not images, so no preprocessing needed.
+        
+        Returns:
+            None, as slide encoders don't preprocess images.
+        """
+        return None
 
 
 class OptimusTorchModel(TorchModel):
@@ -548,6 +719,13 @@ class GigapathModelFactory(ModelFactory):
         return GigapathTorchModel(model_path, use_gpu, gpu_device_id)
 
 
+@register_model_factory(ModelType.GIGAPATH_SLIDE)
+class GigapathSlideEncoderModelFactory(ModelFactory):
+    def get_model(self, model_path=None, use_gpu=True, gpu_device_id=None):
+        """Create Prov-GigaPath slide encoder model instance."""
+        return GigapathSlideEncoderModel(model_path, use_gpu, gpu_device_id)
+
+
 @register_model_factory(ModelType.VIRCHOW)
 class VirchowModelFactory(ModelFactory):
     def get_model(self, model_path=None, use_gpu=True, gpu_device_id=None):
@@ -567,6 +745,13 @@ class Conch15ModelFactory(ModelFactory):
     def get_model(self, model_path=None, use_gpu=True, gpu_device_id=None):
         """Create CONCH v1.5 model instance."""
         return Conch15TorchModel(model_path, use_gpu, gpu_device_id)
+
+
+@register_model_factory(ModelType.TITAN_SLIDE)
+class TitanSlideEncoderModelFactory(ModelFactory):
+    def get_model(self, model_path=None, use_gpu=True, gpu_device_id=None):
+        """Create TITAN slide encoder model instance."""
+        return TitanSlideEncoderModel(model_path, use_gpu, gpu_device_id)
 
 
 @register_model_factory(ModelType.OPTIMUS)

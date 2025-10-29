@@ -9,6 +9,7 @@ This document provides detailed information about the command-line tools provide
 - [Commands](#commands)
   - [tessellate](#tessellate)
   - [extract_features](#extract_features)
+  - [aggregate_slide_features](#aggregate_slide_features)
   - [create_class_embeddings](#create_class_embeddings)
   - [annotate](#annotate)
   - [cache_tiles](#cache_tiles)
@@ -27,6 +28,7 @@ slides, and generating feature embeddings with pathology foundation models.
 
 * `tessellate` - Tile whole-slide images with foreground detection
 * `extract_features` - Extract feature embeddings using foundation models
+* `aggregate_slide_features` - Aggregate patch-level features to slide-level using various methods
 * `create_class_embeddings` - Generate tissue-type embeddings for zero-shot classification
 * `annotate` - Annotate tiles with tissue types using zero-shot learning
 * `cache_tiles` - Cache tiles in an efficient format for training
@@ -163,14 +165,149 @@ extract_features \
     output_pt_path=None
 ```
 
+**Example - Two-step feature extraction:**
+The tool automatically uses two-step process when aggregation_method is set to mean, max, or model:
+```bash
+# Extract features with two-step process (mean aggregation)
+extract_features \
+    slide_path=tests/testdata/948176.svs \
+    patch_h5_path=tests/testdata/948176.patch.h5 \
+    output_h5_path=948176_feat.h5 \
+    output_pt_path=948176_embed.pt \
+    intermediate_h5_path=948176_patch_feat.h5 \
+    aggregation_method=mean
+
+# Extract features with model-based slide aggregation (e.g., Prov-GigaPath)
+# The patch encoder is automatically inferred from the slide encoder
+# The aggregation_method is automatically set to 'model' when slide_model_type is specified
+# Two-step mode is automatically inferred from aggregation_method
+extract_features \
+    slide_path=tests/testdata/948176.svs \
+    patch_h5_path=tests/testdata/948176.patch.h5 \
+    output_h5_path=948176_feat.h5 \
+    output_pt_path=948176_embed.pt \
+    intermediate_h5_path=948176_patch_feat.h5 \
+    slide_model_type=GIGAPATH_SLIDE
+```
+
+The two-step process:
+1. **Step 1 (Patch Encoding)**: Extracts features from individual patches and saves to `intermediate_h5_path`
+2. **Step 2 (Slide Aggregation)**: Aggregates patch features to slide-level and saves to `output_h5_path`
+
+Available aggregation methods:
+- `identity`: No aggregation, keeps all patch features (default, backward compatible)
+- `mean`: Mean pooling across patches (creates single slide-level feature vector)
+- `max`: Max pooling across patches (creates single slide-level feature vector)
+- `model`: Use a slide encoder model for learned aggregation (e.g., Prov-GigaPath slide encoder)
+
+**Simplified model-based aggregation:**
+When you specify `slide_model_type`, the `aggregation_method` is automatically set to `model`. You only need to specify:
+- `slide_model_type`: The type of slide encoder model (e.g., GIGAPATH_SLIDE for Prov-GigaPath slide encoder)
+- `slide_model_path`: Optional path to slide encoder model weights
+
+**Important:** Each slide encoder is tied to a specific patch encoder:
+- `GIGAPATH_SLIDE` automatically uses `GIGAPATH` as the patch encoder
+- `TITAN_SLIDE` automatically uses `CONCH1_5` as the patch encoder
+- The required patch encoder is inferred automatically - no need to specify `model_type`
+- If you specify a different `model_type`, it will be overridden with the required patch encoder
+
 **Output Files:**
 - `*.h5`: HDF5 file with features array and coordinate information
 - `*.pt`: PyTorch tensor file with features (can be loaded with `torch.load()`)
+- `*.patch.h5`: Intermediate patch-level features (when using two-step mode)
 
 **Tips:**
 - Use `batch_size=32` or lower if you encounter GPU memory errors
 - PyTorch models generally require the `torch-gpu` or `torch-cpu` installation
 - TensorFlow models (GooglePath) require the `tensorflow-gpu` or `tensorflow-cpu` installation
+- For gated models, set `HF_TOKEN` environment variable with your HuggingFace token
+
+---
+
+### `aggregate_slide_features`
+
+**Purpose**: Aggregate patch-level features to slide-level features using various aggregation methods.
+
+This command takes an HDF5 file containing patch-level feature embeddings (as produced by `extract_features` with two-step mode) and aggregates them to slide-level features. This is useful when you want to:
+- Apply different aggregation strategies to the same patch features
+- Use slide encoder models (e.g., Prov-GigaPath, TITAN) for learned aggregation
+- Separate patch extraction from slide aggregation for more flexible processing
+
+**Key Parameters:**
+- `patch_features_h5_path`: Path to HDF5 file containing patch-level features
+- `output_h5_path`: Where to save the aggregated slide-level features
+- `aggregation_method`: Aggregation method - 'identity', 'mean', 'max', or 'model'
+- `slide_model_type`: Type of slide encoder model (when using aggregation_method='model')
+- `slide_model_path`: Optional path to slide encoder model weights
+- `use_gpu`: Whether to use GPU for model-based aggregation
+- `gpu_device_id`: Specific GPU device ID to use
+
+**Supported Slide Encoder Models:**
+- `GIGAPATH_SLIDE`: Prov-GigaPath slide encoder (requires GIGAPATH patch features)
+- `TITAN_SLIDE`: MahmoodLab/TITAN slide encoder (requires CONCH1_5 patch features)
+
+**Example - Mean pooling aggregation:**
+```bash
+# First, extract patch-level features
+extract_features \
+    slide_path=tests/testdata/948176.svs \
+    patch_h5_path=tests/testdata/948176.patch.h5 \
+    output_h5_path=948176_patch_feat.h5 \
+    intermediate_h5_path=948176_patch_feat.h5 \
+    aggregation_method=identity
+
+# Then aggregate to slide-level using mean pooling
+aggregate_slide_features \
+    patch_features_h5_path=948176_patch_feat.h5 \
+    output_h5_path=948176_slide_feat_mean.h5 \
+    aggregation_method=mean
+```
+
+**Example - Using Prov-GigaPath slide encoder:**
+```bash
+# First, extract patch-level features with GIGAPATH
+extract_features \
+    slide_path=tests/testdata/948176.svs \
+    patch_h5_path=tests/testdata/948176.patch.h5 \
+    model_type=GIGAPATH \
+    output_h5_path=948176_patch_feat.h5 \
+    intermediate_h5_path=948176_patch_feat.h5 \
+    aggregation_method=identity
+
+# Then aggregate using GigaPath slide encoder
+# aggregation_method is automatically set to 'model' when slide_model_type is specified
+aggregate_slide_features \
+    patch_features_h5_path=948176_patch_feat.h5 \
+    output_h5_path=948176_slide_feat_gigapath.h5 \
+    slide_model_type=GIGAPATH_SLIDE
+```
+
+**Example - Using TITAN slide encoder:**
+```bash
+# First, extract patch-level features with CONCH1_5
+extract_features \
+    slide_path=tests/testdata/948176.svs \
+    patch_h5_path=tests/testdata/948176.patch.h5 \
+    model_type=CONCH1_5 \
+    output_h5_path=948176_patch_feat.h5 \
+    intermediate_h5_path=948176_patch_feat.h5 \
+    aggregation_method=identity
+
+# Then aggregate using TITAN slide encoder
+aggregate_slide_features \
+    patch_features_h5_path=948176_patch_feat.h5 \
+    output_h5_path=948176_slide_feat_titan.h5 \
+    slide_model_type=TITAN_SLIDE
+```
+
+**Output Files:**
+- `*.h5`: HDF5 file with aggregated slide-level features
+
+**Tips:**
+- The patch features file must contain features from the correct patch encoder for the slide encoder you're using
+- `GIGAPATH_SLIDE` requires patch features extracted with `GIGAPATH`
+- `TITAN_SLIDE` requires patch features extracted with `CONCH1_5`
+- Coordinates and patch_size are automatically extracted from the patch features HDF5 file
 - For gated models, set `HF_TOKEN` environment variable with your HuggingFace token
 
 ---

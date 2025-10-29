@@ -183,6 +183,27 @@ extract_features \
     output_pt_path=slide_features.pt
 ```
 
+**Two-step extraction with aggregation:** For more control over the feature extraction process, you can use a two-step approach with different aggregation methods:
+```bash
+# Mean pooling aggregation
+extract_features \
+    slide_path=path/to/your/slide.svs \
+    patch_h5_path=slide_tiles.h5 \
+    model_type=CLIP \
+    output_h5_path=slide_features.h5 \
+    output_pt_path=slide_features.pt \
+    aggregation_method=mean
+
+# Or use a slide encoder model
+extract_features \
+    slide_path=path/to/your/slide.svs \
+    patch_h5_path=slide_tiles.h5 \
+    output_h5_path=slide_features.h5 \
+    output_pt_path=slide_features.pt \
+    slide_model_type=GIGAPATH_SLIDE
+```
+This separates patch-level encoding from slide-level aggregation, allowing for intermediate processing steps. The system automatically uses two-step mode when `aggregation_method` is set to "mean", "max", or "model", or when `slide_model_type` is specified.
+
 ### 5. Annotate tiles with tissue types (zero-shot)
 ```bash
 # Create embeddings for your tissue types

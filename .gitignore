@@ -27,3 +27,4 @@ tmp*
 *.swp
 docker-example-output/
 *-output/
+*.egg-info/
