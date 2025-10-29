@@ -289,6 +289,14 @@ def get_features(
     if gpu_device_ids:
         gpu_device_id = gpu_device_ids
 
+    # Auto-set aggregation_method to "model" if slide_model_type is specified
+    if use_slide_encoder and slide_model_type is not None and aggregation_method != "model":
+        logger.info(
+            f"Auto-setting aggregation_method to 'model' since slide_model_type "
+            f"({slide_model_type}) is specified"
+        )
+        aggregation_method = "model"
+
     # Auto-infer patch encoder from slide encoder if using model-based aggregation
     if use_slide_encoder and aggregation_method == "model" and slide_model_type is not None:
         required_patch_encoder = get_required_patch_encoder(slide_model_type)
@@ -603,6 +611,14 @@ def save_features(
     if use_two_step:
         # Two-step process: patch encoding -> slide aggregation
         logger.info("Using two-step feature extraction process")
+        
+        # Auto-set aggregation_method to "model" if slide_model_type is specified
+        if slide_model_type is not None and aggregation_method != "model":
+            logger.info(
+                f"Auto-setting aggregation_method to 'model' since slide_model_type "
+                f"({slide_model_type}) is specified"
+            )
+            aggregation_method = "model"
         
         # Auto-infer patch encoder from slide encoder if using model-based aggregation
         if aggregation_method == "model" and slide_model_type is not None:

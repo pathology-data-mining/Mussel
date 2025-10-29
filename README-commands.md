@@ -178,6 +178,7 @@ extract_features \
 
 # Extract features with model-based slide aggregation (e.g., Prov-GigaPath)
 # The patch encoder is automatically inferred from the slide encoder
+# The aggregation_method is automatically set to 'model' when slide_model_type is specified
 extract_features \
     slide_path=tests/testdata/948176.svs \
     patch_h5_path=tests/testdata/948176.patch.h5 \
@@ -185,7 +186,6 @@ extract_features \
     output_pt_path=948176_embed.pt \
     use_two_step=True \
     intermediate_h5_path=948176_patch_feat.h5 \
-    aggregation_method=model \
     slide_model_type=GIGAPATH_SLIDE
 ```
 
@@ -199,7 +199,8 @@ Available aggregation methods:
 - `max`: Max pooling across patches (creates single slide-level feature vector)
 - `model`: Use a slide encoder model for learned aggregation (e.g., Prov-GigaPath slide encoder)
 
-When using `aggregation_method=model`, you must specify:
+**Simplified model-based aggregation:**
+When you specify `slide_model_type`, the `aggregation_method` is automatically set to `model`. You only need to specify:
 - `slide_model_type`: The type of slide encoder model (e.g., GIGAPATH_SLIDE for Prov-GigaPath slide encoder)
 - `slide_model_path`: Optional path to slide encoder model weights
 

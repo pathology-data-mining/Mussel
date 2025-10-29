@@ -163,3 +163,35 @@ def test_auto_infer_patch_encoder():
     # TITAN_SLIDE should require CONCH1_5
     required = get_required_patch_encoder(ModelType.TITAN_SLIDE)
     assert required == ModelType.CONCH1_5
+
+
+def test_auto_set_aggregation_method(tmp_path):
+    """Test that aggregation_method is automatically set to 'model' when slide_model_type is specified."""
+    import unittest.mock as mock
+    from mussel.utils import save_features
+    
+    slide_path = "tests/testdata/948176.svs"
+    patch_h5_path = "tests/testdata/948176.patch.h5"
+    output_h5_path = tmp_path / "test.h5"
+    
+    # Mock the actual feature extraction to avoid heavy computation
+    with mock.patch('mussel.utils.feature_extract.extract_patch_features') as mock_extract, \
+         mock.patch('mussel.utils.feature_extract.aggregate_slide_features') as mock_aggregate:
+        
+        # Call with slide_model_type but without aggregation_method
+        save_features(
+            patch_h5_path=patch_h5_path,
+            slide_path=slide_path,
+            output_h5_path=output_h5_path,
+            model_type=ModelType.GIGAPATH,  # Will be auto-set
+            use_two_step=True,
+            slide_model_type=ModelType.GIGAPATH_SLIDE,
+            aggregation_method="identity",  # Should be auto-set to "model"
+            use_gpu=False,
+            num_workers=1,
+        )
+        
+        # Verify aggregate_slide_features was called with aggregation_method="model"
+        mock_aggregate.assert_called_once()
+        call_kwargs = mock_aggregate.call_args[1]
+        assert call_kwargs['aggregation_method'] == 'model'
