@@ -164,27 +164,26 @@ extract_features \
 ```
 
 **Example - Two-step feature extraction:**
-The tool supports a two-step process that separates patch-level encoding from slide-level aggregation:
+The tool automatically uses two-step process when aggregation_method is set to mean, max, or model:
 ```bash
-# Extract features with two-step process (identity aggregation)
+# Extract features with two-step process (mean aggregation)
 extract_features \
     slide_path=tests/testdata/948176.svs \
     patch_h5_path=tests/testdata/948176.patch.h5 \
     output_h5_path=948176_feat.h5 \
     output_pt_path=948176_embed.pt \
-    use_two_step=True \
     intermediate_h5_path=948176_patch_feat.h5 \
-    aggregation_method=identity
+    aggregation_method=mean
 
 # Extract features with model-based slide aggregation (e.g., Prov-GigaPath)
 # The patch encoder is automatically inferred from the slide encoder
 # The aggregation_method is automatically set to 'model' when slide_model_type is specified
+# Two-step mode is automatically inferred from aggregation_method
 extract_features \
     slide_path=tests/testdata/948176.svs \
     patch_h5_path=tests/testdata/948176.patch.h5 \
     output_h5_path=948176_feat.h5 \
     output_pt_path=948176_embed.pt \
-    use_two_step=True \
     intermediate_h5_path=948176_patch_feat.h5 \
     slide_model_type=GIGAPATH_SLIDE
 ```

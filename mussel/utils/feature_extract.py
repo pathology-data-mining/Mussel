@@ -569,7 +569,6 @@ def save_features(
     num_workers=16,
     pin_memory=True,
     is_test_run=False,
-    use_two_step=False,
     intermediate_h5_path=None,
     aggregation_method="identity",
     slide_model_type=None,
@@ -577,9 +576,9 @@ def save_features(
 ):
     """Extract features from whole slide image and save to HDF5 and PyTorch formats.
 
-    This function can operate in two modes:
-    1. Single-step mode (use_two_step=False): Direct feature extraction (default, backward compatible)
-    2. Two-step mode (use_two_step=True): Separate patch encoding and slide aggregation
+    This function can operate in two modes (automatically determined by aggregation_method):
+    1. Single-step mode (aggregation_method="identity"): Direct feature extraction (default, backward compatible)
+    2. Two-step mode (aggregation_method in ["mean", "max", "model"]): Separate patch encoding and slide aggregation
 
     Args:
         patch_h5_path: Path to the h5 file containing patch coordinates.
@@ -599,26 +598,28 @@ def save_features(
         num_workers: Number of worker processes for data loading (default: 16).
         pin_memory: Whether to pin memory for data loading (default: True).
         is_test_run: If True, only process first 3 batches (default: False).
-        use_two_step: If True, use two-step process (patch encoding + aggregation).
         intermediate_h5_path: Path for intermediate patch features (two-step mode only).
-        aggregation_method: Aggregation method for two-step mode (default: "identity").
-            Options: "identity", "mean", "max", "model".
+        aggregation_method: Aggregation method (default: "identity").
+            Options: "identity" (single-step), "mean" (two-step), "max" (two-step), "model" (two-step).
         slide_model_type: Type of slide encoder model (only when aggregation_method="model").
             The required patch encoder will be automatically inferred and used. For example,
             specifying GIGAPATH_SLIDE will automatically use GIGAPATH as the patch encoder.
         slide_model_path: Optional path to slide encoder model weights.
     """
+    # Auto-set aggregation_method to "model" if slide_model_type is specified
+    if slide_model_type is not None and aggregation_method == "identity":
+        logger.info(
+            f"Auto-setting aggregation_method to 'model' since slide_model_type "
+            f"({slide_model_type}) is specified"
+        )
+        aggregation_method = "model"
+    
+    # Infer two-step mode from aggregation_method
+    use_two_step = aggregation_method != "identity"
+    
     if use_two_step:
         # Two-step process: patch encoding -> slide aggregation
         logger.info("Using two-step feature extraction process")
-        
-        # Auto-set aggregation_method to "model" if slide_model_type is specified
-        if slide_model_type is not None and aggregation_method != "model":
-            logger.info(
-                f"Auto-setting aggregation_method to 'model' since slide_model_type "
-                f"({slide_model_type}) is specified"
-            )
-            aggregation_method = "model"
         
         # Auto-infer patch encoder from slide encoder if using model-based aggregation
         if aggregation_method == "model" and slide_model_type is not None:

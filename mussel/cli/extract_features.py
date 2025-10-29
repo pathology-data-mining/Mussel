@@ -30,9 +30,8 @@ class ExtractFeaturesConfig:
     gpu_device_id (Optional[int]): Specific GPU device ID to use, if applicable.
     gpu_device_ids (Optional[List[int]]): List of GPU device IDs to use, if applicable.
     num_workers (int): Number of worker threads for data loading.
-    use_two_step (bool): If True, use two-step process (patch encoding + slide aggregation).
     intermediate_h5_path (Optional[str]): Path for intermediate patch features (two-step mode).
-    aggregation_method (str): Aggregation method for two-step mode (identity, mean, max, model).
+    aggregation_method (str): Aggregation method: identity (single-step), mean/max/model (two-step).
     slide_model_type (Optional[ModelType]): Type of slide encoder model (when aggregation_method="model").
     slide_model_path (Optional[str]): Path to slide encoder model weights.
     """
@@ -51,7 +50,6 @@ class ExtractFeaturesConfig:
     gpu_device_ids: Optional[List[int]] = None
     num_workers: int = 16
     is_test_run: bool = False
-    use_two_step: bool = False
     intermediate_h5_path: Optional[str] = None
     aggregation_method: str = "identity"
     slide_model_type: Optional[ModelType] = None
@@ -64,16 +62,16 @@ Extract features (embeddings) from whole slide images (WSI) or patches using a
 pathology foundation model.  The embeddings are written to a PyTorch tensor file (.pt)
 and an HDF5 (.h5) file.
 
-This tool supports two modes:
-1. Single-step mode (default): Direct feature extraction
-2. Two-step mode (use_two_step=True): 
+This tool supports two modes (automatically selected based on aggregation_method):
+1. Single-step mode (aggregation_method="identity"): Direct feature extraction (default)
+2. Two-step mode (aggregation_method in ["mean", "max", "model"]): 
    - Step 1: Patch-level encoding (extract features from individual patches)
    - Step 2: Slide-level aggregation (aggregate patch features to slide level)
    
 Slide-level aggregation methods:
-   - identity: Keep all patch features (no aggregation)
-   - mean/max: Simple pooling aggregation
-   - model: Use a slide encoder model (e.g., GIGAPATH_SLIDE for Prov-GigaPath)
+   - identity: Keep all patch features - single-step mode (no aggregation)
+   - mean/max: Simple pooling aggregation - two-step mode
+   - model: Use a slide encoder model - two-step mode (e.g., GIGAPATH_SLIDE for Prov-GigaPath)
 """
 
 parameter_doc = f"""== Available Parameters ==
@@ -108,7 +106,6 @@ def main(cfg: ExtractFeaturesConfig):
         num_workers=cfg.num_workers,
         gpu_device_ids=cfg.gpu_device_ids,
         is_test_run=cfg.is_test_run,
-        use_two_step=cfg.use_two_step,
         intermediate_h5_path=cfg.intermediate_h5_path,
         aggregation_method=cfg.aggregation_method,
         slide_model_type=cfg.slide_model_type,

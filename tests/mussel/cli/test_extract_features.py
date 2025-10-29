@@ -47,9 +47,8 @@ def test_extract_features_two_step(tmp_path):
         num_workers=1,
         model_type=ModelType.RESNET50,
         use_gpu=False,
-        use_two_step=True,
         intermediate_h5_path=intermediate_h5_path,
-        aggregation_method="identity",
+        aggregation_method="mean",  # Two-step mode inferred from aggregation_method
     )
     mussel.cli.extract_features.main(OmegaConf.create(cfg))
     
@@ -178,15 +177,14 @@ def test_auto_set_aggregation_method(tmp_path):
     with mock.patch('mussel.utils.feature_extract.extract_patch_features') as mock_extract, \
          mock.patch('mussel.utils.feature_extract.aggregate_slide_features') as mock_aggregate:
         
-        # Call with slide_model_type but without aggregation_method
+        # Call with slide_model_type - aggregation_method should be auto-set to "model"
         save_features(
             patch_h5_path=patch_h5_path,
             slide_path=slide_path,
             output_h5_path=output_h5_path,
             model_type=ModelType.GIGAPATH,  # Will be auto-set
-            use_two_step=True,
             slide_model_type=ModelType.GIGAPATH_SLIDE,
-            aggregation_method="identity",  # Should be auto-set to "model"
+            # aggregation_method should be auto-set to "model"
             use_gpu=False,
             num_workers=1,
         )
