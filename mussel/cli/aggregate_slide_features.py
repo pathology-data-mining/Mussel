@@ -41,7 +41,32 @@ class AggregateSlideFeaturesConfig:
     gpu_device_ids: Optional[List[int]] = None
 
 
+desc_doc = """== ${hydra.help.app_name} ==
+
+Aggregate patch-level feature embeddings to slide-level features using various aggregation methods.
+
+This tool takes an HDF5 file containing patch-level features (as produced by extract_features 
+in two-step mode) and aggregates them to slide-level representations. It supports both simple 
+pooling methods and learned slide encoder models.
+
+Aggregation methods:
+  - identity: No aggregation, keeps all patch features (default)
+  - mean: Mean pooling across patches
+  - max: Max pooling across patches  
+  - model: Use a slide encoder model (e.g., GIGAPATH_SLIDE, TITAN_SLIDE)
+"""
+
+parameter_doc = f"""== Available Parameters ==
+{AggregateSlideFeaturesConfig.__doc__}
+"""
+
 cs = ConfigStore.instance()
+cs.store(
+    group="hydra",
+    name="config",
+    node=HydraConf(help=HelpConf(header=desc_doc, footer=parameter_doc)),
+    provider="hydra",
+)
 cs.store(name="aggregate_slide_features_config", node=AggregateSlideFeaturesConfig)
 
 
