@@ -171,9 +171,11 @@ def main(
     postfilter_model_path = cfg.postfilter_model_path if cfg.postfilter_model_path is not None else cfg.prefilter_model_path
     
     # Optimization: If filtering is enabled and models are the same, skip second extraction
+    # However, if slide-level encoding is requested, we must do the second extraction
     models_are_same = (postfilter_model_type == cfg.prefilter_model_type and 
                        postfilter_model_path == cfg.prefilter_model_path)
-    skip_second_extraction = use_filtering and models_are_same
+    uses_slide_encoding = cfg.aggregation_method != "identity" or cfg.slide_model_type is not None
+    skip_second_extraction = use_filtering and models_are_same and not uses_slide_encoding
     
     # Determine total steps based on filtering and model optimization
     if not use_filtering:
