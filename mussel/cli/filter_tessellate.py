@@ -171,26 +171,6 @@ def main(
         )
         grid_mask.save(cfg.output_grid_mask_path)
 
-    if cfg.output_png_dir:
-        logger.info(f"Saving patches to {cfg.output_png_dir}")
-        save_patches_png(
-            cfg.slide_path,
-            coords,
-            save_dir=cfg.output_png_dir,
-            num_workers=cfg.num_workers,
-            patch_size=cfg.seg_config.patch_size,
-            filter_black_white=cfg.png_config.filter_black_white,
-            white_threshold=cfg.png_config.white_threshold,
-            black_threshold=cfg.png_config.black_threshold,
-        )
-
-    if cfg.output_thumbnail_path:
-        with tiffslide.TiffSlide(cfg.slide_path) as wsi:
-            logger.info(f"Saving thumbnail to {cfg.output_thumbnail_path}")
-            thumbnail = wsi.get_thumbnail(cfg.thumbnail_size)
-            with open(cfg.output_thumbnail_path, "wb") as f:
-                thumbnail.save(f)
-
     # Step 2: Extract CTRANSPATH features
     logger.info("Step 2/3: Extracting CTRANSPATH features...")
     if cfg.keep_intermediate_files:
@@ -254,6 +234,27 @@ def main(
     logger.info(
         f"Filter-tessellate complete. {len(coords)} tiles passed the threshold."
     )
+
+    # Save PNG patches and thumbnail using filtered coordinates (post-filtering)
+    if cfg.output_png_dir:
+        logger.info(f"Saving filtered patches to {cfg.output_png_dir}")
+        save_patches_png(
+            cfg.slide_path,
+            coords,
+            save_dir=cfg.output_png_dir,
+            num_workers=cfg.num_workers,
+            patch_size=cfg.seg_config.patch_size,
+            filter_black_white=cfg.png_config.filter_black_white,
+            white_threshold=cfg.png_config.white_threshold,
+            black_threshold=cfg.png_config.black_threshold,
+        )
+
+    if cfg.output_thumbnail_path:
+        with tiffslide.TiffSlide(cfg.slide_path) as wsi:
+            logger.info(f"Saving thumbnail to {cfg.output_thumbnail_path}")
+            thumbnail = wsi.get_thumbnail(cfg.thumbnail_size)
+            with open(cfg.output_thumbnail_path, "wb") as f:
+                thumbnail.save(f)
 
     # Clean up temporary directory if not keeping intermediate files
     if temp_dir:
