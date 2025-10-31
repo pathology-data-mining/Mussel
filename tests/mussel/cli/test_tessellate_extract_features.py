@@ -215,8 +215,10 @@ def test_tessellate_extract_features_with_slide_encoder_inference(tmp_path):
     )
     
     # Mock save_features to capture the model_type parameter
-    with patch('mussel.cli.tessellate_extract_features.save_features') as mock_save_features, \
-         patch('mussel.cli.tessellate_extract_features.segment_tissue') as mock_segment:
+    with (
+        patch('mussel.cli.tessellate_extract_features.save_features') as mock_save_features,
+        patch('mussel.cli.tessellate_extract_features.segment_tissue') as mock_segment
+    ):
         
         # Mock segment_tissue to return fake data
         mock_coords = [[0, 0], [256, 0], [0, 256]]
@@ -232,7 +234,8 @@ def test_tessellate_extract_features_with_slide_encoder_inference(tmp_path):
         call_args = mock_save_features.call_args
         
         # The model_type should be GIGAPATH (inferred from GIGAPATH_SLIDE)
-        assert call_args.kwargs['model_type'] == ModelType.GIGAPATH, \
-            f"Expected model_type to be GIGAPATH (inferred from slide_model_type), got {call_args.kwargs['model_type']}"
+        assert (
+            call_args.kwargs['model_type'] == ModelType.GIGAPATH
+        ), f"Expected model_type to be GIGAPATH (inferred from slide_model_type), got {call_args.kwargs['model_type']}"
         assert call_args.kwargs['slide_model_type'] == ModelType.GIGAPATH_SLIDE
         assert call_args.kwargs['aggregation_method'] == "model"
