@@ -1,11 +1,15 @@
 import os
+import pickle
 import ssl
 import tempfile
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, List, Optional
 
+import h5py
 import hydra
+import numpy as np
+import torch
 import tiffslide
 from hydra.conf import HelpConf, HydraConf
 from hydra.core.config_store import ConfigStore
@@ -22,7 +26,7 @@ from mussel.cli.tessellate import (
     PngConfig,
 )
 from mussel.models import ModelType
-from mussel.utils import save_features
+from mussel.utils import save_features, filter_features, save_hdf5
 from mussel.utils.segment import draw_slide_mask, save_patches_png, segment_tissue
 
 ssl._create_default_https_context = ssl._create_unverified_context
@@ -36,13 +40,17 @@ class TessellateExtractFeaturesConfig:
     """
     slide_path (str): Path to the whole-slide image.
     slide_id (Optional[str]): Optional slide ID. If None, the slide filename without extension is used.
-    output_h5_path (str): Path to save the final HDF5 file with tile coordinates and features.
-    output_pt_path (str): Path to save the final features in PyTorch format.
-    model_type (ModelType): Type of model to use for feature extraction.
-    model_path (Optional[str]): Path to the model weights file, if applicable.
-    output_png_dir (Optional[str]): Directory to save patches as PNG files.
+    output_h5_path (str): Path to save the final HDF5 file with tile coordinates and features (post-filtering).
+    output_pt_path (str): Path to save the final features in PyTorch format (post-filtering).
+    classifier_pkl (str): Path to the classifier model in pickle format for filtering.
+    classifier_threshold (float): Threshold for the classifier to filter features.
+    prefilter_model_type (ModelType): Type of model to use for pre-filtering feature extraction.
+    prefilter_model_path (Optional[str]): Path to the pre-filtering model weights file, if applicable.
+    postfilter_model_type (Optional[ModelType]): Type of model to use for post-filtering feature extraction. If None, uses prefilter_model_type.
+    postfilter_model_path (Optional[str]): Path to the post-filtering model weights file, if applicable.
+    output_png_dir (Optional[str]): Directory to save patches as PNG files (post-filtering).
     output_mask_path (Optional[str]): Path to save the mask image.
-    output_grid_mask_path (Optional[str]): Path to save the grid mask image.
+    output_grid_mask_path (Optional[str]): Path to save the grid mask image (post-filtering).
     output_thumbnail_path (Optional[str]): Path to save the thumbnail image.
     thumbnail_size (tuple): Size of the thumbnail image.
     seg_config (SegConfig): Configuration for segmentation parameters.
@@ -53,11 +61,12 @@ class TessellateExtractFeaturesConfig:
     use_gpu (bool): Whether to use GPU for feature extraction.
     gpu_device_id (Optional[int]): Specific GPU device ID to use, if applicable.
     gpu_device_ids (Optional[List[int]]): List of GPU device IDs to use, if applicable.
-    keep_intermediate_files (bool): Whether to keep intermediate tessellation file.
-    intermediate_h5_path (Optional[str]): Path for intermediate patch features (two-step mode).
-    aggregation_method (str): Aggregation method: identity (single-step), mean/max/model (two-step).
-    slide_model_type (Optional[ModelType]): Type of slide encoder model (when aggregation_method="model").
-    slide_model_path (Optional[str]): Path to slide encoder model weights.
+    keep_intermediate_files (bool): Whether to keep intermediate files (tessellation and pre-filter features).
+    save_features_to_h5 (bool): Whether to save the post-filtering features to HDF5.
+    intermediate_h5_path (Optional[str]): Path for intermediate patch features (two-step mode for post-filtering).
+    aggregation_method (str): Aggregation method for post-filtering: identity (single-step), mean/max/model (two-step).
+    slide_model_type (Optional[ModelType]): Type of slide encoder model for post-filtering (when aggregation_method="model").
+    slide_model_path (Optional[str]): Path to slide encoder model weights for post-filtering.
     """
 
     defaults: List[Any] = field(default_factory=lambda: defaults)
@@ -65,8 +74,12 @@ class TessellateExtractFeaturesConfig:
     slide_id: Optional[str] = None
     output_h5_path: str = MISSING
     output_pt_path: str = MISSING
-    model_type: ModelType = ModelType.CTRANSPATH
-    model_path: Optional[str] = None
+    classifier_pkl: str = MISSING
+    classifier_threshold: float = 0.75
+    prefilter_model_type: ModelType = ModelType.CTRANSPATH
+    prefilter_model_path: Optional[str] = None
+    postfilter_model_type: Optional[ModelType] = None
+    postfilter_model_path: Optional[str] = None
     output_png_dir: Optional[str] = None
     output_mask_path: Optional[str] = None
     output_grid_mask_path: Optional[str] = None
@@ -78,6 +91,7 @@ class TessellateExtractFeaturesConfig:
     gpu_device_id: Optional[int] = None
     gpu_device_ids: Optional[List[int]] = None
     keep_intermediate_files: bool = False
+    save_features_to_h5: bool = False
     seg_config: SegConfig = MISSING
     vis_config: VisConfig = field(default_factory=VisConfig)
     png_config: PngConfig = field(default_factory=PngConfig)
@@ -89,9 +103,10 @@ class TessellateExtractFeaturesConfig:
 
 desc_doc = """== ${hydra.help.app_name} ==
 
-tessellate-extract-features performs an integrated workflow that tessellates a whole-slide image 
-and extracts features from the tiles using a foundation model. This combines the functionality 
-of tessellate and extract_features into a single command.
+tessellate-extract-features performs an integrated workflow that tessellates a whole-slide image, 
+extracts features from the tiles using a foundation model (first extraction), filters them using 
+a classifier, and then extracts features again from the filtered tiles (second extraction). This 
+provides a complete end-to-end pipeline for filtered feature extraction.
 """
 
 parameter_doc = f"""
@@ -121,7 +136,7 @@ cs.store(name="tessellate_extract_features_config", node=TessellateExtractFeatur
 def main(
     cfg: TessellateExtractFeaturesConfig,
 ):
-    """Tessellate and extract features from a whole-slide image in one workflow."""
+    """Tessellate, extract features, filter, and extract features again in one workflow."""
     # Create temporary directory for intermediate files if not keeping them
     temp_dir = None
     base_path = Path(cfg.output_h5_path).parent
@@ -130,8 +145,13 @@ def main(
         temp_dir = tempfile.mkdtemp()
         logger.info(f"Using temporary directory for intermediate files: {temp_dir}")
     
+    # Determine models for each extraction step
+    # If postfilter_model_type is not specified, use the same model as prefilter
+    postfilter_model_type = cfg.postfilter_model_type if cfg.postfilter_model_type is not None else cfg.prefilter_model_type
+    postfilter_model_path = cfg.postfilter_model_path if cfg.postfilter_model_path is not None else cfg.prefilter_model_path
+    
     # Step 1: Tessellate
-    logger.info("Step 1/2: Tessellating whole-slide image...")
+    logger.info("Step 1/4: Tessellating whole-slide image...")
     if cfg.keep_intermediate_files:
         # Use a persistent path based on output path
         tessellate_h5_path = str(base_path / f"{Path(cfg.slide_path).stem}.tessellate.h5")
@@ -163,22 +183,129 @@ def main(
         )
         mask.save(cfg.output_mask_path)
 
-    # Optional: Save grid visualization (all tiles)
+    # Step 2: Extract features (first time - for filtering)
+    logger.info(f"Step 2/4: Extracting features (first extraction) using {cfg.prefilter_model_type.name}...")
+    if cfg.keep_intermediate_files:
+        prefilter_features_h5_path = str(base_path / f"{Path(cfg.slide_path).stem}.prefilter_features.h5")
+        prefilter_features_pt_path = str(base_path / f"{Path(cfg.slide_path).stem}.prefilter_features.pt")
+    else:
+        prefilter_features_h5_path = os.path.join(temp_dir, "prefilter_features.h5")
+        prefilter_features_pt_path = os.path.join(temp_dir, "prefilter_features.pt")
+
+    save_features(
+        slide_path=cfg.slide_path,
+        gpu_device_id=cfg.gpu_device_id,
+        model_type=cfg.prefilter_model_type,
+        model_path=cfg.prefilter_model_path,
+        use_gpu=cfg.use_gpu,
+        output_h5_path=prefilter_features_h5_path,
+        output_pt_path=prefilter_features_pt_path,
+        patch_h5_path=tessellate_h5_path,
+        batch_size=cfg.batch_size,
+        num_workers=cfg.num_workers,
+        gpu_device_ids=cfg.gpu_device_ids,
+    )
+
+    logger.info(f"First feature extraction complete.")
+
+    # Step 3: Filter features
+    logger.info("Step 3/4: Filtering features using classifier...")
+    logger.info(f"Loading classifier from {cfg.classifier_pkl}")
+    with open(cfg.classifier_pkl, "rb") as f:
+        classifier = pickle.load(f)
+
+    with h5py.File(prefilter_features_h5_path, "r") as features_h5:
+        if prefilter_features_pt_path and os.path.exists(prefilter_features_pt_path):
+            features = torch.load(prefilter_features_pt_path, weights_only=True)
+        else:
+            features = np.array(features_h5["features"])
+            features = torch.Tensor(features)
+        logger.info(
+            f"Loaded {features.shape[0]} features of dimension {features.shape[1]}"
+        )
+        filtered_features, filtered_coords = filter_features(
+            features,
+            features_h5["coords"][:],
+            classifier,
+            cfg.classifier_threshold,
+        )
+
+        logger.info(
+            f"Filtering complete. {len(filtered_coords)} tiles passed the threshold (out of {len(coords)})."
+        )
+
+        # Save filtered coordinates to a temporary h5 file for second extraction
+        if cfg.keep_intermediate_files:
+            filtered_coords_h5_path = str(base_path / f"{Path(cfg.slide_path).stem}.filtered_coords.h5")
+        else:
+            filtered_coords_h5_path = os.path.join(temp_dir, "filtered_coords.h5")
+        
+        save_hdf5(
+            filtered_coords_h5_path,
+            {"coords": filtered_coords},
+            attr_h5_path=prefilter_features_h5_path,
+            mode="w",
+        )
+
+    # Step 4: Extract features (second time - on filtered tiles only)
+    if postfilter_model_type != cfg.prefilter_model_type:
+        logger.info(f"Step 4/4: Extracting features (second extraction) on filtered tiles using {postfilter_model_type.name}...")
+    else:
+        logger.info(f"Step 4/4: Re-extracting features on filtered tiles using {postfilter_model_type.name}...")
+    
+    save_features(
+        slide_path=cfg.slide_path,
+        gpu_device_id=cfg.gpu_device_id,
+        model_type=postfilter_model_type,
+        model_path=postfilter_model_path,
+        use_gpu=cfg.use_gpu,
+        output_h5_path=cfg.output_h5_path,
+        output_pt_path=cfg.output_pt_path,
+        patch_h5_path=filtered_coords_h5_path,
+        batch_size=cfg.batch_size,
+        num_workers=cfg.num_workers,
+        gpu_device_ids=cfg.gpu_device_ids,
+        intermediate_h5_path=cfg.intermediate_h5_path,
+        aggregation_method=cfg.aggregation_method,
+        slide_model_type=cfg.slide_model_type,
+        slide_model_path=cfg.slide_model_path,
+    )
+
+    logger.info(f"Second feature extraction complete.")
+
+    # Create filtered grid visualization (post-filtering)
     if cfg.output_grid_mask_path:
-        logger.info(f"Creating grid mask with {len(coords)} tiles")
+        logger.info(f"Creating filtered grid mask with {len(filtered_coords)} tiles")
+        # Read patch_size from the tessellate h5 file to create proper grid boxes
+        with h5py.File(tessellate_h5_path, "r") as h5:
+            native_patch_size = h5.attrs["patch_size"]
+        
+        # Create Polygon boxes for each filtered coordinate
+        filtered_grid = []
+        for coord in filtered_coords:
+            x, y = coord
+            poly = Polygon([
+                [x, y],
+                [x, y + native_patch_size],
+                [x + native_patch_size, y + native_patch_size],
+                [x + native_patch_size, y],
+            ])
+            filtered_grid.append(poly)
+        
+        # Draw and save the filtered grid mask
         grid_mask = draw_slide_mask(
             cfg.slide_path,
-            grid,
+            filtered_grid,
             **OmegaConf.to_container(cfg.vis_config),
         )
         grid_mask.save(cfg.output_grid_mask_path)
 
-    # Optional: Save PNG patches
+    # Save PNG patches using filtered coordinates (post-filtering)
     if cfg.output_png_dir:
-        logger.info(f"Saving patches to {cfg.output_png_dir}")
+        logger.info(f"Saving filtered patches to {cfg.output_png_dir}")
         save_patches_png(
             cfg.slide_path,
-            coords,
+            filtered_coords,
             save_dir=cfg.output_png_dir,
             num_workers=cfg.num_workers,
             patch_size=cfg.seg_config.patch_size,
@@ -194,29 +321,6 @@ def main(
             thumbnail = wsi.get_thumbnail(cfg.thumbnail_size)
             with open(cfg.output_thumbnail_path, "wb") as f:
                 thumbnail.save(f)
-
-    # Step 2: Extract features using foundation model
-    logger.info(f"Step 2/2: Extracting features using {cfg.model_type.name}...")
-
-    save_features(
-        slide_path=cfg.slide_path,
-        gpu_device_id=cfg.gpu_device_id,
-        model_type=cfg.model_type,
-        model_path=cfg.model_path,
-        use_gpu=cfg.use_gpu,
-        output_h5_path=cfg.output_h5_path,
-        output_pt_path=cfg.output_pt_path,
-        patch_h5_path=tessellate_h5_path,
-        batch_size=cfg.batch_size,
-        num_workers=cfg.num_workers,
-        gpu_device_ids=cfg.gpu_device_ids,
-        intermediate_h5_path=cfg.intermediate_h5_path,
-        aggregation_method=cfg.aggregation_method,
-        slide_model_type=cfg.slide_model_type,
-        slide_model_path=cfg.slide_model_path,
-    )
-
-    logger.info(f"Feature extraction complete.")
 
     # Clean up temporary directory if not keeping intermediate files
     if temp_dir:
