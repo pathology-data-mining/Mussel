@@ -15,6 +15,7 @@ from hydra.conf import HelpConf, HydraConf
 from hydra.core.config_store import ConfigStore
 from loguru import logger
 from omegaconf import MISSING, OmegaConf
+from shapely.geometry import Polygon
 
 from mussel.cli.tessellate import (
     SegConfig,
@@ -154,7 +155,7 @@ def main(
 
     logger.info(f"Tessellation complete. Found {len(coords)} tiles.")
 
-    # Optional: Save mask and grid visualizations
+    # Optional: Save mask visualization (tissue segmentation boundary)
     if cfg.output_mask_path:
         mask = draw_slide_mask(
             cfg.slide_path,
@@ -162,14 +163,6 @@ def main(
             **OmegaConf.to_container(cfg.vis_config),
         )
         mask.save(cfg.output_mask_path)
-
-    if cfg.output_grid_mask_path:
-        grid_mask = draw_slide_mask(
-            cfg.slide_path,
-            grid,
-            **OmegaConf.to_container(cfg.vis_config),
-        )
-        grid_mask.save(cfg.output_grid_mask_path)
 
     # Step 2: Extract CTRANSPATH features
     logger.info("Step 2/3: Extracting CTRANSPATH features...")
@@ -234,6 +227,33 @@ def main(
     logger.info(
         f"Filter-tessellate complete. {len(coords)} tiles passed the threshold."
     )
+
+    # Create filtered grid visualization (post-filtering)
+    if cfg.output_grid_mask_path:
+        logger.info(f"Creating filtered grid mask with {len(coords)} tiles")
+        # Read patch_size from the tessellate h5 file to create proper grid boxes
+        with h5py.File(tessellate_h5_path, "r") as h5:
+            native_patch_size = h5.attrs["patch_size"]
+        
+        # Create Polygon boxes for each filtered coordinate
+        filtered_grid = []
+        for coord in coords:
+            x, y = coord
+            poly = Polygon([
+                [x, y],
+                [x, y + native_patch_size],
+                [x + native_patch_size, y + native_patch_size],
+                [x + native_patch_size, y],
+            ])
+            filtered_grid.append(poly)
+        
+        # Draw and save the filtered grid mask
+        grid_mask = draw_slide_mask(
+            cfg.slide_path,
+            filtered_grid,
+            **OmegaConf.to_container(cfg.vis_config),
+        )
+        grid_mask.save(cfg.output_grid_mask_path)
 
     # Save PNG patches and thumbnail using filtered coordinates (post-filtering)
     if cfg.output_png_dir:
