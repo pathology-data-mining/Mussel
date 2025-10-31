@@ -38,6 +38,19 @@ log() {
     echo "[$(date +'%Y-%m-%d %H:%M:%S')] $1"
 }
 
+# Cleanup function to remove temporary files
+cleanup() {
+    local exit_code=$?
+    if [ -n "$WORK_DIR" ] && [ -d "$WORK_DIR" ]; then
+        log "Cleanup: Removing work directory: $WORK_DIR"
+        rm -rf "$WORK_DIR" || log "Warning: Failed to remove work directory"
+    fi
+    # Don't exit here, let the script continue to its natural exit
+}
+
+# Set trap to ensure cleanup runs on exit (success, failure, or interruption)
+trap cleanup EXIT INT TERM
+
 # Check required environment variables
 if [ -z "$SLIDE_PATH" ]; then
     log "ERROR: SLIDE_PATH environment variable is required"
@@ -248,15 +261,11 @@ if [ $EXIT_CODE -eq 0 ]; then
             log "Output PT file: $LOCAL_OUTPUT_PT_PATH (size: $(du -h "$LOCAL_OUTPUT_PT_PATH" | cut -f1))"
         fi
     fi
-    
-    # Clean up work directory if created
-    if [ -n "$WORK_DIR" ] && [ -d "$WORK_DIR" ]; then
-        log "Cleaning up work directory: $WORK_DIR"
-        rm -rf "$WORK_DIR"
-    fi
 else
     log "ERROR: Processing failed with exit code $EXIT_CODE after $DURATION seconds"
 fi
+
+# Note: Cleanup is handled by the EXIT trap set at the beginning of the script
 
 echo "============================================"
 echo "End time: $(date)"

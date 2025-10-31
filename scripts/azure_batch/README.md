@@ -11,6 +11,7 @@ The Azure Batch integration allows you to:
 - Manage long-running jobs with automatic retry and monitoring
 - Stage slides from S3 and publish results to S3 or local storage
 - Process slides from CSV manifests with slide identifiers
+- Automatic cleanup of temporary files upon task completion (success or failure)
 
 ## Files
 
@@ -370,6 +371,24 @@ az batch task file download \
   --file-path stdout.txt \
   --destination ./task-output.txt
 ```
+
+## Automatic File Cleanup
+
+The task execution script automatically cleans up temporary files when tasks complete:
+
+**What gets cleaned up:**
+- Staged slide files downloaded from S3 (stored in `/tmp/mussel_work_*`)
+- Temporary output files (when outputs are uploaded to S3)
+- Any intermediate work directories created during processing
+
+**When cleanup happens:**
+- On successful task completion (after uploading results to S3 if applicable)
+- On task failure (to free up disk space)
+- On script interruption (via EXIT, INT, or TERM signals)
+
+**Cleanup is automatic and requires no configuration.** The trap mechanism ensures cleanup occurs even if the script exits unexpectedly.
+
+**Note:** Only temporary files are removed. Final output files stored in local directories (non-S3 paths) are preserved.
 
 ## Cleanup
 
