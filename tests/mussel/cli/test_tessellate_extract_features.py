@@ -240,3 +240,48 @@ def test_tessellate_extract_features_with_slide_encoder_inference(tmp_path):
         ), f"Expected model_type to be GIGAPATH (inferred from slide_model_type), got {call_args.kwargs['model_type']}"
         assert call_args.kwargs['slide_model_type'] == ModelType.GIGAPATH_SLIDE
         assert call_args.kwargs['aggregation_method'] == "model"
+
+
+def test_tessellate_extract_features_without_filtering_no_prefilter_params(tmp_path):
+    """Test that prefilter_model_type and prefilter_model_path are not required when classifier_pkl is None."""
+    slide_path = "tests/testdata/948176.svs"
+    output_h5_path = os.path.join(tmp_path, "features.h5")
+    output_pt_path = os.path.join(tmp_path, "features.pt")
+
+    seg_config = SegConfig(segment_threshold=0)
+    cfg = TessellateExtractFeaturesConfig(
+        slide_path=slide_path,
+        output_h5_path=output_h5_path,
+        output_pt_path=output_pt_path,
+        classifier_pkl=None,  # No filtering
+        # Explicitly NOT setting prefilter_model_type or prefilter_model_path
+        # This should work fine now since they're only needed when filtering is enabled
+        seg_config=seg_config,
+        num_workers=1,
+        batch_size=32,
+        use_gpu=False,
+        keep_intermediate_files=False,
+    )
+    
+    # Mock save_features and segment_tissue to verify the workflow runs without prefilter params
+    with (
+        patch('mussel.cli.tessellate_extract_features.save_features') as mock_save_features,
+        patch('mussel.cli.tessellate_extract_features.segment_tissue') as mock_segment
+    ):
+        
+        # Mock segment_tissue to return fake data
+        mock_coords = [[0, 0], [256, 0], [0, 256]]
+        mock_polygon = MagicMock()
+        mock_grid = MagicMock()
+        mock_segment.return_value = (mock_polygon, mock_grid, mock_coords, None)
+        
+        # Run main - this should work without errors
+        main(OmegaConf.create(cfg))
+        
+        # Verify save_features was called once (no prefilter step since no filtering)
+        assert mock_save_features.call_count == 1
+        
+        # Verify the model_type used is the default (CTRANSPATH) since postfilter_model_type wasn't specified
+        call_args = mock_save_features.call_args
+        assert call_args.kwargs['model_type'] == ModelType.CTRANSPATH, \
+            f"Expected default model CTRANSPATH, got {call_args.kwargs['model_type']}"
