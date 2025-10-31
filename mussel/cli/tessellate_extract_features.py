@@ -122,7 +122,8 @@ using a classifier and extract features again from the filtered tiles (dual extr
 
 Workflow modes:
 1. Without filtering (classifier_pkl=None): tessellate → extract features (2 steps)
-2. With filtering (classifier_pkl provided): tessellate → extract → filter → re-extract (4 steps)
+2. With filtering, same model: tessellate → extract → filter (3 steps, optimized)
+3. With filtering, different models: tessellate → extract → filter → re-extract (4 steps)
 """
 
 parameter_doc = f"""
@@ -169,8 +170,18 @@ def main(
     postfilter_model_type = cfg.postfilter_model_type if cfg.postfilter_model_type is not None else cfg.prefilter_model_type
     postfilter_model_path = cfg.postfilter_model_path if cfg.postfilter_model_path is not None else cfg.prefilter_model_path
     
-    # Determine total steps based on filtering
-    total_steps = 4 if use_filtering else 2
+    # Optimization: If filtering is enabled and models are the same, skip second extraction
+    models_are_same = (postfilter_model_type == cfg.prefilter_model_type and 
+                       postfilter_model_path == cfg.prefilter_model_path)
+    skip_second_extraction = use_filtering and models_are_same
+    
+    # Determine total steps based on filtering and model optimization
+    if not use_filtering:
+        total_steps = 2  # tessellate → extract
+    elif skip_second_extraction:
+        total_steps = 3  # tessellate → extract → filter
+    else:
+        total_steps = 4  # tessellate → extract → filter → re-extract
     
     # Step 1: Tessellate
     logger.info(f"Step 1/{total_steps}: Tessellating whole-slide image...")
@@ -210,8 +221,8 @@ def main(
     final_coords = coords
     
     if use_filtering:
-        # Step 2: Extract features (first time - for filtering)
-        logger.info(f"Step 2/{total_steps}: Extracting features (first extraction) using {cfg.prefilter_model_type.name}...")
+        # Step 2: Extract features (for filtering and possibly final output)
+        logger.info(f"Step 2/{total_steps}: Extracting features using {cfg.prefilter_model_type.name}...")
         if cfg.keep_intermediate_files:
             prefilter_features_h5_path = str(base_path / f"{Path(cfg.slide_path).stem}.prefilter_features.h5")
             prefilter_features_pt_path = str(base_path / f"{Path(cfg.slide_path).stem}.prefilter_features.pt")
@@ -233,7 +244,7 @@ def main(
             gpu_device_ids=cfg.gpu_device_ids,
         )
 
-        logger.info(f"First feature extraction complete.")
+        logger.info(f"Feature extraction complete.")
 
         # Step 3: Filter features
         logger.info(f"Step 3/{total_steps}: Filtering features using classifier...")
@@ -261,53 +272,67 @@ def main(
                 f"Filtering complete. {len(filtered_coords)} tiles passed the threshold (out of {len(coords)})."
             )
 
-            # Save filtered coordinates to a temporary h5 file for second extraction
-            if cfg.keep_intermediate_files:
-                filtered_coords_h5_path = str(base_path / f"{Path(cfg.slide_path).stem}.filtered_coords.h5")
+            if skip_second_extraction:
+                # Optimization: Save filtered features directly to output (no re-extraction needed)
+                logger.info("Using same model for pre-filter and post-filter - skipping second extraction")
+                asset_dict = {"coords": filtered_coords}
+                if cfg.save_features_to_h5:
+                    asset_dict["features"] = filtered_features.numpy()
+                save_hdf5(
+                    cfg.output_h5_path,
+                    asset_dict,
+                    attr_h5_path=prefilter_features_h5_path,
+                    mode="w",
+                )
+                torch.save(filtered_features, cfg.output_pt_path)
             else:
-                filtered_coords_h5_path = os.path.join(temp_dir, "filtered_coords.h5")
-            
-            save_hdf5(
-                filtered_coords_h5_path,
-                {"coords": filtered_coords},
-                attr_h5_path=prefilter_features_h5_path,
-                mode="w",
-            )
+                # Save filtered coordinates to a temporary h5 file for second extraction
+                if cfg.keep_intermediate_files:
+                    filtered_coords_h5_path = str(base_path / f"{Path(cfg.slide_path).stem}.filtered_coords.h5")
+                else:
+                    filtered_coords_h5_path = os.path.join(temp_dir, "filtered_coords.h5")
+                
+                save_hdf5(
+                    filtered_coords_h5_path,
+                    {"coords": filtered_coords},
+                    attr_h5_path=prefilter_features_h5_path,
+                    mode="w",
+                )
+                
+                # Update coordinate source for final extraction
+                final_coords_h5_path = filtered_coords_h5_path
         
-        # Update coordinate source for final extraction
-        final_coords_h5_path = filtered_coords_h5_path
+        # Update final coords
         final_coords = filtered_coords
 
-    # Final step: Extract features (on all tiles or filtered tiles)
-    if use_filtering:
-        step_num = 4
-        if postfilter_model_type != cfg.prefilter_model_type:
+    # Final step: Extract features (on all tiles or filtered tiles) - only if not already done
+    if not skip_second_extraction:
+        if use_filtering:
+            step_num = 4
             logger.info(f"Step {step_num}/{total_steps}: Extracting features (second extraction) on filtered tiles using {postfilter_model_type.name}...")
         else:
-            logger.info(f"Step {step_num}/{total_steps}: Re-extracting features on filtered tiles using {postfilter_model_type.name}...")
-    else:
-        step_num = 2
-        logger.info(f"Step {step_num}/{total_steps}: Extracting features using {postfilter_model_type.name}...")
-    
-    save_features(
-        slide_path=cfg.slide_path,
-        gpu_device_id=cfg.gpu_device_id,
-        model_type=postfilter_model_type,
-        model_path=postfilter_model_path,
-        use_gpu=cfg.use_gpu,
-        output_h5_path=cfg.output_h5_path,
-        output_pt_path=cfg.output_pt_path,
-        patch_h5_path=final_coords_h5_path,
-        batch_size=cfg.batch_size,
-        num_workers=cfg.num_workers,
-        gpu_device_ids=cfg.gpu_device_ids,
-        intermediate_h5_path=cfg.intermediate_h5_path,
-        aggregation_method=cfg.aggregation_method,
-        slide_model_type=cfg.slide_model_type,
-        slide_model_path=cfg.slide_model_path,
-    )
+            step_num = 2
+            logger.info(f"Step {step_num}/{total_steps}: Extracting features using {postfilter_model_type.name}...")
+        
+        save_features(
+            slide_path=cfg.slide_path,
+            gpu_device_id=cfg.gpu_device_id,
+            model_type=postfilter_model_type,
+            model_path=postfilter_model_path,
+            use_gpu=cfg.use_gpu,
+            output_h5_path=cfg.output_h5_path,
+            output_pt_path=cfg.output_pt_path,
+            patch_h5_path=final_coords_h5_path,
+            batch_size=cfg.batch_size,
+            num_workers=cfg.num_workers,
+            gpu_device_ids=cfg.gpu_device_ids,
+            intermediate_h5_path=cfg.intermediate_h5_path,
+            aggregation_method=cfg.aggregation_method,
+            slide_model_type=cfg.slide_model_type,
+            slide_model_path=cfg.slide_model_path,
+        )
 
-    logger.info(f"Feature extraction complete.")
+        logger.info(f"Feature extraction complete.")
 
     # Create grid visualization
     if cfg.output_grid_mask_path:
