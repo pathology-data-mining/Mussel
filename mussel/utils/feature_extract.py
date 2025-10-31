@@ -549,6 +549,8 @@ def aggregate_slide_features(
                 attr_dict["features"] = {"model_type": model_type.name}
                 logger.info(f"Saving model_type attribute: {model_type.name}")
             
+            # Copy attributes from patch features file to preserve metadata
+            # attr_dict takes precedence over attr_h5_path for conflicting keys
             save_hdf5(output_h5_path, asset_dict, attr_dict=attr_dict, attr_h5_path=patch_features_h5_path, mode="w")
         
         # Save to PyTorch if requested

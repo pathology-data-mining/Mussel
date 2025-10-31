@@ -64,13 +64,15 @@ def save_hdf5(output_path, asset_dict, attr_dict=None, attr_h5_path=None, mode="
                     dtype=data_type,
                 )
                 dset[:] = val
-                if attr_dict is not None:
-                    if key in attr_dict.keys():
-                        for attr_key, attr_val in attr_dict[key].items():
-                            dset.attrs[attr_key] = attr_val
+                # Copy attributes from attr_h5_path first (if provided)
                 if attr_h5_path is not None:
                     if key in attr_file.keys():
                         for attr_key, attr_val in attr_file[key].attrs.items():
+                            dset.attrs[attr_key] = attr_val
+                # Then apply attr_dict attributes (takes precedence over attr_h5_path)
+                if attr_dict is not None:
+                    if key in attr_dict.keys():
+                        for attr_key, attr_val in attr_dict[key].items():
                             dset.attrs[attr_key] = attr_val
             else:
                 dset = file[key]
