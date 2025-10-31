@@ -537,11 +537,19 @@ def aggregate_slide_features(
             logger.info(f"Saving aggregated features to {output_h5_path}")
             asset_dict = {"features": aggregated_features}
             
+            # Prepare attributes dictionary
+            attr_dict = {}
+            
             # Copy coordinates if they exist and we're using identity
             if aggregation_method == "identity" and "coords" in file:
                 asset_dict["coords"] = file["coords"][:]
             
-            save_hdf5(output_h5_path, asset_dict, attr_h5_path=None, mode="w")
+            # Save model_type when using model-based aggregation
+            if aggregation_method == "model" and model_type is not None:
+                attr_dict["features"] = {"model_type": model_type.name}
+                logger.info(f"Saving model_type attribute: {model_type.name}")
+            
+            save_hdf5(output_h5_path, asset_dict, attr_dict=attr_dict, attr_h5_path=patch_features_h5_path, mode="w")
         
         # Save to PyTorch if requested
         if output_pt_path is not None:
