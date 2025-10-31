@@ -33,7 +33,7 @@ class SegConfig:
     segment_threshold (int): Pixel threshold value . If pixel value smaller than or equal to threshold, it is set to 0, otherwise it is set to the maximum value (segment_max_value).
     segment_max_value (int): Maximum pixel value.
     median_blur_ksize (int): Aperture linear size. it must be odd and greater than 1. image is blurred with median filter.
-    morphology_ex_kernel (int): Kernel for mophological closing transformation.
+    morphology_ex_kernel (int): Kernel for morphological closing transformation.
     ref_patch_size (int): Reference patch size to use for tissue area and hole area thresholding.
     use_otsu (bool): If True, apply otsu thresholding.
     tissue_area_threshold (int): Tissue area threshold. Foreground contour area needs to exceed this threshold (scaled by reference patch size) to be included as foreground.
@@ -211,6 +211,8 @@ def main(
     """Tessellate, extract CTRANSPATH features, and filter tiles in one workflow."""
     # Create temporary directory for intermediate files if not keeping them
     temp_dir = None
+    base_path = Path(cfg.output_h5_path).parent
+    
     if not cfg.keep_intermediate_files:
         temp_dir = tempfile.mkdtemp()
         logger.info(f"Using temporary directory for intermediate files: {temp_dir}")
@@ -219,7 +221,6 @@ def main(
     logger.info("Step 1/3: Tessellating whole-slide image...")
     if cfg.keep_intermediate_files:
         # Use a persistent path based on output path
-        base_path = Path(cfg.output_h5_path).parent
         tessellate_h5_path = str(base_path / f"{Path(cfg.slide_path).stem}.tessellate.h5")
     else:
         tessellate_h5_path = os.path.join(temp_dir, "tessellate.h5")
