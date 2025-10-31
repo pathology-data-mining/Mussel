@@ -38,35 +38,48 @@ defaults = ["_self_", {"seg_config": "default"}]
 @dataclass
 class TessellateExtractFeaturesConfig:
     """
-    slide_path (str): Path to the whole-slide image.
-    slide_id (Optional[str]): Optional slide ID. If None, the slide filename without extension is used.
-    output_h5_path (str): Path to save the final HDF5 file with tile coordinates and features (post-filtering).
-    output_pt_path (str): Path to save the final features in PyTorch format (post-filtering).
-    classifier_pkl (str): Path to the classifier model in pickle format for filtering.
-    classifier_threshold (float): Threshold for the classifier to filter features.
-    prefilter_model_type (ModelType): Type of model to use for pre-filtering feature extraction.
-    prefilter_model_path (Optional[str]): Path to the pre-filtering model weights file, if applicable.
-    postfilter_model_type (Optional[ModelType]): Type of model to use for post-filtering feature extraction. If None, uses prefilter_model_type.
-    postfilter_model_path (Optional[str]): Path to the post-filtering model weights file, if applicable.
-    output_png_dir (Optional[str]): Directory to save patches as PNG files (post-filtering).
-    output_mask_path (Optional[str]): Path to save the mask image.
-    output_grid_mask_path (Optional[str]): Path to save the grid mask image (post-filtering).
-    output_thumbnail_path (Optional[str]): Path to save the thumbnail image.
-    thumbnail_size (tuple): Size of the thumbnail image.
-    seg_config (SegConfig): Configuration for segmentation parameters.
-    vis_config (VisConfig): Configuration for visualization parameters.
-    png_config (PngConfig): Configuration for PNG saving parameters.
-    num_workers (int): Number of workers for saving patches and feature extraction.
-    batch_size (int): Batch size for feature extraction.
-    use_gpu (bool): Whether to use GPU for feature extraction.
-    gpu_device_id (Optional[int]): Specific GPU device ID to use, if applicable.
-    gpu_device_ids (Optional[List[int]]): List of GPU device IDs to use, if applicable.
-    keep_intermediate_files (bool): Whether to keep intermediate files (tessellation and pre-filter features).
-    save_features_to_h5 (bool): Whether to save the post-filtering features to HDF5.
-    intermediate_h5_path (Optional[str]): Path for intermediate patch features (two-step mode for post-filtering).
-    aggregation_method (str): Aggregation method for post-filtering: identity (single-step), mean/max/model (two-step).
-    slide_model_type (Optional[ModelType]): Type of slide encoder model for post-filtering (when aggregation_method="model").
-    slide_model_path (Optional[str]): Path to slide encoder model weights for post-filtering.
+    Configuration for tessellate-extract-features workflow.
+    
+    Core Parameters:
+        slide_path (str): Path to the whole-slide image.
+        slide_id (Optional[str]): Optional slide ID. If None, uses slide filename without extension.
+        output_h5_path (str): Path to save final HDF5 file with coordinates and features (post-filtering).
+        output_pt_path (str): Path to save final features in PyTorch format (post-filtering).
+    
+    Filtering Parameters:
+        classifier_pkl (str): Path to the classifier model in pickle format for filtering.
+        classifier_threshold (float): Threshold for the classifier to filter features.
+    
+    Model Parameters (Pre-Filter Extraction):
+        prefilter_model_type (ModelType): Type of model for pre-filtering feature extraction.
+        prefilter_model_path (Optional[str]): Path to pre-filtering model weights, if applicable.
+    
+    Model Parameters (Post-Filter Extraction):
+        postfilter_model_type (Optional[ModelType]): Type of model for post-filtering extraction. If None, uses prefilter_model_type.
+        postfilter_model_path (Optional[str]): Path to post-filtering model weights, if applicable.
+        intermediate_h5_path (Optional[str]): Path for intermediate patch features (two-step mode for post-filtering).
+        aggregation_method (str): Aggregation method for post-filtering: identity (single-step), mean/max/model (two-step).
+        slide_model_type (Optional[ModelType]): Type of slide encoder model for post-filtering (when aggregation_method="model").
+        slide_model_path (Optional[str]): Path to slide encoder model weights for post-filtering.
+    
+    Visualization Parameters:
+        output_png_dir (Optional[str]): Directory to save patches as PNG files (post-filtering).
+        output_mask_path (Optional[str]): Path to save the mask image.
+        output_grid_mask_path (Optional[str]): Path to save grid mask image (post-filtering).
+        output_thumbnail_path (Optional[str]): Path to save thumbnail image.
+        thumbnail_size (tuple): Size of the thumbnail image.
+    
+    Segmentation & Processing Parameters:
+        seg_config (SegConfig): Configuration for segmentation parameters.
+        vis_config (VisConfig): Configuration for visualization parameters.
+        png_config (PngConfig): Configuration for PNG saving parameters.
+        num_workers (int): Number of workers for saving patches and feature extraction.
+        batch_size (int): Batch size for feature extraction.
+        use_gpu (bool): Whether to use GPU for feature extraction.
+        gpu_device_id (Optional[int]): Specific GPU device ID to use, if applicable.
+        gpu_device_ids (Optional[List[int]]): List of GPU device IDs to use, if applicable.
+        keep_intermediate_files (bool): Whether to keep intermediate files (tessellation and pre-filter features).
+        save_features_to_h5 (bool): Whether to save the post-filtering features to HDF5.
     """
 
     defaults: List[Any] = field(default_factory=lambda: defaults)
