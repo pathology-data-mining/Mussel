@@ -50,12 +50,12 @@ class TessellateExtractFeaturesConfig:
         classifier_pkl (Optional[str]): Path to the classifier model in pickle format for filtering. If None, filtering is skipped.
         classifier_threshold (float): Threshold for the classifier to filter features.
     
-    Model Parameters (Pre-Filter Extraction):
-        prefilter_model_type (ModelType): Type of model for pre-filtering feature extraction.
-        prefilter_model_path (Optional[str]): Path to pre-filtering model weights, if applicable.
+    Model Parameters (Pre-Filter Extraction - only used when classifier_pkl is specified):
+        prefilter_model_type (Optional[ModelType]): Type of model for pre-filtering feature extraction. Only used when filtering is enabled.
+        prefilter_model_path (Optional[str]): Path to pre-filtering model weights, if applicable. Only used when filtering is enabled.
     
     Model Parameters (Post-Filter Extraction):
-        postfilter_model_type (Optional[ModelType]): Type of model for post-filtering extraction. If None and aggregation_method="model" with slide_model_type specified, automatically infers the required patch encoder from slide_model_type. Otherwise, uses prefilter_model_type.
+        postfilter_model_type (Optional[ModelType]): Type of model for post-filtering extraction. If None and aggregation_method="model" with slide_model_type specified, automatically infers the required patch encoder from slide_model_type. When filtering is enabled and postfilter_model_type is None, defaults to prefilter_model_type. When filtering is disabled and postfilter_model_type is None, defaults to CTRANSPATH.
         postfilter_model_path (Optional[str]): Path to post-filtering model weights, if applicable.
         intermediate_h5_path (Optional[str]): Path for intermediate patch features (two-step mode for post-filtering).
         aggregation_method (str): Aggregation method for post-filtering: identity (single-step), mean/max/model (two-step).
@@ -89,7 +89,7 @@ class TessellateExtractFeaturesConfig:
     output_pt_path: str = MISSING
     classifier_pkl: Optional[str] = None
     classifier_threshold: float = 0.75
-    prefilter_model_type: ModelType = ModelType.CTRANSPATH
+    prefilter_model_type: Optional[ModelType] = None
     prefilter_model_path: Optional[str] = None
     postfilter_model_type: Optional[ModelType] = None
     postfilter_model_path: Optional[str] = None
@@ -165,6 +165,16 @@ def main(
     # Determine if filtering is enabled
     use_filtering = cfg.classifier_pkl is not None
     
+    # Determine prefilter_model_type (only used when filtering is enabled)
+    prefilter_model_type = cfg.prefilter_model_type
+    if use_filtering and prefilter_model_type is None:
+        # When filtering is enabled but prefilter_model_type not specified, use default
+        prefilter_model_type = ModelType.CTRANSPATH
+        logger.info(
+            f"Filtering enabled but prefilter_model_type not specified. "
+            f"Using default model: {prefilter_model_type.name}"
+        )
+    
     # Determine models for each extraction step
     # If postfilter_model_type is not specified, infer from slide_model_type when using model aggregation
     postfilter_model_type = cfg.postfilter_model_type
@@ -177,16 +187,39 @@ def main(
                 f"Auto-inferring postfilter_model_type={postfilter_model_type.name} "
                 f"from slide_model_type={cfg.slide_model_type.name}"
             )
+        elif use_filtering:
+            # When filtering is enabled and postfilter_model_type is not specified,
+            # default to using the same model as prefilter
+            postfilter_model_type = prefilter_model_type
         else:
-            # Default to using the same model as prefilter
-            postfilter_model_type = cfg.prefilter_model_type
+            # When filtering is disabled and postfilter_model_type is not specified,
+            # use a default model (don't reference prefilter_model_type to avoid requiring it)
+            postfilter_model_type = ModelType.CTRANSPATH
+            logger.info(
+                f"No filtering enabled and postfilter_model_type not specified. "
+                f"Using default model: {postfilter_model_type.name}"
+            )
     
-    postfilter_model_path = cfg.postfilter_model_path if cfg.postfilter_model_path is not None else cfg.prefilter_model_path
+    # Determine postfilter_model_path
+    if cfg.postfilter_model_path is not None:
+        postfilter_model_path = cfg.postfilter_model_path
+    elif use_filtering:
+        # When filtering is enabled, default to prefilter_model_path
+        postfilter_model_path = cfg.prefilter_model_path
+    else:
+        # When filtering is disabled, don't reference prefilter_model_path
+        postfilter_model_path = None
+    
+    # Determine prefilter_model_path (only used when filtering is enabled)
+    prefilter_model_path = cfg.prefilter_model_path
     
     # Optimization: If filtering is enabled and models are the same, skip second extraction
-    models_are_same = (postfilter_model_type == cfg.prefilter_model_type and 
-                       postfilter_model_path == cfg.prefilter_model_path)
-    skip_second_extraction = use_filtering and models_are_same
+    if use_filtering:
+        models_are_same = (postfilter_model_type == prefilter_model_type and 
+                           postfilter_model_path == prefilter_model_path)
+        skip_second_extraction = models_are_same
+    else:
+        skip_second_extraction = False
     
     # Determine total steps based on filtering and model optimization
     if not use_filtering:
@@ -235,7 +268,7 @@ def main(
     
     if use_filtering:
         # Step 2: Extract features (for filtering and possibly final output)
-        logger.info(f"Step 2/{total_steps}: Extracting features using {cfg.prefilter_model_type.name}...")
+        logger.info(f"Step 2/{total_steps}: Extracting features using {prefilter_model_type.name}...")
         if cfg.keep_intermediate_files:
             prefilter_features_h5_path = str(base_path / f"{Path(cfg.slide_path).stem}.prefilter_features.h5")
             prefilter_features_pt_path = str(base_path / f"{Path(cfg.slide_path).stem}.prefilter_features.pt")
@@ -246,8 +279,8 @@ def main(
         save_features(
             slide_path=cfg.slide_path,
             gpu_device_id=cfg.gpu_device_id,
-            model_type=cfg.prefilter_model_type,
-            model_path=cfg.prefilter_model_path,
+            model_type=prefilter_model_type,
+            model_path=prefilter_model_path,
             use_gpu=cfg.use_gpu,
             output_h5_path=prefilter_features_h5_path,
             output_pt_path=prefilter_features_pt_path,

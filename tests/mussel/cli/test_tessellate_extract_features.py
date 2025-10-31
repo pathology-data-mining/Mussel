@@ -166,7 +166,7 @@ def test_tessellate_extract_features_without_filtering(tmp_path):
         output_h5_path=output_h5_path,
         output_pt_path=output_pt_path,
         classifier_pkl=None,  # No filtering
-        prefilter_model_type=ModelType.RESNET50,
+        # Note: prefilter_model_type is NOT specified - it's not needed when there's no filtering
         seg_config=seg_config,
         num_workers=1,
         batch_size=32,
@@ -203,8 +203,8 @@ def test_tessellate_extract_features_with_slide_encoder_inference(tmp_path):
         output_h5_path=output_h5_path,
         output_pt_path=output_pt_path,
         classifier_pkl=None,  # No filtering
-        prefilter_model_type=ModelType.RESNET50,
-        # Note: postfilter_model_type is NOT specified
+        # Note: prefilter_model_type is NOT specified - it's not needed when there's no filtering
+        # Note: postfilter_model_type is also NOT specified - it will be inferred from slide_model_type
         postfilter_model_type=None,
         aggregation_method="model",
         slide_model_type=ModelType.GIGAPATH_SLIDE,  # Requires GIGAPATH patch encoder
