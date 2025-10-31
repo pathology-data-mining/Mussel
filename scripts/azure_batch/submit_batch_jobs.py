@@ -18,6 +18,7 @@ import datetime
 import json
 import os
 import sys
+import time
 from pathlib import Path
 from typing import Dict, List, Optional
 
@@ -34,7 +35,23 @@ except ImportError:
 
 
 class AzureBatchJobSubmitter:
-    """Handles Azure Batch job submission for Mussel tessellate-extract-features."""
+    """
+    Handles Azure Batch job submission for Mussel tessellate-extract-features.
+    
+    This class provides methods to:
+    - Create and manage Azure Batch compute pools
+    - Create jobs and submit tasks
+    - Submit single tasks or batch tasks from configuration files
+    - Monitor task progress and completion
+    - Clean up resources (jobs and pools)
+    
+    Typical usage:
+        submitter = AzureBatchJobSubmitter(account_name, account_key, account_url)
+        submitter.create_pool(pool_id="my-pool", vm_size="Standard_NC6s_v3")
+        submitter.create_job(job_id="my-job", pool_id="my-pool")
+        submitter.submit_task(job_id="my-job", task_id="task-1", ...)
+        submitter.monitor_tasks(job_id="my-job")
+    """
 
     def __init__(
         self,
@@ -244,8 +261,6 @@ class AzureBatchJobSubmitter:
 
     def monitor_tasks(self, job_id: str, poll_interval: int = 30) -> None:
         """Monitor task progress."""
-        import time
-
         print(f"Monitoring tasks in job '{job_id}'...")
         print("Press Ctrl+C to stop monitoring (tasks will continue running)")
 

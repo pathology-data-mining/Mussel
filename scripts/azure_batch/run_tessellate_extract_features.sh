@@ -110,38 +110,39 @@ if [ ! -d "$OUTPUT_DIR" ]; then
     mkdir -p "$OUTPUT_DIR"
 fi
 
-# Build the command
-CMD="tessellate_extract_features"
-CMD="$CMD slide_path=\"$SLIDE_PATH\""
-CMD="$CMD output_h5_path=\"$OUTPUT_H5_PATH\""
-CMD="$CMD output_pt_path=\"$OUTPUT_PT_PATH\""
+# Build the command as an array for safe execution
+CMD_ARGS=(
+    "tessellate_extract_features"
+    "slide_path=$SLIDE_PATH"
+    "output_h5_path=$OUTPUT_H5_PATH"
+    "output_pt_path=$OUTPUT_PT_PATH"
+    "prefilter_model_type=$PREFILTER_MODEL_TYPE"
+    "seg_config.segment_threshold=$SEGMENT_THRESHOLD"
+    "seg_config.patch_size=$PATCH_SIZE"
+    "seg_config.mpp=$MPP"
+    "num_workers=$NUM_WORKERS"
+    "batch_size=$BATCH_SIZE"
+    "use_gpu=$USE_GPU"
+    "keep_intermediate_files=$KEEP_INTERMEDIATE_FILES"
+)
 
 # Add optional parameters
 if [ -n "$CLASSIFIER_PKL" ]; then
-    CMD="$CMD classifier_pkl=\"$CLASSIFIER_PKL\""
-    CMD="$CMD classifier_threshold=$CLASSIFIER_THRESHOLD"
+    CMD_ARGS+=("classifier_pkl=$CLASSIFIER_PKL")
+    CMD_ARGS+=("classifier_threshold=$CLASSIFIER_THRESHOLD")
 fi
 
 if [ -n "$POSTFILTER_MODEL_TYPE" ]; then
-    CMD="$CMD postfilter_model_type=$POSTFILTER_MODEL_TYPE"
+    CMD_ARGS+=("postfilter_model_type=$POSTFILTER_MODEL_TYPE")
 fi
 
-CMD="$CMD prefilter_model_type=$PREFILTER_MODEL_TYPE"
-CMD="$CMD seg_config.segment_threshold=$SEGMENT_THRESHOLD"
-CMD="$CMD seg_config.patch_size=$PATCH_SIZE"
-CMD="$CMD seg_config.mpp=$MPP"
-CMD="$CMD num_workers=$NUM_WORKERS"
-CMD="$CMD batch_size=$BATCH_SIZE"
-CMD="$CMD use_gpu=$USE_GPU"
-CMD="$CMD keep_intermediate_files=$KEEP_INTERMEDIATE_FILES"
-
 log "Executing command:"
-log "$CMD"
+log "${CMD_ARGS[*]}"
 echo ""
 
 # Execute the command
 START_TIME=$(date +%s)
-eval $CMD
+"${CMD_ARGS[@]}"
 EXIT_CODE=$?
 END_TIME=$(date +%s)
 DURATION=$((END_TIME - START_TIME))
