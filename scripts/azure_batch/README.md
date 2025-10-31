@@ -225,6 +225,9 @@ Each task can specify:
   - `classifier_threshold`: Threshold for filtering (default: 0.75)
   - `prefilter_model_type`: Model for pre-filter extraction (default: CTRANSPATH)
   - `postfilter_model_type`: Model for post-filter extraction
+  - `intermediate_h5_path`: Path for intermediate tile-level features (for slide-level aggregation)
+  - `aggregation_method`: Aggregation method: identity (default), mean, max, model
+  - `slide_model_type`: Slide model type for aggregation_method=model
   - `segment_threshold`: Tissue segmentation threshold (default: 0)
   - `patch_size`: Patch size in pixels (default: 256)
   - `mpp`: Microns per pixel (default: 0.5)
@@ -233,6 +236,27 @@ Each task can specify:
   - `use_gpu`: Whether to use GPU (default: true)
   - `keep_intermediate_files`: Keep intermediate files (default: false)
   - `hf_token`: HuggingFace token for gated models
+
+### Slide-Level Aggregation
+
+When performing slide-level aggregation (e.g., `aggregation_method=mean`), the workflow produces both:
+1. **Tile-level features** (patch embeddings) - saved to `intermediate_h5_path`
+2. **Slide-level features** (aggregated from tiles) - saved to `output_h5_path` and `output_pt_path`
+
+Both feature files are automatically published to the specified output directory or S3 prefix.
+
+**Example with aggregation:**
+```python
+# In config JSON or CSV defaults
+{
+  "aggregation_method": "mean",
+  "intermediate_h5_path": "s3://bucket/results/slide_001_tile_features.h5",
+  "output_h5_path": "s3://bucket/results/slide_001_slide_features.h5",
+  "output_pt_path": "s3://bucket/results/slide_001_slide_features.pt"
+}
+```
+
+When using CSV manifests, tile-level features are automatically named as `{slide_id}_tile_features.h5`.
 
 ### Available Models
 

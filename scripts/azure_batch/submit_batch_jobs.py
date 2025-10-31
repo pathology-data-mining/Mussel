@@ -150,6 +150,9 @@ class AzureBatchJobSubmitter:
         slide_path: str,
         output_h5_path: str,
         output_pt_path: str,
+        intermediate_h5_path: Optional[str] = None,
+        aggregation_method: str = "identity",
+        slide_model_type: Optional[str] = None,
         classifier_pkl: Optional[str] = None,
         classifier_threshold: float = 0.75,
         prefilter_model_type: str = "CTRANSPATH",
@@ -183,7 +186,14 @@ class AzureBatchJobSubmitter:
             batchmodels.EnvironmentSetting("BATCH_SIZE", str(batch_size)),
             batchmodels.EnvironmentSetting("USE_GPU", str(use_gpu).lower()),
             batchmodels.EnvironmentSetting("KEEP_INTERMEDIATE_FILES", str(keep_intermediate_files).lower()),
+            batchmodels.EnvironmentSetting("AGGREGATION_METHOD", aggregation_method),
         ]
+
+        if intermediate_h5_path:
+            env_vars.append(batchmodels.EnvironmentSetting("INTERMEDIATE_H5_PATH", intermediate_h5_path))
+
+        if slide_model_type:
+            env_vars.append(batchmodels.EnvironmentSetting("SLIDE_MODEL_TYPE", slide_model_type))
 
         if classifier_pkl:
             env_vars.append(batchmodels.EnvironmentSetting("CLASSIFIER_PKL", classifier_pkl))
@@ -256,6 +266,9 @@ class AzureBatchJobSubmitter:
                 slide_path=merged_config["slide_path"],
                 output_h5_path=merged_config["output_h5_path"],
                 output_pt_path=merged_config["output_pt_path"],
+                intermediate_h5_path=merged_config.get("intermediate_h5_path"),
+                aggregation_method=merged_config.get("aggregation_method", "identity"),
+                slide_model_type=merged_config.get("slide_model_type"),
                 classifier_pkl=merged_config.get("classifier_pkl"),
                 classifier_threshold=merged_config.get("classifier_threshold", 0.75),
                 prefilter_model_type=merged_config.get("prefilter_model_type", "CTRANSPATH"),
@@ -268,6 +281,9 @@ class AzureBatchJobSubmitter:
                 use_gpu=merged_config.get("use_gpu", True),
                 keep_intermediate_files=merged_config.get("keep_intermediate_files", False),
                 hf_token=merged_config.get("hf_token"),
+                aws_access_key_id=merged_config.get("aws_access_key_id"),
+                aws_secret_access_key=merged_config.get("aws_secret_access_key"),
+                aws_region=merged_config.get("aws_region"),
                 container_image=container_image,
             )
 
@@ -307,19 +323,24 @@ class AzureBatchJobSubmitter:
                 
                 # Determine output paths
                 if output_s3_prefix:
-                    # Upload to S3
+                    # Upload to S3 (slide-level features)
                     output_h5_path = f"{output_s3_prefix.rstrip('/')}/{slide_id}_features.h5"
                     output_pt_path = f"{output_s3_prefix.rstrip('/')}/{slide_id}_features.pt"
+                    # Tile-level features (when doing aggregation)
+                    intermediate_h5_path = f"{output_s3_prefix.rstrip('/')}/{slide_id}_tile_features.h5"
                 else:
-                    # Local output
+                    # Local output (slide-level features)
                     output_h5_path = f"{output_dir}/{slide_id}_features.h5"
                     output_pt_path = f"{output_dir}/{slide_id}_features.pt"
+                    # Tile-level features (when doing aggregation)
+                    intermediate_h5_path = f"{output_dir}/{slide_id}_tile_features.h5"
                 
                 tasks.append({
                     'task_id': slide_id,
                     'slide_path': slide_path,
                     'output_h5_path': output_h5_path,
                     'output_pt_path': output_pt_path,
+                    'intermediate_h5_path': intermediate_h5_path,
                 })
 
         print(f"Submitting {len(tasks)} tasks from CSV manifest...")
@@ -334,6 +355,9 @@ class AzureBatchJobSubmitter:
                 slide_path=merged_config['slide_path'],
                 output_h5_path=merged_config['output_h5_path'],
                 output_pt_path=merged_config['output_pt_path'],
+                intermediate_h5_path=merged_config.get('intermediate_h5_path'),
+                aggregation_method=merged_config.get("aggregation_method", "identity"),
+                slide_model_type=merged_config.get("slide_model_type"),
                 classifier_pkl=merged_config.get("classifier_pkl"),
                 classifier_threshold=merged_config.get("classifier_threshold", 0.75),
                 prefilter_model_type=merged_config.get("prefilter_model_type", "CTRANSPATH"),
@@ -346,6 +370,9 @@ class AzureBatchJobSubmitter:
                 use_gpu=merged_config.get("use_gpu", True),
                 keep_intermediate_files=merged_config.get("keep_intermediate_files", False),
                 hf_token=merged_config.get("hf_token"),
+                aws_access_key_id=merged_config.get("aws_access_key_id"),
+                aws_secret_access_key=merged_config.get("aws_secret_access_key"),
+                aws_region=merged_config.get("aws_region"),
                 container_image=container_image,
             )
 

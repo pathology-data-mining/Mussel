@@ -7,6 +7,9 @@
 #   SLIDE_PATH - Path to the input slide file (can be s3:// URL)
 #   OUTPUT_H5_PATH - Path for output HDF5 file (can be s3:// URL or local path)
 #   OUTPUT_PT_PATH - Path for output PyTorch file (can be s3:// URL or local path)
+#   INTERMEDIATE_H5_PATH - (Optional) Path for intermediate tile-level features (two-step aggregation)
+#   AGGREGATION_METHOD - (Optional) Aggregation method: identity, mean, max, model (default: identity)
+#   SLIDE_MODEL_TYPE - (Optional) Slide model type for aggregation_method=model
 #   CLASSIFIER_PKL - (Optional) Path to classifier pickle file for filtering
 #   CLASSIFIER_THRESHOLD - (Optional) Threshold for classifier (default: 0.75)
 #   PREFILTER_MODEL_TYPE - Model type for pre-filter extraction (default: CTRANSPATH)
@@ -78,6 +81,7 @@ BATCH_SIZE=${BATCH_SIZE:-64}
 USE_GPU=${USE_GPU:-true}
 KEEP_INTERMEDIATE_FILES=${KEEP_INTERMEDIATE_FILES:-false}
 AWS_DEFAULT_REGION=${AWS_DEFAULT_REGION:-us-east-1}
+AGGREGATION_METHOD=${AGGREGATION_METHOD:-identity}
 
 # S3 helper functions
 is_s3_path() {
@@ -166,8 +170,9 @@ fi
 # Prepare output paths (use local temp paths if outputs are S3)
 ORIGINAL_OUTPUT_H5_PATH="$OUTPUT_H5_PATH"
 ORIGINAL_OUTPUT_PT_PATH="$OUTPUT_PT_PATH"
+ORIGINAL_INTERMEDIATE_H5_PATH="$INTERMEDIATE_H5_PATH"
 
-if is_s3_path "$OUTPUT_H5_PATH" || is_s3_path "$OUTPUT_PT_PATH"; then
+if is_s3_path "$OUTPUT_H5_PATH" || is_s3_path "$OUTPUT_PT_PATH" || is_s3_path "$INTERMEDIATE_H5_PATH"; then
     WORK_DIR="${WORK_DIR:-/tmp/mussel_work_$$}"
     mkdir -p "$WORK_DIR"
     
@@ -184,9 +189,19 @@ if is_s3_path "$OUTPUT_H5_PATH" || is_s3_path "$OUTPUT_PT_PATH"; then
     else
         LOCAL_OUTPUT_PT_PATH="$OUTPUT_PT_PATH"
     fi
+    
+    if [ -n "$INTERMEDIATE_H5_PATH" ] && is_s3_path "$INTERMEDIATE_H5_PATH"; then
+        LOCAL_INTERMEDIATE_H5_PATH="$WORK_DIR/$(basename "$INTERMEDIATE_H5_PATH")"
+        log "Will upload intermediate H5 (tile-level features) to S3: $INTERMEDIATE_H5_PATH"
+    elif [ -n "$INTERMEDIATE_H5_PATH" ]; then
+        LOCAL_INTERMEDIATE_H5_PATH="$INTERMEDIATE_H5_PATH"
+    fi
 else
     LOCAL_OUTPUT_H5_PATH="$OUTPUT_H5_PATH"
     LOCAL_OUTPUT_PT_PATH="$OUTPUT_PT_PATH"
+    if [ -n "$INTERMEDIATE_H5_PATH" ]; then
+        LOCAL_INTERMEDIATE_H5_PATH="$INTERMEDIATE_H5_PATH"
+    fi
 fi
 
 # Create output directory if it doesn't exist (for local outputs)
@@ -220,6 +235,19 @@ fi
 
 if [ -n "$POSTFILTER_MODEL_TYPE" ]; then
     CMD_ARGS+=("postfilter_model_type=$POSTFILTER_MODEL_TYPE")
+fi
+
+# Add aggregation parameters if specified
+if [ "$AGGREGATION_METHOD" != "identity" ]; then
+    CMD_ARGS+=("aggregation_method=$AGGREGATION_METHOD")
+fi
+
+if [ -n "$LOCAL_INTERMEDIATE_H5_PATH" ]; then
+    CMD_ARGS+=("intermediate_h5_path=$LOCAL_INTERMEDIATE_H5_PATH")
+fi
+
+if [ -n "$SLIDE_MODEL_TYPE" ]; then
+    CMD_ARGS+=("slide_model_type=$SLIDE_MODEL_TYPE")
 fi
 
 log "Executing command:"
@@ -260,6 +288,17 @@ if [ $EXIT_CODE -eq 0 ]; then
         if [ -f "$LOCAL_OUTPUT_PT_PATH" ]; then
             log "Output PT file: $LOCAL_OUTPUT_PT_PATH (size: $(du -h "$LOCAL_OUTPUT_PT_PATH" | cut -f1))"
         fi
+    fi
+    
+    # Upload intermediate tile-level features if specified
+    if [ -n "$ORIGINAL_INTERMEDIATE_H5_PATH" ] && is_s3_path "$ORIGINAL_INTERMEDIATE_H5_PATH"; then
+        if [ -f "$LOCAL_INTERMEDIATE_H5_PATH" ]; then
+            log "Local intermediate H5 file (tile-level): $LOCAL_INTERMEDIATE_H5_PATH (size: $(du -h "$LOCAL_INTERMEDIATE_H5_PATH" | cut -f1))"
+            upload_to_s3 "$LOCAL_INTERMEDIATE_H5_PATH" "$ORIGINAL_INTERMEDIATE_H5_PATH"
+            log "Uploaded intermediate H5 (tile-level features) to S3: $ORIGINAL_INTERMEDIATE_H5_PATH"
+        fi
+    elif [ -n "$LOCAL_INTERMEDIATE_H5_PATH" ] && [ -f "$LOCAL_INTERMEDIATE_H5_PATH" ]; then
+        log "Intermediate H5 file (tile-level): $LOCAL_INTERMEDIATE_H5_PATH (size: $(du -h "$LOCAL_INTERMEDIATE_H5_PATH" | cut -f1))"
     fi
 else
     log "ERROR: Processing failed with exit code $EXIT_CODE after $DURATION seconds"
