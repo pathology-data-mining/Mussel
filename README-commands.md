@@ -9,6 +9,7 @@ This document provides detailed information about the command-line tools provide
 - [Commands](#commands)
   - [tessellate](#tessellate)
   - [extract_features](#extract_features)
+  - [filter_tessellate](#filter_tessellate)
   - [aggregate_slide_features](#aggregate_slide_features)
   - [create_class_embeddings](#create_class_embeddings)
   - [annotate](#annotate)
@@ -28,6 +29,7 @@ slides, and generating feature embeddings with pathology foundation models.
 
 * `tessellate` - Tile whole-slide images with foreground detection
 * `extract_features` - Extract feature embeddings using foundation models
+* `filter_tessellate` - Integrated workflow: tessellate, extract CTRANSPATH features, and filter
 * `aggregate_slide_features` - Aggregate patch-level features to slide-level using various methods
 * `create_class_embeddings` - Generate tissue-type embeddings for zero-shot classification
 * `annotate` - Annotate tiles with tissue types using zero-shot learning
@@ -221,6 +223,92 @@ When you specify `slide_model_type`, the `aggregation_method` is automatically s
 - PyTorch models generally require the `torch-gpu` or `torch-cpu` installation
 - TensorFlow models (GooglePath) require the `tensorflow-gpu` or `tensorflow-cpu` installation
 - For gated models, set `HF_TOKEN` environment variable with your HuggingFace token
+
+---
+
+### `filter_tessellate`
+
+**Purpose**: Integrated workflow that tessellates a whole-slide image, extracts CTRANSPATH features, and filters tiles using a classifier model in a single command.
+
+This command combines the functionality of `tessellate`, `extract_features` (with CTRANSPATH model), and `filter_features` into a streamlined workflow. It's particularly useful when you want to:
+- Process slides end-to-end with a single command
+- Use CTRANSPATH as the feature extraction model
+- Filter tiles based on a pre-trained classifier
+- Reduce intermediate file management
+
+**Key Parameters:**
+- `slide_path`: Path to your whole-slide image
+- `output_h5_path`: Path to save the final filtered HDF5 file with tile coordinates
+- `output_pt_path`: Path to save the final filtered features in PyTorch format
+- `classifier_pkl`: Path to the classifier model in pickle format
+- `classifier_threshold`: Threshold for the classifier to filter features (default: 0.75)
+- `model_path`: Path to the CTRANSPATH model weights file
+- `seg_config.*`: Segmentation parameters (same as tessellate)
+- `batch_size`: Batch size for feature extraction (default: 64)
+- `num_workers`: Number of workers for processing (default: 4)
+- `use_gpu`: Whether to use GPU for feature extraction (default: True)
+- `keep_intermediate_files`: Whether to keep intermediate files (default: False)
+- `save_features_to_h5`: Whether to save filtered features to HDF5 (default: False)
+
+**Example - Basic usage:**
+```bash
+filter_tessellate \
+    slide_path=tests/testdata/948176.svs \
+    output_h5_path=948176_filtered.h5 \
+    output_pt_path=948176_filtered.pt \
+    classifier_pkl=my_classifier.pkl \
+    classifier_threshold=0.75 \
+    model_path=ctranspath_model.pth \
+    seg_config.segment_threshold=0 \
+    num_workers=8 \
+    batch_size=64
+```
+
+**Example - With visualization outputs:**
+```bash
+filter_tessellate \
+    slide_path=tests/testdata/948176.svs \
+    output_h5_path=948176_filtered.h5 \
+    output_pt_path=948176_filtered.pt \
+    classifier_pkl=my_classifier.pkl \
+    model_path=ctranspath_model.pth \
+    output_mask_path=948176_mask.png \
+    output_grid_mask_path=948176_grid.png \
+    output_thumbnail_path=948176_thumb.png \
+    seg_config.segment_threshold=0
+```
+
+**Example - Keeping intermediate files for debugging:**
+```bash
+filter_tessellate \
+    slide_path=tests/testdata/948176.svs \
+    output_h5_path=948176_filtered.h5 \
+    output_pt_path=948176_filtered.pt \
+    classifier_pkl=my_classifier.pkl \
+    model_path=ctranspath_model.pth \
+    keep_intermediate_files=True \
+    save_features_to_h5=True
+```
+
+**Workflow:**
+1. **Step 1 - Tessellation**: Tiles the whole-slide image and detects tissue regions
+2. **Step 2 - Feature Extraction**: Extracts CTRANSPATH features from detected tiles
+3. **Step 3 - Filtering**: Applies the classifier and keeps only tiles above the threshold
+
+**Output Files:**
+- `output_h5_path`: HDF5 file with filtered tile coordinates
+- `output_pt_path`: PyTorch tensor file with filtered features
+- `*.tessellate.h5`: Intermediate tessellation coordinates (if keep_intermediate_files=True)
+- `*.features.h5`: Intermediate feature file (if keep_intermediate_files=True)
+- Optional visualization outputs (mask, grid, thumbnail) if specified
+
+**Tips:**
+- CTRANSPATH model weights must be provided via `model_path` parameter
+- The classifier should be compatible with CTRANSPATH feature dimensions
+- Use `keep_intermediate_files=True` for debugging or if you need the intermediate results
+- By default, intermediate files are created in a temporary directory and cleaned up automatically
+- Lower `classifier_threshold` to keep more tiles, higher to be more selective
+- Adjust `batch_size` based on available GPU memory
 
 ---
 
