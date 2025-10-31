@@ -186,3 +186,53 @@ def test_tessellate_extract_features_without_filtering(tmp_path):
 
     data = torch.load(output_pt_path, weights_only=True)
     assert data.shape[0] > 0
+
+
+def test_tessellate_extract_features_with_slide_encoder_inference(tmp_path):
+    """Test that postfilter_model_type is inferred from slide_model_type when using model aggregation."""
+    from unittest.mock import patch, MagicMock
+    
+    slide_path = "tests/testdata/948176.svs"
+    output_h5_path = os.path.join(tmp_path, "features.h5")
+    output_pt_path = os.path.join(tmp_path, "features.pt")
+    
+    seg_config = SegConfig(segment_threshold=0)
+    cfg = TessellateExtractFeaturesConfig(
+        slide_path=slide_path,
+        output_h5_path=output_h5_path,
+        output_pt_path=output_pt_path,
+        classifier_pkl=None,  # No filtering
+        prefilter_model_type=ModelType.RESNET50,
+        # Note: postfilter_model_type is NOT specified
+        postfilter_model_type=None,
+        aggregation_method="model",
+        slide_model_type=ModelType.GIGAPATH_SLIDE,  # Requires GIGAPATH patch encoder
+        seg_config=seg_config,
+        num_workers=1,
+        batch_size=32,
+        use_gpu=False,
+        keep_intermediate_files=False,
+    )
+    
+    # Mock save_features to capture the model_type parameter
+    with patch('mussel.cli.tessellate_extract_features.save_features') as mock_save_features, \
+         patch('mussel.cli.tessellate_extract_features.segment_tissue') as mock_segment:
+        
+        # Mock segment_tissue to return fake data
+        mock_coords = [[0, 0], [256, 0], [0, 256]]
+        mock_polygon = MagicMock()
+        mock_grid = MagicMock()
+        mock_segment.return_value = (mock_polygon, mock_grid, mock_coords, None)
+        
+        # Run main
+        main(OmegaConf.create(cfg))
+        
+        # Verify save_features was called with the correct model_type
+        assert mock_save_features.called
+        call_args = mock_save_features.call_args
+        
+        # The model_type should be GIGAPATH (inferred from GIGAPATH_SLIDE)
+        assert call_args.kwargs['model_type'] == ModelType.GIGAPATH, \
+            f"Expected model_type to be GIGAPATH (inferred from slide_model_type), got {call_args.kwargs['model_type']}"
+        assert call_args.kwargs['slide_model_type'] == ModelType.GIGAPATH_SLIDE
+        assert call_args.kwargs['aggregation_method'] == "model"
