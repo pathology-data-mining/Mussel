@@ -55,7 +55,9 @@ class TessellateExtractFeaturesConfig:
         prefilter_model_path (Optional[str]): Path to pre-filtering model weights, if applicable.
     
     Model Parameters (Post-Filter Extraction):
-        postfilter_model_type (Optional[ModelType]): Type of model for post-filtering extraction. If None, uses prefilter_model_type.
+        postfilter_model_type (Optional[ModelType]): Type of model for post-filtering extraction. 
+            If None and aggregation_method="model" with slide_model_type specified, automatically infers 
+            the required patch encoder from slide_model_type. Otherwise, uses prefilter_model_type.
         postfilter_model_path (Optional[str]): Path to post-filtering model weights, if applicable.
         intermediate_h5_path (Optional[str]): Path for intermediate patch features (two-step mode for post-filtering).
         aggregation_method (str): Aggregation method for post-filtering: identity (single-step), mean/max/model (two-step).
