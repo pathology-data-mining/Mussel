@@ -1,6 +1,6 @@
 # Azure Batch Scripts for Mussel
 
-This directory contains scripts for running `tessellate-extract-features` on Azure Batch, enabling large-scale processing of whole-slide images in the cloud.
+This directory contains scripts for running `tessellate-extract-features` on Azure Batch, enabling large-scale processing of whole-slide images in the cloud with support for S3 storage.
 
 ## Overview
 
@@ -9,12 +9,15 @@ The Azure Batch integration allows you to:
 - Scale computation using Azure's cloud infrastructure
 - Use GPU-enabled VMs for fast feature extraction
 - Manage long-running jobs with automatic retry and monitoring
+- Stage slides from S3 and publish results to S3 or local storage
+- Process slides from CSV manifests with slide identifiers
 
 ## Files
 
 - **`submit_batch_jobs.py`**: Python script to submit jobs to Azure Batch
 - **`run_tessellate_extract_features.sh`**: Bash script that runs on Azure Batch compute nodes
 - **`config_template.json`**: Template for batch job configuration
+- **`manifest_template.csv`**: Template for CSV slide manifest
 - **`README.md`**: This file
 
 ## Prerequisites
@@ -130,6 +133,71 @@ python scripts/azure_batch/submit_batch_jobs.py \
   --monitor
 ```
 
+### Processing Slides from S3 with CSV Manifest
+
+For processing slides stored in S3, use a CSV manifest file:
+
+**manifest.csv:**
+```csv
+slide_id,slide_path
+slide_001,s3://my-bucket/slides/slide_001.svs
+slide_002,s3://my-bucket/slides/slide_002.svs
+slide_003,s3://my-bucket/slides/slide_003.svs
+```
+
+Submit with S3 output:
+
+```bash
+python scripts/azure_batch/submit_batch_jobs.py \
+  --batch-account-name mybatchaccount \
+  --batch-account-key <your-batch-key> \
+  --batch-account-url https://mybatchaccount.eastus.batch.azure.com \
+  --pool-id mussel-pool \
+  --create-pool \
+  --job-id mussel-job-003 \
+  --create-job \
+  --csv-manifest manifest.csv \
+  --output-s3-prefix s3://my-bucket/results/ \
+  --aws-access-key-id $AWS_ACCESS_KEY_ID \
+  --aws-secret-access-key $AWS_SECRET_ACCESS_KEY \
+  --aws-region us-east-1 \
+  --monitor
+```
+
+Or output to local directory:
+
+```bash
+python scripts/azure_batch/submit_batch_jobs.py \
+  --batch-account-name mybatchaccount \
+  --batch-account-key <your-batch-key> \
+  --batch-account-url https://mybatchaccount.eastus.batch.azure.com \
+  --pool-id mussel-pool \
+  --job-id mussel-job-004 \
+  --csv-manifest manifest.csv \
+  --output-dir /mnt/output \
+  --aws-access-key-id $AWS_ACCESS_KEY_ID \
+  --aws-secret-access-key $AWS_SECRET_ACCESS_KEY \
+  --monitor
+```
+
+### Single Task with S3 Input/Output
+
+```bash
+python scripts/azure_batch/submit_batch_jobs.py \
+  --batch-account-name mybatchaccount \
+  --batch-account-key <your-batch-key> \
+  --batch-account-url https://mybatchaccount.eastus.batch.azure.com \
+  --pool-id mussel-pool \
+  --job-id mussel-job-005 \
+  --task-id slide-s3-001 \
+  --slide-path s3://my-bucket/slides/slide.svs \
+  --output-h5-path s3://my-bucket/results/slide_features.h5 \
+  --output-pt-path s3://my-bucket/results/slide_features.pt \
+  --aws-access-key-id $AWS_ACCESS_KEY_ID \
+  --aws-secret-access-key $AWS_SECRET_ACCESS_KEY \
+  --monitor
+```
+
 ## Configuration
 
 ### Pool Configuration
@@ -178,6 +246,57 @@ Pre-filter and post-filter model types:
 - `CONCH`: Conch v1.5
 
 ## Data Management
+
+### Using S3 Storage (Recommended for Large Datasets)
+
+The scripts natively support S3 for input slides and output results:
+
+**Features:**
+- Automatic staging: slides are downloaded from S3 to local temp storage before processing
+- Automatic publishing: results are uploaded to S3 after processing completes
+- Mixed paths: slides can be from S3 or local, outputs can go to S3 or local
+- AWS CLI integration: uses standard AWS credentials
+
+**Setup:**
+1. Install AWS CLI in your Docker image or ensure it's available
+2. Provide AWS credentials via command-line arguments:
+   - `--aws-access-key-id`
+   - `--aws-secret-access-key`
+   - `--aws-region` (default: us-east-1)
+
+**Example with S3:**
+```bash
+# Input from S3, output to S3
+--slide-path s3://my-bucket/slides/slide.svs \
+--output-h5-path s3://my-bucket/results/slide.h5 \
+--output-pt-path s3://my-bucket/results/slide.pt
+
+# Input from S3, output local
+--slide-path s3://my-bucket/slides/slide.svs \
+--output-h5-path /mnt/output/slide.h5 \
+--output-pt-path /mnt/output/slide.pt
+
+# Input local, output to S3
+--slide-path /mnt/data/slide.svs \
+--output-h5-path s3://my-bucket/results/slide.h5 \
+--output-pt-path s3://my-bucket/results/slide.pt
+```
+
+### CSV Manifest Format
+
+For batch processing from a slide list:
+
+```csv
+slide_id,slide_path
+slide_001,s3://bucket/path/slide_001.svs
+slide_002,s3://bucket/path/slide_002.svs
+slide_003,/local/path/slide_003.svs
+```
+
+- **slide_id**: Unique identifier for the slide (used for task ID and output filenames)
+- **slide_path**: Path to slide (can be S3 URL or local path)
+
+When using `--csv-manifest`, outputs are automatically named as `{slide_id}_features.h5` and `{slide_id}_features.pt`.
 
 ### Using Azure Storage
 

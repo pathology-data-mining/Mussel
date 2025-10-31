@@ -4,9 +4,9 @@
 # This script runs on Azure Batch compute nodes to process whole-slide images
 #
 # Environment variables expected:
-#   SLIDE_PATH - Path to the input slide file
-#   OUTPUT_H5_PATH - Path for output HDF5 file
-#   OUTPUT_PT_PATH - Path for output PyTorch file
+#   SLIDE_PATH - Path to the input slide file (can be s3:// URL)
+#   OUTPUT_H5_PATH - Path for output HDF5 file (can be s3:// URL or local path)
+#   OUTPUT_PT_PATH - Path for output PyTorch file (can be s3:// URL or local path)
 #   CLASSIFIER_PKL - (Optional) Path to classifier pickle file for filtering
 #   CLASSIFIER_THRESHOLD - (Optional) Threshold for classifier (default: 0.75)
 #   PREFILTER_MODEL_TYPE - Model type for pre-filter extraction (default: CTRANSPATH)
@@ -19,6 +19,9 @@
 #   USE_GPU - Whether to use GPU (default: true)
 #   KEEP_INTERMEDIATE_FILES - Keep intermediate files (default: false)
 #   HF_TOKEN - (Optional) HuggingFace token for gated models
+#   AWS_ACCESS_KEY_ID - (Optional) AWS access key for S3
+#   AWS_SECRET_ACCESS_KEY - (Optional) AWS secret key for S3
+#   AWS_DEFAULT_REGION - (Optional) AWS region (default: us-east-1)
 
 set -e
 set -o pipefail
@@ -61,6 +64,38 @@ NUM_WORKERS=${NUM_WORKERS:-4}
 BATCH_SIZE=${BATCH_SIZE:-64}
 USE_GPU=${USE_GPU:-true}
 KEEP_INTERMEDIATE_FILES=${KEEP_INTERMEDIATE_FILES:-false}
+AWS_DEFAULT_REGION=${AWS_DEFAULT_REGION:-us-east-1}
+
+# S3 helper functions
+is_s3_path() {
+    [[ "$1" =~ ^s3:// ]]
+}
+
+download_from_s3() {
+    local s3_path="$1"
+    local local_path="$2"
+    log "Downloading from S3: $s3_path -> $local_path"
+    
+    if command -v aws &> /dev/null; then
+        aws s3 cp "$s3_path" "$local_path"
+    else
+        log "ERROR: aws CLI not found. Install with: pip install awscli"
+        exit 1
+    fi
+}
+
+upload_to_s3() {
+    local local_path="$1"
+    local s3_path="$2"
+    log "Uploading to S3: $local_path -> $s3_path"
+    
+    if command -v aws &> /dev/null; then
+        aws s3 cp "$local_path" "$s3_path"
+    else
+        log "ERROR: aws CLI not found. Install with: pip install awscli"
+        exit 1
+    fi
+}
 
 log "Configuration:"
 log "  SLIDE_PATH: $SLIDE_PATH"
@@ -78,6 +113,18 @@ log "  BATCH_SIZE: $BATCH_SIZE"
 log "  USE_GPU: $USE_GPU"
 log "  KEEP_INTERMEDIATE_FILES: $KEEP_INTERMEDIATE_FILES"
 echo ""
+
+# Stage input slide from S3 if needed
+ORIGINAL_SLIDE_PATH="$SLIDE_PATH"
+if is_s3_path "$SLIDE_PATH"; then
+    log "Slide is in S3, staging locally..."
+    WORK_DIR="/tmp/mussel_work_$$"
+    mkdir -p "$WORK_DIR"
+    LOCAL_SLIDE_PATH="$WORK_DIR/$(basename "$SLIDE_PATH")"
+    download_from_s3 "$SLIDE_PATH" "$LOCAL_SLIDE_PATH"
+    SLIDE_PATH="$LOCAL_SLIDE_PATH"
+    log "Slide staged to: $SLIDE_PATH"
+fi
 
 # Check if slide file exists
 if [ ! -f "$SLIDE_PATH" ]; then
@@ -103,8 +150,34 @@ if [ "$USE_GPU" = "true" ]; then
     fi
 fi
 
-# Create output directory if it doesn't exist
-OUTPUT_DIR=$(dirname "$OUTPUT_H5_PATH")
+# Prepare output paths (use local temp paths if outputs are S3)
+ORIGINAL_OUTPUT_H5_PATH="$OUTPUT_H5_PATH"
+ORIGINAL_OUTPUT_PT_PATH="$OUTPUT_PT_PATH"
+
+if is_s3_path "$OUTPUT_H5_PATH" || is_s3_path "$OUTPUT_PT_PATH"; then
+    WORK_DIR="${WORK_DIR:-/tmp/mussel_work_$$}"
+    mkdir -p "$WORK_DIR"
+    
+    if is_s3_path "$OUTPUT_H5_PATH"; then
+        LOCAL_OUTPUT_H5_PATH="$WORK_DIR/$(basename "$OUTPUT_H5_PATH")"
+        log "Will upload H5 output to S3: $OUTPUT_H5_PATH"
+    else
+        LOCAL_OUTPUT_H5_PATH="$OUTPUT_H5_PATH"
+    fi
+    
+    if is_s3_path "$OUTPUT_PT_PATH"; then
+        LOCAL_OUTPUT_PT_PATH="$WORK_DIR/$(basename "$OUTPUT_PT_PATH")"
+        log "Will upload PT output to S3: $OUTPUT_PT_PATH"
+    else
+        LOCAL_OUTPUT_PT_PATH="$OUTPUT_PT_PATH"
+    fi
+else
+    LOCAL_OUTPUT_H5_PATH="$OUTPUT_H5_PATH"
+    LOCAL_OUTPUT_PT_PATH="$OUTPUT_PT_PATH"
+fi
+
+# Create output directory if it doesn't exist (for local outputs)
+OUTPUT_DIR=$(dirname "$LOCAL_OUTPUT_H5_PATH")
 if [ ! -d "$OUTPUT_DIR" ]; then
     log "Creating output directory: $OUTPUT_DIR"
     mkdir -p "$OUTPUT_DIR"
@@ -114,8 +187,8 @@ fi
 CMD_ARGS=(
     "tessellate_extract_features"
     "slide_path=$SLIDE_PATH"
-    "output_h5_path=$OUTPUT_H5_PATH"
-    "output_pt_path=$OUTPUT_PT_PATH"
+    "output_h5_path=$LOCAL_OUTPUT_H5_PATH"
+    "output_pt_path=$LOCAL_OUTPUT_PT_PATH"
     "prefilter_model_type=$PREFILTER_MODEL_TYPE"
     "seg_config.segment_threshold=$SEGMENT_THRESHOLD"
     "seg_config.patch_size=$PATCH_SIZE"
@@ -151,12 +224,35 @@ echo ""
 if [ $EXIT_CODE -eq 0 ]; then
     log "SUCCESS: Processing completed in $DURATION seconds"
     
-    # Show output file sizes
-    if [ -f "$OUTPUT_H5_PATH" ]; then
-        log "Output H5 file: $OUTPUT_H5_PATH (size: $(du -h "$OUTPUT_H5_PATH" | cut -f1))"
+    # Upload results to S3 if needed
+    if is_s3_path "$ORIGINAL_OUTPUT_H5_PATH"; then
+        if [ -f "$LOCAL_OUTPUT_H5_PATH" ]; then
+            log "Local H5 file: $LOCAL_OUTPUT_H5_PATH (size: $(du -h "$LOCAL_OUTPUT_H5_PATH" | cut -f1))"
+            upload_to_s3 "$LOCAL_OUTPUT_H5_PATH" "$ORIGINAL_OUTPUT_H5_PATH"
+            log "Uploaded H5 file to S3: $ORIGINAL_OUTPUT_H5_PATH"
+        fi
+    else
+        if [ -f "$LOCAL_OUTPUT_H5_PATH" ]; then
+            log "Output H5 file: $LOCAL_OUTPUT_H5_PATH (size: $(du -h "$LOCAL_OUTPUT_H5_PATH" | cut -f1))"
+        fi
     fi
-    if [ -f "$OUTPUT_PT_PATH" ]; then
-        log "Output PT file: $OUTPUT_PT_PATH (size: $(du -h "$OUTPUT_PT_PATH" | cut -f1))"
+    
+    if is_s3_path "$ORIGINAL_OUTPUT_PT_PATH"; then
+        if [ -f "$LOCAL_OUTPUT_PT_PATH" ]; then
+            log "Local PT file: $LOCAL_OUTPUT_PT_PATH (size: $(du -h "$LOCAL_OUTPUT_PT_PATH" | cut -f1))"
+            upload_to_s3 "$LOCAL_OUTPUT_PT_PATH" "$ORIGINAL_OUTPUT_PT_PATH"
+            log "Uploaded PT file to S3: $ORIGINAL_OUTPUT_PT_PATH"
+        fi
+    else
+        if [ -f "$LOCAL_OUTPUT_PT_PATH" ]; then
+            log "Output PT file: $LOCAL_OUTPUT_PT_PATH (size: $(du -h "$LOCAL_OUTPUT_PT_PATH" | cut -f1))"
+        fi
+    fi
+    
+    # Clean up work directory if created
+    if [ -n "$WORK_DIR" ] && [ -d "$WORK_DIR" ]; then
+        log "Cleaning up work directory: $WORK_DIR"
+        rm -rf "$WORK_DIR"
     fi
 else
     log "ERROR: Processing failed with exit code $EXIT_CODE after $DURATION seconds"

@@ -14,6 +14,7 @@ Install with: pip install azure-batch azure-storage-blob azure-identity
 """
 
 import argparse
+import csv
 import datetime
 import json
 import os
@@ -161,6 +162,9 @@ class AzureBatchJobSubmitter:
         use_gpu: bool = True,
         keep_intermediate_files: bool = False,
         hf_token: Optional[str] = None,
+        aws_access_key_id: Optional[str] = None,
+        aws_secret_access_key: Optional[str] = None,
+        aws_region: Optional[str] = None,
         container_image: str = "mskmind/mussel:latest-torch-gpu",
     ) -> None:
         """Submit a tessellate-extract-features task to Azure Batch."""
@@ -190,6 +194,14 @@ class AzureBatchJobSubmitter:
 
         if hf_token:
             env_vars.append(batchmodels.EnvironmentSetting("HF_TOKEN", hf_token))
+
+        # Add AWS credentials if provided (for S3 access)
+        if aws_access_key_id:
+            env_vars.append(batchmodels.EnvironmentSetting("AWS_ACCESS_KEY_ID", aws_access_key_id))
+        if aws_secret_access_key:
+            env_vars.append(batchmodels.EnvironmentSetting("AWS_SECRET_ACCESS_KEY", aws_secret_access_key))
+        if aws_region:
+            env_vars.append(batchmodels.EnvironmentSetting("AWS_DEFAULT_REGION", aws_region))
 
         # Container settings
         container_settings = batchmodels.TaskContainerSettings(
@@ -244,6 +256,84 @@ class AzureBatchJobSubmitter:
                 slide_path=merged_config["slide_path"],
                 output_h5_path=merged_config["output_h5_path"],
                 output_pt_path=merged_config["output_pt_path"],
+                classifier_pkl=merged_config.get("classifier_pkl"),
+                classifier_threshold=merged_config.get("classifier_threshold", 0.75),
+                prefilter_model_type=merged_config.get("prefilter_model_type", "CTRANSPATH"),
+                postfilter_model_type=merged_config.get("postfilter_model_type"),
+                segment_threshold=merged_config.get("segment_threshold", 0),
+                patch_size=merged_config.get("patch_size", 256),
+                mpp=merged_config.get("mpp", 0.5),
+                num_workers=merged_config.get("num_workers", 4),
+                batch_size=merged_config.get("batch_size", 64),
+                use_gpu=merged_config.get("use_gpu", True),
+                keep_intermediate_files=merged_config.get("keep_intermediate_files", False),
+                hf_token=merged_config.get("hf_token"),
+                container_image=container_image,
+            )
+
+    def submit_tasks_from_csv(
+        self,
+        job_id: str,
+        csv_file: str,
+        output_dir: str = "/mnt/output",
+        output_s3_prefix: Optional[str] = None,
+        container_image: str = "mskmind/mussel:latest-torch-gpu",
+        **default_params,
+    ) -> None:
+        """
+        Submit tasks from a CSV manifest file.
+        
+        CSV format:
+            slide_id,slide_path
+            slide_001,s3://bucket/slides/slide_001.svs
+            slide_002,/local/path/slide_002.svs
+        
+        Args:
+            job_id: Azure Batch job ID
+            csv_file: Path to CSV manifest file
+            output_dir: Local output directory for results (default: /mnt/output)
+            output_s3_prefix: S3 prefix for outputs (e.g., s3://bucket/results/)
+            container_image: Docker image to use
+            **default_params: Default parameters for all tasks (e.g., prefilter_model_type, batch_size)
+        """
+        print(f"Loading task manifest from '{csv_file}'...")
+
+        tasks = []
+        with open(csv_file, 'r') as f:
+            reader = csv.DictReader(f)
+            for row in reader:
+                slide_id = row['slide_id']
+                slide_path = row['slide_path']
+                
+                # Determine output paths
+                if output_s3_prefix:
+                    # Upload to S3
+                    output_h5_path = f"{output_s3_prefix.rstrip('/')}/{slide_id}_features.h5"
+                    output_pt_path = f"{output_s3_prefix.rstrip('/')}/{slide_id}_features.pt"
+                else:
+                    # Local output
+                    output_h5_path = f"{output_dir}/{slide_id}_features.h5"
+                    output_pt_path = f"{output_dir}/{slide_id}_features.pt"
+                
+                tasks.append({
+                    'task_id': slide_id,
+                    'slide_path': slide_path,
+                    'output_h5_path': output_h5_path,
+                    'output_pt_path': output_pt_path,
+                })
+
+        print(f"Submitting {len(tasks)} tasks from CSV manifest...")
+
+        for task_config in tasks:
+            # Merge with default parameters
+            merged_config = {**default_params, **task_config}
+
+            self.submit_task(
+                job_id=job_id,
+                task_id=merged_config['task_id'],
+                slide_path=merged_config['slide_path'],
+                output_h5_path=merged_config['output_h5_path'],
+                output_pt_path=merged_config['output_pt_path'],
                 classifier_pkl=merged_config.get("classifier_pkl"),
                 classifier_threshold=merged_config.get("classifier_threshold", 0.75),
                 prefilter_model_type=merged_config.get("prefilter_model_type", "CTRANSPATH"),
@@ -327,10 +417,18 @@ def main():
     
     # Task configuration
     parser.add_argument("--config-file", help="JSON file with task configurations")
+    parser.add_argument("--csv-manifest", help="CSV manifest file with slide_id,slide_path columns")
+    parser.add_argument("--output-dir", default="/mnt/output", help="Output directory for results (when using CSV)")
+    parser.add_argument("--output-s3-prefix", help="S3 prefix for outputs (e.g., s3://bucket/results/)")
     parser.add_argument("--task-id", help="Single task ID")
-    parser.add_argument("--slide-path", help="Path to slide file (for single task)")
-    parser.add_argument("--output-h5-path", help="Output H5 path (for single task)")
-    parser.add_argument("--output-pt-path", help="Output PT path (for single task)")
+    parser.add_argument("--slide-path", help="Path to slide file (for single task, can be s3://)")
+    parser.add_argument("--output-h5-path", help="Output H5 path (for single task, can be s3://)")
+    parser.add_argument("--output-pt-path", help="Output PT path (for single task, can be s3://)")
+    
+    # AWS credentials for S3 access
+    parser.add_argument("--aws-access-key-id", help="AWS access key ID for S3")
+    parser.add_argument("--aws-secret-access-key", help="AWS secret access key for S3")
+    parser.add_argument("--aws-region", default="us-east-1", help="AWS region")
     
     # Monitoring and cleanup
     parser.add_argument("--monitor", action="store_true", help="Monitor task progress")
@@ -368,6 +466,24 @@ def main():
             config_file=args.config_file,
             container_image=args.container_image,
         )
+    elif args.csv_manifest:
+        # Prepare default parameters for CSV tasks
+        default_params = {}
+        if args.aws_access_key_id:
+            default_params['aws_access_key_id'] = args.aws_access_key_id
+        if args.aws_secret_access_key:
+            default_params['aws_secret_access_key'] = args.aws_secret_access_key
+        if args.aws_region:
+            default_params['aws_region'] = args.aws_region
+        
+        submitter.submit_tasks_from_csv(
+            job_id=args.job_id,
+            csv_file=args.csv_manifest,
+            output_dir=args.output_dir,
+            output_s3_prefix=args.output_s3_prefix,
+            container_image=args.container_image,
+            **default_params,
+        )
     elif args.task_id and args.slide_path:
         submitter.submit_task(
             job_id=args.job_id,
@@ -375,6 +491,9 @@ def main():
             slide_path=args.slide_path,
             output_h5_path=args.output_h5_path,
             output_pt_path=args.output_pt_path,
+            aws_access_key_id=args.aws_access_key_id,
+            aws_secret_access_key=args.aws_secret_access_key,
+            aws_region=args.aws_region,
             container_image=args.container_image,
         )
 
