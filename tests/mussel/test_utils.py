@@ -2,6 +2,8 @@ import h5py
 import mussel.utils
 import torch
 import pickle
+import tempfile
+import os
 from mussel.models import ModelType
 
 import ssl
@@ -109,10 +111,7 @@ def test_get_features_auto_infer_patch_encoder():
 
 def test_aggregate_slide_features_saves_model_type(tmp_path):
     """Test that aggregate_slide_features saves model_type attribute when using model-based aggregation."""
-    import tempfile
-    import os
     from mussel.utils import extract_patch_features, aggregate_slide_features
-    from mussel.models import ModelType
     
     slide_path = "tests/testdata/948176.svs"
     patch_h5_path = "tests/testdata/948176.patch.h5"
