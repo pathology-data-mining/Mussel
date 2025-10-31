@@ -323,6 +323,17 @@ The tools currently available from Mussel are,
 
 These are described, with examples, in the accompanying document, [README-commands.md](README-commands.md)
 
+## Cloud Processing with Azure Batch
+
+For large-scale processing of whole-slide images in the cloud, Mussel provides scripts for running on Azure Batch. These scripts enable:
+
+- Parallel processing of multiple slides
+- GPU-enabled VMs for fast feature extraction
+- Automatic job management and monitoring
+- Integration with Azure Storage
+
+See [scripts/azure_batch/README.md](scripts/azure_batch/README.md) for detailed instructions on setting up and running Mussel on Azure Batch.
+
 ## Troubleshooting
 
 ### Installation Issues
