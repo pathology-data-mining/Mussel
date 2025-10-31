@@ -150,3 +150,39 @@ def test_tessellate_extract_features_with_visualizations(tmp_path):
     assert os.path.exists(output_mask_path)
     assert os.path.exists(output_grid_mask_path)
     assert os.path.exists(output_thumbnail_path)
+
+
+def test_tessellate_extract_features_without_filtering(tmp_path):
+    """Test the workflow without filtering (classifier_pkl=None)."""
+    slide_path = "tests/testdata/948176.svs"
+    output_h5_path = os.path.join(tmp_path, "features.h5")
+    output_pt_path = os.path.join(tmp_path, "features.pt")
+
+    seg_config = SegConfig(segment_threshold=0)
+    cfg = TessellateExtractFeaturesConfig(
+        slide_path=slide_path,
+        output_h5_path=output_h5_path,
+        output_pt_path=output_pt_path,
+        classifier_pkl=None,  # No filtering
+        prefilter_model_type=ModelType.RESNET50,
+        seg_config=seg_config,
+        num_workers=1,
+        batch_size=32,
+        use_gpu=False,
+        keep_intermediate_files=False,
+    )
+
+    main(OmegaConf.create(cfg))
+
+    assert os.path.exists(output_h5_path)
+    assert os.path.exists(output_pt_path)
+
+    # Check that the output files are not empty
+    with h5py.File(output_h5_path, "r") as f:
+        assert "features" in f
+        assert "coords" in f
+        assert f["features"].shape[0] > 0
+        assert f["coords"].shape[0] > 0
+
+    data = torch.load(output_pt_path, weights_only=True)
+    assert data.shape[0] > 0

@@ -46,8 +46,8 @@ class TessellateExtractFeaturesConfig:
         output_h5_path (str): Path to save final HDF5 file with coordinates and features (post-filtering).
         output_pt_path (str): Path to save final features in PyTorch format (post-filtering).
     
-    Filtering Parameters:
-        classifier_pkl (str): Path to the classifier model in pickle format for filtering.
+    Filtering Parameters (Optional):
+        classifier_pkl (Optional[str]): Path to the classifier model in pickle format for filtering. If None, filtering is skipped.
         classifier_threshold (float): Threshold for the classifier to filter features.
     
     Model Parameters (Pre-Filter Extraction):
@@ -87,7 +87,7 @@ class TessellateExtractFeaturesConfig:
     slide_id: Optional[str] = None
     output_h5_path: str = MISSING
     output_pt_path: str = MISSING
-    classifier_pkl: str = MISSING
+    classifier_pkl: Optional[str] = None
     classifier_threshold: float = 0.75
     prefilter_model_type: ModelType = ModelType.CTRANSPATH
     prefilter_model_path: Optional[str] = None
@@ -116,10 +116,13 @@ class TessellateExtractFeaturesConfig:
 
 desc_doc = """== ${hydra.help.app_name} ==
 
-tessellate-extract-features performs an integrated workflow that tessellates a whole-slide image, 
-extracts features from the tiles using a foundation model (first extraction), filters them using 
-a classifier, and then extracts features again from the filtered tiles (second extraction). This 
-provides a complete end-to-end pipeline for filtered feature extraction.
+tessellate-extract-features performs an integrated workflow that tessellates a whole-slide image 
+and extracts features from the tiles using a foundation model. Optionally, it can filter tiles 
+using a classifier and extract features again from the filtered tiles (dual extraction).
+
+Workflow modes:
+1. Without filtering (classifier_pkl=None): tessellate → extract features (2 steps)
+2. With filtering (classifier_pkl provided): tessellate → extract → filter → re-extract (4 steps)
 """
 
 parameter_doc = f"""
@@ -149,7 +152,7 @@ cs.store(name="tessellate_extract_features_config", node=TessellateExtractFeatur
 def main(
     cfg: TessellateExtractFeaturesConfig,
 ):
-    """Tessellate, extract features, filter, and extract features again in one workflow."""
+    """Tessellate and extract features, optionally with filtering in between."""
     # Create temporary directory for intermediate files if not keeping them
     temp_dir = None
     base_path = Path(cfg.output_h5_path).parent
@@ -158,13 +161,19 @@ def main(
         temp_dir = tempfile.mkdtemp()
         logger.info(f"Using temporary directory for intermediate files: {temp_dir}")
     
+    # Determine if filtering is enabled
+    use_filtering = cfg.classifier_pkl is not None
+    
     # Determine models for each extraction step
     # If postfilter_model_type is not specified, use the same model as prefilter
     postfilter_model_type = cfg.postfilter_model_type if cfg.postfilter_model_type is not None else cfg.prefilter_model_type
     postfilter_model_path = cfg.postfilter_model_path if cfg.postfilter_model_path is not None else cfg.prefilter_model_path
     
+    # Determine total steps based on filtering
+    total_steps = 4 if use_filtering else 2
+    
     # Step 1: Tessellate
-    logger.info("Step 1/4: Tessellating whole-slide image...")
+    logger.info(f"Step 1/{total_steps}: Tessellating whole-slide image...")
     if cfg.keep_intermediate_files:
         # Use a persistent path based on output path
         tessellate_h5_path = str(base_path / f"{Path(cfg.slide_path).stem}.tessellate.h5")
@@ -196,75 +205,89 @@ def main(
         )
         mask.save(cfg.output_mask_path)
 
-    # Step 2: Extract features (first time - for filtering)
-    logger.info(f"Step 2/4: Extracting features (first extraction) using {cfg.prefilter_model_type.name}...")
-    if cfg.keep_intermediate_files:
-        prefilter_features_h5_path = str(base_path / f"{Path(cfg.slide_path).stem}.prefilter_features.h5")
-        prefilter_features_pt_path = str(base_path / f"{Path(cfg.slide_path).stem}.prefilter_features.pt")
-    else:
-        prefilter_features_h5_path = os.path.join(temp_dir, "prefilter_features.h5")
-        prefilter_features_pt_path = os.path.join(temp_dir, "prefilter_features.pt")
-
-    save_features(
-        slide_path=cfg.slide_path,
-        gpu_device_id=cfg.gpu_device_id,
-        model_type=cfg.prefilter_model_type,
-        model_path=cfg.prefilter_model_path,
-        use_gpu=cfg.use_gpu,
-        output_h5_path=prefilter_features_h5_path,
-        output_pt_path=prefilter_features_pt_path,
-        patch_h5_path=tessellate_h5_path,
-        batch_size=cfg.batch_size,
-        num_workers=cfg.num_workers,
-        gpu_device_ids=cfg.gpu_device_ids,
-    )
-
-    logger.info(f"First feature extraction complete.")
-
-    # Step 3: Filter features
-    logger.info("Step 3/4: Filtering features using classifier...")
-    logger.info(f"Loading classifier from {cfg.classifier_pkl}")
-    with open(cfg.classifier_pkl, "rb") as f:
-        classifier = pickle.load(f)
-
-    with h5py.File(prefilter_features_h5_path, "r") as features_h5:
-        if prefilter_features_pt_path and os.path.exists(prefilter_features_pt_path):
-            features = torch.load(prefilter_features_pt_path, weights_only=True)
-        else:
-            features = np.array(features_h5["features"])
-            features = torch.Tensor(features)
-        logger.info(
-            f"Loaded {features.shape[0]} features of dimension {features.shape[1]}"
-        )
-        filtered_features, filtered_coords = filter_features(
-            features,
-            features_h5["coords"][:],
-            classifier,
-            cfg.classifier_threshold,
-        )
-
-        logger.info(
-            f"Filtering complete. {len(filtered_coords)} tiles passed the threshold (out of {len(coords)})."
-        )
-
-        # Save filtered coordinates to a temporary h5 file for second extraction
+    # Coordinate source for final extraction (will be updated if filtering is used)
+    final_coords_h5_path = tessellate_h5_path
+    final_coords = coords
+    
+    if use_filtering:
+        # Step 2: Extract features (first time - for filtering)
+        logger.info(f"Step 2/{total_steps}: Extracting features (first extraction) using {cfg.prefilter_model_type.name}...")
         if cfg.keep_intermediate_files:
-            filtered_coords_h5_path = str(base_path / f"{Path(cfg.slide_path).stem}.filtered_coords.h5")
+            prefilter_features_h5_path = str(base_path / f"{Path(cfg.slide_path).stem}.prefilter_features.h5")
+            prefilter_features_pt_path = str(base_path / f"{Path(cfg.slide_path).stem}.prefilter_features.pt")
         else:
-            filtered_coords_h5_path = os.path.join(temp_dir, "filtered_coords.h5")
-        
-        save_hdf5(
-            filtered_coords_h5_path,
-            {"coords": filtered_coords},
-            attr_h5_path=prefilter_features_h5_path,
-            mode="w",
+            prefilter_features_h5_path = os.path.join(temp_dir, "prefilter_features.h5")
+            prefilter_features_pt_path = os.path.join(temp_dir, "prefilter_features.pt")
+
+        save_features(
+            slide_path=cfg.slide_path,
+            gpu_device_id=cfg.gpu_device_id,
+            model_type=cfg.prefilter_model_type,
+            model_path=cfg.prefilter_model_path,
+            use_gpu=cfg.use_gpu,
+            output_h5_path=prefilter_features_h5_path,
+            output_pt_path=prefilter_features_pt_path,
+            patch_h5_path=tessellate_h5_path,
+            batch_size=cfg.batch_size,
+            num_workers=cfg.num_workers,
+            gpu_device_ids=cfg.gpu_device_ids,
         )
 
-    # Step 4: Extract features (second time - on filtered tiles only)
-    if postfilter_model_type != cfg.prefilter_model_type:
-        logger.info(f"Step 4/4: Extracting features (second extraction) on filtered tiles using {postfilter_model_type.name}...")
+        logger.info(f"First feature extraction complete.")
+
+        # Step 3: Filter features
+        logger.info(f"Step 3/{total_steps}: Filtering features using classifier...")
+        logger.info(f"Loading classifier from {cfg.classifier_pkl}")
+        with open(cfg.classifier_pkl, "rb") as f:
+            classifier = pickle.load(f)
+
+        with h5py.File(prefilter_features_h5_path, "r") as features_h5:
+            if prefilter_features_pt_path and os.path.exists(prefilter_features_pt_path):
+                features = torch.load(prefilter_features_pt_path, weights_only=True)
+            else:
+                features = np.array(features_h5["features"])
+                features = torch.Tensor(features)
+            logger.info(
+                f"Loaded {features.shape[0]} features of dimension {features.shape[1]}"
+            )
+            filtered_features, filtered_coords = filter_features(
+                features,
+                features_h5["coords"][:],
+                classifier,
+                cfg.classifier_threshold,
+            )
+
+            logger.info(
+                f"Filtering complete. {len(filtered_coords)} tiles passed the threshold (out of {len(coords)})."
+            )
+
+            # Save filtered coordinates to a temporary h5 file for second extraction
+            if cfg.keep_intermediate_files:
+                filtered_coords_h5_path = str(base_path / f"{Path(cfg.slide_path).stem}.filtered_coords.h5")
+            else:
+                filtered_coords_h5_path = os.path.join(temp_dir, "filtered_coords.h5")
+            
+            save_hdf5(
+                filtered_coords_h5_path,
+                {"coords": filtered_coords},
+                attr_h5_path=prefilter_features_h5_path,
+                mode="w",
+            )
+        
+        # Update coordinate source for final extraction
+        final_coords_h5_path = filtered_coords_h5_path
+        final_coords = filtered_coords
+
+    # Final step: Extract features (on all tiles or filtered tiles)
+    if use_filtering:
+        step_num = 4
+        if postfilter_model_type != cfg.prefilter_model_type:
+            logger.info(f"Step {step_num}/{total_steps}: Extracting features (second extraction) on filtered tiles using {postfilter_model_type.name}...")
+        else:
+            logger.info(f"Step {step_num}/{total_steps}: Re-extracting features on filtered tiles using {postfilter_model_type.name}...")
     else:
-        logger.info(f"Step 4/4: Re-extracting features on filtered tiles using {postfilter_model_type.name}...")
+        step_num = 2
+        logger.info(f"Step {step_num}/{total_steps}: Extracting features using {postfilter_model_type.name}...")
     
     save_features(
         slide_path=cfg.slide_path,
@@ -274,7 +297,7 @@ def main(
         use_gpu=cfg.use_gpu,
         output_h5_path=cfg.output_h5_path,
         output_pt_path=cfg.output_pt_path,
-        patch_h5_path=filtered_coords_h5_path,
+        patch_h5_path=final_coords_h5_path,
         batch_size=cfg.batch_size,
         num_workers=cfg.num_workers,
         gpu_device_ids=cfg.gpu_device_ids,
@@ -284,18 +307,18 @@ def main(
         slide_model_path=cfg.slide_model_path,
     )
 
-    logger.info(f"Second feature extraction complete.")
+    logger.info(f"Feature extraction complete.")
 
-    # Create filtered grid visualization (post-filtering)
+    # Create grid visualization
     if cfg.output_grid_mask_path:
-        logger.info(f"Creating filtered grid mask with {len(filtered_coords)} tiles")
+        logger.info(f"Creating grid mask with {len(final_coords)} tiles")
         # Read patch_size from the tessellate h5 file to create proper grid boxes
         with h5py.File(tessellate_h5_path, "r") as h5:
             native_patch_size = h5.attrs["patch_size"]
         
-        # Create Polygon boxes for each filtered coordinate
-        filtered_grid = []
-        for coord in filtered_coords:
+        # Create Polygon boxes for each coordinate
+        grid_polygons = []
+        for coord in final_coords:
             x, y = coord
             poly = Polygon([
                 [x, y],
@@ -303,22 +326,22 @@ def main(
                 [x + native_patch_size, y + native_patch_size],
                 [x + native_patch_size, y],
             ])
-            filtered_grid.append(poly)
+            grid_polygons.append(poly)
         
-        # Draw and save the filtered grid mask
+        # Draw and save the grid mask
         grid_mask = draw_slide_mask(
             cfg.slide_path,
-            filtered_grid,
+            grid_polygons,
             **OmegaConf.to_container(cfg.vis_config),
         )
         grid_mask.save(cfg.output_grid_mask_path)
 
-    # Save PNG patches using filtered coordinates (post-filtering)
+    # Save PNG patches
     if cfg.output_png_dir:
-        logger.info(f"Saving filtered patches to {cfg.output_png_dir}")
+        logger.info(f"Saving patches to {cfg.output_png_dir}")
         save_patches_png(
             cfg.slide_path,
-            filtered_coords,
+            final_coords,
             save_dir=cfg.output_png_dir,
             num_workers=cfg.num_workers,
             patch_size=cfg.seg_config.patch_size,
