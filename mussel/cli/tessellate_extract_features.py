@@ -25,8 +25,7 @@ from mussel.cli.tessellate import (
     VisConfig,
     PngConfig,
 )
-from mussel.models import ModelType
-from mussel.models import get_required_patch_encoder
+from mussel.models import ModelType, get_required_patch_encoder
 from mussel.utils import save_features, filter_features, save_hdf5
 from mussel.utils.segment import draw_slide_mask, save_patches_png, segment_tissue
 

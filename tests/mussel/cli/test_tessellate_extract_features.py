@@ -1,5 +1,7 @@
 import os
 from pathlib import Path
+from unittest.mock import patch, MagicMock
+
 from omegaconf import OmegaConf
 import h5py
 import torch
@@ -190,7 +192,6 @@ def test_tessellate_extract_features_without_filtering(tmp_path):
 
 def test_tessellate_extract_features_with_slide_encoder_inference(tmp_path):
     """Test that postfilter_model_type is inferred from slide_model_type when using model aggregation."""
-    from unittest.mock import patch, MagicMock
     
     slide_path = "tests/testdata/948176.svs"
     output_h5_path = os.path.join(tmp_path, "features.h5")
