@@ -44,7 +44,8 @@ class FilterTessellateConfig:
     output_pt_path (str): Path to save the final filtered features in PyTorch format.
     classifier_pkl (str): Path to the classifier model in pickle format.
     classifier_threshold (float): Threshold for the classifier to filter features.
-    model_path (str): Path to the CTRANSPATH model weights.
+    model_type (ModelType): Type of model to use for feature extraction.
+    model_path (Optional[str]): Path to the model weights file, if applicable.
     output_png_dir (Optional[str]): Directory to save patches as PNG files.
     output_mask_path (Optional[str]): Path to save the mask image.
     output_grid_mask_path (Optional[str]): Path to save the grid mask image.
@@ -69,7 +70,8 @@ class FilterTessellateConfig:
     output_pt_path: str = MISSING
     classifier_pkl: str = MISSING
     classifier_threshold: float = 0.75
-    model_path: str = MISSING
+    model_type: ModelType = ModelType.CTRANSPATH
+    model_path: Optional[str] = None
     output_png_dir: Optional[str] = None
     output_mask_path: Optional[str] = None
     output_grid_mask_path: Optional[str] = None
@@ -90,8 +92,8 @@ class FilterTessellateConfig:
 desc_doc = """== ${hydra.help.app_name} ==
 
 filter-tessellate performs an integrated workflow that tessellates a whole-slide image, 
-extracts CTRANSPATH features from the tiles, and filters them using a supplied classifier model.
-This combines the functionality of tessellate, extract_features (with CTRANSPATH), and 
+extracts features from the tiles using a foundation model, and filters them using a supplied 
+classifier model. This combines the functionality of tessellate, extract_features, and 
 filter_features into a single command.
 """
 
@@ -164,8 +166,8 @@ def main(
         )
         mask.save(cfg.output_mask_path)
 
-    # Step 2: Extract CTRANSPATH features
-    logger.info("Step 2/3: Extracting CTRANSPATH features...")
+    # Step 2: Extract features using foundation model
+    logger.info(f"Step 2/3: Extracting features using {cfg.model_type.name}...")
     if cfg.keep_intermediate_files:
         features_h5_path = str(base_path / f"{Path(cfg.slide_path).stem}.features.h5")
         features_pt_path = str(base_path / f"{Path(cfg.slide_path).stem}.features.pt")
@@ -176,7 +178,7 @@ def main(
     save_features(
         slide_path=cfg.slide_path,
         gpu_device_id=cfg.gpu_device_id,
-        model_type=ModelType.CTRANSPATH,
+        model_type=cfg.model_type,
         model_path=cfg.model_path,
         use_gpu=cfg.use_gpu,
         output_h5_path=features_h5_path,

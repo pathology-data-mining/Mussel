@@ -228,11 +228,11 @@ When you specify `slide_model_type`, the `aggregation_method` is automatically s
 
 ### `filter_tessellate`
 
-**Purpose**: Integrated workflow that tessellates a whole-slide image, extracts CTRANSPATH features, and filters tiles using a classifier model in a single command.
+**Purpose**: Integrated workflow that tessellates a whole-slide image, extracts features using a foundation model, and filters tiles using a classifier model in a single command.
 
-This command combines the functionality of `tessellate`, `extract_features` (with CTRANSPATH model), and `filter_features` into a streamlined workflow. It's particularly useful when you want to:
+This command combines the functionality of `tessellate`, `extract_features`, and `filter_features` into a streamlined workflow. It's particularly useful when you want to:
 - Process slides end-to-end with a single command
-- Use CTRANSPATH as the feature extraction model
+- Use any supported foundation model for feature extraction
 - Filter tiles based on a pre-trained classifier
 - Reduce intermediate file management
 
@@ -242,7 +242,8 @@ This command combines the functionality of `tessellate`, `extract_features` (wit
 - `output_pt_path`: Path to save the final filtered features in PyTorch format
 - `classifier_pkl`: Path to the classifier model in pickle format
 - `classifier_threshold`: Threshold for the classifier to filter features (default: 0.75)
-- `model_path`: Path to the CTRANSPATH model weights file
+- `model_type`: Type of foundation model to use (default: CTRANSPATH). Supports all models from extract_features.
+- `model_path`: Path to the model weights file (optional, depends on model_type)
 - `seg_config.*`: Segmentation parameters (same as tessellate)
 - `batch_size`: Batch size for feature extraction (default: 64)
 - `num_workers`: Number of workers for processing (default: 4)
@@ -250,7 +251,7 @@ This command combines the functionality of `tessellate`, `extract_features` (wit
 - `keep_intermediate_files`: Whether to keep intermediate files (default: False)
 - `save_features_to_h5`: Whether to save filtered features to HDF5 (default: False)
 
-**Example - Basic usage:**
+**Example - Basic usage with CTRANSPATH:**
 ```bash
 filter_tessellate \
     slide_path=tests/testdata/948176.svs \
@@ -258,10 +259,22 @@ filter_tessellate \
     output_pt_path=948176_filtered.pt \
     classifier_pkl=my_classifier.pkl \
     classifier_threshold=0.75 \
+    model_type=CTRANSPATH \
     model_path=ctranspath_model.pth \
     seg_config.segment_threshold=0 \
     num_workers=8 \
     batch_size=64
+```
+
+**Example - Using H-Optimus-0 model:**
+```bash
+filter_tessellate \
+    slide_path=tests/testdata/948176.svs \
+    output_h5_path=948176_filtered.h5 \
+    output_pt_path=948176_filtered.pt \
+    classifier_pkl=my_classifier.pkl \
+    model_type=OPTIMUS \
+    seg_config.segment_threshold=0
 ```
 
 **Example - With visualization outputs:**
@@ -271,6 +284,7 @@ filter_tessellate \
     output_h5_path=948176_filtered.h5 \
     output_pt_path=948176_filtered.pt \
     classifier_pkl=my_classifier.pkl \
+    model_type=CTRANSPATH \
     model_path=ctranspath_model.pth \
     output_mask_path=948176_mask.png \
     output_grid_mask_path=948176_grid.png \
@@ -285,6 +299,7 @@ filter_tessellate \
     output_h5_path=948176_filtered.h5 \
     output_pt_path=948176_filtered.pt \
     classifier_pkl=my_classifier.pkl \
+    model_type=CTRANSPATH \
     model_path=ctranspath_model.pth \
     keep_intermediate_files=True \
     save_features_to_h5=True
@@ -292,7 +307,7 @@ filter_tessellate \
 
 **Workflow:**
 1. **Step 1 - Tessellation**: Tiles the whole-slide image and detects tissue regions
-2. **Step 2 - Feature Extraction**: Extracts CTRANSPATH features from detected tiles
+2. **Step 2 - Feature Extraction**: Extracts features from detected tiles using the specified foundation model
 3. **Step 3 - Filtering**: Applies the classifier and keeps only tiles above the threshold
 
 **Output Files:**
@@ -303,8 +318,9 @@ filter_tessellate \
 - Optional visualization outputs (mask, grid, thumbnail) if specified
 
 **Tips:**
-- CTRANSPATH model weights must be provided via `model_path` parameter
-- The classifier should be compatible with CTRANSPATH feature dimensions
+- Supports all foundation models available in `extract_features` (CTRANSPATH, CLIP, OPTIMUS, VIRCHOW, etc.)
+- The classifier should be compatible with the feature dimensions of the selected model
+- Some models (like CTRANSPATH) require `model_path`, while others (like CLIP, OPTIMUS) download automatically
 - Use `keep_intermediate_files=True` for debugging or if you need the intermediate results
 - By default, intermediate files are created in a temporary directory and cleaned up automatically
 - Lower `classifier_threshold` to keep more tiles, higher to be more selective
