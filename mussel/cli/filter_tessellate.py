@@ -16,106 +16,19 @@ from hydra.core.config_store import ConfigStore
 from loguru import logger
 from omegaconf import MISSING, OmegaConf
 
+from mussel.cli.tessellate import (
+    SegConfig,
+    BiopsySegConfig,
+    ResectionSegConfig,
+    TcgaSegConfig,
+    VisConfig,
+    PngConfig,
+)
 from mussel.models import ModelType
 from mussel.utils import save_features, filter_features, save_hdf5
 from mussel.utils.segment import draw_slide_mask, save_patches_png, segment_tissue
 
 ssl._create_default_https_context = ssl._create_unverified_context
-
-
-@dataclass
-class SegConfig:
-    """
-    patch_size (int): Patch size at specified mpp (microns per pixel).
-    step_size (int): Optional step size. Defaults to the patch size.
-    mpp (float): Desired microns per pixel
-    seg_level (int): Tessellation pyramid level. If negative, use best level for factor=64 downsample.
-    segment_threshold (int): Pixel threshold value . If pixel value smaller than or equal to threshold, it is set to 0, otherwise it is set to the maximum value (segment_max_value).
-    segment_max_value (int): Maximum pixel value.
-    median_blur_ksize (int): Aperture linear size. it must be odd and greater than 1. image is blurred with median filter.
-    morphology_ex_kernel (int): Kernel for morphological closing transformation.
-    ref_patch_size (int): Reference patch size to use for tissue area and hole area thresholding.
-    use_otsu (bool): If True, apply otsu thresholding.
-    tissue_area_threshold (int): Tissue area threshold. Foreground contour area needs to exceed this threshold (scaled by reference patch size) to be included as foreground.
-    hole_area_threshold (int): Hole area threshold. Hole contour area needs to exceed this threshold (scaled by reference patch size) to be included as a hole.
-    max_num_holes (int): Maximum number of holes.
-    keep_ids (List[int]): List of contour IDs to keep.
-    exclude_ids (List[int]): List of contour IDs to exclude.
-    """
-
-    patch_size: int = 256
-    step_size: Optional[int] = None  # if None, defaults to patch_size
-    mpp: float = 0.5
-    seg_level: int = -1
-    segment_threshold: int = 20
-    segment_max_value: int = 255
-    median_blur_ksize: int = 7
-    morphology_ex_kernel: int = 0
-    ref_patch_size: int = 512
-    use_otsu: bool = False
-    tissue_area_threshold: int = 100
-    hole_area_threshold: int = 16
-    max_num_holes: int = 8
-    keep_ids: List[int] = field(default_factory=list)
-    exclude_ids: List[int] = field(default_factory=list)
-
-
-@dataclass
-class BiopsySegConfig(SegConfig):
-    segment_threshold: int = 15
-    median_blur_ksize: int = 11
-    morphology_ex_kernel: int = 2
-    tissue_area_threshold: int = 1
-    hole_area_threshold: int = 1
-    max_num_holes: int = 2
-
-
-@dataclass
-class ResectionSegConfig(SegConfig):
-    segment_threshold: int = 15
-    median_blur_ksize: int = 11
-    morphology_ex_kernel: int = 4
-    tissue_area_threshold: int = 100
-    hole_area_threshold: int = 16
-    max_num_holes: int = 8
-
-
-@dataclass
-class TcgaSegConfig(SegConfig):
-    segment_threshold: int = 8
-    median_blur_ksize: int = 7
-    morphology_ex_kernel: int = 4
-    tissue_area_threshold: int = 16
-    hole_area_threshold: int = 4
-    max_num_holes: int = 8
-
-
-@dataclass
-class VisConfig:
-    """
-    vis_level (int): pyramid level to visualize. If negative, use best level for factor=64 downsample.
-    outline (str): color of the outline of the tissue mask.
-    fill (tuple): RGBA color of the filled tissue mask.
-    custom_downsample (Optional[int]): custom downsample factor for visualization. If None, use the default downsample factor.
-    """
-
-    vis_level: int = -1
-    outline = "black"
-    fill = (255, 0, 0, 80)
-    custom_downsample: Optional[int] = None
-
-
-@dataclass
-class PngConfig:
-    """
-    filter_black_white (bool): If True, filter out black and white patches.
-    white_threshold (int): Threshold for white patches.
-    black_threshold (int): Threshold for black patches.
-    """
-
-    filter_black_white: bool = True
-    white_threshold: int = 15
-    black_threshold: int = 50
 
 
 defaults = ["_self_", {"seg_config": "default"}]

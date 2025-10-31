@@ -4,7 +4,8 @@ from omegaconf import OmegaConf
 import h5py
 import torch
 
-from mussel.cli.filter_tessellate import FilterTessellateConfig, SegConfig, main
+from mussel.cli.filter_tessellate import FilterTessellateConfig, main
+from mussel.cli.tessellate import SegConfig
 
 
 def test_filter_tessellate(tmp_path):
