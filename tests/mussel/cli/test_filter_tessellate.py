@@ -6,12 +6,12 @@ import torch
 
 from mussel.cli.filter_tessellate import FilterTessellateConfig, main
 from mussel.cli.tessellate import SegConfig
+from mussel.models import ModelType
 
 
 def test_filter_tessellate(tmp_path):
     """Test the integrated filter-tessellate workflow."""
     slide_path = "tests/testdata/948176.svs"
-    model_path = "tests/testdata/ctranspath.pth"  # This would need to be a real model
     classifier_pkl = "tests/testdata/simple_classifier.pkl"
     output_h5_path = os.path.join(tmp_path, "filtered.h5")
     output_pt_path = os.path.join(tmp_path, "filtered.pt")
@@ -23,7 +23,7 @@ def test_filter_tessellate(tmp_path):
         output_pt_path=output_pt_path,
         classifier_pkl=classifier_pkl,
         classifier_threshold=0.75,
-        model_path=model_path,
+        model_type=ModelType.RESNET50,  # Use ResNet50 for testing (no model_path needed)
         seg_config=seg_config,
         num_workers=1,
         batch_size=32,
@@ -33,11 +33,10 @@ def test_filter_tessellate(tmp_path):
     )
 
     # Note: This test would require:
-    # 1. A CTRANSPATH model file at model_path
-    # 2. The actual model weights
+    # 1. The actual model weights (RESNET50 downloads automatically)
     # For now, we're creating a skeleton test that would work if those were available
     
-    # Uncomment the following when CTRANSPATH model is available:
+    # Uncomment the following when ready to run full tests:
     # main(OmegaConf.create(cfg))
     # 
     # assert os.path.exists(output_h5_path)
@@ -55,7 +54,6 @@ def test_filter_tessellate(tmp_path):
 def test_filter_tessellate_with_intermediate_files(tmp_path):
     """Test the integrated workflow while keeping intermediate files."""
     slide_path = "tests/testdata/948176.svs"
-    model_path = "tests/testdata/ctranspath.pth"
     classifier_pkl = "tests/testdata/simple_classifier.pkl"
     output_h5_path = os.path.join(tmp_path, "filtered.h5")
     output_pt_path = os.path.join(tmp_path, "filtered.pt")
@@ -67,7 +65,7 @@ def test_filter_tessellate_with_intermediate_files(tmp_path):
         output_pt_path=output_pt_path,
         classifier_pkl=classifier_pkl,
         classifier_threshold=0.75,
-        model_path=model_path,
+        model_type=ModelType.RESNET50,  # Use ResNet50 for testing (no model_path needed)
         seg_config=seg_config,
         num_workers=1,
         batch_size=32,
@@ -77,10 +75,10 @@ def test_filter_tessellate_with_intermediate_files(tmp_path):
     )
 
     # Note: This test would require:
-    # 1. A CTRANSPATH model file at model_path
+    # 1. The actual model weights (RESNET50 downloads automatically)
     # For now, we're creating a skeleton test
     
-    # Uncomment when model is available:
+    # Uncomment when ready to run full tests:
     # main(OmegaConf.create(cfg))
     # 
     # assert os.path.exists(output_h5_path)
