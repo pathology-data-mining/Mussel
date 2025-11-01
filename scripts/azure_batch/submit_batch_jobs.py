@@ -335,6 +335,9 @@ class AzureBatchJobSubmitter:
         """
         print(f"Loading task manifest from '{csv_file}'...")
 
+        # Get model type from default params for directory organization
+        model_type = default_params.get('prefilter_model_type', 'CTRANSPATH')
+        
         tasks = []
         with open(csv_file, 'r') as f:
             reader = csv.DictReader(f)
@@ -342,19 +345,20 @@ class AzureBatchJobSubmitter:
                 slide_id = row['slide_id']
                 slide_path = row['slide_path']
                 
-                # Determine output paths
+                # Determine output paths with model-based directory structure
                 if output_s3_prefix:
-                    # Upload to S3 (slide-level features)
-                    output_h5_path = f"{output_s3_prefix.rstrip('/')}/{slide_id}_features.h5"
-                    output_pt_path = f"{output_s3_prefix.rstrip('/')}/{slide_id}_features.pt"
-                    # Tile-level features (when doing aggregation)
-                    intermediate_h5_path = f"{output_s3_prefix.rstrip('/')}/{slide_id}_tile_features.h5"
+                    # Upload to S3 with organized structure: {prefix}/{model}/h5/ and {prefix}/{model}/pt/
+                    base_prefix = output_s3_prefix.rstrip('/')
+                    output_h5_path = f"{base_prefix}/{model_type}/h5/{slide_id}_features.h5"
+                    output_pt_path = f"{base_prefix}/{model_type}/pt/{slide_id}_features.pt"
+                    # Tile-level features in separate directory
+                    intermediate_h5_path = f"{base_prefix}/{model_type}/tile_h5/{slide_id}_tile_features.h5"
                 else:
-                    # Local output (slide-level features)
-                    output_h5_path = f"{output_dir}/{slide_id}_features.h5"
-                    output_pt_path = f"{output_dir}/{slide_id}_features.pt"
-                    # Tile-level features (when doing aggregation)
-                    intermediate_h5_path = f"{output_dir}/{slide_id}_tile_features.h5"
+                    # Local output with organized structure: {dir}/{model}/h5/ and {dir}/{model}/pt/
+                    output_h5_path = f"{output_dir}/{model_type}/h5/{slide_id}_features.h5"
+                    output_pt_path = f"{output_dir}/{model_type}/pt/{slide_id}_features.pt"
+                    # Tile-level features in separate directory
+                    intermediate_h5_path = f"{output_dir}/{model_type}/tile_h5/{slide_id}_tile_features.h5"
                 
                 tasks.append({
                     'task_id': slide_id,
@@ -501,6 +505,108 @@ class AzureBatchJobSubmitter:
         
         return len(failed_data)
 
+    def generate_results_manifest(
+        self,
+        job_id: str,
+        output_file: str,
+        task_metadata: Optional[Dict[str, Dict]] = None,
+    ) -> int:
+        """
+        Generate a manifest of successfully completed result files.
+        
+        Args:
+            job_id: Azure Batch job ID
+            output_file: Path to save results manifest CSV
+            task_metadata: Optional dict mapping task_id to task configuration
+            
+        Returns:
+            Number of successful tasks in manifest
+        """
+        print(f"Generating results manifest for job '{job_id}'...")
+        
+        tasks = list(self.batch_client.task.list(job_id))
+        successful_tasks = []
+        
+        for task in tasks:
+            # Check if task completed successfully
+            if task.state == batchmodels.TaskState.completed:
+                if task.execution_info and task.execution_info.exit_code == 0:
+                    successful_tasks.append(task)
+        
+        if not successful_tasks:
+            print("No successful tasks found")
+            return 0
+        
+        print(f"Found {len(successful_tasks)} successful tasks, generating manifest...")
+        
+        # Prepare manifest data
+        manifest_data = []
+        for task in successful_tasks:
+            task_id = task.id
+            task_info = {
+                'task_id': task_id,
+                'state': 'completed',
+                'exit_code': 0,
+            }
+            
+            # If we have metadata, include the output paths
+            if task_metadata and task_id in task_metadata:
+                metadata = task_metadata[task_id]
+                task_info['slide_path'] = metadata.get('slide_path', '')
+                task_info['output_h5_path'] = metadata.get('output_h5_path', '')
+                task_info['output_pt_path'] = metadata.get('output_pt_path', '')
+                
+                # Add intermediate path if present
+                if 'intermediate_h5_path' in metadata:
+                    task_info['intermediate_h5_path'] = metadata.get('intermediate_h5_path', '')
+                
+                # Extract model type from output path
+                output_h5 = metadata.get('output_h5_path', '')
+                if '/' in output_h5:
+                    parts = output_h5.split('/')
+                    # Look for model type in path (e.g., /CTRANSPATH/h5/)
+                    for i, part in enumerate(parts):
+                        if i < len(parts) - 1 and parts[i + 1] in ['h5', 'pt', 'tile_h5']:
+                            task_info['model_type'] = part
+                            break
+                
+                # Extract file type from path
+                if output_h5.endswith('.h5'):
+                    if 'tile' in output_h5:
+                        task_info['file_type'] = 'tile_h5'
+                    else:
+                        task_info['file_type'] = 'h5'
+            else:
+                # Extract from environment variables if available
+                if task.environment_settings:
+                    for env_var in task.environment_settings:
+                        if env_var.name == 'SLIDE_PATH':
+                            task_info['slide_path'] = env_var.value
+                        elif env_var.name == 'OUTPUT_H5_PATH':
+                            task_info['output_h5_path'] = env_var.value
+                        elif env_var.name == 'OUTPUT_PT_PATH':
+                            task_info['output_pt_path'] = env_var.value
+                        elif env_var.name == 'INTERMEDIATE_H5_PATH':
+                            task_info['intermediate_h5_path'] = env_var.value
+                        elif env_var.name == 'PREFILTER_MODEL_TYPE':
+                            task_info['model_type'] = env_var.value
+            
+            manifest_data.append(task_info)
+        
+        # Write to CSV
+        if manifest_data:
+            # Determine CSV headers from first task
+            headers = list(manifest_data[0].keys())
+            
+            with open(output_file, 'w', newline='') as f:
+                writer = csv.DictWriter(f, fieldnames=headers)
+                writer.writeheader()
+                writer.writerows(manifest_data)
+            
+            print(f"Saved results manifest with {len(manifest_data)} successful tasks to '{output_file}'")
+        
+        return len(manifest_data)
+
     def delete_job(self, job_id: str) -> None:
         """Delete a job."""
         print(f"Deleting job '{job_id}'...")
@@ -556,6 +662,7 @@ def main():
     # Retry configuration
     parser.add_argument("--max-retry-count", type=int, default=3, help="Maximum number of retry attempts for failed tasks (default: 3)")
     parser.add_argument("--save-failed-tasks", help="Save failed tasks to CSV file for resubmission")
+    parser.add_argument("--generate-manifest", help="Generate manifest of successful result files to CSV")
     
     # Monitoring and cleanup
     parser.add_argument("--monitor", action="store_true", help="Monitor task progress")
@@ -636,6 +743,14 @@ def main():
         submitter.save_failed_tasks(
             job_id=args.job_id,
             output_file=args.save_failed_tasks,
+            task_metadata=submitter.task_metadata,
+        )
+
+    # Generate results manifest if requested
+    if args.generate_manifest:
+        submitter.generate_results_manifest(
+            job_id=args.job_id,
+            output_file=args.generate_manifest,
             task_metadata=submitter.task_metadata,
         )
 

@@ -288,6 +288,50 @@ python scripts/azure_batch/submit_batch_jobs.py \
   --monitor
 ```
 
+### Results Manifest Generation
+
+Generate a comprehensive manifest of all successfully completed result files:
+
+**Generate Manifest:**
+```bash
+python scripts/azure_batch/submit_batch_jobs.py \
+  --batch-account-name mybatch \
+  --batch-account-key $KEY \
+  --batch-account-url https://mybatch.batch.azure.com \
+  --job-id mussel-job-001 \
+  --generate-manifest results_manifest.csv
+```
+
+**Manifest Contents:**
+The results manifest CSV includes:
+- `task_id`: Task identifier (slide ID)
+- `slide_path`: Input slide path
+- `output_h5_path`: Slide-level HDF5 features path
+- `output_pt_path`: Slide-level PyTorch features path
+- `intermediate_h5_path`: Tile-level features path (if aggregation was used)
+- `model_type`: Model used for feature extraction (e.g., CTRANSPATH, CLIP)
+- `file_type`: File type (h5, pt, tile_h5)
+- `state`: Task state (completed)
+- `exit_code`: Exit code (0 for success)
+
+**Use Cases:**
+- Track all generated result files for downstream processing
+- Document which model was used for each slide
+- Verify completeness of batch processing
+- Generate inventory for data management
+
+**Example with monitoring and manifest:**
+```bash
+python scripts/azure_batch/submit_batch_jobs.py \
+  --csv-manifest slides.csv \
+  --output-s3-prefix s3://bucket/results/ \
+  --monitor \
+  --generate-manifest results_manifest.csv \
+  --save-failed-tasks failed.csv
+```
+
+This workflow monitors progress, generates a manifest of successful results, and saves any failures for resubmission.
+
 ### Slide-Level Aggregation
 
 When performing slide-level aggregation (e.g., `aggregation_method=mean`), the workflow produces both:
@@ -332,6 +376,30 @@ The scripts natively support S3 for input slides and output results:
 - Automatic publishing: results are uploaded to S3 after processing completes
 - Mixed paths: slides can be from S3 or local, outputs can go to S3 or local
 - AWS CLI integration: uses standard AWS credentials
+- **Organized output structure**: Results are automatically organized by model type and file type
+
+**Output Directory Structure:**
+
+When using CSV manifests, results are organized into subdirectories:
+```
+{output_dir}/
+├── {model_type}/           # e.g., CTRANSPATH, CLIP, VIRCHOW
+│   ├── h5/                 # Slide-level HDF5 features
+│   │   └── slide_001_features.h5
+│   ├── pt/                 # Slide-level PyTorch features
+│   │   └── slide_001_features.pt
+│   └── tile_h5/            # Tile-level HDF5 features (when using aggregation)
+│       └── slide_001_tile_features.h5
+```
+
+Example S3 structure:
+```
+s3://bucket/results/
+├── CTRANSPATH/
+│   ├── h5/slide_001_features.h5
+│   ├── pt/slide_001_features.pt
+│   └── tile_h5/slide_001_tile_features.h5
+```
 
 **Setup:**
 1. Install AWS CLI in your Docker image or ensure it's available
@@ -342,10 +410,10 @@ The scripts natively support S3 for input slides and output results:
 
 **Example with S3:**
 ```bash
-# Input from S3, output to S3
+# Input from S3, output to S3 (organized structure)
 --slide-path s3://my-bucket/slides/slide.svs \
---output-h5-path s3://my-bucket/results/slide.h5 \
---output-pt-path s3://my-bucket/results/slide.pt
+--output-h5-path s3://my-bucket/results/CTRANSPATH/h5/slide.h5 \
+--output-pt-path s3://my-bucket/results/CTRANSPATH/pt/slide.pt
 
 # Input from S3, output local
 --slide-path s3://my-bucket/slides/slide.svs \
