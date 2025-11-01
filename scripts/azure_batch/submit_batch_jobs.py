@@ -69,6 +69,9 @@ class AzureBatchJobSubmitter:
         self.storage_account_name = storage_account_name
         self.storage_account_key = storage_account_key
         
+        # Track task metadata for failure reporting
+        self.task_metadata = {}
+        
         if storage_account_name and storage_account_key:
             self.blob_client = BlobServiceClient(
                 account_url=f"https://{storage_account_name}.blob.core.windows.net",
@@ -168,6 +171,7 @@ class AzureBatchJobSubmitter:
         aws_access_key_id: Optional[str] = None,
         aws_secret_access_key: Optional[str] = None,
         aws_region: Optional[str] = None,
+        max_retry_count: int = 3,
         container_image: str = "mskmind/mussel:latest-torch-gpu",
     ) -> None:
         """Submit a tessellate-extract-features task to Azure Batch."""
@@ -222,17 +226,33 @@ class AzureBatchJobSubmitter:
         # Task command - run the task script
         task_command = "/bin/bash /app/scripts/azure_batch/run_tessellate_extract_features.sh"
 
+        # Task constraints with retry configuration
+        task_constraints = batchmodels.TaskConstraints(
+            max_task_retry_count=max_retry_count
+        )
+
         # Create task
         task = batchmodels.TaskAddParameter(
             id=task_id,
             command_line=task_command,
             container_settings=container_settings,
             environment_settings=env_vars,
+            constraints=task_constraints,
         )
 
         try:
             self.batch_client.task.add(job_id, task)
-            print(f"Task '{task_id}' submitted successfully")
+            
+            # Store task metadata for failure tracking
+            self.task_metadata[task_id] = {
+                'slide_path': slide_path,
+                'output_h5_path': output_h5_path,
+                'output_pt_path': output_pt_path,
+            }
+            if intermediate_h5_path:
+                self.task_metadata[task_id]['intermediate_h5_path'] = intermediate_h5_path
+            
+            print(f"Task '{task_id}' submitted successfully (max retries: {max_retry_count})")
         except batchmodels.BatchErrorException as e:
             print(f"Error submitting task: {e}")
             raise
@@ -284,6 +304,7 @@ class AzureBatchJobSubmitter:
                 aws_access_key_id=merged_config.get("aws_access_key_id"),
                 aws_secret_access_key=merged_config.get("aws_secret_access_key"),
                 aws_region=merged_config.get("aws_region"),
+                max_retry_count=merged_config.get("max_retry_count", 3),
                 container_image=container_image,
             )
 
@@ -373,6 +394,7 @@ class AzureBatchJobSubmitter:
                 aws_access_key_id=merged_config.get("aws_access_key_id"),
                 aws_secret_access_key=merged_config.get("aws_secret_access_key"),
                 aws_region=merged_config.get("aws_region"),
+                max_retry_count=merged_config.get("max_retry_count", 3),
                 container_image=container_image,
             )
 
@@ -404,6 +426,80 @@ class AzureBatchJobSubmitter:
 
         except KeyboardInterrupt:
             print("\nStopped monitoring (tasks still running)")
+
+    def save_failed_tasks(
+        self,
+        job_id: str,
+        output_file: str,
+        task_metadata: Optional[Dict[str, Dict]] = None,
+    ) -> int:
+        """
+        Save failed tasks to a CSV file for resubmission.
+        
+        Args:
+            job_id: Azure Batch job ID
+            output_file: Path to save failed tasks CSV
+            task_metadata: Optional dict mapping task_id to task configuration
+            
+        Returns:
+            Number of failed tasks saved
+        """
+        print(f"Checking for failed tasks in job '{job_id}'...")
+        
+        tasks = list(self.batch_client.task.list(job_id))
+        failed_tasks = []
+        
+        for task in tasks:
+            # Check if task failed (completed with non-zero exit code or execution failed)
+            if task.state == batchmodels.TaskState.completed:
+                # Get execution info to check exit code
+                if task.execution_info and task.execution_info.exit_code != 0:
+                    failed_tasks.append(task)
+            elif task.state in [batchmodels.TaskState.failed]:
+                failed_tasks.append(task)
+        
+        if not failed_tasks:
+            print("No failed tasks found")
+            return 0
+        
+        print(f"Found {len(failed_tasks)} failed tasks, saving to '{output_file}'...")
+        
+        # Prepare failed task data
+        failed_data = []
+        for task in failed_tasks:
+            task_id = task.id
+            task_info = {
+                'task_id': task_id,
+                'state': str(task.state),
+                'exit_code': task.execution_info.exit_code if task.execution_info else 'N/A',
+            }
+            
+            # If we have metadata, include the original task configuration
+            if task_metadata and task_id in task_metadata:
+                task_info.update(task_metadata[task_id])
+            else:
+                # Extract from environment variables if available
+                if task.environment_settings:
+                    for env_var in task.environment_settings:
+                        if env_var.name == 'SLIDE_PATH':
+                            task_info['slide_path'] = env_var.value
+            
+            failed_data.append(task_info)
+        
+        # Write to CSV
+        if failed_data:
+            # Determine CSV headers from first failed task
+            headers = list(failed_data[0].keys())
+            
+            with open(output_file, 'w', newline='') as f:
+                writer = csv.DictWriter(f, fieldnames=headers)
+                writer.writeheader()
+                writer.writerows(failed_data)
+            
+            print(f"Saved {len(failed_data)} failed tasks to '{output_file}'")
+            print(f"You can resubmit these tasks using: --csv-manifest {output_file}")
+        
+        return len(failed_data)
 
     def delete_job(self, job_id: str) -> None:
         """Delete a job."""
@@ -457,6 +553,10 @@ def main():
     parser.add_argument("--aws-secret-access-key", help="AWS secret access key for S3")
     parser.add_argument("--aws-region", default="us-east-1", help="AWS region")
     
+    # Retry configuration
+    parser.add_argument("--max-retry-count", type=int, default=3, help="Maximum number of retry attempts for failed tasks (default: 3)")
+    parser.add_argument("--save-failed-tasks", help="Save failed tasks to CSV file for resubmission")
+    
     # Monitoring and cleanup
     parser.add_argument("--monitor", action="store_true", help="Monitor task progress")
     parser.add_argument("--delete-job", action="store_true", help="Delete job after completion")
@@ -502,6 +602,8 @@ def main():
             default_params['aws_secret_access_key'] = args.aws_secret_access_key
         if args.aws_region:
             default_params['aws_region'] = args.aws_region
+        if args.max_retry_count is not None:
+            default_params['max_retry_count'] = args.max_retry_count
         
         submitter.submit_tasks_from_csv(
             job_id=args.job_id,
@@ -521,12 +623,21 @@ def main():
             aws_access_key_id=args.aws_access_key_id,
             aws_secret_access_key=args.aws_secret_access_key,
             aws_region=args.aws_region,
+            max_retry_count=args.max_retry_count,
             container_image=args.container_image,
         )
 
     # Monitor if requested
     if args.monitor:
         submitter.monitor_tasks(job_id=args.job_id)
+
+    # Save failed tasks if requested
+    if args.save_failed_tasks:
+        submitter.save_failed_tasks(
+            job_id=args.job_id,
+            output_file=args.save_failed_tasks,
+            task_metadata=submitter.task_metadata,
+        )
 
     # Cleanup if requested
     if args.delete_job:

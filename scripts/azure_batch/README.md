@@ -236,6 +236,57 @@ Each task can specify:
   - `use_gpu`: Whether to use GPU (default: true)
   - `keep_intermediate_files`: Keep intermediate files (default: false)
   - `hf_token`: HuggingFace token for gated models
+  - `max_retry_count`: Maximum number of retry attempts for failed tasks (default: 3)
+
+### Retry Configuration and Failure Handling
+
+Tasks automatically retry on failure up to the specified maximum attempts:
+
+**Configuration:**
+- `--max-retry-count`: Set maximum retry attempts (default: 3)
+- `--save-failed-tasks`: Save list of failed tasks to CSV file for resubmission
+
+**Automatic Retry:**
+Azure Batch automatically retries failed tasks up to `max_retry_count` times. This handles transient failures like:
+- Network interruptions
+- Temporary resource unavailability
+- Sporadic compute errors
+
+**Saving Failed Tasks:**
+After job completion, save tasks that failed all retry attempts:
+
+```bash
+python scripts/azure_batch/submit_batch_jobs.py \
+  --batch-account-name mybatch \
+  --batch-account-key $KEY \
+  --batch-account-url https://mybatch.batch.azure.com \
+  --pool-id mussel-pool \
+  --job-id mussel-job-001 \
+  --save-failed-tasks failed_tasks.csv
+```
+
+The failed tasks CSV contains:
+- `task_id`: Task identifier
+- `slide_path`: Original slide path
+- `output_h5_path`, `output_pt_path`: Output paths
+- `state`: Task final state
+- `exit_code`: Exit code from failed task
+
+**Resubmitting Failed Tasks:**
+Use the failed tasks CSV to resubmit:
+
+```bash
+python scripts/azure_batch/submit_batch_jobs.py \
+  --batch-account-name mybatch \
+  --batch-account-key $KEY \
+  --batch-account-url https://mybatch.batch.azure.com \
+  --pool-id mussel-pool \
+  --job-id mussel-job-retry \
+  --create-job \
+  --csv-manifest failed_tasks.csv \
+  --max-retry-count 5 \
+  --monitor
+```
 
 ### Slide-Level Aggregation
 
