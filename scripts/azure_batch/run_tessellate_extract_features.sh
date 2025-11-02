@@ -214,60 +214,179 @@ fi
 
 # Determine which postfilter models to run
 if [ -n "$POSTFILTER_MODEL_TYPES" ]; then
-    # Multiple models specified - run sequentially
+    # Multiple models specified - use optimized two-command approach:
+    # 1. Run filter-tessellate once (tessellate + prefilter + filter)
+    # 2. Run extract-features for each postfilter model
+    
     IFS=',' read -ra MODELS <<< "$POSTFILTER_MODEL_TYPES"
-    log "Will run ${#MODELS[@]} postfilter models sequentially: ${POSTFILTER_MODEL_TYPES}"
+    log "Multi-model mode: Will run filter-tessellate once, then extract-features for ${#MODELS[@]} models: ${POSTFILTER_MODEL_TYPES}"
+    
+    # Step 1: Run filter-tessellate to get filtered coordinates
+    log ""
+    log "=========================================="
+    log "Step 1: Running filter-tessellate (tessellation + prefiltering + filtering)"
+    log "=========================================="
+    log ""
+    
+    # Create temp directory for filtered coordinates
+    FILTERED_COORDS_H5="$OUTPUT_DIR/filtered_coords.h5"
+    FILTERED_FEATURES_PT="$OUTPUT_DIR/filtered_features.pt"
+    
+    FILTER_CMD_ARGS=(
+        "filter_tessellate"
+        "slide_path=$SLIDE_PATH"
+        "output_h5_path=$FILTERED_COORDS_H5"
+        "output_pt_path=$FILTERED_FEATURES_PT"
+        "model_type=$PREFILTER_MODEL_TYPE"
+        "classifier_pkl=$CLASSIFIER_PKL"
+        "classifier_threshold=$CLASSIFIER_THRESHOLD"
+        "seg_config.segment_threshold=$SEGMENT_THRESHOLD"
+        "seg_config.patch_size=$PATCH_SIZE"
+        "seg_config.mpp=$MPP"
+        "num_workers=$NUM_WORKERS"
+        "batch_size=$BATCH_SIZE"
+        "use_gpu=$USE_GPU"
+        "keep_intermediate_files=false"
+    )
+    
+    log "Executing filter-tessellate command:"
+    log "${FILTER_CMD_ARGS[*]}"
+    echo ""
+    
+    START_TIME=$(date +%s)
+    "${FILTER_CMD_ARGS[@]}"
+    EXIT_CODE=$?
+    END_TIME=$(date +%s)
+    DURATION=$((END_TIME - START_TIME))
+    
+    if [ $EXIT_CODE -ne 0 ]; then
+        log "ERROR: filter-tessellate failed with exit code $EXIT_CODE (duration: $DURATION seconds)"
+        exit $EXIT_CODE
+    fi
+    
+    log "SUCCESS: filter-tessellate completed in $DURATION seconds"
+    log ""
+    
+    # Step 2: Run extract-features for each postfilter model
+    MODEL_INDEX=0
+    for MODEL in "${MODELS[@]}"; do
+        MODEL_INDEX=$((MODEL_INDEX + 1))
+        MODEL=$(echo "$MODEL" | xargs)  # Trim whitespace
+        
+        log ""
+        log "=========================================="
+        log "Step $((MODEL_INDEX + 1)): Extracting features with model $MODEL_INDEX/${#MODELS[@]}: $MODEL"
+        log "=========================================="
+        log ""
+        
+        # Create model-specific output directories
+        MODEL_H5_DIR="$OUTPUT_DIR/$MODEL/h5"
+        MODEL_PT_DIR="$OUTPUT_DIR/$MODEL/pt"
+        mkdir -p "$MODEL_H5_DIR"
+        mkdir -p "$MODEL_PT_DIR"
+        
+        SLIDE_NAME=$(basename "$SLIDE_PATH" | sed 's/\.[^.]*$//')
+        MODEL_H5_PATH="$MODEL_H5_DIR/${SLIDE_NAME}_features.h5"
+        MODEL_PT_PATH="$MODEL_PT_DIR/${SLIDE_NAME}_features.pt"
+        
+        # Handle intermediate path for aggregation
+        if [ "$AGGREGATION_METHOD" != "identity" ]; then
+            MODEL_TILE_H5_DIR="$OUTPUT_DIR/$MODEL/tile_h5"
+            mkdir -p "$MODEL_TILE_H5_DIR"
+            MODEL_INTERMEDIATE_H5="$MODEL_TILE_H5_DIR/${SLIDE_NAME}_tile_features.h5"
+        else
+            MODEL_INTERMEDIATE_H5=""
+        fi
+        
+        EXTRACT_CMD_ARGS=(
+            "extract_features"
+            "patch_h5_path=$FILTERED_COORDS_H5"
+            "slide_path=$SLIDE_PATH"
+            "output_h5_path=$MODEL_H5_PATH"
+            "output_pt_path=$MODEL_PT_PATH"
+            "model_type=$MODEL"
+            "batch_size=$BATCH_SIZE"
+            "use_gpu=$USE_GPU"
+            "num_workers=$NUM_WORKERS"
+        )
+        
+        # Add aggregation parameters if specified
+        if [ "$AGGREGATION_METHOD" != "identity" ]; then
+            EXTRACT_CMD_ARGS+=("aggregation_method=$AGGREGATION_METHOD")
+            EXTRACT_CMD_ARGS+=("intermediate_h5_path=$MODEL_INTERMEDIATE_H5")
+        fi
+        
+        if [ -n "$SLIDE_MODEL_TYPE" ]; then
+            EXTRACT_CMD_ARGS+=("slide_model_type=$SLIDE_MODEL_TYPE")
+        fi
+        
+        log "Executing extract-features command for $MODEL:"
+        log "${EXTRACT_CMD_ARGS[*]}"
+        echo ""
+        
+        MODEL_START_TIME=$(date +%s)
+        "${EXTRACT_CMD_ARGS[@]}"
+        MODEL_EXIT_CODE=$?
+        MODEL_END_TIME=$(date +%s)
+        MODEL_DURATION=$((MODEL_END_TIME - MODEL_START_TIME))
+        
+        if [ $MODEL_EXIT_CODE -ne 0 ]; then
+            log "ERROR: extract-features failed for model $MODEL with exit code $MODEL_EXIT_CODE (duration: $MODEL_DURATION seconds)"
+            exit $MODEL_EXIT_CODE
+        fi
+        
+        log "SUCCESS: Model $MODEL completed in $MODEL_DURATION seconds"
+    done
+    
+    # Upload results to S3 if needed
+    if is_s3_path "$ORIGINAL_OUTPUT_H5_PATH"; then
+        S3_BASE=$(dirname "$ORIGINAL_OUTPUT_H5_PATH")
+        
+        for MODEL in "${MODELS[@]}"; do
+            MODEL=$(echo "$MODEL" | xargs)  # Trim whitespace
+            
+            SLIDE_NAME=$(basename "$SLIDE_PATH" | sed 's/\.[^.]*$//')
+            LOCAL_MODEL_H5="$OUTPUT_DIR/$MODEL/h5/${SLIDE_NAME}_features.h5"
+            LOCAL_MODEL_PT="$OUTPUT_DIR/$MODEL/pt/${SLIDE_NAME}_features.pt"
+            S3_MODEL_H5="$S3_BASE/$MODEL/h5/${SLIDE_NAME}_features.h5"
+            S3_MODEL_PT="$S3_BASE/$MODEL/pt/${SLIDE_NAME}_features.pt"
+            
+            if [ -f "$LOCAL_MODEL_H5" ]; then
+                log "Uploading $MODEL H5 file: $LOCAL_MODEL_H5 -> $S3_MODEL_H5"
+                upload_to_s3 "$LOCAL_MODEL_H5" "$S3_MODEL_H5"
+            fi
+            
+            if [ -f "$LOCAL_MODEL_PT" ]; then
+                log "Uploading $MODEL PT file: $LOCAL_MODEL_PT -> $S3_MODEL_PT"
+                upload_to_s3 "$LOCAL_MODEL_PT" "$S3_MODEL_PT"
+            fi
+            
+            # Upload intermediate tile features if present
+            if [ "$AGGREGATION_METHOD" != "identity" ]; then
+                LOCAL_MODEL_INT="$OUTPUT_DIR/$MODEL/tile_h5/${SLIDE_NAME}_tile_features.h5"
+                S3_MODEL_INT="$S3_BASE/$MODEL/tile_h5/${SLIDE_NAME}_tile_features.h5"
+                
+                if [ -f "$LOCAL_MODEL_INT" ]; then
+                    log "Uploading $MODEL intermediate H5 file: $LOCAL_MODEL_INT -> $S3_MODEL_INT"
+                    upload_to_s3 "$LOCAL_MODEL_INT" "$S3_MODEL_INT"
+                fi
+            fi
+        done
+    fi
+
 elif [ -n "$POSTFILTER_MODEL_TYPE" ]; then
-    # Single model specified
-    MODELS=("$POSTFILTER_MODEL_TYPE")
+    # Single model specified - use tessellate-extract-features
+    MODEL="$POSTFILTER_MODEL_TYPE"
 else
     # No postfilter model specified - use prefilter model
-    MODELS=("$PREFILTER_MODEL_TYPE")
+    MODEL="$PREFILTER_MODEL_TYPE"
 fi
 
-# Run tessellate-extract-features for each model
-TOTAL_MODELS=${#MODELS[@]}
-MODEL_INDEX=0
-
-for MODEL in "${MODELS[@]}"; do
-    MODEL_INDEX=$((MODEL_INDEX + 1))
-    MODEL=$(echo "$MODEL" | xargs)  # Trim whitespace
-    
-    log ""
-    log "=========================================="
-    log "Processing with model $MODEL_INDEX/$TOTAL_MODELS: $MODEL"
-    log "=========================================="
-    log ""
-    
-    # Adjust output paths for this specific model
-    # If multiple models, include model name in the path
-    if [ $TOTAL_MODELS -gt 1 ]; then
-        # Extract base paths and insert model directory
-        H5_DIR=$(dirname "$LOCAL_OUTPUT_H5_PATH")
-        H5_FILE=$(basename "$LOCAL_OUTPUT_H5_PATH")
-        PT_DIR=$(dirname "$LOCAL_OUTPUT_PT_PATH")
-        PT_FILE=$(basename "$LOCAL_OUTPUT_PT_PATH")
-        
-        # Restructure: {base_dir}/{model}/h5/{file} and {base_dir}/{model}/pt/{file}
-        MODEL_H5_PATH="$H5_DIR/../$MODEL/h5/$H5_FILE"
-        MODEL_PT_PATH="$PT_DIR/../$MODEL/pt/$PT_FILE"
-        
-        # Create model-specific directories
-        mkdir -p "$(dirname "$MODEL_H5_PATH")"
-        mkdir -p "$(dirname "$MODEL_PT_PATH")"
-        
-        # Adjust intermediate path if specified
-        if [ -n "$LOCAL_INTERMEDIATE_H5_PATH" ]; then
-            INT_DIR=$(dirname "$LOCAL_INTERMEDIATE_H5_PATH")
-            INT_FILE=$(basename "$LOCAL_INTERMEDIATE_H5_PATH")
-            MODEL_INTERMEDIATE_H5_PATH="$INT_DIR/../$MODEL/tile_h5/$INT_FILE"
-            mkdir -p "$(dirname "$MODEL_INTERMEDIATE_H5_PATH")"
-        fi
-    else
-        MODEL_H5_PATH="$LOCAL_OUTPUT_H5_PATH"
-        MODEL_PT_PATH="$LOCAL_OUTPUT_PT_PATH"
-        MODEL_INTERMEDIATE_H5_PATH="$LOCAL_INTERMEDIATE_H5_PATH"
-    fi
+# Single-model mode (backward compatible - uses tessellate-extract-features)
+if [ -z "$POSTFILTER_MODEL_TYPES" ]; then
+    MODEL_H5_PATH="$LOCAL_OUTPUT_H5_PATH"
+    MODEL_PT_PATH="$LOCAL_OUTPUT_PT_PATH"
+    MODEL_INTERMEDIATE_H5_PATH="$LOCAL_INTERMEDIATE_H5_PATH"
     
     # Build the command as an array for safe execution
     CMD_ARGS=(
@@ -291,7 +410,7 @@ for MODEL in "${MODELS[@]}"; do
         CMD_ARGS+=("classifier_threshold=$CLASSIFIER_THRESHOLD")
     fi
 
-    # Add the specific postfilter model for this iteration
+    # Add the specific postfilter model
     CMD_ARGS+=("postfilter_model_type=$MODEL")
 
     # Add aggregation parameters if specified
@@ -312,70 +431,38 @@ for MODEL in "${MODELS[@]}"; do
     echo ""
 
     # Execute the command
-    MODEL_START_TIME=$(date +%s)
+    START_TIME=$(date +%s)
     "${CMD_ARGS[@]}"
-    MODEL_EXIT_CODE=$?
-    MODEL_END_TIME=$(date +%s)
-    MODEL_DURATION=$((MODEL_END_TIME - MODEL_START_TIME))
+    EXIT_CODE=$?
+    END_TIME=$(date +%s)
+    DURATION=$((END_TIME - START_TIME))
 
     echo ""
-    if [ $MODEL_EXIT_CODE -ne 0 ]; then
-        log "ERROR: Processing failed for model $MODEL with exit code $MODEL_EXIT_CODE (duration: $MODEL_DURATION seconds)"
-        exit $MODEL_EXIT_CODE
+    if [ $EXIT_CODE -ne 0 ]; then
+        log "ERROR: Processing failed with exit code $EXIT_CODE (duration: $DURATION seconds)"
+        exit $EXIT_CODE
     fi
     
-    log "SUCCESS: Model $MODEL completed in $MODEL_DURATION seconds"
+    log "SUCCESS: Processing completed in $DURATION seconds"
     
-    # Upload results to S3 if needed (for multi-model, adjust S3 paths)
+    # Upload results to S3 if needed
     if is_s3_path "$ORIGINAL_OUTPUT_H5_PATH"; then
-        if [ $TOTAL_MODELS -gt 1 ]; then
-            # Adjust S3 path to include model directory
-            S3_BASE=$(dirname "$ORIGINAL_OUTPUT_H5_PATH")
-            H5_FILE=$(basename "$ORIGINAL_OUTPUT_H5_PATH")
-            PT_FILE=$(basename "$ORIGINAL_OUTPUT_PT_PATH")
-            
-            S3_MODEL_H5="$S3_BASE/../$MODEL/h5/$H5_FILE"
-            S3_MODEL_PT="$S3_BASE/../$MODEL/pt/$PT_FILE"
-            
-            if [ -f "$MODEL_H5_PATH" ]; then
-                log "Local H5 file: $MODEL_H5_PATH (size: $(du -h "$MODEL_H5_PATH" | cut -f1))"
-                upload_to_s3 "$MODEL_H5_PATH" "$S3_MODEL_H5"
-                log "Uploaded H5 file to S3: $S3_MODEL_H5"
-            fi
-            
-            if [ -f "$MODEL_PT_PATH" ]; then
-                log "Local PT file: $MODEL_PT_PATH (size: $(du -h "$MODEL_PT_PATH" | cut -f1))"
-                upload_to_s3 "$MODEL_PT_PATH" "$S3_MODEL_PT"
-                log "Uploaded PT file to S3: $S3_MODEL_PT"
-            fi
-            
-            # Upload intermediate features if present
-            if [ -n "$MODEL_INTERMEDIATE_H5_PATH" ] && [ -f "$MODEL_INTERMEDIATE_H5_PATH" ]; then
-                INT_FILE=$(basename "$ORIGINAL_INTERMEDIATE_H5_PATH")
-                S3_MODEL_INT="$S3_BASE/../$MODEL/tile_h5/$INT_FILE"
-                log "Local intermediate H5 file: $MODEL_INTERMEDIATE_H5_PATH (size: $(du -h "$MODEL_INTERMEDIATE_H5_PATH" | cut -f1))"
-                upload_to_s3 "$MODEL_INTERMEDIATE_H5_PATH" "$S3_MODEL_INT"
-                log "Uploaded intermediate H5 file to S3: $S3_MODEL_INT"
-            fi
-        else
-            # Single model - use original paths
-            if [ -f "$MODEL_H5_PATH" ]; then
-                log "Local H5 file: $MODEL_H5_PATH (size: $(du -h "$MODEL_H5_PATH" | cut -f1))"
-                upload_to_s3 "$MODEL_H5_PATH" "$ORIGINAL_OUTPUT_H5_PATH"
-                log "Uploaded H5 file to S3: $ORIGINAL_OUTPUT_H5_PATH"
-            fi
-            
-            if [ -f "$MODEL_PT_PATH" ]; then
-                log "Local PT file: $MODEL_PT_PATH (size: $(du -h "$MODEL_PT_PATH" | cut -f1))"
-                upload_to_s3 "$MODEL_PT_PATH" "$ORIGINAL_OUTPUT_PT_PATH"
-                log "Uploaded PT file to S3: $ORIGINAL_OUTPUT_PT_PATH"
-            fi
-            
-            if [ -n "$MODEL_INTERMEDIATE_H5_PATH" ] && [ -f "$MODEL_INTERMEDIATE_H5_PATH" ]; then
-                log "Local intermediate H5 file: $MODEL_INTERMEDIATE_H5_PATH (size: $(du -h "$MODEL_INTERMEDIATE_H5_PATH" | cut -f1))"
-                upload_to_s3 "$MODEL_INTERMEDIATE_H5_PATH" "$ORIGINAL_INTERMEDIATE_H5_PATH"
-                log "Uploaded intermediate H5 file to S3: $ORIGINAL_INTERMEDIATE_H5_PATH"
-            fi
+        if [ -f "$MODEL_H5_PATH" ]; then
+            log "Local H5 file: $MODEL_H5_PATH (size: $(du -h "$MODEL_H5_PATH" | cut -f1))"
+            upload_to_s3 "$MODEL_H5_PATH" "$ORIGINAL_OUTPUT_H5_PATH"
+            log "Uploaded H5 file to S3: $ORIGINAL_OUTPUT_H5_PATH"
+        fi
+        
+        if [ -f "$MODEL_PT_PATH" ]; then
+            log "Local PT file: $MODEL_PT_PATH (size: $(du -h "$MODEL_PT_PATH" | cut -f1))"
+            upload_to_s3 "$MODEL_PT_PATH" "$ORIGINAL_OUTPUT_PT_PATH"
+            log "Uploaded PT file to S3: $ORIGINAL_OUTPUT_PT_PATH"
+        fi
+        
+        if [ -n "$MODEL_INTERMEDIATE_H5_PATH" ] && [ -f "$MODEL_INTERMEDIATE_H5_PATH" ]; then
+            log "Local intermediate H5 file: $MODEL_INTERMEDIATE_H5_PATH (size: $(du -h "$MODEL_INTERMEDIATE_H5_PATH" | cut -f1))"
+            upload_to_s3 "$MODEL_INTERMEDIATE_H5_PATH" "$ORIGINAL_INTERMEDIATE_H5_PATH"
+            log "Uploaded intermediate H5 file to S3: $ORIGINAL_INTERMEDIATE_H5_PATH"
         fi
     else
         # Local output
@@ -389,11 +476,11 @@ for MODEL in "${MODELS[@]}"; do
             log "Intermediate H5 file: $MODEL_INTERMEDIATE_H5_PATH (size: $(du -h "$MODEL_INTERMEDIATE_H5_PATH" | cut -f1))"
         fi
     fi
-done
+fi
 
 log ""
 log "=========================================="
-log "All models processed successfully"
+log "Processing completed successfully"
 log "=========================================="
 
 echo "============================================"
