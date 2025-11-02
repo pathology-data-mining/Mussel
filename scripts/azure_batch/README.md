@@ -238,6 +238,47 @@ Each task can specify:
   - `hf_token`: HuggingFace token for gated models
   - `max_retry_count`: Maximum number of retry attempts for failed tasks (default: 3)
 
+### Running Multiple Postfilter Models
+
+Process each slide with multiple postfilter models in a single submission:
+
+**Usage:**
+```bash
+python scripts/azure_batch/submit_batch_jobs.py \
+  --csv-manifest slides.csv \
+  --output-s3-prefix s3://bucket/results/ \
+  --postfilter-models CTRANSPATH,CLIP,VIRCHOW \
+  --monitor
+```
+
+**How it works:**
+- Each slide is processed with all specified postfilter models
+- Separate tasks are created for each slide-model combination
+- Task IDs are automatically generated as `{slide_id}_{model_type}`
+- Results are organized into model-specific subdirectories
+
+**Example output structure:**
+```
+s3://bucket/results/
+├── CTRANSPATH/
+│   ├── h5/slide_001_features.h5
+│   └── pt/slide_001_features.pt
+├── CLIP/
+│   ├── h5/slide_001_features.h5
+│   └── pt/slide_001_features.pt
+└── VIRCHOW/
+    ├── h5/slide_001_features.h5
+    └── pt/slide_001_features.pt
+```
+
+**Benefits:**
+- Compare multiple models on the same slides
+- Single job submission for multi-model processing
+- Organized outputs by model type
+- Parallel execution across models and slides
+
+**Available models:** RESNET50, CTRANSPATH, CLIP, VIRCHOW, VIRCHOW2, HOPTIMUS0, GIGAPATH, CONCH
+
 ### Retry Configuration and Failure Handling
 
 Tasks automatically retry on failure up to the specified maximum attempts:

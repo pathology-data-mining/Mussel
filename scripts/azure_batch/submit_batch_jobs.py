@@ -315,6 +315,7 @@ class AzureBatchJobSubmitter:
         output_dir: str = "/mnt/output",
         output_s3_prefix: Optional[str] = None,
         container_image: str = "mskmind/mussel:latest-torch-gpu",
+        postfilter_models: Optional[List[str]] = None,
         **default_params,
     ) -> None:
         """
@@ -331,12 +332,23 @@ class AzureBatchJobSubmitter:
             output_dir: Local output directory for results (default: /mnt/output)
             output_s3_prefix: S3 prefix for outputs (e.g., s3://bucket/results/)
             container_image: Docker image to use
+            postfilter_models: List of postfilter model types to run (creates separate task per model)
             **default_params: Default parameters for all tasks (e.g., prefilter_model_type, batch_size)
         """
         print(f"Loading task manifest from '{csv_file}'...")
 
-        # Get model type from default params for directory organization
-        model_type = default_params.get('prefilter_model_type', 'CTRANSPATH')
+        # Get prefilter model type (used for feature extraction before filtering)
+        prefilter_model = default_params.get('prefilter_model_type', 'CTRANSPATH')
+        
+        # If postfilter_models is provided, run each slide with multiple postfilter models
+        # Otherwise, use single model from default_params or None
+        if postfilter_models:
+            models_to_run = postfilter_models
+            print(f"Will process each slide with {len(models_to_run)} postfilter models: {', '.join(models_to_run)}")
+        else:
+            # Single model run - use postfilter_model_type if specified, otherwise use prefilter
+            single_model = default_params.get('postfilter_model_type', prefilter_model)
+            models_to_run = [single_model]
         
         tasks = []
         with open(csv_file, 'r') as f:
@@ -345,28 +357,40 @@ class AzureBatchJobSubmitter:
                 slide_id = row['slide_id']
                 slide_path = row['slide_path']
                 
-                # Determine output paths with model-based directory structure
-                if output_s3_prefix:
-                    # Upload to S3 with organized structure: {prefix}/{model}/h5/ and {prefix}/{model}/pt/
-                    base_prefix = output_s3_prefix.rstrip('/')
-                    output_h5_path = f"{base_prefix}/{model_type}/h5/{slide_id}_features.h5"
-                    output_pt_path = f"{base_prefix}/{model_type}/pt/{slide_id}_features.pt"
-                    # Tile-level features in separate directory
-                    intermediate_h5_path = f"{base_prefix}/{model_type}/tile_h5/{slide_id}_tile_features.h5"
-                else:
-                    # Local output with organized structure: {dir}/{model}/h5/ and {dir}/{model}/pt/
-                    output_h5_path = f"{output_dir}/{model_type}/h5/{slide_id}_features.h5"
-                    output_pt_path = f"{output_dir}/{model_type}/pt/{slide_id}_features.pt"
-                    # Tile-level features in separate directory
-                    intermediate_h5_path = f"{output_dir}/{model_type}/tile_h5/{slide_id}_tile_features.h5"
-                
-                tasks.append({
-                    'task_id': slide_id,
-                    'slide_path': slide_path,
-                    'output_h5_path': output_h5_path,
-                    'output_pt_path': output_pt_path,
-                    'intermediate_h5_path': intermediate_h5_path,
-                })
+                # Create a task for each model type
+                for model_type in models_to_run:
+                    # Create unique task ID combining slide and model
+                    if len(models_to_run) > 1:
+                        task_id = f"{slide_id}_{model_type}"
+                    else:
+                        task_id = slide_id
+                    
+                    # Determine output paths with model-based directory structure
+                    if output_s3_prefix:
+                        # Upload to S3 with organized structure: {prefix}/{model}/h5/ and {prefix}/{model}/pt/
+                        base_prefix = output_s3_prefix.rstrip('/')
+                        output_h5_path = f"{base_prefix}/{model_type}/h5/{slide_id}_features.h5"
+                        output_pt_path = f"{base_prefix}/{model_type}/pt/{slide_id}_features.pt"
+                        # Tile-level features in separate directory
+                        intermediate_h5_path = f"{base_prefix}/{model_type}/tile_h5/{slide_id}_tile_features.h5"
+                    else:
+                        # Local output with organized structure: {dir}/{model}/h5/ and {dir}/{model}/pt/
+                        output_h5_path = f"{output_dir}/{model_type}/h5/{slide_id}_features.h5"
+                        output_pt_path = f"{output_dir}/{model_type}/pt/{slide_id}_features.pt"
+                        # Tile-level features in separate directory
+                        intermediate_h5_path = f"{output_dir}/{model_type}/tile_h5/{slide_id}_tile_features.h5"
+                    
+                    # Create task config with model-specific settings
+                    task_config = {
+                        'task_id': task_id,
+                        'slide_path': slide_path,
+                        'output_h5_path': output_h5_path,
+                        'output_pt_path': output_pt_path,
+                        'intermediate_h5_path': intermediate_h5_path,
+                        'postfilter_model_type': model_type,  # Set the specific postfilter model
+                    }
+                    
+                    tasks.append(task_config)
 
         print(f"Submitting {len(tasks)} tasks from CSV manifest...")
 
@@ -649,6 +673,7 @@ def main():
     parser.add_argument("--csv-manifest", help="CSV manifest file with slide_id,slide_path columns")
     parser.add_argument("--output-dir", default="/mnt/output", help="Output directory for results (when using CSV)")
     parser.add_argument("--output-s3-prefix", help="S3 prefix for outputs (e.g., s3://bucket/results/)")
+    parser.add_argument("--postfilter-models", help="Comma-separated list of postfilter model types to run (e.g., CTRANSPATH,CLIP,VIRCHOW)")
     parser.add_argument("--task-id", help="Single task ID")
     parser.add_argument("--slide-path", help="Path to slide file (for single task, can be s3://)")
     parser.add_argument("--output-h5-path", help="Output H5 path (for single task, can be s3://)")
@@ -712,12 +737,18 @@ def main():
         if args.max_retry_count is not None:
             default_params['max_retry_count'] = args.max_retry_count
         
+        # Parse postfilter models if provided
+        postfilter_models_list = None
+        if args.postfilter_models:
+            postfilter_models_list = [m.strip() for m in args.postfilter_models.split(',')]
+        
         submitter.submit_tasks_from_csv(
             job_id=args.job_id,
             csv_file=args.csv_manifest,
             output_dir=args.output_dir,
             output_s3_prefix=args.output_s3_prefix,
             container_image=args.container_image,
+            postfilter_models=postfilter_models_list,
             **default_params,
         )
     elif args.task_id and args.slide_path:
