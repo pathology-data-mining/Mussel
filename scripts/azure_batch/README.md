@@ -240,7 +240,7 @@ Each task can specify:
 
 ### Running Multiple Postfilter Models
 
-Process each slide with multiple postfilter models in a single submission:
+Process each slide with multiple postfilter models **sequentially in the same task**:
 
 **Usage:**
 ```bash
@@ -252,10 +252,11 @@ python scripts/azure_batch/submit_batch_jobs.py \
 ```
 
 **How it works:**
-- Each slide is processed with all specified postfilter models
-- Separate tasks are created for each slide-model combination
-- Task IDs are automatically generated as `{slide_id}_{model_type}`
-- Results are organized into model-specific subdirectories
+- Each slide is processed with all specified postfilter models sequentially
+- Models run **within the same task** (not separate tasks)
+- Slide is read once and cached in memory for efficiency
+- Each model's results are saved to model-specific subdirectories
+- Task IDs remain as `{slide_id}` (one task per slide)
 
 **Example output structure:**
 ```
@@ -272,10 +273,11 @@ s3://bucket/results/
 ```
 
 **Benefits:**
-- Compare multiple models on the same slides
-- Single job submission for multi-model processing
-- Organized outputs by model type
-- Parallel execution across models and slides
+- **Efficient**: Slide read once and reused for all models
+- **Sequential processing**: Models run one after another in same task
+- **Organized outputs**: Each model's results in dedicated subdirectories
+- **Single job**: One task per slide, regardless of model count
+- **Cost effective**: Fewer task overhead, better resource utilization
 
 **Available models:** RESNET50, CTRANSPATH, CLIP, VIRCHOW, VIRCHOW2, HOPTIMUS0, GIGAPATH, CONCH
 

@@ -160,6 +160,7 @@ class AzureBatchJobSubmitter:
         classifier_threshold: float = 0.75,
         prefilter_model_type: str = "CTRANSPATH",
         postfilter_model_type: Optional[str] = None,
+        postfilter_model_types: Optional[str] = None,
         segment_threshold: int = 0,
         patch_size: int = 256,
         mpp: float = 0.5,
@@ -203,7 +204,12 @@ class AzureBatchJobSubmitter:
             env_vars.append(batchmodels.EnvironmentSetting("CLASSIFIER_PKL", classifier_pkl))
             env_vars.append(batchmodels.EnvironmentSetting("CLASSIFIER_THRESHOLD", str(classifier_threshold)))
 
-        if postfilter_model_type:
+        # Handle postfilter models - either single or multiple
+        if postfilter_model_types:
+            # Multiple models - comma-separated list
+            env_vars.append(batchmodels.EnvironmentSetting("POSTFILTER_MODEL_TYPES", postfilter_model_types))
+        elif postfilter_model_type:
+            # Single model
             env_vars.append(batchmodels.EnvironmentSetting("POSTFILTER_MODEL_TYPE", postfilter_model_type))
 
         if hf_token:
@@ -332,23 +338,24 @@ class AzureBatchJobSubmitter:
             output_dir: Local output directory for results (default: /mnt/output)
             output_s3_prefix: S3 prefix for outputs (e.g., s3://bucket/results/)
             container_image: Docker image to use
-            postfilter_models: List of postfilter model types to run (creates separate task per model)
+            postfilter_models: List of postfilter model types to run sequentially in same task
             **default_params: Default parameters for all tasks (e.g., prefilter_model_type, batch_size)
         """
         print(f"Loading task manifest from '{csv_file}'...")
 
-        # Get prefilter model type (used for feature extraction before filtering)
+        # Get prefilter model type (used for directory organization when single model)
         prefilter_model = default_params.get('prefilter_model_type', 'CTRANSPATH')
         
-        # If postfilter_models is provided, run each slide with multiple postfilter models
-        # Otherwise, use single model from default_params or None
-        if postfilter_models:
-            models_to_run = postfilter_models
-            print(f"Will process each slide with {len(models_to_run)} postfilter models: {', '.join(models_to_run)}")
+        # Determine model type for directory structure
+        if postfilter_models and len(postfilter_models) > 1:
+            # Multiple models - use first model for base directory, but actual paths will be model-specific
+            model_type = postfilter_models[0]
+            print(f"Will process each slide with {len(postfilter_models)} postfilter models sequentially: {', '.join(postfilter_models)}")
+        elif postfilter_models and len(postfilter_models) == 1:
+            model_type = postfilter_models[0]
         else:
-            # Single model run - use postfilter_model_type if specified, otherwise use prefilter
-            single_model = default_params.get('postfilter_model_type', prefilter_model)
-            models_to_run = [single_model]
+            # Single model from default_params or prefilter
+            model_type = default_params.get('postfilter_model_type', prefilter_model)
         
         tasks = []
         with open(csv_file, 'r') as f:
@@ -357,40 +364,37 @@ class AzureBatchJobSubmitter:
                 slide_id = row['slide_id']
                 slide_path = row['slide_path']
                 
-                # Create a task for each model type
-                for model_type in models_to_run:
-                    # Create unique task ID combining slide and model
-                    if len(models_to_run) > 1:
-                        task_id = f"{slide_id}_{model_type}"
-                    else:
-                        task_id = slide_id
-                    
-                    # Determine output paths with model-based directory structure
-                    if output_s3_prefix:
-                        # Upload to S3 with organized structure: {prefix}/{model}/h5/ and {prefix}/{model}/pt/
-                        base_prefix = output_s3_prefix.rstrip('/')
-                        output_h5_path = f"{base_prefix}/{model_type}/h5/{slide_id}_features.h5"
-                        output_pt_path = f"{base_prefix}/{model_type}/pt/{slide_id}_features.pt"
-                        # Tile-level features in separate directory
-                        intermediate_h5_path = f"{base_prefix}/{model_type}/tile_h5/{slide_id}_tile_features.h5"
-                    else:
-                        # Local output with organized structure: {dir}/{model}/h5/ and {dir}/{model}/pt/
-                        output_h5_path = f"{output_dir}/{model_type}/h5/{slide_id}_features.h5"
-                        output_pt_path = f"{output_dir}/{model_type}/pt/{slide_id}_features.pt"
-                        # Tile-level features in separate directory
-                        intermediate_h5_path = f"{output_dir}/{model_type}/tile_h5/{slide_id}_tile_features.h5"
-                    
-                    # Create task config with model-specific settings
-                    task_config = {
-                        'task_id': task_id,
-                        'slide_path': slide_path,
-                        'output_h5_path': output_h5_path,
-                        'output_pt_path': output_pt_path,
-                        'intermediate_h5_path': intermediate_h5_path,
-                        'postfilter_model_type': model_type,  # Set the specific postfilter model
-                    }
-                    
-                    tasks.append(task_config)
+                # Create ONE task per slide (models run sequentially within the task)
+                task_id = slide_id
+                
+                # For multi-model, base output paths use the first model's directory
+                # The bash script will handle creating model-specific subdirectories
+                if output_s3_prefix:
+                    base_prefix = output_s3_prefix.rstrip('/')
+                    output_h5_path = f"{base_prefix}/{model_type}/h5/{slide_id}_features.h5"
+                    output_pt_path = f"{base_prefix}/{model_type}/pt/{slide_id}_features.pt"
+                    intermediate_h5_path = f"{base_prefix}/{model_type}/tile_h5/{slide_id}_tile_features.h5"
+                else:
+                    output_h5_path = f"{output_dir}/{model_type}/h5/{slide_id}_features.h5"
+                    output_pt_path = f"{output_dir}/{model_type}/pt/{slide_id}_features.pt"
+                    intermediate_h5_path = f"{output_dir}/{model_type}/tile_h5/{slide_id}_tile_features.h5"
+                
+                # Create task config
+                task_config = {
+                    'task_id': task_id,
+                    'slide_path': slide_path,
+                    'output_h5_path': output_h5_path,
+                    'output_pt_path': output_pt_path,
+                    'intermediate_h5_path': intermediate_h5_path,
+                }
+                
+                # Add postfilter models as comma-separated list if multiple
+                if postfilter_models and len(postfilter_models) > 1:
+                    task_config['postfilter_model_types'] = ','.join(postfilter_models)
+                elif postfilter_models and len(postfilter_models) == 1:
+                    task_config['postfilter_model_type'] = postfilter_models[0]
+                
+                tasks.append(task_config)
 
         print(f"Submitting {len(tasks)} tasks from CSV manifest...")
 
