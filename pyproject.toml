@@ -49,9 +49,9 @@ dev = ["mypy", "isort", "black", "pytest", "ipython>=8.37.0"]
 "torch-gpu" = ["torch < 2.6", "torchvision", "open-clip-torch"]
 "gigapath" = [
   "gigapath@git+https://github.com/prov-gigapath/prov-gigapath",
-  "torch < 2.6",
-  "torchvision",
-  "xformers==0.0.18",
+  "torch==2.0.1",
+  "torchvision==0.15.2",
+  "xformers>=0.0.20,<0.0.21",
   "huggingface-hub>=0.20,<0.21",
   "transformers==4.36.2",
   "flash-attn==2.5.8",
