@@ -1,7 +1,8 @@
 #!/bin/bash
 #
-# Azure Batch task script for running tessellate-extract-features
-# This script runs on Azure Batch compute nodes to process whole-slide images
+# Task script for running tessellate-extract-features
+# This script runs on distributed compute nodes to process whole-slide images
+# Supports: Azure Batch, HTCondor, SLURM
 #
 # Environment variables expected:
 #   SLIDE_PATH - Path to the input slide file (can be s3:// URL)
@@ -34,7 +35,7 @@ set -e
 set -o pipefail
 
 echo "============================================"
-echo "Azure Batch Tessellate-Extract-Features Task"
+echo "Tessellate-Extract-Features Task"
 echo "============================================"
 echo "Start time: $(date)"
 echo "Node: $(hostname)"

@@ -23,6 +23,15 @@ import time
 from pathlib import Path
 from typing import Dict, List, Optional
 
+# Import model pre-download utility
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'common'))
+try:
+    from model_predownload import pre_download_models, upload_models_to_s3
+except ImportError:
+    print("WARNING: Could not import model_predownload module. Pre-download features will be unavailable.")
+    pre_download_models = None
+    upload_models_to_s3 = None
+
 try:
     from azure.batch import BatchServiceClient
     from azure.batch.batch_auth import SharedKeyCredentials
@@ -159,8 +168,11 @@ class AzureBatchJobSubmitter:
         classifier_pkl: Optional[str] = None,
         classifier_threshold: float = 0.75,
         prefilter_model_type: str = "CTRANSPATH",
+        prefilter_model_path: Optional[str] = None,
         postfilter_model_type: Optional[str] = None,
+        postfilter_model_path: Optional[str] = None,
         postfilter_model_types: Optional[str] = None,
+        slide_model_path: Optional[str] = None,
         segment_threshold: int = 0,
         patch_size: int = 256,
         mpp: float = 0.5,
@@ -211,6 +223,14 @@ class AzureBatchJobSubmitter:
         elif postfilter_model_type:
             # Single model
             env_vars.append(batchmodels.EnvironmentSetting("POSTFILTER_MODEL_TYPE", postfilter_model_type))
+        
+        # Add model paths if provided
+        if prefilter_model_path:
+            env_vars.append(batchmodels.EnvironmentSetting("PREFILTER_MODEL_PATH", prefilter_model_path))
+        if postfilter_model_path:
+            env_vars.append(batchmodels.EnvironmentSetting("POSTFILTER_MODEL_PATH", postfilter_model_path))
+        if slide_model_path:
+            env_vars.append(batchmodels.EnvironmentSetting("SLIDE_MODEL_PATH", slide_model_path))
 
         if hf_token:
             env_vars.append(batchmodels.EnvironmentSetting("HF_TOKEN", hf_token))
@@ -688,6 +708,18 @@ def main():
     parser.add_argument("--aws-secret-access-key", help="AWS secret access key for S3")
     parser.add_argument("--aws-region", default="us-east-1", help="AWS region")
     
+    # Model pre-download configuration
+    parser.add_argument("--pre-download-models", action="store_true", default=True,
+                        help="Pre-download models before job submission (default: True for batch jobs)")
+    parser.add_argument("--no-pre-download-models", dest="pre_download_models", action="store_false",
+                        help="Disable model pre-download")
+    parser.add_argument("--model-cache-dir", default="./model_cache",
+                        help="Local directory to cache models (default: ./model_cache)")
+    parser.add_argument("--model-s3-prefix", help="S3 prefix for uploaded models (default: use output-s3-prefix/models/)")
+    parser.add_argument("--prefilter-model-path", help="Path to prefilter model weights (local or s3://)")
+    parser.add_argument("--postfilter-model-path", help="Path to postfilter model weights (local or s3://)")
+    parser.add_argument("--slide-model-path", help="Path to slide encoder model weights (local or s3://)")
+    
     # Retry configuration
     parser.add_argument("--max-retry-count", type=int, default=3, help="Maximum number of retry attempts for failed tasks (default: 3)")
     parser.add_argument("--save-failed-tasks", help="Save failed tasks to CSV file for resubmission")
@@ -699,6 +731,79 @@ def main():
     parser.add_argument("--delete-pool", action="store_true", help="Delete pool after completion")
     
     args = parser.parse_args()
+
+    # Pre-download models if requested and using batch processing
+    model_paths = {}
+    if args.pre_download_models and pre_download_models and (args.csv_manifest or args.config_file):
+        print("\n[Model Pre-Download] Starting model pre-download process...")
+        
+        # Determine which models need to be downloaded
+        models_to_download = []
+        
+        # Check if user provided explicit model paths (skip pre-download for those)
+        user_provided_paths = {
+            'prefilter': args.prefilter_model_path,
+            'postfilter': args.postfilter_model_path,
+            'slide': args.slide_model_path,
+        }
+        
+        # Add prefilter model if not provided by user
+        if not user_provided_paths['prefilter']:
+            # Default prefilter is CTRANSPATH
+            models_to_download.append('CTRANSPATH')
+        
+        # Add postfilter models if not provided by user
+        if not user_provided_paths['postfilter'] and args.postfilter_models:
+            postfilter_list = [m.strip() for m in args.postfilter_models.split(',')]
+            models_to_download.extend(postfilter_list)
+        
+        # Remove duplicates
+        models_to_download = list(set(models_to_download))
+        
+        if models_to_download:
+            print(f"[Model Pre-Download] Models to download: {', '.join(models_to_download)}")
+            
+            try:
+                # Download models to cache directory
+                cached_models = pre_download_models(
+                    model_types=models_to_download,
+                    cache_dir=args.model_cache_dir
+                )
+                
+                # Upload to S3 if output prefix specified
+                if args.output_s3_prefix and upload_models_to_s3:
+                    # Determine S3 model prefix
+                    if args.model_s3_prefix:
+                        s3_model_prefix = args.model_s3_prefix
+                    else:
+                        # Use output prefix + /models/
+                        s3_model_prefix = args.output_s3_prefix.rstrip('/') + '/models/'
+                    
+                    # Upload models to S3
+                    s3_model_paths = upload_models_to_s3(cached_models, s3_model_prefix)
+                    model_paths = s3_model_paths
+                    print(f"[Model Pre-Download] Models available at S3: {s3_model_prefix}")
+                else:
+                    # Use local paths (for non-S3 workflows or testing)
+                    model_paths = cached_models
+                    print(f"[Model Pre-Download] Models cached locally: {args.model_cache_dir}")
+                
+            except Exception as e:
+                print(f"ERROR: Model pre-download failed: {e}", file=sys.stderr)
+                print("Continuing with job submission (tasks will download models from HuggingFace Hub)")
+        else:
+            print("[Model Pre-Download] All models provided by user, skipping pre-download")
+    
+    # Apply user-provided model paths (override pre-downloaded if both specified)
+    if args.prefilter_model_path:
+        model_paths['CTRANSPATH'] = args.prefilter_model_path  # Assume prefilter is CTRANSPATH
+    if args.postfilter_model_path:
+        # Apply to all postfilter models if multiple
+        if args.postfilter_models:
+            for model in args.postfilter_models.split(','):
+                model_paths[model.strip()] = args.postfilter_model_path
+    if args.slide_model_path:
+        model_paths['slide'] = args.slide_model_path
 
     # Initialize submitter
     submitter = AzureBatchJobSubmitter(
@@ -741,6 +846,19 @@ def main():
         if args.max_retry_count is not None:
             default_params['max_retry_count'] = args.max_retry_count
         
+        # Add model paths from pre-download or user-provided
+        if model_paths.get('CTRANSPATH'):
+            default_params['prefilter_model_path'] = model_paths['CTRANSPATH']
+        # For postfilter, we'll pass the path that applies to all models
+        # The postfilter_model_path will be used for all models in the list
+        if args.postfilter_models and model_paths:
+            # Use the first postfilter model's path if available
+            first_model = args.postfilter_models.split(',')[0].strip()
+            if first_model in model_paths:
+                default_params['postfilter_model_path'] = model_paths[first_model]
+        if model_paths.get('slide'):
+            default_params['slide_model_path'] = model_paths['slide']
+        
         # Parse postfilter models if provided
         postfilter_models_list = None
         if args.postfilter_models:
@@ -756,6 +874,19 @@ def main():
             **default_params,
         )
     elif args.task_id and args.slide_path:
+        # Prepare model paths for single task
+        task_model_paths = {}
+        if model_paths.get('CTRANSPATH'):
+            task_model_paths['prefilter_model_path'] = model_paths['CTRANSPATH']
+        if model_paths:
+            # Try to find a postfilter model path
+            for key, path in model_paths.items():
+                if key != 'CTRANSPATH' and key != 'slide':
+                    task_model_paths['postfilter_model_path'] = path
+                    break
+        if model_paths.get('slide'):
+            task_model_paths['slide_model_path'] = model_paths['slide']
+        
         submitter.submit_task(
             job_id=args.job_id,
             task_id=args.task_id,
@@ -767,6 +898,7 @@ def main():
             aws_region=args.aws_region,
             max_retry_count=args.max_retry_count,
             container_image=args.container_image,
+            **task_model_paths,
         )
 
     # Monitor if requested
