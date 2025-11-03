@@ -139,8 +139,8 @@ start_shell() {
     local work_dir="${MUSSEL_WORK_DIR:-$(pwd)}"
     local docker_args="-it --rm"
     
-    # Run as current user to preserve file ownership
-    docker_args="$docker_args --user $(id -u):$(id -g)"
+    # Pass user/group IDs to container for permission management
+    docker_args="$docker_args -e LOCAL_UID=$(id -u) -e LOCAL_GID=$(id -g)"
     
     # Add GPU support if requested
     if [ "$USE_GPU" = "true" ]; then
@@ -171,8 +171,8 @@ run_command() {
     local work_dir="${MUSSEL_WORK_DIR:-$(pwd)}"
     local docker_args="--rm"
     
-    # Run as current user to preserve file ownership
-    docker_args="$docker_args --user $(id -u):$(id -g)"
+    # Pass user/group IDs to container for permission management
+    docker_args="$docker_args -e LOCAL_UID=$(id -u) -e LOCAL_GID=$(id -g)"
     
     # Add GPU support if requested
     if [ "$USE_GPU" = "true" ]; then

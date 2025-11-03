@@ -23,6 +23,11 @@ RUN apt-get update && apt-get install -y \
   ca-certificates \
   && rm -rf /var/lib/apt/lists/*
 
+# Install gosu for user switching
+RUN curl -fsSL "https://github.com/tianon/gosu/releases/download/1.17/gosu-$(dpkg --print-architecture)" -o /usr/local/bin/gosu && \
+    chmod +x /usr/local/bin/gosu && \
+    gosu nobody true
+
 # Install uv package manager system-wide
 RUN curl -LsSf https://astral.sh/uv/install.sh | sh && \
     mv /root/.cargo/bin/uv /usr/local/bin/ || mv /root/.local/bin/uv /usr/local/bin/
@@ -34,7 +39,7 @@ RUN curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2
     rm -rf awscliv2.zip aws
 
 # Set working directory
-WORKDIR /code/mussel
+WORKDIR /app
 
 # Copy all application code
 COPY . .
@@ -43,5 +48,28 @@ COPY . .
 # This ensures the virtual environment is created with all dependencies including the editable package
 RUN uv sync --frozen --extra $BACKEND
 
+# Create cache directory with world-writable permissions for multi-user compatibility
+RUN mkdir -p /.cache && chmod 777 /.cache
+
+# Copy and set entrypoint script
+COPY entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+
+# Set entrypoint to handle user permissions
+ENTRYPOINT ["/entrypoint.sh"]
+
+# Default command
+CMD ["uv", "run", "python", "-c", "import sys; print('Mussel container ready. Use: uv run <command>')"]
+
 # Create cache directory with wide permissions so any user can write to it
 RUN mkdir -p /.cache && chmod 777 /.cache
+
+# Create /data directory for mounted volumes
+RUN mkdir -p /data && chmod 777 /data
+
+# Copy and set up entrypoint script
+COPY docker-entrypoint.sh /usr/local/bin/entrypoint.sh
+RUN chmod +x /usr/local/bin/entrypoint.sh
+
+ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
+CMD ["uv", "run", "python", "-c", "print('Mussel container ready')"]
