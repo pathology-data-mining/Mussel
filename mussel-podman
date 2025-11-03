@@ -160,6 +160,7 @@ start_shell() {
     podman run $podman_args \
         -v "$work_dir:/data:Z" \
         -w /data \
+        -e UV_CACHE_DIR=/data/.uv-cache \
         "$PODMAN_IMAGE" \
         /bin/bash
 }
@@ -200,6 +201,7 @@ run_command() {
     podman run $podman_args \
         -v "$work_dir:/data:Z" \
         -w /data \
+        -e UV_CACHE_DIR=/data/.uv-cache \
         "$PODMAN_IMAGE" \
         uv run "$command" "$@"
 }
