@@ -65,6 +65,7 @@ dev = ["mypy", "isort", "black", "pytest", "ipython>=8.37.0"]
   "scikit-survival",
   "fairscale",
   "wandb",
+  "open-clip-torch",
   "packaging==23.2",
   "ninja==1.11.1.1",
 ]
