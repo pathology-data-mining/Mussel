@@ -103,6 +103,7 @@ build_image() {
     
     podman build \
         --format docker \
+        --layers=false \
         --build-arg BACKEND="$BACKEND" \
         -t "$PODMAN_IMAGE" \
         .

@@ -5,7 +5,8 @@ ENV BACKEND=$BACKEND
 
 ENV DEBIAN_FRONTEND=noninteractive
 
-RUN apt-get update && apt-get install \
+# Install system dependencies in a single layer and clean up to reduce size
+RUN apt-get update && apt-get install -y \
   build-essential \
   libgdal-dev \
   liblapack-dev \
@@ -18,20 +19,22 @@ RUN apt-get update && apt-get install \
   libxext6 \
   curl \
   zip \
-  git -y
+  git \
+  ca-certificates \
+  && rm -rf /var/lib/apt/lists/*
 
 # Install uv package manager
-# Download and install uv with proper SSL handling
-RUN apt-get update && apt-get install -y ca-certificates && \
-    curl -LsSf https://astral.sh/uv/install.sh -o /tmp/install.sh && \
+RUN curl -LsSf https://astral.sh/uv/install.sh -o /tmp/install.sh && \
     sh /tmp/install.sh && rm /tmp/install.sh
 
 # Ensure the installed binary is on the `PATH`
 ENV PATH="/root/.local/bin/:$PATH"
 
-RUN curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
-RUN unzip awscliv2.zip
-RUN ./aws/install
+# Install AWS CLI
+RUN curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip" && \
+    unzip awscliv2.zip && \
+    ./aws/install && \
+    rm -rf awscliv2.zip aws
 
 # Set working directory
 WORKDIR /code/mussel
