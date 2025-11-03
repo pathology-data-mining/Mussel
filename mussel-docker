@@ -19,6 +19,8 @@ NC='\033[0m' # No Color
 # Available Mussel commands
 MUSSEL_COMMANDS=(
     "tessellate"
+    "tessellate_extract_features"
+    "filter_tessellate"
     "extract_features"
     "create_class_embeddings"
     "annotate"
@@ -39,6 +41,8 @@ Usage: $(basename "$0") COMMAND [OPTIONS]
 
 Available Commands:
     tessellate                  - Tile whole-slide images with foreground detection
+    tessellate_extract_features - Combined tessellation and feature extraction
+    filter_tessellate           - Filter tessellated patches
     extract_features            - Extract feature embeddings using foundation models
     create_class_embeddings     - Generate tissue-type embeddings
     annotate                    - Annotate tiles with tissue types
@@ -211,7 +215,7 @@ main() {
         shell)
             start_shell
             ;;
-        tessellate|extract_features|create_class_embeddings|annotate|cache_tiles|export_tiles|filter_features|merge_annotation_features|linear_probe_benchmark|save_model)
+        tessellate|tessellate_extract_features|filter_tessellate|extract_features|create_class_embeddings|annotate|cache_tiles|export_tiles|filter_features|merge_annotation_features|linear_probe_benchmark|save_model)
             run_command "$command" "$@"
             ;;
         *)
