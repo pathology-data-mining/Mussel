@@ -157,7 +157,6 @@ start_shell() {
     docker run $docker_args \
         -v "$work_dir:/data" \
         -w /data \
-        -e UV_CACHE_DIR=/data/.uv-cache \
         "$DOCKER_IMAGE" \
         /bin/bash
 }
@@ -188,7 +187,6 @@ run_command() {
     docker run $docker_args \
         -v "$work_dir:/data" \
         -w /data \
-        -e UV_CACHE_DIR=/data/.uv-cache \
         "$DOCKER_IMAGE" \
         uv run "$command" "$@"
 }

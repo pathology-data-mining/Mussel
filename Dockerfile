@@ -42,3 +42,6 @@ COPY . .
 # Install dependencies and package in one step
 # This ensures the virtual environment is created with all dependencies including the editable package
 RUN uv sync --frozen --extra $BACKEND
+
+# Create cache directory with wide permissions so any user can write to it
+RUN mkdir -p /.cache && chmod 777 /.cache
