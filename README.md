@@ -323,16 +323,52 @@ The tools currently available from Mussel are,
 
 These are described, with examples, in the accompanying document, [README-commands.md](README-commands.md)
 
-## Cloud Processing with Azure Batch
+## Distributed Processing Backends
 
-For large-scale processing of whole-slide images in the cloud, Mussel provides scripts for running on Azure Batch. These scripts enable:
+For large-scale processing of whole-slide images, Mussel provides scripts for multiple compute backends:
 
-- Parallel processing of multiple slides
+### Azure Batch (Cloud)
+- Parallel processing with auto-scaling
 - GPU-enabled VMs for fast feature extraction
 - Automatic job management and monitoring
-- Integration with Azure Storage
+- S3 and Azure Storage integration
 
-See [scripts/azure_batch/README.md](scripts/azure_batch/README.md) for detailed instructions on setting up and running Mussel on Azure Batch.
+See [scripts/azure_batch/README.md](scripts/azure_batch/README.md) for detailed instructions.
+
+### HTCondor (HPC)
+- DAGMan workflows for complex dependencies
+- Throughput-oriented job scheduling
+- GPU and CPU resource management
+- S3 staging support
+
+See [scripts/condor/README.md](scripts/condor/README.md) for detailed instructions.
+
+### SLURM (HPC)
+- Job arrays for batch processing
+- Partition and QOS support
+- GPU allocation via gres
+- S3 staging support
+
+See [scripts/slurm/README.md](scripts/slurm/README.md) for detailed instructions.
+
+### Common Features
+
+All backends support:
+- CSV manifest processing for batch submissions
+- Multi-model processing optimization (filter-tessellate + extract-features)
+- Automatic retry on failure
+- Organized output structure by model type
+- S3 integration for cloud storage
+
+**Backend Comparison:**
+
+| Feature | Azure Batch | HTCondor | SLURM |
+|---------|-------------|----------|-------|
+| Type | Cloud | HPC | HPC |
+| Best For | Cloud bursting | Throughput computing | HPC clusters |
+| Scaling | Auto-scale | Manual/auto | Manual |
+| Cost | Pay-per-use | Fixed infrastructure | Fixed infrastructure |
+| Setup | Complex | Moderate | Easy |
 
 ## Troubleshooting
 
