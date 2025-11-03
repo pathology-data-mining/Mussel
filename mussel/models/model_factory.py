@@ -25,7 +25,7 @@ IMAGENET_STD = [0.229, 0.224, 0.225]
 class ModelType(Enum):
     def __init__(self, id, code, path):
         """Initialize a ModelType enum value.
-        
+
         Args:
             id: Unique integer identifier for the model type.
             code: String code for the model type.
@@ -44,8 +44,10 @@ class ModelType(Enum):
     GOOGLEPATH = 7, "googlepath", "google/path-foundation"
     CONCH1_5 = 8, "conch1_5", "MahmoodLab/TITAN"
     VIRCHOW2 = 9, "virchow2", "hf-hub:paige-ai/Virchow2"
-    GIGAPATH_SLIDE = 10, "gigapath_slide", "hf-hub:prov-gigapath/prov-gigapath"
-    TITAN_SLIDE = 11, "titan_slide", "MahmoodLab/TITAN"
+    UNI2 = 10, "uni2h", "hf-hub:MahmoodLab/UNI2-h"
+    UNI = 11, "uni", "hf-hub:MahmoodLab/UNI"
+    GIGAPATH_SLIDE = 12, "gigapath_slide", "hf-hub:prov-gigapath/prov-gigapath"
+    TITAN_SLIDE = 13, "titan_slide", "MahmoodLab/TITAN"
 
 
 # Mapping of slide encoder models to their compatible patch encoder models
@@ -58,16 +60,16 @@ SLIDE_ENCODER_COMPATIBILITY = {
 
 def get_required_patch_encoder(slide_encoder: ModelType) -> ModelType:
     """Get the required patch encoder for a given slide encoder.
-    
+
     Each slide encoder model is designed to work with features from a specific
     patch encoder model. This function returns the required patch encoder.
-    
+
     Args:
         slide_encoder: The slide-level encoder model type.
-        
+
     Returns:
         The required patch encoder model type.
-        
+
     Raises:
         ValueError: If the slide encoder is not recognized.
     """
@@ -76,23 +78,25 @@ def get_required_patch_encoder(slide_encoder: ModelType) -> ModelType:
             f"Unknown slide encoder: {slide_encoder}. "
             f"Available slide encoders: {list(SLIDE_ENCODER_COMPATIBILITY.keys())}"
         )
-    
+
     return SLIDE_ENCODER_COMPATIBILITY[slide_encoder]
 
 
-def validate_slide_encoder_compatibility(patch_encoder: ModelType, slide_encoder: ModelType) -> bool:
+def validate_slide_encoder_compatibility(
+    patch_encoder: ModelType, slide_encoder: ModelType
+) -> bool:
     """Validate that a slide encoder is compatible with a patch encoder.
-    
+
     Each slide encoder model is designed to work with features from a specific
     patch encoder model. This function validates that the combination is valid.
-    
+
     Args:
         patch_encoder: The patch-level encoder model type.
         slide_encoder: The slide-level encoder model type.
-        
+
     Returns:
         True if the slide encoder is compatible with the patch encoder.
-        
+
     Raises:
         ValueError: If the slide encoder is not compatible with the patch encoder.
     """
@@ -101,7 +105,7 @@ def validate_slide_encoder_compatibility(patch_encoder: ModelType, slide_encoder
             f"Unknown slide encoder: {slide_encoder}. "
             f"Available slide encoders: {list(SLIDE_ENCODER_COMPATIBILITY.keys())}"
         )
-    
+
     expected_patch_encoder = SLIDE_ENCODER_COMPATIBILITY[slide_encoder]
     if patch_encoder != expected_patch_encoder:
         raise ValueError(
@@ -109,7 +113,7 @@ def validate_slide_encoder_compatibility(patch_encoder: ModelType, slide_encoder
             f"but {patch_encoder} was provided. Each slide encoder is tied to a specific "
             f"patch encoder model."
         )
-    
+
     return True
 
 
@@ -121,7 +125,7 @@ class Model:
         gpu_device_id: int | List[int] | None = None,
     ):
         """Initialize base Model wrapper.
-        
+
         Args:
             model_obj: The underlying model object.
             use_gpu: Whether to use GPU (default: True).
@@ -131,7 +135,7 @@ class Model:
 
     def get_model_fun(self) -> Callable:
         """Get a callable function for model inference.
-        
+
         Returns:
             Callable that takes input and returns model output.
         """
@@ -139,7 +143,7 @@ class Model:
 
     def get_preprocessing_fun(self) -> Callable:
         """Get preprocessing function for input data.
-        
+
         Returns:
             Callable for preprocessing or None if no preprocessing needed.
         """
@@ -147,7 +151,7 @@ class Model:
 
     def save(self, save_path: str):
         """Save the model to disk.
-        
+
         Args:
             save_path: Path to save the model.
         """
@@ -162,7 +166,7 @@ class GooglePathModel(Model):
         gpu_device_id: int | List[int] | None = None,
     ):
         """Initialize GooglePath model.
-        
+
         Args:
             model_path: Path to the model or HuggingFace repo ID.
             use_gpu: Whether to use GPU (default: True).
@@ -191,7 +195,7 @@ class GooglePathModel(Model):
 
     def get_model_fun(self) -> Callable:
         """Get model inference function for GooglePath.
-        
+
         Returns:
             Callable that preprocesses input and returns model output.
         """
@@ -210,10 +214,10 @@ class GooglePathModel(Model):
 
     def save(self, save_path: str):
         """Save GooglePath model (not implemented).
-        
+
         Args:
             save_path: Path to save the model.
-            
+
         Raises:
             NotImplementedError: GooglePath model saving is not yet implemented.
         """
@@ -229,7 +233,7 @@ class TorchModel(Model):
         gpu_device_id: int | List[int] | None = None,
     ):
         """Initialize PyTorch model wrapper.
-        
+
         Args:
             model_path: Path to model file or HuggingFace repo ID.
             model_obj: Optional pre-loaded model object (default: None).
@@ -251,7 +255,10 @@ class TorchModel(Model):
                     raise ValueError(
                         f"model_name not found in config.json from {repo_id}"
                     )
-                model_obj = timm.create_model(model_name, pretrained=True)
+                model_obj = timm.create_model(
+                    model_name,
+                    pretrained=True,
+                )
             elif Path(model_path).is_file():
                 with open(model_path, "rb") as f:
                     model_obj = pickle.load(f)
@@ -280,16 +287,17 @@ class TorchModel(Model):
 
     def get_model_fun(self) -> Callable:
         """Get model inference function with automatic mixed precision.
-        
+
         Returns:
             Callable that runs inference on GPU or CPU with autocast.
         """
+
         def model_fun(x):
             """Run inference with mixed precision."""
             with (
                 torch.no_grad(),
                 torch.inference_mode(),
-                torch.autocast(device_type=self.device.type, dtype=torch.float16)
+                torch.autocast(device_type=self.device.type, dtype=torch.float16),
             ):
                 x = x.to(self.device, non_blocking=True)
                 return self.obj(x).cpu()
@@ -298,7 +306,7 @@ class TorchModel(Model):
 
     def save(self, save_path: str):
         """Save PyTorch model to disk using pickle.
-        
+
         Args:
             save_path: Path to save the model.
         """
@@ -306,7 +314,7 @@ class TorchModel(Model):
             pickle.dump(self.obj, f)
 
 
-class Conch15TorchModel(TorchModel):
+class Conch15Model(TorchModel):
     def __init__(
         self,
         model_path,
@@ -314,7 +322,7 @@ class Conch15TorchModel(TorchModel):
         gpu_device_id: int | List[int] | None = None,
     ):
         """Initialize CONCH v1.5 model.
-        
+
         Args:
             model_path: Path to model file or HuggingFace repo ID.
             use_gpu: Whether to use GPU (default: True).
@@ -330,7 +338,7 @@ class Conch15TorchModel(TorchModel):
 
     def get_preprocessing_fun(self) -> Callable:
         """Get preprocessing transforms for CONCH v1.5.
-        
+
         Returns:
             Composed transforms for CONCH v1.5 input preprocessing.
         """
@@ -354,10 +362,10 @@ class TitanSlideEncoderModel(TorchModel):
         gpu_device_id: int | List[int] | None = None,
     ):
         """Initialize TITAN slide encoder model.
-        
+
         This is the slide-level encoder from MahmoodLab/TITAN that aggregates
         CONCH patch-level features into slide-level representations.
-        
+
         Args:
             model_path: Path to slide encoder model file or HuggingFace repo ID.
             use_gpu: Whether to use GPU (default: True).
@@ -374,54 +382,168 @@ class TitanSlideEncoderModel(TorchModel):
 
     def get_model_fun(self) -> Callable:
         """Get model inference function for TITAN slide encoder.
-        
+
         The TITAN slide encoder uses encode_slide_from_patch_features method
         which requires patch features, coordinates, and patch size at level 0.
-        
+
         Returns:
             Callable that takes patch features, coords, and patch_size, returns slide-level features.
         """
+
         def model_fun(patch_features, coords, patch_size):
             """Run TITAN slide encoder on patch features with coordinates and patch size."""
-            return self.obj.encode_slide_from_patch_features(patch_features, coords, patch_size)
-        
+            return self.obj.encode_slide_from_patch_features(
+                patch_features, coords, patch_size
+            )
+
         return model_fun
 
     def get_preprocessing_fun(self) -> Callable:
         """Get preprocessing function for slide encoder.
-        
+
         Slide encoders work on patch features, not images, so no preprocessing needed.
-        
+
         Returns:
             None, as slide encoders don't preprocess images.
         """
         return None
 
 
-class GigapathTorchModel(TorchModel):
+class UniModel(TorchModel):
     def __init__(
         self,
         model_path,
         use_gpu: bool = True,
         gpu_device_id: int | List[int] | None = None,
     ):
-        """Initialize Prov-GigaPath model.
-        
+        """Initialize UNI model.
+
         Args:
             model_path: Path to model file or HuggingFace repo ID.
             use_gpu: Whether to use GPU (default: True).
             gpu_device_id: GPU device ID or list of IDs for multi-GPU (default: None).
         """
         if model_path is None:
+            model_path = ModelType.UNI.path
+        model_obj = None
+        if model_path.startswith("hf-hub:"):
+            timm_kwargs = {
+                "init_values": 1e-5,
+                "dynamic_img_size": True,
+            }
+
+            model_obj = timm.create_model(
+                model_path,
+                pretrained=True,
+                **timm_kwargs,
+            )
+        super().__init__(model_path, model_obj, use_gpu, gpu_device_id)
+
+    def get_preprocessing_fun(self) -> Callable:
+        """Get preprocessing transforms for UNI.
+
+        Returns:
+            Composed transforms for UNI input preprocessing.
+        """
+        preprocessing = transforms.Compose(
+            [
+                transforms.Resize(
+                    224,
+                ),
+                transforms.ToTensor(),
+                transforms.Normalize(mean=IMAGENET_MEAN, std=IMAGENET_STD),
+            ]
+        )
+        return preprocessing
+
+
+class Uni2Model(TorchModel):
+    def __init__(
+        self,
+        model_path,
+        use_gpu: bool = True,
+        gpu_device_id: int | List[int] | None = None,
+    ):
+        """Initialize UNI2-h model.
+
+        Args:
+            model_path: Path to model file or HuggingFace repo ID.
+            use_gpu: Whether to use GPU (default: True).
+            gpu_device_id: GPU device ID or list of IDs for multi-GPU (default: None).
+        """
+        if model_path is None:
+            model_path = ModelType.UNI.path
+        model_obj = None
+        if model_path.startswith("hf-hub:"):
+            timm_kwargs = {
+                "img_size": 224,
+                "patch_size": 14,
+                "depth": 24,
+                "num_heads": 24,
+                "init_values": 1e-5,
+                "embed_dim": 1536,
+                "mlp_ratio": 2.66667 * 2,
+                "num_classes": 0,
+                "no_embed_class": True,
+                "mlp_layer": timm.layers.SwiGLUPacked,
+                "act_layer": torch.nn.SiLU,
+                "reg_tokens": 8,
+                "dynamic_img_size": True,
+            }
+
+            model_obj = timm.create_model(
+                model_path,
+                pretrained=True,
+                **timm_kwargs,
+            )
+        super().__init__(model_path, model_obj, use_gpu, gpu_device_id)
+
+    def get_preprocessing_fun(self) -> Callable:
+        """Get preprocessing transforms for UNI2-h.
+
+        Returns:
+            Composed transforms for UNI2-h input preprocessing.
+        """
+        preprocessing = transforms.Compose(
+            [
+                transforms.Resize(
+                    224,
+                ),
+                transforms.CenterCrop(224),
+                transforms.ToTensor(),
+                transforms.Normalize(mean=IMAGENET_MEAN, std=IMAGENET_STD),
+            ]
+        )
+        return preprocessing
+
+
+class GigapathModel(TorchModel):
+    def __init__(
+        self,
+        model_path,
+        use_gpu: bool = True,
+        gpu_device_id: int | List[int] | None = None,
+        model_args: dict | None = None,
+    ):
+        """Initialize Prov-GigaPath model.
+
+        Args:
+            model_path: Path to model file or HuggingFace repo ID.
+            use_gpu: Whether to use GPU (default: True).
+            gpu_device_id: GPU device ID or list of IDs for multi-GPU (default: None).
+        """
+        if model_args is None:
+            model_args = {}
+        if model_path is None:
             model_path = ModelType.GIGAPATH.path
         model_obj = None
         if model_path.startswith("hf-hub:"):
-            model_obj = timm.create_model(model_path, pretrained=True)
+            model_obj = timm.create_model(model_path, pretrained=True, **model_args)
         super().__init__(model_path, model_obj, use_gpu, gpu_device_id)
 
     def get_preprocessing_fun(self) -> Callable:
         """Get preprocessing transforms for Prov-GigaPath.
-        
+
         Returns:
             Composed transforms for Prov-GigaPath input preprocessing.
         """
@@ -445,10 +567,10 @@ class GigapathSlideEncoderModel(TorchModel):
         gpu_device_id: int | List[int] | None = None,
     ):
         """Initialize Prov-GigaPath slide encoder model.
-        
+
         This is the slide-level encoder from Prov-GigaPath that aggregates
         patch-level features into slide-level representations.
-        
+
         Args:
             model_path: Path to slide encoder model file or HuggingFace repo ID.
             use_gpu: Whether to use GPU (default: True).
@@ -458,39 +580,42 @@ class GigapathSlideEncoderModel(TorchModel):
             model_path = ModelType.GIGAPATH_SLIDE.path
         model_obj = None
         if model_path.startswith("hf-hub:"):
-            # Load the full GigaPath model which includes the slide encoder
-            repo_id = model_path.replace("hf-hub:", "")
-            model_obj = timm.create_model(repo_id, pretrained=True)
-        super().__init__(model_path, model_obj, use_gpu, gpu_device_id)
+            from gigapath import slide_encoder
 
-    def get_model_fun(self) -> Callable:
-        """Get model inference function for GigaPath slide encoder.
-        
-        The GigaPath slide encoder uses the slide_encoder method which
-        requires both tile embeddings and coordinates as arguments.
-        
-        Returns:
-            Callable that takes tile embeddings and coordinates, returns slide-level features.
-        """
-        def model_fun(tile_embeddings, coords):
-            """Run GigaPath slide encoder on tile embeddings with coordinates."""
-            return self.obj.slide_encoder(tile_embeddings, coords)
-        
-        return model_fun
+            model_obj = slide_encoder.create_model(
+                model_path,
+                "gigapath_slide_enc12l768d",
+                1536,
+            )
+        super().__init__(model_path, model_obj, use_gpu, gpu_device_id)
 
     def get_preprocessing_fun(self) -> Callable:
         """Get preprocessing function for slide encoder.
-        
+
         Slide encoders work on patch features, not images, so no preprocessing needed.
-        
+
         Returns:
             None, as slide encoders don't preprocess images.
         """
         return None
 
+    def get_model_fun(self) -> Callable:
+        """Get model inference function with automatic mixed precision.
 
-class OptimusTorchModel(TorchModel):
+        Returns:
+            Callable that runs inference on GPU or CPU with autocast.
+        """
 
+        def model_fun(features, coords):
+            """Run inference with mixed precision."""
+            with torch.no_grad():
+                features = features.to(self.device, non_blocking=True)
+                return self.obj(features, coords).cpu()
+
+        return model_fun
+
+
+class OptimusModel(TorchModel):
     def __init__(
         self,
         model_path,
@@ -498,7 +623,7 @@ class OptimusTorchModel(TorchModel):
         gpu_device_id: int | List[int] | None = None,
     ):
         """Initialize H-Optimus-0 model.
-        
+
         Args:
             model_path: Path to model file or HuggingFace repo ID.
             use_gpu: Whether to use GPU (default: True).
@@ -518,7 +643,7 @@ class OptimusTorchModel(TorchModel):
 
     def get_preprocessing_fun(self) -> Callable:
         """Get preprocessing transforms for H-Optimus-0.
-        
+
         Returns:
             Composed transforms for H-Optimus-0 input preprocessing.
         """
@@ -537,7 +662,7 @@ class OptimusTorchModel(TorchModel):
         return preprocessing
 
 
-class VirchowTorchModel(TorchModel):
+class VirchowModel(TorchModel):
     def __init__(
         self,
         model_path,
@@ -545,7 +670,7 @@ class VirchowTorchModel(TorchModel):
         gpu_device_id: int | List[int] | None = None,
     ):
         """Initialize Virchow model.
-        
+
         Args:
             model_path: Path to model file or HuggingFace repo ID.
             use_gpu: Whether to use GPU (default: True).
@@ -565,7 +690,7 @@ class VirchowTorchModel(TorchModel):
 
     def get_preprocessing_fun(self) -> Callable:
         """Get preprocessing transforms for Virchow.
-        
+
         Returns:
             Preprocessing transforms resolved from model config.
         """
@@ -575,7 +700,7 @@ class VirchowTorchModel(TorchModel):
         return preprocessing
 
 
-class ClipTorchModel(TorchModel):
+class ClipModel(TorchModel):
     def __init__(
         self,
         model_path,
@@ -583,7 +708,7 @@ class ClipTorchModel(TorchModel):
         gpu_device_id: int | List[int] | None = None,
     ):
         """Initialize CLIP (QuiltNet) model.
-        
+
         Args:
             model_path: Path to model file or HuggingFace repo ID.
             use_gpu: Whether to use GPU (default: True).
@@ -601,14 +726,14 @@ class ClipTorchModel(TorchModel):
 
     def get_preprocessing_fun(self) -> Callable:
         """Get preprocessing transforms for CLIP.
-        
+
         Returns:
             Preprocessing transforms from open_clip.
         """
         return self.preprocessing
 
 
-class TransPathTorchModel(TorchModel):
+class TranspathModel(TorchModel):
     def __init__(
         self,
         model_path,
@@ -616,12 +741,12 @@ class TransPathTorchModel(TorchModel):
         gpu_device_id: int | List[int] | None = None,
     ):
         """Initialize TransPath model.
-        
+
         Args:
             model_path: Path to model weights file.
             use_gpu: Whether to use GPU (default: True).
             gpu_device_id: GPU device ID or list of IDs for multi-GPU (default: None).
-            
+
         Raises:
             ValueError: If model_path is not provided.
         """
@@ -638,12 +763,12 @@ class TransPathTorchModel(TorchModel):
         super().__init__(model_path, model_obj, use_gpu, gpu_device_id)
 
 
-class ResnetTorchModel(TorchModel):
+class ResnetModel(TorchModel):
     def __init__(
         self, use_gpu: bool = True, gpu_device_id: int | List[int] | None = None
     ):
         """Initialize ResNet-50 model.
-        
+
         Args:
             use_gpu: Whether to use GPU (default: True).
             gpu_device_id: GPU device ID or list of IDs for multi-GPU (default: None).
@@ -659,13 +784,14 @@ MODEL_FACTORIES = {}
 
 def register_model_factory(model_type: ModelType):
     """Decorator to register a model factory for a given model type.
-    
+
     Args:
         model_type: The ModelType to register the factory for.
-        
+
     Returns:
         Decorator function that registers the factory.
     """
+
     def decorator(fn):
         """Register factory function."""
         MODEL_FACTORIES[model_type] = fn
@@ -675,16 +801,15 @@ def register_model_factory(model_type: ModelType):
 
 
 class ModelFactory(ABC):
-
     @abstractmethod
     def get_model(self, model_path, use_gpu, gpu_device_id) -> Model:
         """Get a model instance.
-        
+
         Args:
             model_path: Path to model weights or config.
             use_gpu: Whether to use GPU.
             gpu_device_id: GPU device ID or list of IDs.
-            
+
         Returns:
             Model instance.
         """
@@ -702,21 +827,21 @@ class GooglePathModelFactory(ModelFactory):
 class Resnet50ModelFactory(ModelFactory):
     def get_model(self, model_path=None, use_gpu=True, gpu_device_id=None):
         """Create ResNet-50 model instance."""
-        return ResnetTorchModel(use_gpu, gpu_device_id)
+        return ResnetModel(use_gpu, gpu_device_id)
 
 
 @register_model_factory(ModelType.CTRANSPATH)
 class CTransPathModelFactory(ModelFactory):
     def get_model(self, model_path=None, use_gpu=True, gpu_device_id=None):
         """Create TransPath model instance."""
-        return TransPathTorchModel(model_path, use_gpu, gpu_device_id)
+        return TranspathModel(model_path, use_gpu, gpu_device_id)
 
 
 @register_model_factory(ModelType.GIGAPATH)
 class GigapathModelFactory(ModelFactory):
     def get_model(self, model_path=None, use_gpu=True, gpu_device_id=None):
         """Create Prov-GigaPath model instance."""
-        return GigapathTorchModel(model_path, use_gpu, gpu_device_id)
+        return GigapathModel(model_path, use_gpu, gpu_device_id)
 
 
 @register_model_factory(ModelType.GIGAPATH_SLIDE)
@@ -730,21 +855,21 @@ class GigapathSlideEncoderModelFactory(ModelFactory):
 class VirchowModelFactory(ModelFactory):
     def get_model(self, model_path=None, use_gpu=True, gpu_device_id=None):
         """Create Virchow model instance."""
-        return VirchowTorchModel(model_path, use_gpu, gpu_device_id)
+        return VirchowModel(model_path, use_gpu, gpu_device_id)
 
 
 @register_model_factory(ModelType.VIRCHOW2)
 class Virchow2ModelFactory(ModelFactory):
     def get_model(self, model_path=None, use_gpu=True, gpu_device_id=None):
         """Create Virchow2 model instance."""
-        return VirchowTorchModel(model_path, use_gpu, gpu_device_id)
+        return VirchowModel(model_path, use_gpu, gpu_device_id)
 
 
 @register_model_factory(ModelType.CONCH1_5)
 class Conch15ModelFactory(ModelFactory):
     def get_model(self, model_path=None, use_gpu=True, gpu_device_id=None):
         """Create CONCH v1.5 model instance."""
-        return Conch15TorchModel(model_path, use_gpu, gpu_device_id)
+        return Conch15Model(model_path, use_gpu, gpu_device_id)
 
 
 @register_model_factory(ModelType.TITAN_SLIDE)
@@ -758,25 +883,41 @@ class TitanSlideEncoderModelFactory(ModelFactory):
 class OptimusModelFactory(ModelFactory):
     def get_model(self, model_path=None, use_gpu=True, gpu_device_id=None):
         """Create H-Optimus-0 model instance."""
-        return OptimusTorchModel(model_path, use_gpu, gpu_device_id)
+        return OptimusModel(model_path, use_gpu, gpu_device_id)
 
 
 @register_model_factory(ModelType.CLIP)
 class ClipModelFactory(ModelFactory):
     def get_model(self, model_path=None, use_gpu=True, gpu_device_id=None):
         """Create CLIP (QuiltNet) model instance."""
-        return ClipTorchModel(model_path, use_gpu, gpu_device_id)
+        return ClipModel(model_path, use_gpu, gpu_device_id)
 
 
-def get_model_factory(model_type: ModelType | str = ModelType.CTRANSPATH) -> ModelFactory:
+@register_model_factory(ModelType.UNI)
+class UniModelFactory(ModelFactory):
+    def get_model(self, model_path=None, use_gpu=True, gpu_device_id=None):
+        """Create UNI model instance."""
+        return UniModel(model_path, use_gpu, gpu_device_id)
+
+
+@register_model_factory(ModelType.UNI2)
+class Uni2ModelFactory(ModelFactory):
+    def get_model(self, model_path=None, use_gpu=True, gpu_device_id=None):
+        """Create UNI2-h model instance."""
+        return Uni2Model(model_path, use_gpu, gpu_device_id)
+
+
+def get_model_factory(
+    model_type: ModelType | str = ModelType.CTRANSPATH,
+) -> ModelFactory:
     """Get the model factory for a given model type.
-    
+
     Args:
         model_type: ModelType enum or string name of the model (default: ModelType.CTRANSPATH).
-        
+
     Returns:
         ModelFactory instance for the specified model type.
-        
+
     Raises:
         ValueError: If model_type string is not recognized.
     """
