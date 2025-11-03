@@ -13,8 +13,11 @@
 #   CLASSIFIER_PKL - (Optional) Path to classifier pickle file for filtering
 #   CLASSIFIER_THRESHOLD - (Optional) Threshold for classifier (default: 0.75)
 #   PREFILTER_MODEL_TYPE - Model type for pre-filter extraction (default: CTRANSPATH)
+#   PREFILTER_MODEL_PATH - (Optional) Path to prefilter model weights (can be s3://)
 #   POSTFILTER_MODEL_TYPE - (Optional) Model type for post-filter extraction
+#   POSTFILTER_MODEL_PATH - (Optional) Path to postfilter model weights (can be s3://)
 #   POSTFILTER_MODEL_TYPES - (Optional) Comma-separated list of postfilter models to run sequentially
+#   SLIDE_MODEL_PATH - (Optional) Path to slide encoder model weights (can be s3://)
 #   SEGMENT_THRESHOLD - Tissue segmentation threshold (default: 0)
 #   PATCH_SIZE - Patch size in pixels (default: 256)
 #   MPP - Microns per pixel (default: 0.5)
@@ -122,7 +125,10 @@ log "  OUTPUT_PT_PATH: $OUTPUT_PT_PATH"
 log "  CLASSIFIER_PKL: ${CLASSIFIER_PKL:-<not set>}"
 log "  CLASSIFIER_THRESHOLD: $CLASSIFIER_THRESHOLD"
 log "  PREFILTER_MODEL_TYPE: $PREFILTER_MODEL_TYPE"
+log "  PREFILTER_MODEL_PATH: ${PREFILTER_MODEL_PATH:-<not set>}"
 log "  POSTFILTER_MODEL_TYPE: ${POSTFILTER_MODEL_TYPE:-<not set>}"
+log "  POSTFILTER_MODEL_PATH: ${POSTFILTER_MODEL_PATH:-<not set>}"
+log "  SLIDE_MODEL_PATH: ${SLIDE_MODEL_PATH:-<not set>}"
 log "  SEGMENT_THRESHOLD: $SEGMENT_THRESHOLD"
 log "  PATCH_SIZE: $PATCH_SIZE"
 log "  MPP: $MPP"
@@ -151,6 +157,37 @@ if [ ! -f "$SLIDE_PATH" ]; then
 fi
 
 log "Slide file found: $SLIDE_PATH (size: $(du -h "$SLIDE_PATH" | cut -f1))"
+
+# Stage model files from S3 if needed
+if [ -n "$PREFILTER_MODEL_PATH" ] && is_s3_path "$PREFILTER_MODEL_PATH"; then
+    log "Prefilter model is in S3, staging locally..."
+    WORK_DIR="${WORK_DIR:-/tmp/mussel_work_$$}"
+    mkdir -p "$WORK_DIR"
+    LOCAL_PREFILTER_MODEL_PATH="$WORK_DIR/$(basename "$PREFILTER_MODEL_PATH")"
+    download_from_s3 "$PREFILTER_MODEL_PATH" "$LOCAL_PREFILTER_MODEL_PATH"
+    PREFILTER_MODEL_PATH="$LOCAL_PREFILTER_MODEL_PATH"
+    log "Prefilter model staged to: $PREFILTER_MODEL_PATH"
+fi
+
+if [ -n "$POSTFILTER_MODEL_PATH" ] && is_s3_path "$POSTFILTER_MODEL_PATH"; then
+    log "Postfilter model is in S3, staging locally..."
+    WORK_DIR="${WORK_DIR:-/tmp/mussel_work_$$}"
+    mkdir -p "$WORK_DIR"
+    LOCAL_POSTFILTER_MODEL_PATH="$WORK_DIR/$(basename "$POSTFILTER_MODEL_PATH")"
+    download_from_s3 "$POSTFILTER_MODEL_PATH" "$LOCAL_POSTFILTER_MODEL_PATH"
+    POSTFILTER_MODEL_PATH="$LOCAL_POSTFILTER_MODEL_PATH"
+    log "Postfilter model staged to: $POSTFILTER_MODEL_PATH"
+fi
+
+if [ -n "$SLIDE_MODEL_PATH" ] && is_s3_path "$SLIDE_MODEL_PATH"; then
+    log "Slide model is in S3, staging locally..."
+    WORK_DIR="${WORK_DIR:-/tmp/mussel_work_$$}"
+    mkdir -p "$WORK_DIR"
+    LOCAL_SLIDE_MODEL_PATH="$WORK_DIR/$(basename "$SLIDE_MODEL_PATH")"
+    download_from_s3 "$SLIDE_MODEL_PATH" "$LOCAL_SLIDE_MODEL_PATH"
+    SLIDE_MODEL_PATH="$LOCAL_SLIDE_MODEL_PATH"
+    log "Slide model staged to: $SLIDE_MODEL_PATH"
+fi
 
 # Set HuggingFace token if provided
 if [ -n "$HF_TOKEN" ]; then
@@ -249,6 +286,11 @@ if [ -n "$POSTFILTER_MODEL_TYPES" ]; then
         "keep_intermediate_files=false"
     )
     
+    # Add model_path if specified
+    if [ -n "$PREFILTER_MODEL_PATH" ]; then
+        FILTER_CMD_ARGS+=("model_path=$PREFILTER_MODEL_PATH")
+    fi
+    
     log "Executing filter-tessellate command:"
     log "${FILTER_CMD_ARGS[*]}"
     echo ""
@@ -310,6 +352,11 @@ if [ -n "$POSTFILTER_MODEL_TYPES" ]; then
             "num_workers=$NUM_WORKERS"
         )
         
+        # Add model_path if specified
+        if [ -n "$POSTFILTER_MODEL_PATH" ]; then
+            EXTRACT_CMD_ARGS+=("model_path=$POSTFILTER_MODEL_PATH")
+        fi
+        
         # Add aggregation parameters if specified
         if [ "$AGGREGATION_METHOD" != "identity" ]; then
             EXTRACT_CMD_ARGS+=("aggregation_method=$AGGREGATION_METHOD")
@@ -318,6 +365,10 @@ if [ -n "$POSTFILTER_MODEL_TYPES" ]; then
         
         if [ -n "$SLIDE_MODEL_TYPE" ]; then
             EXTRACT_CMD_ARGS+=("slide_model_type=$SLIDE_MODEL_TYPE")
+        fi
+        
+        if [ -n "$SLIDE_MODEL_PATH" ]; then
+            EXTRACT_CMD_ARGS+=("slide_model_path=$SLIDE_MODEL_PATH")
         fi
         
         log "Executing extract-features command for $MODEL:"
@@ -410,8 +461,17 @@ if [ -z "$POSTFILTER_MODEL_TYPES" ]; then
         CMD_ARGS+=("classifier_threshold=$CLASSIFIER_THRESHOLD")
     fi
 
+    # Add model paths if specified
+    if [ -n "$PREFILTER_MODEL_PATH" ]; then
+        CMD_ARGS+=("prefilter_model_path=$PREFILTER_MODEL_PATH")
+    fi
+
     # Add the specific postfilter model
     CMD_ARGS+=("postfilter_model_type=$MODEL")
+    
+    if [ -n "$POSTFILTER_MODEL_PATH" ]; then
+        CMD_ARGS+=("postfilter_model_path=$POSTFILTER_MODEL_PATH")
+    fi
 
     # Add aggregation parameters if specified
     if [ "$AGGREGATION_METHOD" != "identity" ]; then
@@ -424,6 +484,10 @@ if [ -z "$POSTFILTER_MODEL_TYPES" ]; then
 
     if [ -n "$SLIDE_MODEL_TYPE" ]; then
         CMD_ARGS+=("slide_model_type=$SLIDE_MODEL_TYPE")
+    fi
+    
+    if [ -n "$SLIDE_MODEL_PATH" ]; then
+        CMD_ARGS+=("slide_model_path=$SLIDE_MODEL_PATH")
     fi
 
     log "Executing command:"
