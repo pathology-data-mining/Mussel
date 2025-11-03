@@ -16,7 +16,7 @@ dependencies = [
   "loguru",
   "geopandas",
   "scikit-learn",
-  "transformers",
+  "transformers<4.46",
   "transpath@git+https://github.com/msk-mind/TransPath/",
   "timm_ctranspath@git+https://github.com/msk-mind/timm-ctranspath",
   "shapely>=2.0.7",
