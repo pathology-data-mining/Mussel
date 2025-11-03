@@ -40,7 +40,11 @@ WORKDIR /code/mussel
 COPY pyproject.toml uv.lock ./
 
 # Install dependencies (this layer will be cached if dependencies don't change)
-RUN uv sync --frozen --extra $BACKEND
+# Use --no-editable to avoid issues with the package not being copied yet
+RUN uv sync --frozen --no-editable --extra $BACKEND
 
 # Copy the rest of the application code
 COPY . .
+
+# Install the package in editable mode now that all code is present
+RUN uv pip install -e .
