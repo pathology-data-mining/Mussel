@@ -140,9 +140,9 @@ start_shell() {
             # Fallback to --security-opt=label=disable approach
             elif podman run --rm --security-opt=label=disable --device /dev/dri ubuntu:22.04 ls /dev/dri &> /dev/null 2>&1; then
                 podman_args="$podman_args --security-opt=label=disable"
-                # Add all GPU devices
+                # Add all GPU devices (only character/block devices, not directories)
                 for dev in /dev/nvidia* /dev/dri/*; do
-                    [ -e "$dev" ] && podman_args="$podman_args --device $dev"
+                    [ -c "$dev" ] || [ -b "$dev" ] && podman_args="$podman_args --device $dev"
                 done
             else
                 echo -e "${YELLOW}Warning: GPU support requested but not available${NC}" >&2
@@ -182,9 +182,9 @@ run_command() {
             # Fallback to --security-opt=label=disable approach
             elif podman run --rm --security-opt=label=disable --device /dev/dri ubuntu:22.04 ls /dev/dri &> /dev/null 2>&1; then
                 podman_args="$podman_args --security-opt=label=disable"
-                # Add all GPU devices
+                # Add all GPU devices (only character/block devices, not directories)
                 for dev in /dev/nvidia* /dev/dri/*; do
-                    [ -e "$dev" ] && podman_args="$podman_args --device $dev"
+                    [ -c "$dev" ] || [ -b "$dev" ] && podman_args="$podman_args --device $dev"
                 done
             else
                 echo -e "${YELLOW}Warning: GPU support requested but not available, running on CPU${NC}" >&2
