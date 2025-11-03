@@ -18,6 +18,14 @@ import sys
 from pathlib import Path
 from typing import Dict, List, Optional
 
+# Import model pre-download utility
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'common'))
+try:
+    from model_predownload import pre_download_models
+except ImportError:
+    print("WARNING: Could not import model_predownload module. Pre-download features will be unavailable.")
+    pre_download_models = None
+
 
 class SlurmJobSubmitter:
     """
@@ -54,10 +62,13 @@ class SlurmJobSubmitter:
         classifier_pkl: Optional[str] = None,
         classifier_threshold: float = 0.75,
         prefilter_model_type: str = "CTRANSPATH",
+        prefilter_model_path: Optional[str] = None,
         postfilter_model_type: Optional[str] = None,
+        postfilter_model_path: Optional[str] = None,
         postfilter_model_types: Optional[str] = None,
         aggregation_method: Optional[str] = None,
         slide_model_type: Optional[str] = None,
+        slide_model_path: Optional[str] = None,
         segment_threshold: int = 0,
         patch_size: int = 256,
         mpp: float = 0.5,
@@ -119,14 +130,20 @@ class SlurmJobSubmitter:
             env_vars["INTERMEDIATE_H5_PATH"] = intermediate_h5_path
         if classifier_pkl:
             env_vars["CLASSIFIER_PKL"] = classifier_pkl
+        if prefilter_model_path:
+            env_vars["PREFILTER_MODEL_PATH"] = prefilter_model_path
         if postfilter_model_type:
             env_vars["POSTFILTER_MODEL_TYPE"] = postfilter_model_type
+        if postfilter_model_path:
+            env_vars["POSTFILTER_MODEL_PATH"] = postfilter_model_path
         if postfilter_model_types:
             env_vars["POSTFILTER_MODEL_TYPES"] = postfilter_model_types
         if aggregation_method:
             env_vars["AGGREGATION_METHOD"] = aggregation_method
         if slide_model_type:
             env_vars["SLIDE_MODEL_TYPE"] = slide_model_type
+        if slide_model_path:
+            env_vars["SLIDE_MODEL_PATH"] = slide_model_path
         if aws_access_key_id:
             env_vars["AWS_ACCESS_KEY_ID"] = aws_access_key_id
         if aws_secret_access_key:
@@ -493,10 +510,81 @@ def main():
     # HuggingFace token
     parser.add_argument("--hf-token", help="HuggingFace token for gated models")
     
+    # Model pre-download configuration
+    parser.add_argument("--pre-download-models", action="store_true", default=True,
+                        help="Pre-download models before job submission (default: True for batch jobs)")
+    parser.add_argument("--no-pre-download-models", dest="pre_download_models", action="store_false",
+                        help="Disable model pre-download")
+    parser.add_argument("--model-cache-dir", default="./model_cache",
+                        help="Shared filesystem directory to cache models (default: ./model_cache)")
+    parser.add_argument("--prefilter-model-path", help="Path to prefilter model weights (local filesystem)")
+    parser.add_argument("--postfilter-model-path", help="Path to postfilter model weights (local filesystem)")
+    parser.add_argument("--slide-model-path", help="Path to slide encoder model weights (local filesystem)")
+    
     # Submission
     parser.add_argument("--submit", action="store_true", help="Actually submit to SLURM")
     
     args = parser.parse_args()
+    
+    # Pre-download models if requested and using batch processing
+    model_paths = {}
+    if args.pre_download_models and pre_download_models and args.csv_manifest:
+        print("\n[Model Pre-Download] Starting model pre-download process...")
+        
+        # Determine which models need to be downloaded
+        models_to_download = []
+        
+        # Check if user provided explicit model paths (skip pre-download for those)
+        user_provided_paths = {
+            'prefilter': args.prefilter_model_path,
+            'postfilter': args.postfilter_model_path,
+            'slide': args.slide_model_path,
+        }
+        
+        # Add prefilter model if not provided by user
+        if not user_provided_paths['prefilter']:
+            # Default prefilter is CTRANSPATH
+            models_to_download.append('CTRANSPATH')
+        
+        # Add postfilter models if not provided by user
+        if not user_provided_paths['postfilter'] and args.postfilter_models:
+            postfilter_list = [m.strip() for m in args.postfilter_models.split(',')]
+            models_to_download.extend(postfilter_list)
+        
+        # Remove duplicates
+        models_to_download = list(set(models_to_download))
+        
+        if models_to_download:
+            print(f"[Model Pre-Download] Models to download: {', '.join(models_to_download)}")
+            
+            try:
+                # Download models to shared filesystem cache directory
+                cached_models = pre_download_models(
+                    model_types=models_to_download,
+                    cache_dir=args.model_cache_dir
+                )
+                
+                model_paths = cached_models
+                print(f"[Model Pre-Download] Models cached to shared filesystem: {args.model_cache_dir}")
+                
+            except Exception as e:
+                print(f"ERROR: Model pre-download failed: {e}", file=sys.stderr)
+                print("Continuing with job submission (tasks will download models from HuggingFace Hub)")
+        else:
+            print("[Model Pre-Download] All models provided by user, skipping pre-download")
+    
+    # Apply user-provided model paths (override pre-downloaded if both specified)
+    if args.prefilter_model_path:
+        model_paths['CTRANSPATH'] = args.prefilter_model_path  # Assume prefilter is CTRANSPATH
+    if args.postfilter_model_path:
+        # Apply to all postfilter models if multi-model
+        if args.postfilter_models:
+            for model in args.postfilter_models.split(','):
+                model_paths[model.strip()] = args.postfilter_model_path
+        elif args.postfilter_model_type:
+            model_paths[args.postfilter_model_type] = args.postfilter_model_path
+    if args.slide_model_path and args.slide_model_type:
+        model_paths[args.slide_model_type] = args.slide_model_path
     
     # Validate single task arguments
     if args.job_name:
@@ -508,6 +596,15 @@ def main():
     
     # Submit tasks
     if args.job_name:
+        # Determine model paths for single task
+        task_model_paths = {}
+        if model_paths:
+            task_model_paths = {
+                'prefilter': model_paths.get('CTRANSPATH', args.prefilter_model_path),
+                'postfilter': model_paths.get(args.postfilter_model_type, args.postfilter_model_path) if args.postfilter_model_type else None,
+                'slide': model_paths.get(args.slide_model_type, args.slide_model_path) if args.slide_model_type else None,
+            }
+        
         submitter.submit_task(
             job_name=args.job_name,
             slide_path=args.slide_path,
@@ -516,10 +613,13 @@ def main():
             classifier_pkl=args.classifier_pkl,
             classifier_threshold=args.classifier_threshold,
             prefilter_model_type=args.prefilter_model_type,
+            prefilter_model_path=task_model_paths.get('prefilter'),
             postfilter_model_type=args.postfilter_model_type,
+            postfilter_model_path=task_model_paths.get('postfilter'),
             postfilter_model_types=args.postfilter_models,
             aggregation_method=args.aggregation_method,
             slide_model_type=args.slide_model_type,
+            slide_model_path=task_model_paths.get('slide'),
             segment_threshold=args.segment_threshold,
             patch_size=args.patch_size,
             mpp=args.mpp,
@@ -547,10 +647,13 @@ def main():
             classifier_pkl=args.classifier_pkl,
             classifier_threshold=args.classifier_threshold,
             prefilter_model_type=args.prefilter_model_type,
+            prefilter_model_path=model_paths.get('CTRANSPATH') if model_paths else None,
             postfilter_model_type=args.postfilter_model_type,
+            postfilter_model_path=args.postfilter_model_path,  # Will be expanded in method
             postfilter_model_types=args.postfilter_models,
             aggregation_method=args.aggregation_method,
             slide_model_type=args.slide_model_type,
+            slide_model_path=model_paths.get(args.slide_model_type) if model_paths and args.slide_model_type else None,
             segment_threshold=args.segment_threshold,
             patch_size=args.patch_size,
             mpp=args.mpp,
@@ -567,6 +670,7 @@ def main():
             aws_secret_access_key=args.aws_secret_access_key,
             aws_region=args.aws_region,
             hf_token=args.hf_token,
+            model_paths=model_paths,  # Pass all model paths
             submit=args.submit,
         )
 
