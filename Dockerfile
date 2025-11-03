@@ -39,15 +39,9 @@ RUN curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2
 # Set working directory
 WORKDIR /code/mussel
 
-# Copy only dependency files first to leverage Docker cache
-COPY pyproject.toml uv.lock ./
-
-# Install dependencies (this layer will be cached if dependencies don't change)
-# Use --no-editable to avoid issues with the package not being copied yet
-RUN uv sync --frozen --no-editable --extra $BACKEND
-
-# Copy the rest of the application code
+# Copy all application code
 COPY . .
 
-# Install the package in editable mode now that all code is present
-RUN uv pip install -e .
+# Install dependencies and package in one step
+# This ensures the virtual environment is created with all dependencies including the editable package
+RUN uv sync --frozen --extra $BACKEND
