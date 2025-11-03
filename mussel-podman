@@ -102,6 +102,7 @@ build_image() {
     echo "Image: $PODMAN_IMAGE"
     
     podman build \
+        --format docker \
         --build-arg BACKEND="$BACKEND" \
         -t "$PODMAN_IMAGE" \
         .
