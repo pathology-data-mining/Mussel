@@ -7,7 +7,7 @@ readme = "README.md"
 requires-python = ">=3.10, <3.12"
 dependencies = [
   "pandas",
-  "numpy<2.3",
+  "numpy<2",
   "h5py",
   "matplotlib",
   "tiffslide",
@@ -49,12 +49,12 @@ dev = ["mypy", "isort", "black", "pytest", "ipython>=8.37.0"]
 "torch-gpu" = ["torch < 2.6", "torchvision", "open-clip-torch"]
 "gigapath" = [
   "gigapath@git+https://github.com/prov-gigapath/prov-gigapath",
-  "torch==2.0.1",
-  "torchvision==0.15.2",
-  "xformers>=0.0.20,<0.0.21",
+  "torch==2.1.2",
+  "torchvision==0.16.2",
+  "xformers>=0.0.23,<0.0.24",
   "huggingface-hub>=0.20,<0.21",
   "transformers==4.36.2",
-  "flash-attn==2.5.8",
+  "flash-attn==2.5.9",
   "timm>=1.0.3",
   "omegaconf",
   "torchmetrics==0.10.3",
@@ -95,9 +95,12 @@ torchvision = [
   { index = "torch-gpu", extra = "torch-gpu" },
   { index = "torch-gpu-cu118", extra = "gigapath" },
 ]
+xformers = [
+  { index = "torch-gpu-cu118", extra = "gigapath" },
+]
 flash-attn = [
-  { url = "https://github.com/Dao-AILab/flash-attention/releases/download/v2.5.8/flash_attn-2.5.8+cu118torch2.0cxx11abiFALSE-cp310-cp310-linux_x86_64.whl", marker = "python_version == '3.10'" },
-  { url = "https://github.com/Dao-AILab/flash-attention/releases/download/v2.5.8/flash_attn-2.5.8+cu118torch2.0cxx11abiFALSE-cp311-cp311-linux_x86_64.whl", marker = "python_version == '3.11'" },
+  { url = "https://github.com/mjun0812/flash-attention-prebuild-wheels/releases/download/v0.0.1/flash_attn-2.5.9+cu118torch2.1-cp310-cp310-linux_x86_64.whl", marker = "python_version == '3.10'" },
+  { url = "https://github.com/mjun0812/flash-attention-prebuild-wheels/releases/download/v0.0.1/flash_attn-2.5.9+cu118torch2.1-cp311-cp311-linux_x86_64.whl", marker = "python_version == '3.11'" },
 ]
 
 [[tool.uv.index]]
