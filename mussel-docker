@@ -142,6 +142,9 @@ start_shell() {
     # Pass user/group IDs to container for permission management
     docker_args="$docker_args -e LOCAL_UID=$(id -u) -e LOCAL_GID=$(id -g)"
     
+    # Force UV to use the container's virtual environment (ignore host .venv)
+    docker_args="$docker_args -e UV_PROJECT_ENVIRONMENT=/app/.venv"
+    
     # Add GPU support if requested
     if [ "$USE_GPU" = "true" ]; then
         if docker run --rm --gpus all ubuntu:22.04 nvidia-smi &> /dev/null; then
@@ -173,6 +176,9 @@ run_command() {
     
     # Pass user/group IDs to container for permission management
     docker_args="$docker_args -e LOCAL_UID=$(id -u) -e LOCAL_GID=$(id -g)"
+    
+    # Force UV to use the container's virtual environment (ignore host .venv)
+    docker_args="$docker_args -e UV_PROJECT_ENVIRONMENT=/app/.venv"
     
     # Add GPU support if requested
     if [ "$USE_GPU" = "true" ]; then

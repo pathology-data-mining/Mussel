@@ -132,6 +132,9 @@ start_shell() {
     local work_dir="${MUSSEL_WORK_DIR:-$(pwd)}"
     local podman_args="-it --rm"
     
+    # Force UV to use the container's virtual environment (ignore host .venv)
+    podman_args="$podman_args -e UV_PROJECT_ENVIRONMENT=/app/.venv"
+    
     # Add GPU support if requested
     if [ "$USE_GPU" = "true" ]; then
         # Check if nvidia-ctk or nvidia-container-toolkit is available
@@ -173,6 +176,9 @@ run_command() {
     
     local work_dir="${MUSSEL_WORK_DIR:-$(pwd)}"
     local podman_args="--rm"
+    
+    # Force UV to use the container's virtual environment (ignore host .venv)
+    podman_args="$podman_args -e UV_PROJECT_ENVIRONMENT=/app/.venv"
     
     # Add GPU support if requested
     if [ "$USE_GPU" = "true" ]; then
