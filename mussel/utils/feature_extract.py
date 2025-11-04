@@ -6,7 +6,6 @@ import numpy as np
 import torch
 from torch.utils.data import DataLoader
 from torchvision.datasets import ImageFolder
-from functools import singledispatch
 from tqdm import tqdm
 
 from mussel.datasets import WholeSlideImageH5Dataset, WholeSlideImageTileCoordDataset
@@ -19,50 +18,49 @@ from .timer import timed
 logger = logging.getLogger(__name__)
 
 
-@singledispatch
-def process_dataset(
-    dataset,
-    loader,
-    model_fun,
-    patch_h5_path=None,
-    output_h5_path=None,
-):
+def _extract_features_from_loader(loader, model_fun, is_test_run=False):
     """
+    Common helper function to extract features from a dataloader.
+
     Args:
-            dataset: dataset object
-            loader: dataloader object
-            model_fun: function to extract features from a batch of images
-            patch_h5_path: path to the h5 file containing patch coordinates (if any)
-            output_h5_path: path to save the extracted features (if any)
+        loader: dataloader object
+        model_fun: function to extract features from a batch of images
+        is_test_run: if True, only process first 3 batches
+
+    Yields:
+        tuple: (count, batch, labels, features) for each batch
     """
-    pass
-
-
-@process_dataset.register(WholeSlideImageTileCoordDataset)
-def _(dataset: WholeSlideImageTileCoordDataset, loader, model_fun, is_test_run=False):
-    all_features = []
-    all_labels = []
     for count, (batch, labels) in enumerate(tqdm(loader, desc="Extracting features")):
         if is_test_run and count > 2:
             break
 
         features = model_fun(batch)
-        all_features.append(features.numpy())
+        features = features.numpy()
+
+        yield count, batch, labels, features
+
+
+def _process_tile_coord_dataset(dataset, loader, model_fun, is_test_run=False):
+    """Process WholeSlideImageTileCoordDataset by accumulating features in memory."""
+    all_features = []
+    all_labels = []
+
+    for count, batch, labels, features in _extract_features_from_loader(
+        loader, model_fun, is_test_run
+    ):
+        all_features.append(features)
         all_labels.append(labels)
+
     all_features = np.concatenate(all_features, axis=0)
     all_labels = np.concatenate(all_labels, axis=0)
     return all_features, all_labels
 
 
-@process_dataset.register(ImageFolder)
-def _(
-    dataset: ImageFolder,
-    loader,
-    model_fun,
-    patch_h5_path=None,
-    output_h5_path=None,
-    is_test_run=False,
+def _process_image_folder_dataset(
+    dataset, loader, model_fun, output_h5_path, is_test_run=False
 ):
+    """Process ImageFolder dataset by saving features to HDF5 incrementally."""
+    # Save initial metadata
     asset_dict = {
         "image_paths": np.array([x[0] for x in dataset.imgs]).astype("T"),
         "class_to_idx": np.array(
@@ -70,41 +68,72 @@ def _(
         ),
     }
     save_hdf5(output_h5_path, asset_dict, attr_h5_path=None, mode="w")
-    for count, (batch, labels) in enumerate(tqdm(loader, desc="Extracting features")):
-        if is_test_run and count > 2:
-            break
-        labels = labels.numpy()
 
-        features = model_fun(batch)
-        features = features.numpy()
+    # Save features incrementally
+    for count, batch, labels, features in _extract_features_from_loader(
+        loader, model_fun, is_test_run
+    ):
+        labels = labels.numpy()
         asset_dict = {
             "features": features,
             "class": labels,
         }
         save_hdf5(output_h5_path, asset_dict, attr_h5_path=None, mode="a")
+
     return output_h5_path
 
 
-@process_dataset.register(WholeSlideImageH5Dataset)
-def _(
-    dataset: WholeSlideImageH5Dataset,
+def _process_h5_dataset(
+    dataset, loader, model_fun, patch_h5_path, output_h5_path, is_test_run=False
+):
+    """Process WholeSlideImageH5Dataset by saving features to HDF5 incrementally."""
+    mode = "w"
+
+    for count, batch, labels, features in _extract_features_from_loader(
+        loader, model_fun, is_test_run
+    ):
+        asset_dict = {"features": features, "coords": labels}
+        save_hdf5(output_h5_path, asset_dict, attr_h5_path=patch_h5_path, mode=mode)
+        mode = "a"
+
+    return output_h5_path
+
+
+def process_dataset(
+    dataset,
     loader,
     model_fun,
     patch_h5_path=None,
     output_h5_path=None,
     is_test_run=False,
 ):
-    mode = "w"
-    for count, (batch, labels) in enumerate(tqdm(loader, desc="Extracting features")):
-        if is_test_run and count > 2:
-            break
+    """
+    Process a dataset and extract features using a model.
 
-        features = model_fun(batch)
-        features = features.numpy()
-        asset_dict = {"features": features, "coords": coords}
-        save_hdf5(output_h5_path, asset_dict, attr_h5_path=patch_h5_path, mode=mode)
-        mode = "a"
-    return output_h5_path
+    Args:
+        dataset: dataset object (WholeSlideImageTileCoordDataset, ImageFolder, or WholeSlideImageH5Dataset)
+        loader: dataloader object
+        model_fun: function to extract features from a batch of images
+        patch_h5_path: path to the h5 file containing patch coordinates (if any)
+        output_h5_path: path to save the extracted features (if any)
+        is_test_run: if True, only process first 3 batches
+
+    Returns:
+        For WholeSlideImageTileCoordDataset: tuple of (features, labels) as numpy arrays
+        For ImageFolder or WholeSlideImageH5Dataset: path to output HDF5 file
+    """
+    if isinstance(dataset, WholeSlideImageTileCoordDataset):
+        return _process_tile_coord_dataset(dataset, loader, model_fun, is_test_run)
+    elif isinstance(dataset, ImageFolder):
+        return _process_image_folder_dataset(
+            dataset, loader, model_fun, output_h5_path, is_test_run
+        )
+    elif isinstance(dataset, WholeSlideImageH5Dataset):
+        return _process_h5_dataset(
+            dataset, loader, model_fun, patch_h5_path, output_h5_path, is_test_run
+        )
+    else:
+        raise TypeError(f"Unsupported dataset type: {type(dataset)}")
 
 
 def get_features(
