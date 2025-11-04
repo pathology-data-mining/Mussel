@@ -46,6 +46,15 @@ log() {
     echo "[$(date +'%Y-%m-%d %H:%M:%S')] $1"
 }
 
+# Detect uv virtual environment
+UV_PREFIX=""
+if command -v uv >/dev/null 2>&1; then
+    if [ -d ".venv" ] || [ -n "$VIRTUAL_ENV" ]; then
+        UV_PREFIX="uv run"
+        log "Detected uv environment - using 'uv run' for CLI commands"
+    fi
+fi
+
 # Cleanup function to remove temporary files
 cleanup() {
     local exit_code=$?
@@ -297,7 +306,7 @@ if [ -n "$POSTFILTER_MODEL_TYPES" ]; then
     echo ""
     
     START_TIME=$(date +%s)
-    "${FILTER_CMD_ARGS[@]}"
+    ${UV_PREFIX} "${FILTER_CMD_ARGS[@]}"
     EXIT_CODE=$?
     END_TIME=$(date +%s)
     DURATION=$((END_TIME - START_TIME))
@@ -377,7 +386,7 @@ if [ -n "$POSTFILTER_MODEL_TYPES" ]; then
         echo ""
         
         MODEL_START_TIME=$(date +%s)
-        "${EXTRACT_CMD_ARGS[@]}"
+        ${UV_PREFIX} "${EXTRACT_CMD_ARGS[@]}"
         MODEL_EXIT_CODE=$?
         MODEL_END_TIME=$(date +%s)
         MODEL_DURATION=$((MODEL_END_TIME - MODEL_START_TIME))
@@ -497,7 +506,7 @@ if [ -z "$POSTFILTER_MODEL_TYPES" ]; then
 
     # Execute the command
     START_TIME=$(date +%s)
-    "${CMD_ARGS[@]}"
+    ${UV_PREFIX} "${CMD_ARGS[@]}"
     EXIT_CODE=$?
     END_TIME=$(date +%s)
     DURATION=$((END_TIME - START_TIME))

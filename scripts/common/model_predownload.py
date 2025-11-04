@@ -9,6 +9,7 @@ before batch job submission using the save_model CLI tool.
 import os
 import subprocess
 import sys
+import shutil
 from pathlib import Path
 from typing import List, Optional, Dict
 
@@ -25,7 +26,14 @@ def run_save_model(model_type: str, output_path: str, model_path: Optional[str] 
     Returns:
         True if successful, False otherwise
     """
-    cmd = ["save_model", f"model_type={model_type}", f"output_path={output_path}"]
+    # Detect uv environment
+    cmd_prefix = []
+    if shutil.which('uv'):
+        if os.path.isdir('.venv') or os.getenv('VIRTUAL_ENV'):
+            cmd_prefix = ['uv', 'run']
+            print(f"  [Using uv environment]")
+    
+    cmd = cmd_prefix + ["save_model", f"model_type={model_type}", f"output_path={output_path}"]
     if model_path:
         cmd.append(f"model_path={model_path}")
     
