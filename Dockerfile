@@ -48,28 +48,15 @@ COPY . .
 # This ensures the virtual environment is created with all dependencies including the editable package
 RUN uv sync --frozen --extra $BACKEND
 
-# Create cache directory with world-writable permissions for multi-user compatibility
-RUN mkdir -p /.cache && chmod 777 /.cache
-
-# Copy and set entrypoint script
-COPY entrypoint.sh /entrypoint.sh
-RUN chmod +x /entrypoint.sh
-
-# Set entrypoint to handle user permissions
-ENTRYPOINT ["/entrypoint.sh"]
-
-# Default command
-CMD ["uv", "run", "python", "-c", "import sys; print('Mussel container ready. Use: uv run <command>')"]
-
-# Create cache directory with wide permissions so any user can write to it
-RUN mkdir -p /.cache && chmod 777 /.cache
-
-# Create /data directory for mounted volumes
-RUN mkdir -p /data && chmod 777 /data
+# Create cache and data directories with wide permissions
+RUN mkdir -p /.cache /data && chmod 777 /.cache /data
 
 # Copy and set up entrypoint script
 COPY docker-entrypoint.sh /usr/local/bin/entrypoint.sh
 RUN chmod +x /usr/local/bin/entrypoint.sh
 
+# Set entrypoint to handle user permissions
 ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
-CMD ["uv", "run", "python", "-c", "print('Mussel container ready')"]
+
+# Default command
+CMD ["uv", "run", "python", "-c", "print('Mussel container ready. Use mussel-docker <command>')"]
