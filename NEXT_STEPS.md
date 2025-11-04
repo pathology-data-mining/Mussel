@@ -2,9 +2,27 @@
 
 The large PR has been successfully separated into 8 manageable branches. Here's what to do next:
 
-## Branches Created (Locally)
+## Current Situation
 
-All the following branches have been created locally:
+The 8 feature branches have been **designed and documented** but need to be **created and pushed** to GitHub. The branches don't exist yet on the remote repository.
+
+## Step 1: Create and Push Branches to GitHub
+
+Run the automated script that will create all 8 branches and push them to GitHub:
+
+```bash
+./create-and-push-branches.sh
+```
+
+This script will:
+1. Create each feature branch from the base commit (91c4977)
+2. Add only the appropriate files to each branch
+3. Commit the changes
+4. Push the branch to GitHub
+
+**Note:** The script requires git push permissions. If you encounter authentication issues, ensure you have proper GitHub credentials configured.
+
+## Branches That Will Be Created
 
 1. `feature/01-project-setup` (6 files)
 2. `feature/02-documentation` (10 files)
@@ -15,30 +33,9 @@ All the following branches have been created locally:
 7. `feature/07-tests-code` (15 files)
 8. `feature/08-tests-data` (8 files)
 
-## Step 1: Push Branches to GitHub
-
-**Note:** The branches exist locally but need to be pushed to GitHub. You have two options:
-
-### Option A: Use the provided script (Recommended)
-```bash
-./push-branches.sh
-```
-
-### Option B: Push manually
-```bash
-git push -u origin feature/01-project-setup
-git push -u origin feature/02-documentation
-git push -u origin feature/03-core-application
-git push -u origin feature/04-presets
-git push -u origin feature/05-docker-support
-git push -u origin feature/06-ci-cd
-git push -u origin feature/07-tests-code
-git push -u origin feature/08-tests-data
-```
-
 ## Step 2: Create Pull Requests
 
-Create pull requests for each branch in the following order:
+After running `./create-and-push-branches.sh`, create pull requests for each branch in the following order:
 
 ### Phase 1 - Foundation (MUST BE MERGED FIRST)
 1. **PR #1**: `feature/01-project-setup` → `main`
@@ -85,24 +82,15 @@ Create pull requests for each branch in the following order:
 
 ## Verification
 
-### Check local branches
+After running the script, you can verify the branches were created:
+
+### Check remote branches
 ```bash
-git branch | grep feature/
+git fetch origin
+git branch -r | grep feature/
 ```
 
 You should see all 8 feature branches listed.
-
-### View files in a branch
-```bash
-git checkout feature/01-project-setup
-git ls-files
-```
-
-### Compare with original
-```bash
-# Each branch should contain only its designated files
-git diff --stat 91c4977 feature/01-project-setup
-```
 
 ## Documentation Files
 

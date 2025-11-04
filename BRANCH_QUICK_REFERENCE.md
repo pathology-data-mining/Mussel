@@ -4,7 +4,9 @@
 
 This document provides a quick reference for the separated branches.
 
-### All Feature Branches
+### Feature Branches (To Be Created)
+
+The following 8 branches will be created when you run `./create-and-push-branches.sh`:
 
 1. `feature/01-project-setup` - Project setup and configuration (6 files)
 2. `feature/02-documentation` - Project documentation (10 files)

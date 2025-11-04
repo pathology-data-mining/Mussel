@@ -141,9 +141,9 @@ Week 4:  ✅ 05-docker-support
 
 ## Status
 
-- [x] Branch separation completed
+- [x] Branch separation design completed
 - [x] Documentation created
-- [ ] Branches pushed to GitHub (run `./push-branches.sh`)
+- [ ] Branches created and pushed to GitHub (run `./create-and-push-branches.sh`)
 - [ ] Pull requests created
 - [ ] Reviews in progress
 - [ ] Branches merged
@@ -151,8 +151,8 @@ Week 4:  ✅ 05-docker-support
 ## Quick Start
 
 ```bash
-# 1. Push all branches to GitHub
-./push-branches.sh
+# 1. Create and push all branches to GitHub
+./create-and-push-branches.sh
 
 # 2. Create PRs in order (see NEXT_STEPS.md)
 
