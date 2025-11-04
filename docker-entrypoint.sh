@@ -22,11 +22,15 @@ fi
 chown -R mussel-user:mussel-user /app/.venv || true
 chown -R mussel-user:mussel-user /.cache || true
 
-# Ensure /data directory is writable
+# Handle /data directory permissions if it exists
 if [ -d /data ]; then
-    # Don't change ownership of /data itself (it's mounted from host)
-    # But ensure it's writable
+    # Make /data writable by all users (it's mounted from host)
     chmod a+w /data || true
+    
+    # If .venv exists in /data, ensure mussel-user can access it
+    if [ -d /data/.venv ]; then
+        chown -R mussel-user:mussel-user /data/.venv || true
+    fi
 fi
 
 # Execute the command as the mussel-user
