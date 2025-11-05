@@ -22,14 +22,18 @@ class ExtractFeaturesConfig:
     slide_path (str): Path to the whole slide image.
     output_h5_path (str): Path to save the computed features in HDF5 format.
     output_pt_path (Optional[str]): Path to save the computed features in PyTorch format.
-    model_type (ModelType): Type of model to use for feature extraction.
-    model_path (Optional[str]): Path to the model weights, if applicable.
+    model_type (ModelType): Type of model to use for patch-level feature extraction.
+    model_path (Optional[str]): Path to the patch encoder model weights, if applicable.
     patch_path (Optional[str]): Directory containing pre-tiled images, if applicable.
     batch_size (int): Batch size for processing patches or tiles.
     use_gpu (bool): Whether to use GPU for computation.
     gpu_device_id (Optional[int]): Specific GPU device ID to use, if applicable.
     gpu_device_ids (Optional[List[int]]): List of GPU device IDs to use, if applicable.
     num_workers (int): Number of worker threads for data loading.
+    intermediate_h5_path (Optional[str]): Path for intermediate patch features (two-step mode).
+    aggregation_method (str): Aggregation method: identity (single-step), mean/max/model (two-step).
+    slide_model_type (Optional[ModelType]): Type of slide encoder model (when aggregation_method="model").
+    slide_model_path (Optional[str]): Path to slide encoder model weights.
     """
 
     patch_h5_path: str = MISSING
@@ -46,6 +50,10 @@ class ExtractFeaturesConfig:
     gpu_device_ids: Optional[List[int]] = None
     num_workers: int = 16
     is_test_run: bool = False
+    intermediate_h5_path: Optional[str] = None
+    aggregation_method: str = "identity"
+    slide_model_type: Optional[ModelType] = None
+    slide_model_path: Optional[str] = None
 
 
 desc_doc = """== ${hydra.help.app_name} ==
@@ -53,6 +61,17 @@ desc_doc = """== ${hydra.help.app_name} ==
 Extract features (embeddings) from whole slide images (WSI) or patches using a 
 pathology foundation model.  The embeddings are written to a PyTorch tensor file (.pt)
 and an HDF5 (.h5) file.
+
+This tool supports two modes (automatically selected based on aggregation_method):
+1. Single-step mode (aggregation_method="identity"): Direct feature extraction (default)
+2. Two-step mode (aggregation_method in ["mean", "max", "model"]): 
+   - Step 1: Patch-level encoding (extract features from individual patches)
+   - Step 2: Slide-level aggregation (aggregate patch features to slide level)
+   
+Slide-level aggregation methods:
+   - identity: Keep all patch features - single-step mode (no aggregation)
+   - mean/max: Simple pooling aggregation - two-step mode
+   - model: Use a slide encoder model - two-step mode (e.g., GIGAPATH_SLIDE for Prov-GigaPath)
 """
 
 parameter_doc = f"""== Available Parameters ==
@@ -87,6 +106,10 @@ def main(cfg: ExtractFeaturesConfig):
         num_workers=cfg.num_workers,
         gpu_device_ids=cfg.gpu_device_ids,
         is_test_run=cfg.is_test_run,
+        intermediate_h5_path=cfg.intermediate_h5_path,
+        aggregation_method=cfg.aggregation_method,
+        slide_model_type=cfg.slide_model_type,
+        slide_model_path=cfg.slide_model_path,
     )
 
 

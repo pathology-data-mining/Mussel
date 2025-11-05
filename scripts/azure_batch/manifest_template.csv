@@ -1,0 +1,4 @@
+slide_id,slide_path
+slide_001,s3://my-bucket/slides/slide_001.svs
+slide_002,s3://my-bucket/slides/slide_002.svs
+slide_003,/mnt/data/slides/slide_003.svs

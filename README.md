@@ -183,6 +183,27 @@ extract_features \
     output_pt_path=slide_features.pt
 ```
 
+**Two-step extraction with aggregation:** For more control over the feature extraction process, you can use a two-step approach with different aggregation methods:
+```bash
+# Mean pooling aggregation
+extract_features \
+    slide_path=path/to/your/slide.svs \
+    patch_h5_path=slide_tiles.h5 \
+    model_type=CLIP \
+    output_h5_path=slide_features.h5 \
+    output_pt_path=slide_features.pt \
+    aggregation_method=mean
+
+# Or use a slide encoder model
+extract_features \
+    slide_path=path/to/your/slide.svs \
+    patch_h5_path=slide_tiles.h5 \
+    output_h5_path=slide_features.h5 \
+    output_pt_path=slide_features.pt \
+    slide_model_type=GIGAPATH_SLIDE
+```
+This separates patch-level encoding from slide-level aggregation, allowing for intermediate processing steps. The system automatically uses two-step mode when `aggregation_method` is set to "mean", "max", or "model", or when `slide_model_type` is specified.
+
 ### 5. Annotate tiles with tissue types (zero-shot)
 ```bash
 # Create embeddings for your tissue types
@@ -301,6 +322,53 @@ The tools currently available from Mussel are,
 * `save_model` - download and save a foundation model locally
 
 These are described, with examples, in the accompanying document, [README-commands.md](README-commands.md)
+
+## Distributed Processing Backends
+
+For large-scale processing of whole-slide images, Mussel provides scripts for multiple compute backends:
+
+### Azure Batch (Cloud)
+- Parallel processing with auto-scaling
+- GPU-enabled VMs for fast feature extraction
+- Automatic job management and monitoring
+- S3 and Azure Storage integration
+
+See [scripts/azure_batch/README.md](scripts/azure_batch/README.md) for detailed instructions.
+
+### HTCondor (HPC)
+- DAGMan workflows for complex dependencies
+- Throughput-oriented job scheduling
+- GPU and CPU resource management
+- S3 staging support
+
+See [scripts/condor/README.md](scripts/condor/README.md) for detailed instructions.
+
+### SLURM (HPC)
+- Job arrays for batch processing
+- Partition and QOS support
+- GPU allocation via gres
+- S3 staging support
+
+See [scripts/slurm/README.md](scripts/slurm/README.md) for detailed instructions.
+
+### Common Features
+
+All backends support:
+- CSV manifest processing for batch submissions
+- Multi-model processing optimization (filter-tessellate + extract-features)
+- Automatic retry on failure
+- Organized output structure by model type
+- S3 integration for cloud storage
+
+**Backend Comparison:**
+
+| Feature | Azure Batch | HTCondor | SLURM |
+|---------|-------------|----------|-------|
+| Type | Cloud | HPC | HPC |
+| Best For | Cloud bursting | Throughput computing | HPC clusters |
+| Scaling | Auto-scale | Manual/auto | Manual |
+| Cost | Pay-per-use | Fixed infrastructure | Fixed infrastructure |
+| Setup | Complex | Moderate | Easy |
 
 ## Troubleshooting
 

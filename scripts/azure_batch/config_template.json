@@ -1,0 +1,29 @@
+{
+  "defaults": {
+    "prefilter_model_type": "CTRANSPATH",
+    "segment_threshold": 0,
+    "patch_size": 256,
+    "mpp": 0.5,
+    "num_workers": 4,
+    "batch_size": 64,
+    "use_gpu": true,
+    "keep_intermediate_files": false
+  },
+  "tasks": [
+    {
+      "task_id": "slide_001",
+      "slide_path": "/mnt/data/slides/slide_001.svs",
+      "output_h5_path": "/mnt/output/slide_001_features.h5",
+      "output_pt_path": "/mnt/output/slide_001_features.pt"
+    },
+    {
+      "task_id": "slide_002",
+      "slide_path": "/mnt/data/slides/slide_002.svs",
+      "output_h5_path": "/mnt/output/slide_002_features.h5",
+      "output_pt_path": "/mnt/output/slide_002_features.pt",
+      "classifier_pkl": "/mnt/data/classifier.pkl",
+      "classifier_threshold": 0.75,
+      "postfilter_model_type": "CLIP"
+    }
+  ]
+}
