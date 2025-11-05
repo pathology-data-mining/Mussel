@@ -23,7 +23,7 @@ import time
 from pathlib import Path
 from typing import Dict, List, Optional
 
-# Import model pre-download utility
+# Import model pre-download utility and Azure Files staging
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'common'))
 try:
     from model_predownload import pre_download_models, upload_models_to_s3
@@ -31,6 +31,12 @@ except ImportError:
     print("WARNING: Could not import model_predownload module. Pre-download features will be unavailable.")
     pre_download_models = None
     upload_models_to_s3 = None
+
+try:
+    from azure_files_staging import AzureFilesStaging
+except ImportError:
+    print("WARNING: Could not import azure_files_staging module. Azure Files staging features will be unavailable.")
+    AzureFilesStaging = None
 
 try:
     from azure.batch import BatchServiceClient
@@ -70,6 +76,7 @@ class AzureBatchJobSubmitter:
         batch_account_url: str,
         storage_account_name: Optional[str] = None,
         storage_account_key: Optional[str] = None,
+        azure_files_share_name: Optional[str] = None,
     ):
         """Initialize Azure Batch client."""
         credentials = SharedKeyCredentials(batch_account_name, batch_account_key)
@@ -77,9 +84,13 @@ class AzureBatchJobSubmitter:
         
         self.storage_account_name = storage_account_name
         self.storage_account_key = storage_account_key
+        self.azure_files_share_name = azure_files_share_name
         
         # Track task metadata for failure reporting
         self.task_metadata = {}
+        
+        # Track staged files for cleanup
+        self.staged_files = []
         
         if storage_account_name and storage_account_key:
             self.blob_client = BlobServiceClient(
@@ -88,6 +99,16 @@ class AzureBatchJobSubmitter:
             )
         else:
             self.blob_client = None
+        
+        # Initialize Azure Files staging client if configured
+        if storage_account_name and storage_account_key and azure_files_share_name and AzureFilesStaging:
+            self.azure_files_staging = AzureFilesStaging(
+                account_name=storage_account_name,
+                account_key=storage_account_key,
+                share_name=azure_files_share_name,
+            )
+        else:
+            self.azure_files_staging = None
 
     def create_pool(
         self,
@@ -96,8 +117,9 @@ class AzureBatchJobSubmitter:
         node_count: int = 1,
         container_image: str = "mskmind/mussel:latest-torch-gpu",
         use_gpu: bool = True,
+        mount_azure_files: bool = False,
     ) -> None:
-        """Create a pool of compute nodes."""
+        """Create a pool of compute nodes with optional Azure Files mount."""
         print(f"Creating pool '{pool_id}'...")
 
         # Container configuration
@@ -119,6 +141,22 @@ class AzureBatchJobSubmitter:
             node_agent_sku_id="batch.node.ubuntu 20.04",
         )
 
+        # Add Azure Files mount configuration if requested
+        mount_config = None
+        if mount_azure_files and self.azure_files_staging:
+            print(f"  Configuring Azure Files mount: share '{self.azure_files_share_name}'")
+            mount_config = [
+                batchmodels.MountConfiguration(
+                    azure_file_share_configuration=batchmodels.AzureFileShareConfiguration(
+                        account_name=self.storage_account_name,
+                        azure_file_url=f"https://{self.storage_account_name}.file.core.windows.net/{self.azure_files_share_name}",
+                        account_key=self.storage_account_key,
+                        relative_mount_path="azfiles",
+                        mount_options="-o vers=3.0,dir_mode=0777,file_mode=0777,sec=ntlmssp",
+                    )
+                )
+            ]
+
         # Pool configuration
         pool = batchmodels.PoolAddParameter(
             id=pool_id,
@@ -126,11 +164,14 @@ class AzureBatchJobSubmitter:
             vm_size=vm_size,
             target_dedicated_nodes=node_count,
             enable_auto_scale=False,
+            mount_configuration=mount_config,
         )
 
         try:
             self.batch_client.pool.add(pool)
             print(f"Pool '{pool_id}' created successfully")
+            if mount_config:
+                print(f"  Azure Files share '{self.azure_files_share_name}' will be mounted at /mnt/batch/tasks/fsmounts/azfiles")
         except batchmodels.BatchErrorException as e:
             if e.error.code == "PoolExists":
                 print(f"Pool '{pool_id}' already exists")
@@ -342,6 +383,7 @@ class AzureBatchJobSubmitter:
         output_s3_prefix: Optional[str] = None,
         container_image: str = "mskmind/mussel:latest-torch-gpu",
         postfilter_models: Optional[List[str]] = None,
+        staged_slide_paths: Optional[Dict[str, str]] = None,
         **default_params,
     ) -> None:
         """
@@ -359,6 +401,7 @@ class AzureBatchJobSubmitter:
             output_s3_prefix: S3 prefix for outputs (e.g., s3://bucket/results/)
             container_image: Docker image to use
             postfilter_models: List of postfilter model types to run sequentially in same task
+            staged_slide_paths: Optional dict mapping slide_id to staged Azure Files paths
             **default_params: Default parameters for all tasks (e.g., prefilter_model_type, batch_size)
         """
         print(f"Loading task manifest from '{csv_file}'...")
@@ -383,6 +426,11 @@ class AzureBatchJobSubmitter:
             for row in reader:
                 slide_id = row['slide_id']
                 slide_path = row['slide_path']
+                
+                # Use staged path if available
+                if staged_slide_paths and slide_id in staged_slide_paths:
+                    slide_path = staged_slide_paths[slide_id]
+                    print(f"  Using staged path for {slide_id}: {slide_path}")
                 
                 # Create ONE task per slide (models run sequentially within the task)
                 task_id = slide_id
@@ -655,6 +703,72 @@ class AzureBatchJobSubmitter:
         
         return len(manifest_data)
 
+    def stage_slides_to_azure_files(
+        self,
+        slides: List[Dict[str, str]],
+        remote_dir: str = "slides",
+    ) -> Dict[str, str]:
+        """
+        Stage slides to Azure Files before processing.
+        
+        Args:
+            slides: List of dicts with 'slide_id' and 'slide_path' keys
+            remote_dir: Remote directory for slides in Azure Files
+            
+        Returns:
+            Dict mapping slide_id to Azure Files path (azfiles://...)
+        """
+        if not self.azure_files_staging:
+            raise ValueError("Azure Files staging not configured. Provide storage account details and share name.")
+        
+        staged_paths = {}
+        print(f"[Azure Files] Staging {len(slides)} slides to Azure Files share '{self.azure_files_share_name}'...")
+        
+        for slide in slides:
+            slide_id = slide['slide_id']
+            slide_path = slide['slide_path']
+            
+            # Determine filename
+            if slide_path.startswith(("s3://", "http://", "https://", "azblob://")):
+                filename = os.path.basename(slide_path)
+            else:
+                filename = os.path.basename(slide_path)
+            
+            # Upload to Azure Files
+            remote_path = f"{remote_dir}/{filename}"
+            self.azure_files_staging.upload_file(slide_path, remote_path)
+            
+            # Store mapping with azfiles:// URL format
+            azfiles_path = f"azfiles://{self.storage_account_name}/{self.azure_files_share_name}/{remote_path}"
+            staged_paths[slide_id] = azfiles_path
+            
+            # Track for cleanup
+            self.staged_files.append(remote_path)
+        
+        print(f"[Azure Files] Staged {len(staged_paths)} slides")
+        return staged_paths
+    
+    def cleanup_staged_files(self) -> None:
+        """Clean up all staged files from Azure Files."""
+        if not self.azure_files_staging or not self.staged_files:
+            return
+        
+        print(f"[Azure Files] Cleaning up {len(self.staged_files)} staged files...")
+        
+        # Group files by directory for efficient cleanup
+        directories = set()
+        for file_path in self.staged_files:
+            directory = os.path.dirname(file_path)
+            if directory:
+                directories.add(directory)
+        
+        # Delete directories (which will delete all files within)
+        if directories:
+            self.azure_files_staging.cleanup_staging(list(directories))
+        
+        self.staged_files = []
+        print("[Azure Files] Cleanup complete")
+
     def delete_job(self, job_id: str) -> None:
         """Delete a job."""
         print(f"Deleting job '{job_id}'...")
@@ -679,6 +793,15 @@ def main():
     parser.add_argument("--batch-account-url", required=True, help="Azure Batch account URL")
     parser.add_argument("--storage-account-name", help="Azure Storage account name (optional)")
     parser.add_argument("--storage-account-key", help="Azure Storage account key (optional)")
+    
+    # Azure Files staging configuration
+    parser.add_argument("--azure-files-share-name", help="Azure Files share name for staging files")
+    parser.add_argument("--stage-to-azure-files", action="store_true", 
+                        help="Stage input files to Azure Files before processing")
+    parser.add_argument("--mount-azure-files", action="store_true",
+                        help="Mount Azure Files share to batch pool nodes")
+    parser.add_argument("--cleanup-staged-files", action="store_true",
+                        help="Clean up staged files from Azure Files after processing")
     
     # Pool configuration
     parser.add_argument("--pool-id", required=True, help="Pool ID")
@@ -812,6 +935,7 @@ def main():
         batch_account_url=args.batch_account_url,
         storage_account_name=args.storage_account_name,
         storage_account_key=args.storage_account_key,
+        azure_files_share_name=args.azure_files_share_name,
     )
 
     # Create pool if requested
@@ -821,6 +945,7 @@ def main():
             vm_size=args.vm_size,
             node_count=args.node_count,
             container_image=args.container_image,
+            mount_azure_files=args.mount_azure_files,
         )
 
     # Create job if requested
@@ -835,6 +960,31 @@ def main():
             container_image=args.container_image,
         )
     elif args.csv_manifest:
+        # Stage slides to Azure Files if requested
+        staged_slide_paths = {}
+        if args.stage_to_azure_files:
+            if not args.azure_files_share_name:
+                print("ERROR: --azure-files-share-name required when using --stage-to-azure-files")
+                sys.exit(1)
+            
+            # Read CSV to get slide paths
+            slides_to_stage = []
+            with open(args.csv_manifest, 'r') as f:
+                reader = csv.DictReader(f)
+                for row in reader:
+                    slides_to_stage.append({
+                        'slide_id': row['slide_id'],
+                        'slide_path': row['slide_path']
+                    })
+            
+            # Stage slides to Azure Files
+            print(f"\n[Azure Files Staging] Staging {len(slides_to_stage)} slides...")
+            staged_slide_paths = submitter.stage_slides_to_azure_files(
+                slides=slides_to_stage,
+                remote_dir="slides",
+            )
+            print(f"[Azure Files Staging] Staging complete. Files available at /mnt/batch/tasks/fsmounts/azfiles/slides/\n")
+        
         # Prepare default parameters for CSV tasks
         default_params = {}
         if args.aws_access_key_id:
@@ -871,6 +1021,7 @@ def main():
             output_s3_prefix=args.output_s3_prefix,
             container_image=args.container_image,
             postfilter_models=postfilter_models_list,
+            staged_slide_paths=staged_slide_paths if staged_slide_paths else None,
             **default_params,
         )
     elif args.task_id and args.slide_path:
@@ -922,6 +1073,9 @@ def main():
         )
 
     # Cleanup if requested
+    if args.cleanup_staged_files:
+        submitter.cleanup_staged_files()
+    
     if args.delete_job:
         submitter.delete_job(job_id=args.job_id)
     

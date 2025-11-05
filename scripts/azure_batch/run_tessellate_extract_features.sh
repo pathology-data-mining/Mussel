@@ -84,9 +84,13 @@ KEEP_INTERMEDIATE_FILES=${KEEP_INTERMEDIATE_FILES:-false}
 AWS_DEFAULT_REGION=${AWS_DEFAULT_REGION:-us-east-1}
 AGGREGATION_METHOD=${AGGREGATION_METHOD:-identity}
 
-# S3 helper functions
+# Storage helper functions
 is_s3_path() {
     [[ "$1" =~ ^s3:// ]]
+}
+
+is_azfiles_path() {
+    [[ "$1" =~ ^azfiles:// ]]
 }
 
 download_from_s3() {
@@ -115,6 +119,20 @@ upload_to_s3() {
     fi
 }
 
+resolve_azfiles_path() {
+    # Convert azfiles://account/share/path to /mnt/batch/tasks/fsmounts/azfiles/path
+    local azfiles_url="$1"
+    
+    # Extract path after share name: azfiles://account/share/path -> path
+    # Format: azfiles://account/share/path
+    local path_part=$(echo "$azfiles_url" | sed 's|^azfiles://[^/]*/[^/]*/||')
+    
+    # Azure Batch mounts Azure Files at /mnt/batch/tasks/fsmounts/azfiles
+    local local_path="/mnt/batch/tasks/fsmounts/azfiles/$path_part"
+    
+    echo "$local_path"
+}
+
 log "Configuration:"
 log "  SLIDE_PATH: $SLIDE_PATH"
 log "  OUTPUT_H5_PATH: $OUTPUT_H5_PATH"
@@ -132,9 +150,14 @@ log "  USE_GPU: $USE_GPU"
 log "  KEEP_INTERMEDIATE_FILES: $KEEP_INTERMEDIATE_FILES"
 echo ""
 
-# Stage input slide from S3 if needed
+# Stage input slide - handle S3, Azure Files, or local paths
 ORIGINAL_SLIDE_PATH="$SLIDE_PATH"
-if is_s3_path "$SLIDE_PATH"; then
+if is_azfiles_path "$SLIDE_PATH"; then
+    # Resolve Azure Files path to local mount point
+    log "Slide is in Azure Files, resolving to mount point..."
+    SLIDE_PATH=$(resolve_azfiles_path "$SLIDE_PATH")
+    log "Resolved to: $SLIDE_PATH"
+elif is_s3_path "$SLIDE_PATH"; then
     log "Slide is in S3, staging locally..."
     WORK_DIR="/tmp/mussel_work_$$"
     mkdir -p "$WORK_DIR"
