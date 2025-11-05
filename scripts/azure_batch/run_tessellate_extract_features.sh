@@ -123,9 +123,22 @@ resolve_azfiles_path() {
     # Convert azfiles://account/share/path to /mnt/batch/tasks/fsmounts/azfiles/path
     local azfiles_url="$1"
     
+    # Validate URL format
+    if ! [[ "$azfiles_url" =~ ^azfiles://[^/]+/[^/]+/.+ ]]; then
+        log "ERROR: Invalid Azure Files URL format: $azfiles_url"
+        log "Expected format: azfiles://account/share/path"
+        exit 1
+    fi
+    
     # Extract path after share name: azfiles://account/share/path -> path
     # Format: azfiles://account/share/path
     local path_part=$(echo "$azfiles_url" | sed 's|^azfiles://[^/]*/[^/]*/||')
+    
+    # Validate path extraction
+    if [ -z "$path_part" ]; then
+        log "ERROR: Could not extract path from Azure Files URL: $azfiles_url"
+        exit 1
+    fi
     
     # Azure Batch mounts Azure Files at /mnt/batch/tasks/fsmounts/azfiles
     local local_path="/mnt/batch/tasks/fsmounts/azfiles/$path_part"

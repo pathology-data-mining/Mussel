@@ -728,11 +728,8 @@ class AzureBatchJobSubmitter:
             slide_id = slide['slide_id']
             slide_path = slide['slide_path']
             
-            # Determine filename
-            if slide_path.startswith(("s3://", "http://", "https://", "azblob://")):
-                filename = os.path.basename(slide_path)
-            else:
-                filename = os.path.basename(slide_path)
+            # Determine filename from path
+            filename = os.path.basename(slide_path)
             
             # Upload to Azure Files
             remote_path = f"{remote_dir}/{filename}"

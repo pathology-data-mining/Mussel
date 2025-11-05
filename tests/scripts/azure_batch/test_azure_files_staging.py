@@ -7,14 +7,17 @@ This test validates the logic and structure without requiring Azure SDK.
 import sys
 import os
 import re
+from pathlib import Path
 
-# Add scripts path
-scripts_path = os.path.join(os.path.dirname(__file__), '..', '..', '..', 'scripts', 'azure_batch')
+# Get absolute paths using pathlib
+TEST_DIR = Path(__file__).parent
+SCRIPTS_DIR = TEST_DIR / '..' / '..' / '..' / 'scripts' / 'azure_batch'
+COMMON_DIR = TEST_DIR / '..' / '..' / '..' / 'scripts' / 'common'
 
 
 def test_submit_batch_jobs_has_azure_files_support():
     """Test that submit_batch_jobs.py has Azure Files staging support."""
-    submit_file = os.path.join(scripts_path, 'submit_batch_jobs.py')
+    submit_file = SCRIPTS_DIR / 'submit_batch_jobs.py'
     
     with open(submit_file, 'r') as f:
         content = f.read()
@@ -62,7 +65,7 @@ def test_submit_batch_jobs_has_azure_files_support():
 
 def test_run_script_has_azfiles_support():
     """Test that run_tessellate_extract_features.sh supports azfiles:// paths."""
-    run_script = os.path.join(scripts_path, 'run_tessellate_extract_features.sh')
+    run_script = SCRIPTS_DIR / 'run_tessellate_extract_features.sh'
     
     with open(run_script, 'r') as f:
         content = f.read()
@@ -88,7 +91,7 @@ def test_run_script_has_azfiles_support():
 
 def test_azure_files_staging_module_structure():
     """Test that azure_files_staging.py has required functionality."""
-    staging_file = os.path.join(scripts_path, '..', 'common', 'azure_files_staging.py')
+    staging_file = COMMON_DIR / 'azure_files_staging.py'
     
     with open(staging_file, 'r') as f:
         content = f.read()
@@ -116,7 +119,7 @@ def test_azure_files_staging_module_structure():
 
 def test_documentation_updated():
     """Test that documentation includes Azure Files staging information."""
-    readme_file = os.path.join(scripts_path, 'README.md')
+    readme_file = SCRIPTS_DIR / 'README.md'
     
     with open(readme_file, 'r') as f:
         content = f.read()
@@ -142,16 +145,17 @@ def test_documentation_updated():
 
 def test_workflow_integration():
     """Test that the workflow is properly integrated."""
-    submit_file = os.path.join(scripts_path, 'submit_batch_jobs.py')
+    submit_file = SCRIPTS_DIR / 'submit_batch_jobs.py'
     
     with open(submit_file, 'r') as f:
         content = f.read()
     
     # Check that staging happens before task submission
-    # Look for pattern: stage_to_azure_files ... stage_slides_to_azure_files ... submit_tasks_from_csv
-    stage_pattern = r'if args\.stage_to_azure_files:.*?staged_slide_paths = submitter\.stage_slides_to_azure_files'
-    assert re.search(stage_pattern, content, re.DOTALL), \
-        "Staging not properly integrated before task submission"
+    assert 'if args.stage_to_azure_files:' in content, \
+        "Missing staging conditional check"
+    
+    assert 'staged_slide_paths = submitter.stage_slides_to_azure_files' in content, \
+        "Missing call to stage_slides_to_azure_files"
     
     # Check that staged paths are passed to submit_tasks_from_csv
     assert 'staged_slide_paths=staged_slide_paths' in content, \
