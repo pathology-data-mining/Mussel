@@ -28,6 +28,14 @@ if [ -z "$AZURE_BATCH_ACCOUNT_NAME" ] || [ -z "$AZURE_BATCH_ACCOUNT_KEY" ] || [ 
     exit 1
 fi
 
+# Check AWS credentials if using S3
+if [ -z "$AWS_ACCESS_KEY_ID" ] || [ -z "$AWS_SECRET_ACCESS_KEY" ]; then
+    echo "ERROR: Please set AWS credentials for S3 access:"
+    echo "  export AWS_ACCESS_KEY_ID=\"<your-key>\""
+    echo "  export AWS_SECRET_ACCESS_KEY=\"<your-secret>\""
+    exit 1
+fi
+
 # Configuration
 MANIFEST_FILE="example_slides_manifest.csv"
 OUTPUT_S3_PREFIX="s3://my-bucket/mussel-results"

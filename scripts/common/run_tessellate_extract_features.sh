@@ -399,21 +399,8 @@ if [ "$BATCH_MODE" = true ]; then
     
     log "SUCCESS: Batch processing completed in $DURATION seconds"
     
-    # Handle S3 output upload if OUTPUT_DIR is an S3 path
-    if is_s3_path "$OUTPUT_DIR"; then
-        log ""
-        log "Output directory is S3 path, uploading results..."
-        
-        # Create a temporary local output directory
-        LOCAL_OUTPUT_DIR="/tmp/mussel_output_$$"
-        
-        # The tessellate_extract_features command should have created files in OUTPUT_DIR
-        # But since OUTPUT_DIR is S3, we need to upload them
-        # Actually, the CLI should handle S3 natively, so this might not be needed
-        # Let's add a warning for now
-        log "WARNING: S3 output directory specified. Ensure the tessellate_extract_features CLI supports S3 outputs."
-        log "If outputs are in a local directory, manual upload may be required."
-    fi
+    # Note: The tessellate_extract_features CLI handles S3 output paths natively
+    # No additional upload logic needed here
     
     log ""
     log "=========================================="
