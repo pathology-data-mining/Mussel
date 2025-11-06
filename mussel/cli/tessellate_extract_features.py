@@ -27,7 +27,7 @@ from mussel.cli.tessellate_extract_features_common import (
     create_visualizations,
 )
 from mussel.models import ModelType, get_required_patch_encoder
-from mussel.utils import aggregate_slide_features_batch, aggregate_slide_features, extract_patch_features_batch
+from mussel.utils import aggregate_slide_features_batch, aggregate_slide_features, extract_patch_features_batch, save_features
 
 ssl._create_default_https_context = ssl._create_unverified_context
 
@@ -57,6 +57,8 @@ class TessellateExtractFeaturesConfig:
         output_h5_suffix (str): Suffix for output HDF5 files (default: "features.h5").
         output_pt_suffix (str): Suffix for output PyTorch files (default: "features.pt").
         slide_batch_size (int): Number of slides to process in a single batch during slide-level aggregation (default: 8).
+        use_tile_batch_extraction (bool): Whether to use batch tile-level feature extraction (loads model once for all slides). 
+            Default: True. Set to False to use sequential per-slide extraction (backward compatible).
     
     Filtering Parameters (Optional):
         classifier_pkl (Optional[str]): Path to the classifier model in pickle format for filtering. If None, filtering is skipped.
@@ -113,6 +115,7 @@ class TessellateExtractFeaturesConfig:
     output_h5_suffix: str = "features.h5"
     output_pt_suffix: str = "features.pt"
     slide_batch_size: int = 8
+    use_tile_batch_extraction: bool = True
     # Common parameters
     classifier_pkl: Optional[str] = None
     classifier_threshold: float = 0.75
@@ -382,101 +385,129 @@ def _main_batch(cfg: TessellateExtractFeaturesConfig):
             shutil.rmtree(temp_dir)
         return
     
-    # Phase 2: Batch extract patch features for all slides
-    logger.info(f"\n=== Phase 2: Batch extracting patch features for {len(slide_results)} slides ===")
+    # Phase 2: Extract patch features for all slides
+    logger.info(f"\n=== Phase 2: Extracting patch features for {len(slide_results)} slides ===")
     
-    # Prepare paths for batch extraction
+    # Prepare paths for extraction
     patch_h5_paths = [r['final_coords_h5_path'] for r in slide_results]
     slide_paths = [r['slide_path'] for r in slide_results]
     
     # Determine if we need two-step processing (patch features + slide aggregation)
     use_two_step = cfg.aggregation_method != "identity"
     
-    if use_two_step:
-        # Extract to intermediate patch feature files for later aggregation
-        intermediate_h5_paths = [
-            str(base_path / f"{r['slide_id']}.patch.h5") 
-            for r in slide_results
-        ]
+    if cfg.use_tile_batch_extraction:
+        # Use batch tile-level extraction (NEW - loads model once)
+        logger.info("Using batch tile-level feature extraction")
         
-        extract_patch_features_batch(
-            patch_h5_paths=patch_h5_paths,
-            slide_paths=slide_paths,
-            output_h5_paths=intermediate_h5_paths,
-            model_type=postfilter_model_type,
-            model_path=postfilter_model_path,
-            batch_size=cfg.batch_size,
-            use_gpu=cfg.use_gpu,
-            gpu_device_id=cfg.gpu_device_id,
-            gpu_device_ids=cfg.gpu_device_ids,
-            num_workers=cfg.num_workers,
-            pin_memory=True,
-            is_test_run=False,
-        )
-        
-        # Add intermediate paths to results
-        for r, intermediate_h5_path in zip(slide_results, intermediate_h5_paths):
-            r['intermediate_h5_path'] = intermediate_h5_path
-        
-        # Phase 3: Batch aggregate to slide level
-        if cfg.aggregation_method == "model":
-            logger.info(f"\n=== Phase 3: Batch aggregating {len(slide_results)} slides ===")
+        if use_two_step:
+            # Extract to intermediate patch feature files for later aggregation
+            intermediate_h5_paths = [
+                str(base_path / f"{r['slide_id']}.patch.h5") 
+                for r in slide_results
+            ]
             
-            output_h5_paths = [r['output_h5_path'] for r in slide_results]
-            output_pt_paths = [r['output_pt_path'] for r in slide_results]
-            
-            aggregate_slide_features_batch(
-                patch_features_h5_paths=intermediate_h5_paths,
-                output_h5_paths=output_h5_paths,
-                output_pt_paths=output_pt_paths,
-                aggregation_method=cfg.aggregation_method,
-                model_type=cfg.slide_model_type,
-                model_path=cfg.slide_model_path,
+            extract_patch_features_batch(
+                patch_h5_paths=patch_h5_paths,
+                slide_paths=slide_paths,
+                output_h5_paths=intermediate_h5_paths,
+                model_type=postfilter_model_type,
+                model_path=postfilter_model_path,
+                batch_size=cfg.batch_size,
                 use_gpu=cfg.use_gpu,
                 gpu_device_id=cfg.gpu_device_id,
                 gpu_device_ids=cfg.gpu_device_ids,
-                slide_batch_size=cfg.slide_batch_size,
+                num_workers=cfg.num_workers,
+                pin_memory=True,
+                is_test_run=False,
             )
-        else:
-            # For mean/max aggregation, aggregate each slide individually
-            logger.info(f"\n=== Phase 3: Aggregating {len(slide_results)} slides (non-model) ===")
             
-            for r in slide_results:
-                aggregate_slide_features(
-                    patch_features_h5_path=r['intermediate_h5_path'],
-                    output_h5_path=r['output_h5_path'],
-                    output_pt_path=r['output_pt_path'],
+            # Add intermediate paths to results
+            for r, intermediate_h5_path in zip(slide_results, intermediate_h5_paths):
+                r['intermediate_h5_path'] = intermediate_h5_path
+            
+            # Phase 3: Batch aggregate to slide level
+            if cfg.aggregation_method == "model":
+                logger.info(f"\n=== Phase 3: Batch aggregating {len(slide_results)} slides ===")
+                
+                output_h5_paths = [r['output_h5_path'] for r in slide_results]
+                output_pt_paths = [r['output_pt_path'] for r in slide_results]
+                
+                aggregate_slide_features_batch(
+                    patch_features_h5_paths=intermediate_h5_paths,
+                    output_h5_paths=output_h5_paths,
+                    output_pt_paths=output_pt_paths,
                     aggregation_method=cfg.aggregation_method,
-                    model_type=None,
-                    model_path=None,
+                    model_type=cfg.slide_model_type,
+                    model_path=cfg.slide_model_path,
                     use_gpu=cfg.use_gpu,
                     gpu_device_id=cfg.gpu_device_id,
                     gpu_device_ids=cfg.gpu_device_ids,
+                    slide_batch_size=cfg.slide_batch_size,
                 )
+            else:
+                # For mean/max aggregation, aggregate each slide individually
+                logger.info(f"\n=== Phase 3: Aggregating {len(slide_results)} slides (non-model) ===")
+                
+                for r in slide_results:
+                    aggregate_slide_features(
+                        patch_features_h5_path=r['intermediate_h5_path'],
+                        output_h5_path=r['output_h5_path'],
+                        output_pt_path=r['output_pt_path'],
+                        aggregation_method=cfg.aggregation_method,
+                        model_type=None,
+                        model_path=None,
+                        use_gpu=cfg.use_gpu,
+                        gpu_device_id=cfg.gpu_device_id,
+                        gpu_device_ids=cfg.gpu_device_ids,
+                    )
+        else:
+            # Single-step: extract directly to final output (no aggregation)
+            output_h5_paths = [r['output_h5_path'] for r in slide_results]
+            
+            extract_patch_features_batch(
+                patch_h5_paths=patch_h5_paths,
+                slide_paths=slide_paths,
+                output_h5_paths=output_h5_paths,
+                model_type=postfilter_model_type,
+                model_path=postfilter_model_path,
+                batch_size=cfg.batch_size,
+                use_gpu=cfg.use_gpu,
+                gpu_device_id=cfg.gpu_device_id,
+                gpu_device_ids=cfg.gpu_device_ids,
+                num_workers=cfg.num_workers,
+                pin_memory=True,
+                is_test_run=False,
+            )
+            
+            # Also save as PT format for consistency
+            for r in slide_results:
+                with h5py.File(r['output_h5_path'], "r") as f:
+                    features = torch.from_numpy(f["features"][:])
+                    torch.save(features, r['output_pt_path'])
     else:
-        # Single-step: extract directly to final output (no aggregation)
-        output_h5_paths = [r['output_h5_path'] for r in slide_results]
+        # Use sequential per-slide extraction (backward compatible)
+        logger.info("Using sequential per-slide feature extraction")
         
-        extract_patch_features_batch(
-            patch_h5_paths=patch_h5_paths,
-            slide_paths=slide_paths,
-            output_h5_paths=output_h5_paths,
-            model_type=postfilter_model_type,
-            model_path=postfilter_model_path,
-            batch_size=cfg.batch_size,
-            use_gpu=cfg.use_gpu,
-            gpu_device_id=cfg.gpu_device_id,
-            gpu_device_ids=cfg.gpu_device_ids,
-            num_workers=cfg.num_workers,
-            pin_memory=True,
-            is_test_run=False,
-        )
-        
-        # Also save as PT format for consistency
-        for r in slide_results:
-            with h5py.File(r['output_h5_path'], "r") as f:
-                features = torch.from_numpy(f["features"][:])
-                torch.save(features, r['output_pt_path'])
+        for i, r in enumerate(slide_results):
+            logger.info(f"Extracting features for slide {i+1}/{len(slide_results)}: {r['slide_id']}")
+            
+            save_features(
+                slide_path=r['slide_path'],
+                gpu_device_id=cfg.gpu_device_id,
+                model_type=postfilter_model_type,
+                model_path=postfilter_model_path,
+                use_gpu=cfg.use_gpu,
+                output_h5_path=r['output_h5_path'],
+                output_pt_path=r['output_pt_path'],
+                patch_h5_path=r['final_coords_h5_path'],
+                batch_size=cfg.batch_size,
+                num_workers=cfg.num_workers,
+                gpu_device_ids=cfg.gpu_device_ids,
+                intermediate_h5_path=None,
+                aggregation_method=cfg.aggregation_method,
+                slide_model_type=cfg.slide_model_type,
+                slide_model_path=cfg.slide_model_path,
+            )
     
     # Phase 4: Create visualizations
     logger.info(f"\n=== Phase 4: Creating visualizations ===")
