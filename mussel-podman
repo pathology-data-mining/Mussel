@@ -18,23 +18,23 @@ NC='\033[0m' # No Color
 
 # Available Mussel commands
 MUSSEL_COMMANDS=(
-    "tessellate"
-    "tessellate_extract_features"
-    "filter_tessellate"
-    "extract_features"
-    "create_class_embeddings"
-    "annotate"
-    "cache_tiles"
-    "export_tiles"
-    "filter_features"
-    "merge_annotation_features"
-    "linear_probe_benchmark"
-    "save_model"
+  "tessellate"
+  "tessellate_extract_features"
+  "filter_tessellate"
+  "extract_features"
+  "create_class_embeddings"
+  "annotate"
+  "cache_tiles"
+  "export_tiles"
+  "filter_features"
+  "merge_annotation_features"
+  "linear_probe_benchmark"
+  "save_model"
 )
 
 # Help message
 show_help() {
-    cat << EOF
+  cat <<EOF
 Mussel Podman Wrapper
 
 Usage: $(basename "$0") COMMAND [OPTIONS]
@@ -88,160 +88,154 @@ EOF
 
 # Check if Podman is installed
 check_podman() {
-    if ! command -v podman &> /dev/null; then
-        echo -e "${RED}Error: Podman is not installed or not in PATH${NC}" >&2
-        echo "Please install Podman from https://podman.io/getting-started/installation" >&2
-        exit 1
-    fi
+  if ! command -v podman &>/dev/null; then
+    echo -e "${RED}Error: Podman is not installed or not in PATH${NC}" >&2
+    echo "Please install Podman from https://podman.io/getting-started/installation" >&2
+    exit 1
+  fi
 }
 
 # Build Podman image
 build_image() {
-    echo -e "${GREEN}Building Mussel Podman image...${NC}"
-    echo "Backend: $BACKEND"
-    echo "Image: $PODMAN_IMAGE"
-    
-    podman build \
-        --format docker \
-        --layers=false \
-        --build-arg BACKEND="$BACKEND" \
-        -t "$PODMAN_IMAGE" \
-        .
-    
-    if [ $? -eq 0 ]; then
-        echo -e "${GREEN}Successfully built $PODMAN_IMAGE${NC}"
-    else
-        echo -e "${RED}Failed to build Podman image${NC}" >&2
-        exit 1
-    fi
+  echo -e "${GREEN}Building Mussel Podman image...${NC}"
+  echo "Backend: $BACKEND"
+  echo "Image: $PODMAN_IMAGE"
+
+  podman build \
+    --format docker \
+    --layers=false \
+    --build-arg BACKEND="$BACKEND" \
+    -t "$PODMAN_IMAGE" \
+    .
+
+  if [ $? -eq 0 ]; then
+    echo -e "${GREEN}Successfully built $PODMAN_IMAGE${NC}"
+  else
+    echo -e "${RED}Failed to build Podman image${NC}" >&2
+    exit 1
+  fi
 }
 
 # Check if image exists
 check_image() {
-    if ! podman image inspect "$PODMAN_IMAGE" &> /dev/null; then
-        echo -e "${YELLOW}Podman image '$PODMAN_IMAGE' not found${NC}" >&2
-        echo "Building the image..." >&2
-        build_image
-    fi
+  if ! podman image inspect "$PODMAN_IMAGE" &>/dev/null; then
+    echo -e "${YELLOW}Podman image '$PODMAN_IMAGE' not found${NC}" >&2
+    echo "Building the image..." >&2
+    build_image
+  fi
 }
 
 # Start interactive shell
 start_shell() {
-    check_image
-    
-    local work_dir="${MUSSEL_WORK_DIR:-$(pwd)}"
-    local podman_args="-it --rm"
-    
-    # Force UV to use the container's virtual environment (ignore host .venv)
-    podman_args="$podman_args -e UV_PROJECT_ENVIRONMENT=/app/.venv"
-    
-    # Add GPU support if requested
-    if [ "$USE_GPU" = "true" ]; then
-        # Check if nvidia-ctk or nvidia-container-toolkit is available
-        if command -v nvidia-ctk &> /dev/null || [ -f /usr/bin/nvidia-container-runtime ]; then
-            # Try CDI (Container Device Interface) first (Podman 4.1+)
-            if podman run --rm --device nvidia.com/gpu=all ubuntu:22.04 nvidia-smi &> /dev/null 2>&1; then
-                podman_args="$podman_args --device nvidia.com/gpu=all"
-            # Fallback to --security-opt=label=disable approach
-            elif podman run --rm --security-opt=label=disable --device /dev/dri ubuntu:22.04 ls /dev/dri &> /dev/null 2>&1; then
-                podman_args="$podman_args --security-opt=label=disable"
-                # Add all GPU devices (only character/block devices, not directories)
-                for dev in /dev/nvidia* /dev/dri/*; do
-                    [ -c "$dev" ] || [ -b "$dev" ] && podman_args="$podman_args --device $dev"
-                done
-            else
-                echo -e "${YELLOW}Warning: GPU support requested but not available${NC}" >&2
-            fi
-        else
-            echo -e "${YELLOW}Warning: GPU support requested but nvidia-container-toolkit not found${NC}" >&2
-        fi
+  check_image
+
+  local work_dir="${MUSSEL_WORK_DIR:-$(pwd)}"
+  local podman_args="-it --rm"
+
+  # Add GPU support if requested
+  if [ "$USE_GPU" = "true" ]; then
+    # Check if nvidia-ctk or nvidia-container-toolkit is available
+    if command -v nvidia-ctk &>/dev/null || [ -f /usr/bin/nvidia-container-runtime ]; then
+      # Try CDI (Container Device Interface) first (Podman 4.1+)
+      if podman run --rm --device nvidia.com/gpu=all ubuntu:22.04 nvidia-smi &>/dev/null 2>&1; then
+        podman_args="$podman_args --device nvidia.com/gpu=all"
+      # Fallback to --security-opt=label=disable approach
+      elif podman run --rm --security-opt=label=disable --device /dev/dri ubuntu:22.04 ls /dev/dri &>/dev/null 2>&1; then
+        podman_args="$podman_args --security-opt=label=disable"
+        # Add all GPU devices (only character/block devices, not directories)
+        for dev in /dev/nvidia* /dev/dri/*; do
+          [ -c "$dev" ] || [ -b "$dev" ] && podman_args="$podman_args --device $dev"
+        done
+      else
+        echo -e "${YELLOW}Warning: GPU support requested but not available${NC}" >&2
+      fi
+    else
+      echo -e "${YELLOW}Warning: GPU support requested but nvidia-container-toolkit not found${NC}" >&2
     fi
-    
-    echo -e "${GREEN}Starting interactive shell...${NC}"
-    echo "Working directory: $work_dir"
-    
-    podman run $podman_args \
-        -v "$work_dir:/data:Z" \
-        -w /data \
-        "$PODMAN_IMAGE" \
-        /bin/bash
+  fi
+
+  echo -e "${GREEN}Starting interactive shell...${NC}"
+  echo "Working directory: $work_dir"
+
+  podman run $podman_args \
+    -v "$work_dir:/data:Z" \
+    -w /data \
+    "$PODMAN_IMAGE" \
+    /bin/bash
 }
 
 # Run a Mussel command
 run_command() {
-    local command=$1
-    shift
-    
-    check_image
-    
-    local work_dir="${MUSSEL_WORK_DIR:-$(pwd)}"
-    local podman_args="--rm"
-    
-    # Force UV to use the container's virtual environment (ignore host .venv)
-    podman_args="$podman_args -e UV_PROJECT_ENVIRONMENT=/app/.venv"
-    
-    # Add GPU support if requested
-    if [ "$USE_GPU" = "true" ]; then
-        # Check if nvidia-ctk or nvidia-container-toolkit is available
-        if command -v nvidia-ctk &> /dev/null || [ -f /usr/bin/nvidia-container-runtime ]; then
-            # Try CDI (Container Device Interface) first (Podman 4.1+)
-            if podman run --rm --device nvidia.com/gpu=all ubuntu:22.04 nvidia-smi &> /dev/null 2>&1; then
-                podman_args="$podman_args --device nvidia.com/gpu=all"
-            # Fallback to --security-opt=label=disable approach
-            elif podman run --rm --security-opt=label=disable --device /dev/dri ubuntu:22.04 ls /dev/dri &> /dev/null 2>&1; then
-                podman_args="$podman_args --security-opt=label=disable"
-                # Add all GPU devices (only character/block devices, not directories)
-                for dev in /dev/nvidia* /dev/dri/*; do
-                    [ -c "$dev" ] || [ -b "$dev" ] && podman_args="$podman_args --device $dev"
-                done
-            else
-                echo -e "${YELLOW}Warning: GPU support requested but not available, running on CPU${NC}" >&2
-            fi
-        else
-            echo -e "${YELLOW}Warning: GPU support requested but nvidia-container-toolkit not found, running on CPU${NC}" >&2
-        fi
+  local command=$1
+  shift
+
+  check_image
+
+  local work_dir="${MUSSEL_WORK_DIR:-$(pwd)}"
+  local podman_args="--rm"
+
+  # Add GPU support if requested
+  if [ "$USE_GPU" = "true" ]; then
+    # Check if nvidia-ctk or nvidia-container-toolkit is available
+    if command -v nvidia-ctk &>/dev/null || [ -f /usr/bin/nvidia-container-runtime ]; then
+      # Try CDI (Container Device Interface) first (Podman 4.1+)
+      if podman run --rm --device nvidia.com/gpu=all ubuntu:22.04 nvidia-smi &>/dev/null 2>&1; then
+        podman_args="$podman_args --device nvidia.com/gpu=all"
+      # Fallback to --security-opt=label=disable approach
+      elif podman run --rm --security-opt=label=disable --device /dev/dri ubuntu:22.04 ls /dev/dri &>/dev/null 2>&1; then
+        podman_args="$podman_args --security-opt=label=disable"
+        # Add all GPU devices (only character/block devices, not directories)
+        for dev in /dev/nvidia* /dev/dri/*; do
+          [ -c "$dev" ] || [ -b "$dev" ] && podman_args="$podman_args --device $dev"
+        done
+      else
+        echo -e "${YELLOW}Warning: GPU support requested but not available, running on CPU${NC}" >&2
+      fi
+    else
+      echo -e "${YELLOW}Warning: GPU support requested but nvidia-container-toolkit not found, running on CPU${NC}" >&2
     fi
-    
-    # Run the command
-    podman run $podman_args \
-        -v "$work_dir:/data:Z" \
-        -w /data \
-        "$PODMAN_IMAGE" \
-        uv run "$command" "$@"
+  fi
+
+  # Run the command
+  echo podman run $podman_args \
+    -v "$work_dir:/data:Z" \
+    -w /data \
+    "$PODMAN_IMAGE" \
+    "/usr/local/bin/$command" "$@"
 }
 
 # Main script logic
 main() {
-    check_podman
-    
-    # Handle no arguments
-    if [ $# -eq 0 ]; then
-        show_help
-        exit 0
-    fi
-    
-    local command=$1
-    shift
-    
-    case "$command" in
-        help|--help|-h)
-            show_help
-            ;;
-        build)
-            build_image
-            ;;
-        shell)
-            start_shell
-            ;;
-        tessellate|tessellate_extract_features|filter_tessellate|extract_features|create_class_embeddings|annotate|cache_tiles|export_tiles|filter_features|merge_annotation_features|linear_probe_benchmark|save_model)
-            run_command "$command" "$@"
-            ;;
-        *)
-            echo -e "${RED}Error: Unknown command '$command'${NC}" >&2
-            echo "Run '$(basename "$0") help' for usage information" >&2
-            exit 1
-            ;;
-    esac
+  check_podman
+
+  # Handle no arguments
+  if [ $# -eq 0 ]; then
+    show_help
+    exit 0
+  fi
+
+  local command=$1
+  shift
+
+  case "$command" in
+  help | --help | -h)
+    show_help
+    ;;
+  build)
+    build_image
+    ;;
+  shell)
+    start_shell
+    ;;
+  tessellate | tessellate_extract_features | filter_tessellate | extract_features | create_class_embeddings | annotate | cache_tiles | export_tiles | filter_features | merge_annotation_features | linear_probe_benchmark | save_model)
+    run_command "$command" "$@"
+    ;;
+  *)
+    echo -e "${RED}Error: Unknown command '$command'${NC}" >&2
+    echo "Run '$(basename "$0") help' for usage information" >&2
+    exit 1
+    ;;
+  esac
 }
 
 # Run main function
