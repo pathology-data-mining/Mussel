@@ -4,7 +4,11 @@ This document describes the batch processing feature for `tessellate-extract-fea
 
 ## Overview
 
-The new `tessellate-extract-features-batch` command provides optimized batch processing when extracting slide-level features from multiple whole-slide images. This is particularly beneficial when using slide-level aggregation models (e.g., GIGAPATH_SLIDE, TITAN_SLIDE).
+The `tessellate-extract-features` command automatically provides optimized batch processing when multiple slides are provided. This is particularly beneficial when using slide-level aggregation models (e.g., GIGAPATH_SLIDE, TITAN_SLIDE).
+
+The command automatically detects whether to operate in single-slide or batch mode:
+- **Single mode**: When `slide_path` is provided
+- **Batch mode**: When `slide_paths` is provided (list of slides)
 
 ## Performance Benefits
 
@@ -48,7 +52,7 @@ With 100 slides, batch_size=8, using GIGAPATH_SLIDE:
 Process multiple slides without filtering:
 
 ```bash
-tessellate_extract_features_batch \
+tessellate_extract_features \
   slide_paths="[slide1.svs,slide2.svs,slide3.svs]" \
   output_dir=./output \
   prefilter_model_type=RESNET50 \
@@ -60,7 +64,7 @@ tessellate_extract_features_batch \
 Process multiple slides with slide-level model aggregation:
 
 ```bash
-tessellate_extract_features_batch \
+tessellate_extract_features \
   slide_paths="[slide1.svs,slide2.svs,slide3.svs]" \
   output_dir=./output \
   aggregation_method=model \
@@ -76,7 +80,7 @@ The `slide_batch_size` parameter controls how many slides are processed together
 Process multiple slides with tile filtering:
 
 ```bash
-tessellate_extract_features_batch \
+tessellate_extract_features \
   slide_paths="[slide1.svs,slide2.svs,slide3.svs]" \
   output_dir=./output \
   classifier_pkl=classifier.pkl \
@@ -90,7 +94,7 @@ tessellate_extract_features_batch \
 Specify custom slide identifiers:
 
 ```bash
-tessellate_extract_features_batch \
+tessellate_extract_features \
   slide_paths="[slide1.svs,slide2.svs]" \
   slide_ids="[patient_001,patient_002]" \
   output_dir=./output \
@@ -200,14 +204,18 @@ If encountering out-of-memory errors, reduce `slide_batch_size`.
 
 ## Backward Compatibility
 
-The original `tessellate-extract-features` command remains unchanged and continues to process single slides. Use `tessellate-extract-features-batch` for multi-slide workflows.
+The `tessellate-extract-features` command maintains full backward compatibility:
+- Single-slide mode: Use `slide_path`, `output_h5_path`, `output_pt_path` (unchanged)
+- Batch mode: Use `slide_paths`, `output_dir` (automatic detection)
+
+Existing single-slide workflows continue to work without any changes.
 
 ## Examples
 
 ### Process 10 slides with GigaPath
 
 ```bash
-tessellate_extract_features_batch \
+tessellate_extract_features \
   slide_paths="[slide1.svs,slide2.svs,...,slide10.svs]" \
   output_dir=./gigapath_features \
   aggregation_method=model \
@@ -222,7 +230,7 @@ tessellate_extract_features_batch \
 ### Process with filtering and visualization
 
 ```bash
-tessellate_extract_features_batch \
+tessellate_extract_features \
   slide_paths="[slide1.svs,slide2.svs,slide3.svs]" \
   output_dir=./filtered_features \
   classifier_pkl=tumor_classifier.pkl \
@@ -249,11 +257,11 @@ To measure the performance benefit on your hardware:
 
 ```python
 import time
-from mussel.cli import tessellate_extract_features_batch
+from mussel.cli import tessellate_extract_features
 
 # Measure batch processing time
 start = time.time()
-tessellate_extract_features_batch.main(config)
+tessellate_extract_features.main(config)
 batch_time = time.time() - start
 
 print(f"Batch processing: {batch_time:.2f}s for {n_slides} slides")

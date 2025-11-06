@@ -16,11 +16,12 @@ When processing multiple slides with `tessellate-extract-features` using slide-l
 
 ## Solution
 
-New `tessellate-extract-features-batch` command that implements batch processing:
+The `tessellate-extract-features` command now supports automatic batch processing:
 
 1. **Single model load**: Load slide encoder model once for all slides
 2. **Batch processing**: Process multiple slides together during slide-level aggregation
 3. **Optimized GPU usage**: Better utilization through parallel/batched operations
+4. **Automatic detection**: Command automatically operates in batch mode when `slide_paths` is provided
 
 **Result**: Processing 100 slides takes 32s (0.32s per slide) in batch mode = **7.81x speedup**
 
@@ -83,8 +84,9 @@ Batch Processing (New):
    - Supports GIGAPATH_SLIDE, TITAN_SLIDE, generic slide encoders
    - Falls back to sequential for non-model aggregation
 
-2. **`tessellate-extract-features-batch`** CLI (`mussel/cli/tessellate_extract_features_batch.py`):
-   - Accepts list of slide paths
+2. **Unified `tessellate-extract-features`** CLI (`mussel/cli/tessellate_extract_features.py`):
+   - Automatically detects single vs batch mode
+   - Accepts list of slide paths for batch processing
    - Auto-generates slide IDs from filenames
    - Maintains all features from single-slide command
    - Organizes outputs by slide ID
@@ -113,7 +115,7 @@ Batch Processing (New):
 ### Basic Batch Processing
 
 ```bash
-tessellate_extract_features_batch \
+tessellate_extract_features \
   slide_paths="[slide1.svs,slide2.svs,slide3.svs]" \
   output_dir=./output \
   prefilter_model_type=RESNET50 \
@@ -123,7 +125,7 @@ tessellate_extract_features_batch \
 ### With Slide-Level Model Aggregation (Optimized)
 
 ```bash
-tessellate_extract_features_batch \
+tessellate_extract_features \
   slide_paths="[slide1.svs,...,slide100.svs]" \
   output_dir=./output \
   aggregation_method=model \
@@ -135,7 +137,7 @@ tessellate_extract_features_batch \
 ### With Filtering
 
 ```bash
-tessellate_extract_features_batch \
+tessellate_extract_features \
   slide_paths="[slide1.svs,slide2.svs]" \
   output_dir=./output \
   classifier_pkl=classifier.pkl \
@@ -146,7 +148,7 @@ tessellate_extract_features_batch \
 ### Python API
 
 ```python
-from mussel.cli.tessellate_extract_features_batch import (
+from mussel.cli.tessellate_extract_features import (
     TessellateExtractFeaturesBatchConfig, main
 )
 
@@ -198,12 +200,13 @@ main(OmegaConf.create(cfg))
 
 ## Backward Compatibility
 
-✅ **Original `tessellate-extract-features` command unchanged**
-- Existing workflows continue to work
+✅ **Fully backward compatible**
+- Existing single-slide workflows continue to work unchanged
 - No breaking changes
 
-✅ **New command is opt-in**
-- Use `tessellate-extract-features-batch` for multi-slide workflows
+✅ **Automatic mode detection**
+- Single mode: Use `slide_path`, `output_h5_path`, `output_pt_path`
+- Batch mode: Use `slide_paths`, `output_dir`
 - Shared core functionality ensures consistency
 
 ## Testing
@@ -241,18 +244,19 @@ main(OmegaConf.create(cfg))
 ## Files Changed
 
 ### Core Implementation
-- `mussel/utils/feature_extract.py`: +170 lines (batch aggregation function)
-- `mussel/utils/__init__.py`: +1 line (export)
-- `mussel/cli/tessellate_extract_features_batch.py`: +521 lines (new CLI)
-- `pyproject.toml`: +1 line (CLI entry point)
+- `mussel/utils/feature_extract.py`: Batch aggregation function
+- `mussel/utils/__init__.py`: Export new function
+- `mussel/cli/tessellate_extract_features.py`: Unified CLI with automatic mode detection
+- `mussel/cli/tessellate_extract_features_common.py`: Shared processing logic
+- `pyproject.toml`: CLI entry point
 
 ### Tests
-- `tests/mussel/cli/test_tessellate_extract_features_batch.py`: +186 lines
+- `tests/mussel/cli/test_tessellate_extract_features_batch.py`: Batch processing tests
 
 ### Documentation
-- `docs/BATCH_PROCESSING.md`: +323 lines (user guide)
-- `EVALUATION_SUMMARY.md`: +291 lines (evaluation report)
-- `README_BATCH_PROCESSING.md`: +268 lines (this file)
+- `docs/BATCH_PROCESSING.md`: User guide
+- `EVALUATION_SUMMARY.md`: Evaluation report
+- `README_BATCH_PROCESSING.md`: This file
 
 ### Tools & Examples
 - `scripts/benchmark_batch_processing.py`: +239 lines (benchmark tool)

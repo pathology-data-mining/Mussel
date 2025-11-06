@@ -30,7 +30,7 @@ When processing N slides sequentially with slide-level model aggregation:
 
 ### Implementation
 
-We implemented a new `tessellate-extract-features-batch` command with the following architecture:
+The `tessellate-extract-features` command now supports automatic batch processing with the following architecture:
 
 1. **Per-slide processing** (parallel where possible):
    - Tessellation
@@ -50,8 +50,9 @@ We implemented a new `tessellate-extract-features-batch` command with the follow
    - Supports GIGAPATH_SLIDE, TITAN_SLIDE, and generic slide encoders
    - Falls back to sequential processing for non-model aggregation
 
-2. **`tessellate-extract-features-batch` CLI** (`mussel/cli/tessellate_extract_features_batch.py`):
-   - Accepts list of slide paths
+2. **Unified `tessellate-extract-features` CLI** (`mussel/cli/tessellate_extract_features.py`):
+   - Automatically detects single vs batch mode
+   - Accepts list of slide paths for batch mode
    - Auto-generates slide IDs from filenames
    - Organizes outputs by slide ID
    - Maintains all features from single-slide command
@@ -106,7 +107,7 @@ Expected speedup range: **5-10x** for typical use cases with 50-100 slides.
 ### Basic batch processing
 
 ```bash
-tessellate_extract_features_batch \
+tessellate_extract_features \
   slide_paths="[slide1.svs,slide2.svs,slide3.svs]" \
   output_dir=./output \
   prefilter_model_type=RESNET50 \
@@ -116,7 +117,7 @@ tessellate_extract_features_batch \
 ### With slide-level model aggregation (optimized)
 
 ```bash
-tessellate_extract_features_batch \
+tessellate_extract_features \
   slide_paths="[slide1.svs,slide2.svs,...,slide100.svs]" \
   output_dir=./output \
   aggregation_method=model \
@@ -128,7 +129,7 @@ tessellate_extract_features_batch \
 ### With filtering
 
 ```bash
-tessellate_extract_features_batch \
+tessellate_extract_features \
   slide_paths="[slide1.svs,slide2.svs,slide3.svs]" \
   output_dir=./output \
   classifier_pkl=classifier.pkl \
@@ -155,9 +156,10 @@ tessellate_extract_features_batch \
 
 ### Backward Compatibility
 
-- Original `tessellate-extract-features` command unchanged
-- New `tessellate-extract-features-batch` command for multi-slide workflows
-- Both commands share core functionality
+- `tessellate-extract-features` maintains full backward compatibility
+- Single-slide mode: Use `slide_path` (unchanged)
+- Batch mode: Use `slide_paths` (automatic detection)
+- Shared core functionality for both modes
 
 ### Memory Considerations
 
@@ -192,13 +194,15 @@ The feature is ready for production use and provides substantial performance imp
 
 - `mussel/utils/feature_extract.py`: Added `aggregate_slide_features_batch()`
 - `mussel/utils/__init__.py`: Exported new function
-- `mussel/cli/tessellate_extract_features_batch.py`: New CLI command (521 lines)
-- `pyproject.toml`: Added new CLI entry point
-- `tests/mussel/cli/test_tessellate_extract_features_batch.py`: Test suite (186 lines)
-- `docs/BATCH_PROCESSING.md`: User documentation (323 lines)
-- `scripts/benchmark_batch_processing.py`: Benchmark tool (239 lines)
+- `mussel/cli/tessellate_extract_features.py`: Unified CLI with automatic mode detection
+- `mussel/cli/tessellate_extract_features_common.py`: Shared processing logic
+- `pyproject.toml`: CLI entry points
+- `tests/mussel/cli/test_tessellate_extract_features_batch.py`: Test suite
+- `docs/BATCH_PROCESSING.md`: User documentation
+- `scripts/benchmark_batch_processing.py`: Benchmark tool
+- `examples/`: Example scripts
 
-**Total**: ~1,300 lines of code added
+**Total**: ~1,900 lines of code
 
 ## Future Work
 
