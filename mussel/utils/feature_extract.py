@@ -501,6 +501,207 @@ def extract_patch_features(
 
 
 @timed
+def aggregate_slide_features_batch(
+    patch_features_h5_paths,
+    output_h5_paths=None,
+    output_pt_paths=None,
+    aggregation_method="identity",
+    model_type=None,
+    model_path=None,
+    use_gpu=True,
+    gpu_device_id=None,
+    gpu_device_ids=None,
+    slide_batch_size=8,
+):
+    """Aggregate patch-level features to slide-level for multiple slides (Step 2: Batch Slide Encoding).
+
+    This function takes patch-level features from multiple slides and aggregates them into slide-level
+    representations in batches. This is more efficient than processing slides one-by-one when using
+    model-based aggregation, as it:
+    1. Loads the model only once
+    2. Processes multiple slides in parallel on GPU
+    3. Reduces model initialization overhead
+
+    Args:
+        patch_features_h5_paths: List of paths to HDF5 files with patch-level features.
+        output_h5_paths: Optional list of paths to save slide-level features in HDF5 format.
+        output_pt_paths: Optional list of paths to save slide-level features in PyTorch format.
+        aggregation_method: Method for aggregating features (default: "identity").
+            - "identity": No aggregation, keeps all patch features (backward compatible)
+            - "mean": Mean pooling across patches
+            - "max": Max pooling across patches
+            - "model": Use a slide encoder model for aggregation
+        model_type: Type of slide encoder model to use (only when aggregation_method="model").
+        model_path: Optional path to slide encoder model weights.
+        use_gpu: Whether to use GPU for model-based aggregation (default: True).
+        gpu_device_id: GPU device ID to use.
+        gpu_device_ids: List of GPU device IDs for multi-GPU.
+        slide_batch_size: Number of slides to process in a single batch (default: 8).
+
+    Returns:
+        Tuple of (output_h5_paths, output_pt_paths) if saving.
+    """
+    logger.info(f"Step 2: Batch aggregating patch features to slide level for {len(patch_features_h5_paths)} slides")
+    
+    num_slides = len(patch_features_h5_paths)
+    
+    # For non-model aggregation methods, process each slide directly
+    # without loading a model
+    if aggregation_method != "model":
+        logger.info(f"Processing {num_slides} slides with aggregation_method={aggregation_method}")
+        for i, patch_h5_path in enumerate(patch_features_h5_paths):
+            output_h5 = output_h5_paths[i] if output_h5_paths else None
+            output_pt = output_pt_paths[i] if output_pt_paths else None
+            
+            with h5py.File(patch_h5_path, "r") as file:
+                features = file["features"][:]
+                logger.info(f"Loaded patch features with shape: {features.shape} for slide {i+1}/{num_slides}")
+                
+                # Load coordinates if available
+                coords = file["coords"][:] if "coords" in file else None
+                
+                # Load patch_size from coords attributes if available
+                patch_size = None
+                if "coords" in file and "patch_size" in file["coords"].attrs:
+                    patch_size = file["coords"].attrs["patch_size"]
+                
+                # Apply aggregation using shared helper function
+                aggregated_features = _apply_slide_aggregation(
+                    features,
+                    aggregation_method=aggregation_method,
+                    slide_model_type=model_type,
+                    slide_model_path=model_path,
+                    use_gpu=use_gpu,
+                    gpu_device_id=gpu_device_id,
+                    gpu_device_ids=gpu_device_ids,
+                    coords=coords,
+                    patch_size=patch_size,
+                )
+                
+                # Save to HDF5 if requested
+                if output_h5:
+                    logger.info(f"Saving aggregated features to {output_h5}")
+                    asset_dict = {"features": aggregated_features}
+                    
+                    # Copy coordinates if they exist and we're using identity
+                    if aggregation_method == "identity" and "coords" in file:
+                        asset_dict["coords"] = file["coords"][:]
+                    
+                    save_hdf5(output_h5, asset_dict, attr_h5_path=None, mode="w")
+                
+                # Save to PyTorch if requested
+                if output_pt:
+                    logger.info(f"Saving aggregated features to {output_pt}")
+                    features_tensor = torch.from_numpy(aggregated_features)
+                    torch.save(features_tensor, output_pt)
+        
+        return output_h5_paths, output_pt_paths
+    
+    # Model-based aggregation with batching
+    logger.info(f"Using batch processing with slide_batch_size={slide_batch_size}")
+    
+    if gpu_device_ids:
+        gpu_device_id = gpu_device_ids
+    
+    # Load the slide encoder model once
+    logger.info(f"Loading slide encoder model: {model_type}")
+    model_factory = get_model_factory(model_type)
+    if model_factory is None:
+        raise ValueError(f"Slide model type {model_type} not recognized")
+    model = model_factory.get_model(model_path, use_gpu, gpu_device_id)
+    model_fun = model.get_model_fun()
+    
+    # Process slides in batches
+    for batch_start in range(0, num_slides, slide_batch_size):
+        batch_end = min(batch_start + slide_batch_size, num_slides)
+        batch_indices = range(batch_start, batch_end)
+        
+        logger.info(f"Processing slides {batch_start+1}-{batch_end} of {num_slides}")
+        
+        # Load features and metadata for current batch
+        batch_features = []
+        batch_coords = []
+        batch_patch_sizes = []
+        
+        for i in batch_indices:
+            with h5py.File(patch_features_h5_paths[i], "r") as file:
+                features = file["features"][:]
+                coords = file["coords"][:] if "coords" in file else None
+                
+                patch_size = None
+                if "coords" in file and "patch_size" in file["coords"].attrs:
+                    patch_size = file["coords"].attrs["patch_size"]
+                
+                batch_features.append(features)
+                batch_coords.append(coords)
+                batch_patch_sizes.append(patch_size)
+        
+        # Process batch based on model type requirements
+        with torch.no_grad():
+            if model_type == ModelType.TITAN_SLIDE:
+                # TITAN requires features, coords, and patch_size per slide
+                # Note: We process slides sequentially here because TITAN_SLIDE expects
+                # variable-length sequences per slide. The main performance benefit comes
+                # from loading the model once rather than N times.
+                # Future optimization: Implement true batching with padding if model supports it
+                aggregated_batch = []
+                for features, coords, patch_size in zip(batch_features, batch_coords, batch_patch_sizes):
+                    if coords is None:
+                        raise ValueError("TITAN_SLIDE requires coordinates")
+                    if patch_size is None:
+                        patch_size = 256
+                        logger.warning(f"patch_size not provided, using default: {patch_size}")
+                    
+                    features_tensor = torch.from_numpy(features).unsqueeze(0)
+                    coords_tensor = torch.from_numpy(coords).long().unsqueeze(0)
+                    agg_features = model_fun(features_tensor, coords_tensor, patch_size).cpu().numpy()
+                    aggregated_batch.append(agg_features)
+                    
+            elif model_type == ModelType.GIGAPATH_SLIDE:
+                # GIGAPATH requires features and coords per slide
+                # Note: We process slides sequentially here because GIGAPATH_SLIDE expects
+                # variable-length sequences per slide. The main performance benefit comes
+                # from loading the model once rather than N times.
+                # Future optimization: Implement true batching with padding if model supports it
+                aggregated_batch = []
+                for features, coords in zip(batch_features, batch_coords):
+                    if coords is None:
+                        raise ValueError("GIGAPATH_SLIDE requires coordinates")
+                    
+                    features_tensor = torch.from_numpy(features).unsqueeze(0)
+                    coords_tensor = torch.from_numpy(coords).unsqueeze(0)
+                    agg_features = model_fun(features_tensor, coords_tensor).squeeze().numpy()
+                    aggregated_batch.append(agg_features)
+                    
+            else:
+                # Other slide encoders may only need features
+                # Stack features from all slides in batch and process together
+                features_list = [torch.from_numpy(f).unsqueeze(0) for f in batch_features]
+                features_batch = torch.cat(features_list, dim=0)
+                
+                # Process entire batch at once for maximum efficiency
+                aggregated_batch_tensor = model_fun(features_batch).cpu().numpy()
+                aggregated_batch = [aggregated_batch_tensor[i:i+1] for i in range(len(batch_features))]
+        
+        # Save results for each slide in batch
+        for idx, i in enumerate(batch_indices):
+            aggregated_features = aggregated_batch[idx]
+            
+            # Save to HDF5 if requested
+            if output_h5_paths and output_h5_paths[i] is not None:
+                asset_dict = {"features": aggregated_features}
+                save_hdf5(output_h5_paths[i], asset_dict, attr_h5_path=None, mode="w")
+            
+            # Save to PyTorch if requested
+            if output_pt_paths and output_pt_paths[i] is not None:
+                features_tensor = torch.from_numpy(aggregated_features)
+                torch.save(features_tensor, output_pt_paths[i])
+    
+    logger.info(f"Batch aggregation complete for {num_slides} slides")
+    return output_h5_paths, output_pt_paths
+
+
+@timed
 def aggregate_slide_features(
     patch_features_h5_path,
     output_h5_path=None,
