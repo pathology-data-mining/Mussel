@@ -12,7 +12,7 @@ from mussel.models import ModelType
 def test_filter_tessellate_default_patch_size_for_model():
     """Test that patch size is automatically set based on model type in filter_tessellate."""
     # Test with CONCH1_5 which should use 512
-    seg_config = SegConfig()  # Default patch_size is 256
+    seg_config = SegConfig()  # Uses DEFAULT_PATCH_SIZE
     cfg = FilterTessellateConfig(
         slide_path="test.svs",
         output_h5_path="test.h5",

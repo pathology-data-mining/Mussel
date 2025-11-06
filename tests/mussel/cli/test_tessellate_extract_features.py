@@ -14,7 +14,7 @@ from mussel.models import ModelType
 def test_default_patch_size_for_model():
     """Test that patch size is automatically set based on model type."""
     # Test with CONCH1_5 which should use 512
-    seg_config = SegConfig()  # Default patch_size is 256
+    seg_config = SegConfig()  # Uses DEFAULT_PATCH_SIZE
     cfg = TessellateExtractFeaturesConfig(
         slide_path="test.svs",
         output_h5_path="test.h5",
@@ -25,7 +25,7 @@ def test_default_patch_size_for_model():
     assert cfg.seg_config.patch_size == 512
     
     # Test with VIRCHOW which should use 224
-    seg_config = SegConfig()  # Default patch_size is 256
+    seg_config = SegConfig()  # Uses DEFAULT_PATCH_SIZE
     cfg = TessellateExtractFeaturesConfig(
         slide_path="test.svs",
         output_h5_path="test.h5",
@@ -36,7 +36,7 @@ def test_default_patch_size_for_model():
     assert cfg.seg_config.patch_size == 224
     
     # Test with CLIP which should use 224
-    seg_config = SegConfig()  # Default patch_size is 256
+    seg_config = SegConfig()  # Uses DEFAULT_PATCH_SIZE
     cfg = TessellateExtractFeaturesConfig(
         slide_path="test.svs",
         output_h5_path="test.h5",
@@ -47,7 +47,7 @@ def test_default_patch_size_for_model():
     assert cfg.seg_config.patch_size == 224
     
     # Test with GOOGLEPATH which should use 224
-    seg_config = SegConfig()  # Default patch_size is 256
+    seg_config = SegConfig()  # Uses DEFAULT_PATCH_SIZE
     cfg = TessellateExtractFeaturesConfig(
         slide_path="test.svs",
         output_h5_path="test.h5",
@@ -57,8 +57,8 @@ def test_default_patch_size_for_model():
     )
     assert cfg.seg_config.patch_size == 224
     
-    # Test with GIGAPATH which should keep 256
-    seg_config = SegConfig()  # Default patch_size is 256
+    # Test with GIGAPATH which should keep DEFAULT_PATCH_SIZE
+    seg_config = SegConfig()  # Uses DEFAULT_PATCH_SIZE
     cfg = TessellateExtractFeaturesConfig(
         slide_path="test.svs",
         output_h5_path="test.h5",
@@ -66,7 +66,7 @@ def test_default_patch_size_for_model():
         prefilter_model_type=ModelType.GIGAPATH,
         seg_config=seg_config,
     )
-    assert cfg.seg_config.patch_size == 256
+    assert cfg.seg_config.patch_size == SegConfig.DEFAULT_PATCH_SIZE
 
 
 def test_explicit_patch_size_preserved():

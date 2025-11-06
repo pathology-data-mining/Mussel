@@ -37,7 +37,10 @@ class SegConfig:
     exclude_ids (List[int]): List of contour IDs to exclude.
     """
 
-    patch_size: int = 256
+    # Default patch size constant - used by CLI __post_init__ methods to detect when to auto-set
+    DEFAULT_PATCH_SIZE: int = 256
+    
+    patch_size: int = DEFAULT_PATCH_SIZE
     step_size: Optional[int] = None  # if None, defaults to patch_size
     mpp: float = 0.5
     seg_level: int = -1

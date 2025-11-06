@@ -146,16 +146,16 @@ class TessellateExtractFeaturesConfig:
 
     def __post_init__(self):
         """Set default patch size based on model type if not explicitly set."""
-        # Only set patch size if seg_config.patch_size is at the default value (256)
+        # Only set patch size if seg_config.patch_size is at the default value
         # This allows users to override if they explicitly set a different value
-        if self.seg_config.patch_size == 256:  # Default value from SegConfig
+        if self.seg_config.patch_size == SegConfig.DEFAULT_PATCH_SIZE:
             # Get the model type to use for determining patch size
             model_type = self.prefilter_model_type
             
             # Get recommended patch size for the model
             try:
                 recommended_patch_size = get_default_patch_size(model_type)
-                if recommended_patch_size != 256:
+                if recommended_patch_size != SegConfig.DEFAULT_PATCH_SIZE:
                     logger.info(
                         f"Setting seg_config.patch_size={recommended_patch_size} based on "
                         f"model_type={model_type.name} (recommended default for this model)"
