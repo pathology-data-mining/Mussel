@@ -280,23 +280,24 @@ if [ "$BATCH_MODE" = true ]; then
     log ""
     
     # Build command for batch processing
+    # Note: slide_paths parameter uses Hydra list syntax: slide_paths=[item1,item2,...]
     CMD_ARGS=(
         "tessellate_extract_features"
-        "slide_paths=[$SLIDE_PATHS]"
-        "output_dir=$OUTPUT_DIR"
-        "prefilter_model_type=$PREFILTER_MODEL_TYPE"
-        "seg_config.segment_threshold=$SEGMENT_THRESHOLD"
-        "seg_config.patch_size=$PATCH_SIZE"
-        "seg_config.mpp=$MPP"
-        "num_workers=$NUM_WORKERS"
-        "batch_size=$BATCH_SIZE"
-        "slide_batch_size=$SLIDE_BATCH_SIZE"
-        "use_gpu=$USE_GPU"
+        "slide_paths=[${SLIDE_PATHS}]"
+        "output_dir=${OUTPUT_DIR}"
+        "prefilter_model_type=${PREFILTER_MODEL_TYPE}"
+        "seg_config.segment_threshold=${SEGMENT_THRESHOLD}"
+        "seg_config.patch_size=${PATCH_SIZE}"
+        "seg_config.mpp=${MPP}"
+        "num_workers=${NUM_WORKERS}"
+        "batch_size=${BATCH_SIZE}"
+        "slide_batch_size=${SLIDE_BATCH_SIZE}"
+        "use_gpu=${USE_GPU}"
     )
     
     # Add slide IDs if provided
     if [ -n "$SLIDE_IDS" ]; then
-        CMD_ARGS+=("slide_ids=[$SLIDE_IDS]")
+        CMD_ARGS+=("slide_ids=[${SLIDE_IDS}]")
     fi
     
     # Add prefilter model path if specified

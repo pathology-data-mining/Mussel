@@ -132,7 +132,8 @@ class SlurmJobSubmitter:
             env_vars["SLIDE_BATCH_SIZE"] = str(slide_batch_size)
         else:
             # Single slide mode (backward compatible)
-            if slide_paths:
+            # If slide_paths has one element, use it; otherwise use slide_path parameter
+            if slide_paths and not slide_path:
                 slide_path = slide_paths[0]
             env_vars["SLIDE_PATH"] = slide_path
             env_vars["OUTPUT_H5_PATH"] = output_h5_path
