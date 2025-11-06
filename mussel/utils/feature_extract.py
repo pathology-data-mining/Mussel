@@ -234,9 +234,9 @@ def _apply_slide_aggregation(
                     logger.warning(
                         f"patch_size not provided, using default: {patch_size}"
                     )
-                coords_tensor = torch.from_numpy(coords).unsqueeze(
+                coords_tensor = torch.from_numpy(coords).long().unsqueeze(
                     0
-                )  # Add batch dimension
+                )  # Add batch dimension and convert to int64
                 aggregated_features = (
                     model_fun(features_tensor, coords_tensor, patch_size).cpu().numpy()
                 )
