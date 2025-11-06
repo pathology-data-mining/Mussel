@@ -23,7 +23,7 @@ import time
 from pathlib import Path
 from typing import Dict, List, Optional
 
-# Import model pre-download utility
+# Import model pre-download utility and Azure Files staging
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'common'))
 try:
     from model_predownload import pre_download_models, upload_models_to_s3
@@ -31,6 +31,12 @@ except ImportError:
     print("WARNING: Could not import model_predownload module. Pre-download features will be unavailable.")
     pre_download_models = None
     upload_models_to_s3 = None
+
+try:
+    from azure_files_staging import AzureFilesStaging
+except ImportError:
+    print("WARNING: Could not import azure_files_staging module. Azure Files staging features will be unavailable.")
+    AzureFilesStaging = None
 
 try:
     from azure.batch import BatchServiceClient
@@ -70,6 +76,7 @@ class AzureBatchJobSubmitter:
         batch_account_url: str,
         storage_account_name: Optional[str] = None,
         storage_account_key: Optional[str] = None,
+        azure_files_share_name: Optional[str] = None,
     ):
         """Initialize Azure Batch client."""
         credentials = SharedKeyCredentials(batch_account_name, batch_account_key)
@@ -77,9 +84,13 @@ class AzureBatchJobSubmitter:
         
         self.storage_account_name = storage_account_name
         self.storage_account_key = storage_account_key
+        self.azure_files_share_name = azure_files_share_name
         
         # Track task metadata for failure reporting
         self.task_metadata = {}
+        
+        # Track staged files for cleanup
+        self.staged_files = []
         
         if storage_account_name and storage_account_key:
             self.blob_client = BlobServiceClient(
@@ -88,6 +99,16 @@ class AzureBatchJobSubmitter:
             )
         else:
             self.blob_client = None
+        
+        # Initialize Azure Files staging client if configured
+        if storage_account_name and storage_account_key and azure_files_share_name and AzureFilesStaging:
+            self.azure_files_staging = AzureFilesStaging(
+                account_name=storage_account_name,
+                account_key=storage_account_key,
+                share_name=azure_files_share_name,
+            )
+        else:
+            self.azure_files_staging = None
 
     def create_pool(
         self,
@@ -96,8 +117,9 @@ class AzureBatchJobSubmitter:
         node_count: int = 1,
         container_image: str = "mskmind/mussel:latest-torch-gpu",
         use_gpu: bool = True,
+        mount_azure_files: bool = False,
     ) -> None:
-        """Create a pool of compute nodes."""
+        """Create a pool of compute nodes with optional Azure Files mount."""
         print(f"Creating pool '{pool_id}'...")
 
         # Container configuration
@@ -119,6 +141,22 @@ class AzureBatchJobSubmitter:
             node_agent_sku_id="batch.node.ubuntu 20.04",
         )
 
+        # Add Azure Files mount configuration if requested
+        mount_config = None
+        if mount_azure_files and self.azure_files_staging:
+            print(f"  Configuring Azure Files mount: share '{self.azure_files_share_name}'")
+            mount_config = [
+                batchmodels.MountConfiguration(
+                    azure_file_share_configuration=batchmodels.AzureFileShareConfiguration(
+                        account_name=self.storage_account_name,
+                        azure_file_url=f"https://{self.storage_account_name}.file.core.windows.net/{self.azure_files_share_name}",
+                        account_key=self.storage_account_key,
+                        relative_mount_path="azfiles",
+                        mount_options="-o vers=3.0,dir_mode=0777,file_mode=0777,sec=ntlmssp",
+                    )
+                )
+            ]
+
         # Pool configuration
         pool = batchmodels.PoolAddParameter(
             id=pool_id,
@@ -126,11 +164,14 @@ class AzureBatchJobSubmitter:
             vm_size=vm_size,
             target_dedicated_nodes=node_count,
             enable_auto_scale=False,
+            mount_configuration=mount_config,
         )
 
         try:
             self.batch_client.pool.add(pool)
             print(f"Pool '{pool_id}' created successfully")
+            if mount_config:
+                print(f"  Azure Files share '{self.azure_files_share_name}' will be mounted at /mnt/batch/tasks/fsmounts/azfiles")
         except batchmodels.BatchErrorException as e:
             if e.error.code == "PoolExists":
                 print(f"Pool '{pool_id}' already exists")
@@ -186,6 +227,7 @@ class AzureBatchJobSubmitter:
         aws_region: Optional[str] = None,
         max_retry_count: int = 3,
         container_image: str = "mskmind/mussel:latest-torch-gpu",
+        cleanup_staged_file: bool = False,
     ) -> None:
         """Submit a tessellate-extract-features task to Azure Batch."""
         print(f"Submitting task '{task_id}' to job '{job_id}'...")
@@ -242,6 +284,16 @@ class AzureBatchJobSubmitter:
             env_vars.append(batchmodels.EnvironmentSetting("AWS_SECRET_ACCESS_KEY", aws_secret_access_key))
         if aws_region:
             env_vars.append(batchmodels.EnvironmentSetting("AWS_DEFAULT_REGION", aws_region))
+        
+        # Add Azure Files cleanup settings if enabled
+        if cleanup_staged_file:
+            env_vars.append(batchmodels.EnvironmentSetting("CLEANUP_STAGED_FILE", "true"))
+            if self.storage_account_name:
+                env_vars.append(batchmodels.EnvironmentSetting("AZURE_STORAGE_ACCOUNT", self.storage_account_name))
+            if self.storage_account_key:
+                env_vars.append(batchmodels.EnvironmentSetting("AZURE_STORAGE_KEY", self.storage_account_key))
+            if self.azure_files_share_name:
+                env_vars.append(batchmodels.EnvironmentSetting("AZURE_FILES_SHARE", self.azure_files_share_name))
 
         # Container settings
         container_settings = batchmodels.TaskContainerSettings(
@@ -334,6 +386,148 @@ class AzureBatchJobSubmitter:
                 container_image=container_image,
             )
 
+    def stage_and_submit_tasks_from_csv(
+        self,
+        job_id: str,
+        csv_file: str,
+        output_dir: str = "/mnt/output",
+        output_s3_prefix: Optional[str] = None,
+        container_image: str = "mskmind/mussel:latest-torch-gpu",
+        postfilter_models: Optional[List[str]] = None,
+        remote_dir: str = "slides",
+        **default_params,
+    ) -> None:
+        """
+        Stage slides to Azure Files and submit tasks incrementally.
+        
+        This method stages each slide to Azure Files and immediately submits
+        the corresponding task, allowing processing to start as soon as the
+        first slide is staged rather than waiting for all slides to be staged.
+        
+        CSV format:
+            slide_id,slide_path
+            slide_001,s3://bucket/slides/slide_001.svs
+            slide_002,/local/path/slide_002.svs
+        
+        Args:
+            job_id: Azure Batch job ID
+            csv_file: Path to CSV manifest file
+            output_dir: Local output directory for results (default: /mnt/output)
+            output_s3_prefix: S3 prefix for outputs (e.g., s3://bucket/results/)
+            container_image: Docker image to use
+            postfilter_models: List of postfilter model types to run sequentially in same task
+            remote_dir: Remote directory for slides in Azure Files
+            **default_params: Default parameters for all tasks (e.g., prefilter_model_type, batch_size)
+        """
+        if not self.azure_files_staging:
+            raise ValueError("Azure Files staging not configured. Provide storage account details and share name.")
+        
+        print(f"Loading task manifest from '{csv_file}'...")
+
+        # Get prefilter model type (used for directory organization when single model)
+        prefilter_model = default_params.get('prefilter_model_type', 'CTRANSPATH')
+        
+        # Determine model type for directory structure
+        if postfilter_models and len(postfilter_models) > 1:
+            # Multiple models - use first model for base directory, but actual paths will be model-specific
+            model_type = postfilter_models[0]
+            print(f"Will process each slide with {len(postfilter_models)} postfilter models sequentially: {', '.join(postfilter_models)}")
+        elif postfilter_models and len(postfilter_models) == 1:
+            model_type = postfilter_models[0]
+        else:
+            # Single model from default_params or prefilter
+            model_type = default_params.get('postfilter_model_type', prefilter_model)
+        
+        # Read CSV and process slides one by one
+        tasks_submitted = 0
+        with open(csv_file, 'r') as f:
+            reader = csv.DictReader(f)
+            slides = list(reader)
+        
+        print(f"[Azure Files] Staging and submitting {len(slides)} slides...")
+        print(f"[Azure Files] Tasks will start processing as slides are staged")
+        
+        for idx, row in enumerate(slides, 1):
+            slide_id = row['slide_id']
+            slide_path = row['slide_path']
+            
+            # Stage slide to Azure Files
+            filename = os.path.basename(slide_path)
+            remote_path = f"{remote_dir}/{filename}"
+            
+            print(f"[{idx}/{len(slides)}] Staging {slide_id}...")
+            self.azure_files_staging.upload_file(slide_path, remote_path)
+            
+            # Create azfiles:// path
+            azfiles_path = f"azfiles://{self.storage_account_name}/{self.azure_files_share_name}/{remote_path}"
+            
+            # Track for cleanup
+            self.staged_files.append(remote_path)
+            
+            # Create task with staged path
+            task_id = slide_id
+            
+            # For multi-model, base output paths use the first model's directory
+            # The bash script will handle creating model-specific subdirectories
+            if output_s3_prefix:
+                base_prefix = output_s3_prefix.rstrip('/')
+                output_h5_path = f"{base_prefix}/{model_type}/h5/{slide_id}_features.h5"
+                output_pt_path = f"{base_prefix}/{model_type}/pt/{slide_id}_features.pt"
+                intermediate_h5_path = f"{base_prefix}/{model_type}/tile_h5/{slide_id}_tile_features.h5"
+            else:
+                output_h5_path = f"{output_dir}/{model_type}/h5/{slide_id}_features.h5"
+                output_pt_path = f"{output_dir}/{model_type}/pt/{slide_id}_features.pt"
+                intermediate_h5_path = f"{output_dir}/{model_type}/tile_h5/{slide_id}_tile_features.h5"
+            
+            # Merge with default parameters
+            merged_config = {**default_params}
+            merged_config['task_id'] = task_id
+            merged_config['slide_path'] = azfiles_path
+            merged_config['output_h5_path'] = output_h5_path
+            merged_config['output_pt_path'] = output_pt_path
+            merged_config['intermediate_h5_path'] = intermediate_h5_path
+            
+            # Add postfilter models as comma-separated list if multiple
+            if postfilter_models and len(postfilter_models) > 1:
+                merged_config['postfilter_model_types'] = ','.join(postfilter_models)
+            elif postfilter_models and len(postfilter_models) == 1:
+                merged_config['postfilter_model_type'] = postfilter_models[0]
+            
+            # Submit task immediately
+            print(f"[{idx}/{len(slides)}] Submitting task for {slide_id}...")
+            self.submit_task(
+                job_id=job_id,
+                task_id=merged_config['task_id'],
+                slide_path=merged_config['slide_path'],
+                output_h5_path=merged_config['output_h5_path'],
+                output_pt_path=merged_config['output_pt_path'],
+                intermediate_h5_path=merged_config.get('intermediate_h5_path'),
+                aggregation_method=merged_config.get("aggregation_method", "identity"),
+                slide_model_type=merged_config.get("slide_model_type"),
+                classifier_pkl=merged_config.get("classifier_pkl"),
+                classifier_threshold=merged_config.get("classifier_threshold", 0.75),
+                prefilter_model_type=merged_config.get("prefilter_model_type", "CTRANSPATH"),
+                postfilter_model_type=merged_config.get("postfilter_model_type"),
+                postfilter_model_types=merged_config.get("postfilter_model_types"),
+                segment_threshold=merged_config.get("segment_threshold", 0),
+                patch_size=merged_config.get("patch_size", 256),
+                mpp=merged_config.get("mpp", 0.5),
+                num_workers=merged_config.get("num_workers", 4),
+                batch_size=merged_config.get("batch_size", 64),
+                use_gpu=merged_config.get("use_gpu", True),
+                keep_intermediate_files=merged_config.get("keep_intermediate_files", False),
+                hf_token=merged_config.get("hf_token"),
+                aws_access_key_id=merged_config.get("aws_access_key_id"),
+                aws_secret_access_key=merged_config.get("aws_secret_access_key"),
+                aws_region=merged_config.get("aws_region"),
+                max_retry_count=merged_config.get("max_retry_count", 3),
+                container_image=container_image,
+                cleanup_staged_file=True,  # Enable per-task cleanup for staged files
+            )
+            tasks_submitted += 1
+        
+        print(f"\n[Azure Files] Staged and submitted {tasks_submitted} tasks")
+
     def submit_tasks_from_csv(
         self,
         job_id: str,
@@ -342,6 +536,7 @@ class AzureBatchJobSubmitter:
         output_s3_prefix: Optional[str] = None,
         container_image: str = "mskmind/mussel:latest-torch-gpu",
         postfilter_models: Optional[List[str]] = None,
+        staged_slide_paths: Optional[Dict[str, str]] = None,
         **default_params,
     ) -> None:
         """
@@ -359,6 +554,7 @@ class AzureBatchJobSubmitter:
             output_s3_prefix: S3 prefix for outputs (e.g., s3://bucket/results/)
             container_image: Docker image to use
             postfilter_models: List of postfilter model types to run sequentially in same task
+            staged_slide_paths: Optional dict mapping slide_id to staged Azure Files paths
             **default_params: Default parameters for all tasks (e.g., prefilter_model_type, batch_size)
         """
         print(f"Loading task manifest from '{csv_file}'...")
@@ -383,6 +579,11 @@ class AzureBatchJobSubmitter:
             for row in reader:
                 slide_id = row['slide_id']
                 slide_path = row['slide_path']
+                
+                # Use staged path if available
+                if staged_slide_paths and slide_id in staged_slide_paths:
+                    slide_path = staged_slide_paths[slide_id]
+                    print(f"  Using staged path for {slide_id}: {slide_path}")
                 
                 # Create ONE task per slide (models run sequentially within the task)
                 task_id = slide_id
@@ -655,6 +856,76 @@ class AzureBatchJobSubmitter:
         
         return len(manifest_data)
 
+    def stage_slides_to_azure_files(
+        self,
+        slides: List[Dict[str, str]],
+        remote_dir: str = "slides",
+    ) -> Dict[str, str]:
+        """
+        Stage slides to Azure Files before processing.
+        
+        Args:
+            slides: List of dicts with 'slide_id' and 'slide_path' keys
+            remote_dir: Remote directory for slides in Azure Files
+            
+        Returns:
+            Dict mapping slide_id to Azure Files path (azfiles://...)
+        """
+        if not self.azure_files_staging:
+            raise ValueError("Azure Files staging not configured. Provide storage account details and share name.")
+        
+        staged_paths = {}
+        print(f"[Azure Files] Staging {len(slides)} slides to Azure Files share '{self.azure_files_share_name}'...")
+        
+        for slide in slides:
+            slide_id = slide['slide_id']
+            slide_path = slide['slide_path']
+            
+            # Determine filename from path
+            filename = os.path.basename(slide_path)
+            
+            # Upload to Azure Files
+            remote_path = f"{remote_dir}/{filename}"
+            self.azure_files_staging.upload_file(slide_path, remote_path)
+            
+            # Store mapping with azfiles:// URL format
+            azfiles_path = f"azfiles://{self.storage_account_name}/{self.azure_files_share_name}/{remote_path}"
+            staged_paths[slide_id] = azfiles_path
+            
+            # Track for cleanup
+            self.staged_files.append(remote_path)
+        
+        print(f"[Azure Files] Staged {len(staged_paths)} slides")
+        return staged_paths
+    
+    def cleanup_staged_files(self) -> None:
+        """
+        Clean up all staged files from Azure Files.
+        
+        Note: When using incremental staging (stage_and_submit_tasks_from_csv),
+        files are automatically cleaned up after each task completes. This method
+        is primarily for cleaning up files staged using stage_slides_to_azure_files
+        or for manual cleanup operations.
+        """
+        if not self.azure_files_staging or not self.staged_files:
+            return
+        
+        print(f"[Azure Files] Cleaning up {len(self.staged_files)} staged files...")
+        
+        # Group files by directory for efficient cleanup
+        directories = set()
+        for file_path in self.staged_files:
+            directory = os.path.dirname(file_path)
+            if directory:
+                directories.add(directory)
+        
+        # Delete directories (which will delete all files within)
+        if directories:
+            self.azure_files_staging.cleanup_staging(list(directories))
+        
+        self.staged_files = []
+        print("[Azure Files] Cleanup complete")
+
     def delete_job(self, job_id: str) -> None:
         """Delete a job."""
         print(f"Deleting job '{job_id}'...")
@@ -679,6 +950,15 @@ def main():
     parser.add_argument("--batch-account-url", required=True, help="Azure Batch account URL")
     parser.add_argument("--storage-account-name", help="Azure Storage account name (optional)")
     parser.add_argument("--storage-account-key", help="Azure Storage account key (optional)")
+    
+    # Azure Files staging configuration
+    parser.add_argument("--azure-files-share-name", help="Azure Files share name for staging files")
+    parser.add_argument("--stage-to-azure-files", action="store_true", 
+                        help="Stage input files to Azure Files before processing")
+    parser.add_argument("--mount-azure-files", action="store_true",
+                        help="Mount Azure Files share to batch pool nodes")
+    parser.add_argument("--cleanup-staged-files", action="store_true",
+                        help="Clean up staged files from Azure Files after processing")
     
     # Pool configuration
     parser.add_argument("--pool-id", required=True, help="Pool ID")
@@ -812,6 +1092,7 @@ def main():
         batch_account_url=args.batch_account_url,
         storage_account_name=args.storage_account_name,
         storage_account_key=args.storage_account_key,
+        azure_files_share_name=args.azure_files_share_name,
     )
 
     # Create pool if requested
@@ -821,6 +1102,7 @@ def main():
             vm_size=args.vm_size,
             node_count=args.node_count,
             container_image=args.container_image,
+            mount_azure_files=args.mount_azure_files,
         )
 
     # Create job if requested
@@ -864,15 +1146,34 @@ def main():
         if args.postfilter_models:
             postfilter_models_list = [m.strip() for m in args.postfilter_models.split(',')]
         
-        submitter.submit_tasks_from_csv(
-            job_id=args.job_id,
-            csv_file=args.csv_manifest,
-            output_dir=args.output_dir,
-            output_s3_prefix=args.output_s3_prefix,
-            container_image=args.container_image,
-            postfilter_models=postfilter_models_list,
-            **default_params,
-        )
+        # Use incremental staging and submission if Azure Files staging is enabled
+        if args.stage_to_azure_files:
+            if not args.azure_files_share_name:
+                print("ERROR: --azure-files-share-name required when using --stage-to-azure-files")
+                sys.exit(1)
+            
+            # Stage and submit tasks incrementally
+            submitter.stage_and_submit_tasks_from_csv(
+                job_id=args.job_id,
+                csv_file=args.csv_manifest,
+                output_dir=args.output_dir,
+                output_s3_prefix=args.output_s3_prefix,
+                container_image=args.container_image,
+                postfilter_models=postfilter_models_list,
+                remote_dir="slides",
+                **default_params,
+            )
+        else:
+            # Standard workflow without staging
+            submitter.submit_tasks_from_csv(
+                job_id=args.job_id,
+                csv_file=args.csv_manifest,
+                output_dir=args.output_dir,
+                output_s3_prefix=args.output_s3_prefix,
+                container_image=args.container_image,
+                postfilter_models=postfilter_models_list,
+                **default_params,
+            )
     elif args.task_id and args.slide_path:
         # Prepare model paths for single task
         task_model_paths = {}
@@ -922,6 +1223,9 @@ def main():
         )
 
     # Cleanup if requested
+    if args.cleanup_staged_files:
+        submitter.cleanup_staged_files()
+    
     if args.delete_job:
         submitter.delete_job(job_id=args.job_id)
     

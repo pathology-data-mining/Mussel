@@ -1,6 +1,6 @@
 # Azure Batch Scripts for Mussel
 
-This directory contains scripts for running `tessellate-extract-features` on Azure Batch, enabling large-scale processing of whole-slide images in the cloud with support for S3 storage.
+This directory contains scripts for running `tessellate-extract-features` on Azure Batch, enabling large-scale processing of whole-slide images in the cloud with support for S3 and Azure Files storage.
 
 ## Overview
 
@@ -9,9 +9,11 @@ The Azure Batch integration allows you to:
 - Scale computation using Azure's cloud infrastructure
 - Use GPU-enabled VMs for fast feature extraction
 - Manage long-running jobs with automatic retry and monitoring
-- Stage slides from S3 and publish results to S3 or local storage
+- Stage slides from S3 or local storage to Azure Files for preprocessing
+- Mount Azure Files to batch nodes for direct access (eliminating download overhead)
+- Publish results to S3, Azure Storage, or local directories
 - Process slides from CSV manifests with slide identifiers
-- Automatic cleanup of temporary files upon task completion (success or failure)
+- Automatic cleanup of staged files and temporary files upon task completion
 
 ## Files
 
@@ -55,8 +57,10 @@ az batch account create \
 Install the required Python packages:
 
 ```bash
-pip install azure-batch azure-storage-blob azure-identity
+pip install azure-batch azure-storage-blob azure-storage-file-share azure-identity
 ```
+
+For Azure Files staging support, `azure-storage-file-share` is required.
 
 ### 3. Docker Image
 
@@ -198,6 +202,77 @@ python scripts/azure_batch/submit_batch_jobs.py \
   --aws-secret-access-key $AWS_SECRET_ACCESS_KEY \
   --monitor
 ```
+
+### Azure Files Staging (Preprocessing)
+
+For optimal performance when processing many slides, you can stage input files to Azure Files before processing. Azure Files can be mounted directly to batch nodes, eliminating download overhead during task execution.
+
+**Benefits:**
+- **Incremental processing**: Tasks start as soon as slides are staged (no waiting for full batch)
+- **Faster task startup**: No per-task download time
+- **Reduced egress costs**: Lower S3 egress costs
+- **Better resource utilization**: Batch nodes can start processing immediately
+- **Automatic per-task cleanup**: Staged files removed after each task completes, freeing storage space progressively
+- **Centralized storage**: All batch nodes access same files
+- **Lower storage costs**: Per-task cleanup means you only pay for storage during active processing
+
+**Setup:**
+
+1. Create an Azure Files share (or use existing):
+```bash
+az storage share create \
+  --name mussel-staging \
+  --account-name mystorageaccount \
+  --account-key $STORAGE_KEY
+```
+
+2. Stage slides and run with Azure Files:
+
+```bash
+python scripts/azure_batch/submit_batch_jobs.py \
+  --batch-account-name mybatchaccount \
+  --batch-account-key <your-batch-key> \
+  --batch-account-url https://mybatchaccount.eastus.batch.azure.com \
+  --storage-account-name mystorageaccount \
+  --storage-account-key <your-storage-key> \
+  --azure-files-share-name mussel-staging \
+  --pool-id mussel-pool \
+  --create-pool \
+  --mount-azure-files \
+  --job-id mussel-job-006 \
+  --create-job \
+  --csv-manifest manifest.csv \
+  --stage-to-azure-files \
+  --output-s3-prefix s3://my-bucket/results/ \
+  --aws-access-key-id $AWS_ACCESS_KEY_ID \
+  --aws-secret-access-key $AWS_SECRET_ACCESS_KEY \
+  --monitor \
+  --cleanup-staged-files
+```
+
+**Workflow:**
+1. Pool is created with Azure Files mount at `/mnt/batch/tasks/fsmounts/azfiles/`
+2. For each slide in the manifest:
+   - Slide is staged to Azure Files share
+   - Task is immediately submitted to process the staged slide
+   - Processing can start as soon as the first slide is staged (no need to wait for all slides)
+   - **After task completes successfully, the staged file is automatically cleaned up**
+3. Tasks access slides directly from mounted Azure Files (no download needed)
+4. Cleanup happens per-task, so storage space is freed as tasks complete
+
+**Incremental Processing:**
+When `--stage-to-azure-files` is enabled, slides are staged and tasks are submitted one by one. This means:
+- Processing starts as soon as the first slide is uploaded
+- No need to wait for all slides to be staged before processing begins
+- Better utilization of batch resources (nodes can start working immediately)
+- Faster overall throughput for large batches
+- **Automatic per-task cleanup**: Each task cleans up its staged file after successful completion
+
+**Key Arguments:**
+- `--azure-files-share-name`: Name of Azure Files share for staging
+- `--stage-to-azure-files`: Enable incremental staging of input files to Azure Files
+- `--mount-azure-files`: Mount Azure Files share to batch pool nodes
+- `--cleanup-staged-files`: (Optional) Remove any remaining staged files after all tasks complete (normally not needed with incremental staging)
 
 ## Configuration
 
