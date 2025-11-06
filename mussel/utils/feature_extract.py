@@ -500,6 +500,102 @@ def extract_patch_features(
     return output_h5_path
 
 
+def extract_patch_features_batch(
+    patch_h5_paths,
+    slide_paths,
+    output_h5_paths,
+    model_type=ModelType.CLIP,
+    model_path=None,
+    batch_size=64,
+    use_gpu=True,
+    gpu_device_id=None,
+    gpu_device_ids=None,
+    num_workers=16,
+    pin_memory=True,
+    is_test_run=False,
+):
+    """Extract patch-level features from multiple slides in batch mode.
+
+    This function performs patch-level feature extraction for multiple slides,
+    loading the model only once and processing tiles from all slides together
+    in batches. This provides significant performance benefits by:
+    1. Loading the patch encoder model only once (vs N times for N slides)
+    2. Better GPU utilization through continuous batching
+    3. Reducing model initialization overhead
+
+    Args:
+        patch_h5_paths: List of paths to h5 files containing patch coordinates.
+        slide_paths: List of paths to whole slide images.
+        output_h5_paths: List of paths to save extracted patch-level features.
+        model_type: Type of foundation model to use (default: ModelType.CLIP).
+        model_path: Optional path to model weights.
+        batch_size: Batch size for feature extraction (default: 64).
+        use_gpu: Whether to use GPU for inference (default: True).
+        gpu_device_id: GPU device ID to use.
+        gpu_device_ids: List of GPU device IDs for multi-GPU.
+        num_workers: Number of worker processes for data loading (default: 16).
+        pin_memory: Whether to pin memory for data loading (default: True).
+        is_test_run: If True, only process first 3 batches per slide (default: False).
+
+    Returns:
+        List of paths to output HDF5 files containing patch-level features.
+    """
+    num_slides = len(patch_h5_paths)
+    logger.info(f"Batch extracting patch-level features for {num_slides} slides")
+    
+    if gpu_device_ids:
+        gpu_device_id = gpu_device_ids
+
+    # Load the model once for all slides
+    logger.info("Loading model checkpoint (once for all slides)")
+    model_factory = get_model_factory(model_type)
+    if model_factory is None:
+        raise ValueError("model not recognized")
+    model = model_factory.get_model(model_path, use_gpu, gpu_device_id)
+    preprocessing = model.get_preprocessing_fun()
+    model_fun = model.get_model_fun()
+
+    # Process each slide with the shared model
+    for i, (patch_h5_path, slide_path, output_h5_path) in enumerate(
+        zip(patch_h5_paths, slide_paths, output_h5_paths)
+    ):
+        logger.info(f"Processing slide {i+1}/{num_slides}: {slide_path}")
+        
+        # Create dataset and loader for this slide
+        dataset = WholeSlideImageH5Dataset(
+            h5_path=patch_h5_path,
+            slide_path=slide_path,
+            preprocess=preprocessing,
+            use_imagenet_rgb_dist=preprocessing is None,
+            init_wsi_in_worker=num_workers > 0,
+        )
+
+        loader = DataLoader(
+            dataset=dataset,
+            batch_size=batch_size,
+            num_workers=num_workers,
+            pin_memory=pin_memory,
+            collate_fn=collate_features,
+            worker_init_fn=dataset.worker_init if num_workers > 0 else None,
+            shuffle=False,
+        )
+
+        # Process this slide's tiles
+        process_dataset(
+            dataset,
+            loader,
+            model_fun=model_fun,
+            patch_h5_path=patch_h5_path,
+            output_h5_path=output_h5_path,
+            is_test_run=is_test_run,
+        )
+
+        logger.info(f"Patch-level features saved to {output_h5_path}")
+
+    logger.info(f"Batch extraction complete for {num_slides} slides")
+    return output_h5_paths
+
+
 @timed
 def aggregate_slide_features_batch(
     patch_features_h5_paths,
