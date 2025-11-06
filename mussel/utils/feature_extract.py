@@ -10,7 +10,12 @@ from functools import singledispatch
 from tqdm import tqdm
 
 from mussel.datasets import WholeSlideImageH5Dataset, WholeSlideImageTileCoordDataset
-from mussel.models import ModelType, get_model_factory, validate_slide_encoder_compatibility, get_required_patch_encoder
+from mussel.models import (
+    ModelType,
+    get_model_factory,
+    validate_slide_encoder_compatibility,
+    get_required_patch_encoder,
+)
 
 from .file import save_hdf5
 from .ml import collate_features
@@ -156,9 +161,9 @@ def _apply_slide_aggregation(
     patch_size=None,
 ):
     """Apply slide-level aggregation to patch features.
-    
+
     Helper function shared by get_features() and aggregate_slide_features().
-    
+
     Args:
         features: Numpy array of patch-level features.
         aggregation_method: Method for aggregating features (default: "identity").
@@ -169,9 +174,9 @@ def _apply_slide_aggregation(
         gpu_device_id: GPU device ID to use.
         gpu_device_ids: List of GPU device IDs for multi-GPU.
         coords: Optional numpy array of patch coordinates (required for some slide encoders like GIGAPATH_SLIDE, TITAN_SLIDE).
-        patch_size: Optional patch size at level 0 (required for TITAN_SLIDE). 
+        patch_size: Optional patch size at level 0 (required for TITAN_SLIDE).
             If not provided, will be extracted from h5 file 'coords' attributes or default to 256.
-        
+
     Returns:
         Numpy array of aggregated features.
     """
@@ -182,33 +187,39 @@ def _apply_slide_aggregation(
     elif aggregation_method == "mean":
         # Mean pooling across patches
         aggregated_features = np.mean(features, axis=0, keepdims=True)
-        logger.info(f"Applied mean pooling: {features.shape} -> {aggregated_features.shape}")
+        logger.info(
+            f"Applied mean pooling: {features.shape} -> {aggregated_features.shape}"
+        )
         return aggregated_features
     elif aggregation_method == "max":
         # Max pooling across patches
         aggregated_features = np.max(features, axis=0, keepdims=True)
-        logger.info(f"Applied max pooling: {features.shape} -> {aggregated_features.shape}")
+        logger.info(
+            f"Applied max pooling: {features.shape} -> {aggregated_features.shape}"
+        )
         return aggregated_features
     elif aggregation_method == "model":
         # Model-based aggregation using a slide encoder
         if slide_model_type is None:
-            raise ValueError("slide_model_type must be provided when using model-based aggregation")
-        
+            raise ValueError(
+                "slide_model_type must be provided when using model-based aggregation"
+            )
+
         logger.info(f"Using model-based aggregation with {slide_model_type}")
-        
+
         if gpu_device_ids:
             gpu_device_id = gpu_device_ids
-        
+
         # Load the slide encoder model
         model_factory = get_model_factory(slide_model_type)
         if model_factory is None:
             raise ValueError(f"Slide model type {slide_model_type} not recognized")
         model = model_factory.get_model(slide_model_path, use_gpu, gpu_device_id)
         model_fun = model.get_model_fun()
-        
+
         # Convert features to tensor and apply model
         features_tensor = torch.from_numpy(features).unsqueeze(0)  # Add batch dimension
-        
+
         # Some slide encoders require coordinates and/or patch size
         # GIGAPATH_SLIDE: requires (features, coords)
         # TITAN_SLIDE: requires (features, coords, patch_size)
@@ -220,20 +231,33 @@ def _apply_slide_aggregation(
                 if patch_size is None:
                     # Default patch size at level 0 (commonly 256 for TITAN/CONCH)
                     patch_size = 256
-                    logger.warning(f"patch_size not provided, using default: {patch_size}")
-                coords_tensor = torch.from_numpy(coords).unsqueeze(0)  # Add batch dimension
-                aggregated_features = model_fun(features_tensor, coords_tensor, patch_size).cpu().numpy()
+                    logger.warning(
+                        f"patch_size not provided, using default: {patch_size}"
+                    )
+                coords_tensor = torch.from_numpy(coords).long().unsqueeze(
+                    0
+                )  # Add batch dimension and convert to int64
+                aggregated_features = (
+                    model_fun(features_tensor, coords_tensor, patch_size).cpu().numpy()
+                )
             elif slide_model_type == ModelType.GIGAPATH_SLIDE:
                 # GIGAPATH requires features and coords
                 if coords is None:
                     raise ValueError("GIGAPATH_SLIDE requires coordinates")
-                coords_tensor = torch.from_numpy(coords).unsqueeze(0)  # Add batch dimension
-                aggregated_features = model_fun(features_tensor, coords_tensor).cpu().numpy()
+
+                coords_tensor = torch.from_numpy(coords).unsqueeze(
+                    0
+                )  # Add batch dimension
+                aggregated_features = (
+                    model_fun(features_tensor, coords_tensor).squeeze().numpy()
+                )
             else:
                 # Other slide encoders may only need features
                 aggregated_features = model_fun(features_tensor).cpu().numpy()
-        
-        logger.info(f"Applied model aggregation: {features.shape} -> {aggregated_features.shape}")
+
+        logger.info(
+            f"Applied model aggregation: {features.shape} -> {aggregated_features.shape}"
+        )
         return aggregated_features
     else:
         raise ValueError(f"Unknown aggregation method: {aggregation_method}")
@@ -290,7 +314,11 @@ def get_features(
         gpu_device_id = gpu_device_ids
 
     # Auto-set aggregation_method to "model" if slide_model_type is specified
-    if use_slide_encoder and slide_model_type is not None and aggregation_method != "model":
+    if (
+        use_slide_encoder
+        and slide_model_type is not None
+        and aggregation_method != "model"
+    ):
         logger.info(
             f"Auto-setting aggregation_method to 'model' since slide_model_type "
             f"({slide_model_type}) is specified"
@@ -298,7 +326,11 @@ def get_features(
         aggregation_method = "model"
 
     # Auto-infer patch encoder from slide encoder if using model-based aggregation
-    if use_slide_encoder and aggregation_method == "model" and slide_model_type is not None:
+    if (
+        use_slide_encoder
+        and aggregation_method == "model"
+        and slide_model_type is not None
+    ):
         required_patch_encoder = get_required_patch_encoder(slide_model_type)
         if model_type != required_patch_encoder:
             logger.info(
@@ -341,12 +373,12 @@ def get_features(
     # Apply slide-level encoding if requested
     if use_slide_encoder:
         logger.info("Applying slide-level encoding")
-        
+
         # Extract patch_size from attrs if available
         patch_size = attrs.get("patch_size") if attrs else None
         if patch_size is not None:
             logger.info(f"Using patch_size from attrs: {patch_size}")
-        
+
         features = _apply_slide_aggregation(
             features,
             aggregation_method=aggregation_method,
@@ -400,7 +432,7 @@ def extract_patch_features(
         num_workers: Number of worker processes for data loading (default: 16).
         pin_memory: Whether to pin memory for data loading (default: True).
         is_test_run: If True, only process first 3 batches (default: False).
-    
+
     Returns:
         Path to the output HDF5 file containing patch-level features.
     """
@@ -500,25 +532,25 @@ def aggregate_slide_features(
         use_gpu: Whether to use GPU for model-based aggregation (default: True).
         gpu_device_id: GPU device ID to use.
         gpu_device_ids: List of GPU device IDs for multi-GPU.
-    
+
     Returns:
         Tuple of (output_h5_path, output_pt_path) if saving, otherwise features tensor.
     """
     logger.info("Step 2: Aggregating patch features to slide level")
-    
+
     with h5py.File(patch_features_h5_path, "r") as file:
         features = file["features"][:]
         logger.info(f"Loaded patch features with shape: {features.shape}")
-        
+
         # Load coordinates if available
         coords = file["coords"][:] if "coords" in file else None
-        
+
         # Load patch_size from coords attributes if available
         patch_size = None
         if "coords" in file and "patch_size" in file["coords"].attrs:
             patch_size = file["coords"].attrs["patch_size"]
             logger.info(f"Loaded patch_size from h5 file: {patch_size}")
-        
+
         # Apply aggregation using shared helper function
         aggregated_features = _apply_slide_aggregation(
             features,
@@ -531,24 +563,24 @@ def aggregate_slide_features(
             coords=coords,
             patch_size=patch_size,
         )
-        
+
         # Save to HDF5 if requested
         if output_h5_path is not None:
             logger.info(f"Saving aggregated features to {output_h5_path}")
             asset_dict = {"features": aggregated_features}
-            
+
             # Copy coordinates if they exist and we're using identity
             if aggregation_method == "identity" and "coords" in file:
                 asset_dict["coords"] = file["coords"][:]
-            
+
             save_hdf5(output_h5_path, asset_dict, attr_h5_path=None, mode="w")
-        
+
         # Save to PyTorch if requested
         if output_pt_path is not None:
             logger.info(f"Saving aggregated features to {output_pt_path}")
             features_tensor = torch.from_numpy(aggregated_features)
             torch.save(features_tensor, output_pt_path)
-    
+
     return output_h5_path, output_pt_path
 
 
@@ -613,14 +645,14 @@ def save_features(
             f"({slide_model_type}) is specified"
         )
         aggregation_method = "model"
-    
+
     # Infer two-step mode from aggregation_method
     use_two_step = aggregation_method != "identity"
-    
+
     if use_two_step:
         # Two-step process: patch encoding -> slide aggregation
         logger.info("Using two-step feature extraction process")
-        
+
         # Auto-infer patch encoder from slide encoder if using model-based aggregation
         if aggregation_method == "model" and slide_model_type is not None:
             required_patch_encoder = get_required_patch_encoder(slide_model_type)
@@ -632,11 +664,11 @@ def save_features(
                 model_type = required_patch_encoder
             # Validate compatibility
             validate_slide_encoder_compatibility(model_type, slide_model_type)
-        
+
         # Determine intermediate path
         if intermediate_h5_path is None:
             intermediate_h5_path = str(Path(output_h5_path).with_suffix(".patch.h5"))
-        
+
         # Step 1: Extract patch-level features
         extract_patch_features(
             patch_h5_path=patch_h5_path,
@@ -654,7 +686,7 @@ def save_features(
             pin_memory=pin_memory,
             is_test_run=is_test_run,
         )
-        
+
         # Step 2: Aggregate to slide level
         aggregate_slide_features(
             patch_features_h5_path=intermediate_h5_path,
