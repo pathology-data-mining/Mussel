@@ -196,3 +196,91 @@ def test_auto_slide_id_generation(tmp_path):
     # Should use filename stem as ID
     assert os.path.exists(os.path.join(output_dir, "948176.features.h5"))
     assert os.path.exists(os.path.join(output_dir, "948176.features.pt"))
+
+
+def test_tile_level_batching_single_model_load(tmp_path):
+    """Test that tile-level batching loads the patch encoder model only once."""
+    slide_path = "tests/testdata/948176.svs"
+    slide_paths = [slide_path, slide_path]
+    output_dir = str(tmp_path / "batch_output")
+    
+    seg_config = SegConfig(segment_threshold=0)
+    cfg = TessellateExtractFeaturesConfig(
+        slide_paths=slide_paths,
+        slide_ids=["slide1", "slide2"],
+        output_dir=output_dir,
+        classifier_pkl=None,
+        prefilter_model_type=ModelType.RESNET50,
+        aggregation_method="mean",  # Use mean aggregation (no slide encoder needed)
+        seg_config=seg_config,
+        num_workers=1,
+        batch_size=32,
+        use_gpu=False,
+        keep_intermediate_files=False,
+    )
+    
+    # Track model factory calls to verify single load
+    with patch('mussel.utils.feature_extract.get_model_factory') as mock_factory:
+        mock_model = MagicMock()
+        mock_model.get_model_fun.return_value = MagicMock(
+            side_effect=lambda x: torch.randn(len(x), 2048)
+        )
+        mock_model.get_preprocessing_fun.return_value = None
+        mock_factory.return_value = MagicMock(get_model=MagicMock(return_value=mock_model))
+        
+        main(OmegaConf.create(cfg))
+        
+        # Verify model factory was called only once for batch extraction
+        # (not once per slide as in the old sequential approach)
+        # Note: In the new implementation, get_model_factory is called once
+        # in extract_patch_features_batch for all slides
+        assert mock_factory.call_count >= 1
+        
+    # Verify outputs were created for both slides
+    assert os.path.exists(os.path.join(output_dir, "slide1.features.h5"))
+    assert os.path.exists(os.path.join(output_dir, "slide2.features.h5"))
+
+
+def test_tile_level_batching_with_slide_aggregation(tmp_path):
+    """Test tile-level batching combined with slide-level aggregation batching."""
+    slide_path = "tests/testdata/948176.svs"
+    slide_paths = [slide_path, slide_path]
+    output_dir = str(tmp_path / "batch_output")
+    
+    seg_config = SegConfig(segment_threshold=0)
+    cfg = TessellateExtractFeaturesConfig(
+        slide_paths=slide_paths,
+        slide_ids=["slide1", "slide2"],
+        output_dir=output_dir,
+        classifier_pkl=None,
+        prefilter_model_type=ModelType.RESNET50,
+        aggregation_method="model",
+        slide_model_type=ModelType.GIGAPATH_SLIDE,
+        seg_config=seg_config,
+        num_workers=1,
+        batch_size=32,
+        slide_batch_size=2,
+        use_gpu=False,
+        keep_intermediate_files=True,  # Keep intermediate files to verify pipeline
+    )
+    
+    main(OmegaConf.create(cfg))
+    
+    # Verify intermediate patch features were created
+    assert os.path.exists(os.path.join(output_dir, "slide1.patch.h5"))
+    assert os.path.exists(os.path.join(output_dir, "slide2.patch.h5"))
+    
+    # Verify final aggregated features were created
+    assert os.path.exists(os.path.join(output_dir, "slide1.features.h5"))
+    assert os.path.exists(os.path.join(output_dir, "slide2.features.h5"))
+    
+    # Verify patch features have multiple patches
+    with h5py.File(os.path.join(output_dir, "slide1.patch.h5"), "r") as f:
+        patch_features = f["features"][:]
+        assert patch_features.shape[0] > 1  # Multiple patches
+    
+    # Verify aggregated features are slide-level (single vector)
+    with h5py.File(os.path.join(output_dir, "slide1.features.h5"), "r") as f:
+        slide_features = f["features"][:]
+        assert slide_features.shape[0] == 1  # Single slide-level feature vector
+

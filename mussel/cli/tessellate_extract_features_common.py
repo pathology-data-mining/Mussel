@@ -231,6 +231,153 @@ def process_slide_tessellation_and_filtering(
         }
 
 
+def process_slide_tessellation_only(
+    slide_path: str,
+    slide_id: Optional[str],
+    cfg,
+    temp_dir: str,
+    base_path: Path,
+    use_filtering: bool,
+    prefilter_model_type,
+    prefilter_model_path: Optional[str],
+    skip_second_extraction: bool,
+    output_mask_path: Optional[str] = None,
+) -> Optional[dict]:
+    """
+    Process a single slide through tessellation and optional filtering (without feature extraction).
+    
+    This is used in batch mode to prepare slides for batch feature extraction.
+    
+    Args:
+        slide_path: Path to the whole-slide image
+        slide_id: Optional slide identifier
+        cfg: Configuration object with seg_config, vis_config, etc.
+        temp_dir: Temporary directory for intermediate files
+        base_path: Base path for output files
+        use_filtering: Whether to apply filtering
+        prefilter_model_type: Model type for pre-filtering
+        prefilter_model_path: Path to pre-filter model weights
+        skip_second_extraction: Whether to skip second extraction (when models are same)
+        output_mask_path: Optional path to save mask visualization
+        
+    Returns:
+        Dict with paths and coordinates for batch feature extraction, None if failed
+    """
+    # Step 1: Tessellate
+    logger.info(f"Tessellating slide: {slide_path}")
+    if cfg.keep_intermediate_files:
+        tessellate_h5_path = str(base_path / f"{Path(slide_path).stem}.tessellate.h5")
+    else:
+        tessellate_h5_path = os.path.join(temp_dir, f"{Path(slide_path).stem}.tessellate.h5")
+    
+    if values := segment_tissue(
+        slide_path=slide_path,
+        slide_id=slide_id,
+        output_h5_path=tessellate_h5_path,
+        **OmegaConf.to_container(cfg.seg_config),
+    ):
+        polygon, grid, coords, _ = values
+    else:
+        logger.error(f"Tessellation failed for {slide_path}")
+        return None
+    
+    logger.info(f"Tessellation complete. Found {len(coords)} tiles.")
+    
+    # Optional: Save mask visualization
+    if output_mask_path:
+        mask = draw_slide_mask(
+            slide_path,
+            polygon,
+            **OmegaConf.to_container(cfg.vis_config),
+        )
+        mask.save(output_mask_path)
+    
+    # Coordinate source for final extraction
+    final_coords_h5_path = tessellate_h5_path
+    final_coords = coords
+    prefilter_features_h5_path = None  # Initialize to avoid NameError when use_filtering is False
+    
+    if use_filtering:
+        # Extract features for filtering
+        logger.info(f"Extracting features for filtering: {slide_path}")
+        if cfg.keep_intermediate_files:
+            prefilter_features_h5_path = str(base_path / f"{Path(slide_path).stem}.prefilter_features.h5")
+            prefilter_features_pt_path = str(base_path / f"{Path(slide_path).stem}.prefilter_features.pt")
+        else:
+            prefilter_features_h5_path = os.path.join(temp_dir, f"{Path(slide_path).stem}.prefilter_features.h5")
+            prefilter_features_pt_path = os.path.join(temp_dir, f"{Path(slide_path).stem}.prefilter_features.pt")
+        
+        save_features(
+            slide_path=slide_path,
+            gpu_device_id=cfg.gpu_device_id,
+            model_type=prefilter_model_type,
+            model_path=prefilter_model_path,
+            use_gpu=cfg.use_gpu,
+            output_h5_path=prefilter_features_h5_path,
+            output_pt_path=prefilter_features_pt_path,
+            patch_h5_path=tessellate_h5_path,
+            batch_size=cfg.batch_size,
+            num_workers=cfg.num_workers,
+            gpu_device_ids=cfg.gpu_device_ids,
+        )
+        
+        # Filter features
+        logger.info(f"Filtering features: {slide_path}")
+        with open(cfg.classifier_pkl, "rb") as f:
+            classifier = pickle.load(f)
+        
+        with h5py.File(prefilter_features_h5_path, "r") as features_h5:
+            if prefilter_features_pt_path and os.path.exists(prefilter_features_pt_path):
+                features = torch.load(prefilter_features_pt_path, weights_only=True)
+            else:
+                features = np.array(features_h5["features"])
+                features = torch.Tensor(features)
+            
+            filtered_features, filtered_coords = filter_features(
+                features,
+                features_h5["coords"][:],
+                classifier,
+                cfg.classifier_threshold,
+            )
+            
+            logger.info(
+                f"Filtering complete. {len(filtered_coords)} tiles passed (out of {len(coords)})."
+            )
+            
+            if skip_second_extraction:
+                # If not doing second extraction, we're done - need to save final features
+                # But we'll handle this in the batch processing logic
+                final_coords = filtered_coords
+                final_coords_h5_path = prefilter_features_h5_path
+            else:
+                # Create filtered coords h5 for second extraction
+                if cfg.keep_intermediate_files:
+                    filtered_coords_h5_path = str(base_path / f"{Path(slide_path).stem}.filtered_coords.h5")
+                else:
+                    filtered_coords_h5_path = os.path.join(temp_dir, f"{Path(slide_path).stem}.filtered_coords.h5")
+                
+                asset_dict = {"coords": filtered_coords}
+                save_hdf5(
+                    filtered_coords_h5_path,
+                    asset_dict,
+                    attr_h5_path=tessellate_h5_path,
+                    mode="w",
+                )
+                
+                final_coords_h5_path = filtered_coords_h5_path
+                final_coords = filtered_coords
+    
+    # Return paths for batch feature extraction
+    return {
+        'slide_path': slide_path,
+        'tessellate_h5_path': tessellate_h5_path,
+        'final_coords_h5_path': final_coords_h5_path,
+        'final_coords': final_coords,
+        'skip_second_extraction': skip_second_extraction,
+        'prefilter_features_h5_path': prefilter_features_h5_path if use_filtering else None,
+    }
+
+
 def create_visualizations(
     slide_path: str,
     final_coords,
