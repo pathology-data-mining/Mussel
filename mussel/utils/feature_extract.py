@@ -249,7 +249,7 @@ def _apply_slide_aggregation(
                     0
                 )  # Add batch dimension
                 aggregated_features = (
-                    model_fun(features_tensor, coords_tensor).squeeze().numpy()
+                    model_fun(features_tensor, coords_tensor).numpy()
                 )
             else:
                 # Other slide encoders may only need features
@@ -778,7 +778,7 @@ def aggregate_slide_features_batch(
                     
                     features_tensor = torch.from_numpy(features).unsqueeze(0)
                     coords_tensor = torch.from_numpy(coords).unsqueeze(0)
-                    agg_features = model_fun(features_tensor, coords_tensor).squeeze().numpy()
+                    agg_features = model_fun(features_tensor, coords_tensor).numpy()
                     aggregated_batch.append(agg_features)
                     
             else:
