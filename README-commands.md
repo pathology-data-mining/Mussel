@@ -145,8 +145,6 @@ This command processes the tiles identified by `tessellate` and generates featur
 You can override these defaults by explicitly setting `seg_config.patch_size` to a different value. The model will automatically resize patches to its expected input size during inference.
 
 **Example - Using the default CLIP model:**
-
-**Example - Using the default CLIP model:**
 ```bash
 extract_features \
     slide_path=tests/testdata/948176.svs \
