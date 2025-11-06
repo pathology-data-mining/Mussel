@@ -134,7 +134,7 @@ This command processes the tiles identified by `tessellate` and generates featur
 
 **Default Model**: OpenCLIP with QuiltNet-B-16-PMB weights is used by default. This model works well for general histopathology tasks and doesn't require authentication.
 
-**Automatic Patch Size Selection**: When using integrated workflows like `tessellate_extract_features` or `filter_tessellate`, the patch size for tessellation is automatically set based on the model type to match recommendations from the TRIDENT repository. The default patch sizes are:
+**Automatic Patch Size Selection**: When using integrated workflows like `tessellate_extract_features` or `filter_tessellate`, the patch size for tessellation is automatically set based on the model type to match recommended values for optimal performance. The default patch sizes are:
 
 | Model Type | Default Patch Size | Note |
 |------------|-------------------|------|

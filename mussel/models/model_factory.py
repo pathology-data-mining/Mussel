@@ -56,8 +56,7 @@ SLIDE_ENCODER_COMPATIBILITY = {
 }
 
 
-# Recommended patch sizes for each model type based on TRIDENT repository
-# https://github.com/mahmoodlab/TRIDENT
+# Recommended patch sizes for each model type
 MODEL_PATCH_SIZES = {
     ModelType.RESNET50: 256,
     ModelType.CTRANSPATH: 256,
@@ -100,9 +99,6 @@ def get_required_patch_encoder(slide_encoder: ModelType) -> ModelType:
 
 def get_default_patch_size(model_type: ModelType) -> int:
     """Get the recommended default patch size for a model type.
-
-    Patch sizes are based on the TRIDENT repository recommendations:
-    https://github.com/mahmoodlab/TRIDENT
 
     Args:
         model_type: The model type to get the patch size for.

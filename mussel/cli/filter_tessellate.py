@@ -99,7 +99,7 @@ class FilterTessellateConfig:
                 if recommended_patch_size != 256:
                     logger.info(
                         f"Setting seg_config.patch_size={recommended_patch_size} based on "
-                        f"model_type={self.model_type.name} (default for this model from TRIDENT repository)"
+                        f"model_type={self.model_type.name} (recommended default for this model)"
                     )
                     self.seg_config.patch_size = recommended_patch_size
             except ValueError:
