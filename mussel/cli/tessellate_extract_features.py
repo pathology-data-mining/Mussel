@@ -473,7 +473,6 @@ def _main_batch(cfg: TessellateExtractFeaturesConfig):
         )
         
         # Also save as PT format for consistency
-        import torch
         for r in slide_results:
             with h5py.File(r['output_h5_path'], "r") as f:
                 features = torch.from_numpy(f["features"][:])

@@ -540,6 +540,18 @@ def extract_patch_features_batch(
     Returns:
         List of paths to output HDF5 files containing patch-level features.
     """
+    # Validate inputs
+    if not patch_h5_paths:
+        return []
+    
+    if not (len(patch_h5_paths) == len(slide_paths) == len(output_h5_paths)):
+        raise ValueError(
+            f"Input lists must have the same length: "
+            f"patch_h5_paths={len(patch_h5_paths)}, "
+            f"slide_paths={len(slide_paths)}, "
+            f"output_h5_paths={len(output_h5_paths)}"
+        )
+    
     num_slides = len(patch_h5_paths)
     logger.info(f"Batch extracting patch-level features for {num_slides} slides")
     

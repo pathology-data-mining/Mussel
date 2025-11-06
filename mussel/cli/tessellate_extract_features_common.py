@@ -295,6 +295,7 @@ def process_slide_tessellation_only(
     # Coordinate source for final extraction
     final_coords_h5_path = tessellate_h5_path
     final_coords = coords
+    prefilter_features_h5_path = None  # Initialize to avoid NameError when use_filtering is False
     
     if use_filtering:
         # Extract features for filtering
