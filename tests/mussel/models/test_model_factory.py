@@ -1,3 +1,7 @@
+import pytest
+import torch
+from unittest.mock import MagicMock, patch
+
 from mussel.models.model_factory import (
     MODEL_FACTORIES,
     ModelType,
@@ -58,3 +62,82 @@ def test_get_model_factory_default():
     # Default should be CTRANSPATH
     factory = get_model_factory()
     assert factory is not None
+
+
+def test_titan_slide_encoder_model_fun():
+    """Test that TitanSlideEncoderModel.get_model_fun() properly moves inputs to device."""
+    from mussel.models.model_factory import TitanSlideEncoderModel
+    
+    # Create a mock model object
+    mock_model = MagicMock()
+    mock_model.encode_slide_from_patch_features = MagicMock(return_value=torch.randn(1, 768))
+    
+    # Create TitanSlideEncoderModel instance with mock
+    with patch('mussel.models.model_factory.AutoModel.from_pretrained', return_value=mock_model):
+        # We need to mock the parent __init__ to avoid device setup
+        with patch.object(TitanSlideEncoderModel, '__init__', lambda self, *args, **kwargs: None):
+            encoder = TitanSlideEncoderModel.__new__(TitanSlideEncoderModel)
+            encoder.obj = mock_model
+            encoder.device = torch.device('cpu')
+            encoder.use_gpu = False
+            
+            # Get the model function
+            model_fun = encoder.get_model_fun()
+            
+            # Create test inputs
+            patch_features = torch.randn(1, 100, 768)
+            coords = torch.randint(0, 4096, (1, 100, 2))
+            patch_size = 512
+            
+            # Call the model function
+            result = model_fun(patch_features, coords, patch_size)
+            
+            # Verify that encode_slide_from_patch_features was called
+            assert mock_model.encode_slide_from_patch_features.called
+            
+            # Get the call arguments
+            call_args = mock_model.encode_slide_from_patch_features.call_args
+            
+            # Verify that the inputs were passed (they should be on the device)
+            assert call_args[0][0] is not None  # patch_features
+            assert call_args[0][1] is not None  # coords
+            assert call_args[0][2] == patch_size  # patch_size
+
+
+def test_gigapath_slide_encoder_model_fun():
+    """Test that GigapathSlideEncoderModel.get_model_fun() properly moves inputs to device."""
+    from mussel.models.model_factory import GigapathSlideEncoderModel
+    
+    # Create a mock model object
+    mock_model = MagicMock()
+    mock_model.return_value = [torch.randn(1, 768)]
+    
+    # Create GigapathSlideEncoderModel instance with mock
+    with patch('timm.create_model', return_value=mock_model):
+        # We need to mock the parent __init__ to avoid device setup
+        with patch.object(GigapathSlideEncoderModel, '__init__', lambda self, *args, **kwargs: None):
+            encoder = GigapathSlideEncoderModel.__new__(GigapathSlideEncoderModel)
+            encoder.obj = mock_model
+            encoder.device = torch.device('cpu')
+            encoder.use_gpu = False
+            
+            # Get the model function
+            model_fun = encoder.get_model_fun()
+            
+            # Create test inputs
+            features = torch.randn(1, 100, 1536)
+            coords = torch.randn(1, 100, 2)
+            
+            # Call the model function
+            result = model_fun(features, coords)
+            
+            # Verify that the model was called
+            assert mock_model.called
+            
+            # Get the call arguments
+            call_args = mock_model.call_args
+            
+            # Verify that the inputs were passed (they should be on the device)
+            assert call_args[0][0] is not None  # features
+            assert call_args[0][1] is not None  # coords
+
