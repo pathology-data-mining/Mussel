@@ -57,9 +57,12 @@ class CondorJobSubmitter:
     def generate_submit_file(
         self,
         task_id: str,
-        slide_path: str,
-        output_h5_path: str,
-        output_pt_path: str,
+        slide_path: str = None,
+        slide_paths: Optional[List[str]] = None,
+        slide_ids: Optional[List[str]] = None,
+        output_h5_path: str = None,
+        output_pt_path: str = None,
+        output_dir_for_batch: Optional[str] = None,
         intermediate_h5_path: Optional[str] = None,
         classifier_pkl: Optional[str] = None,
         classifier_threshold: float = 0.75,
@@ -86,18 +89,41 @@ class CondorJobSubmitter:
         hf_token: Optional[str] = None,
         max_retries: int = 3,
         output_dir: Optional[str] = None,
+        slide_batch_size: int = 8,
     ) -> str:
-        """Generate HTCondor submit file content."""
+        """Generate HTCondor submit file content.
+        
+        Supports both single-slide and multi-slide batch processing.
+        For batch processing, provide slide_paths and slide_ids instead of slide_path.
+        """
         
         # Set output directory for logs
         log_dir = output_dir or "condor_logs"
         os.makedirs(log_dir, exist_ok=True)
         
         # Build environment variables
-        env_vars = {
-            "SLIDE_PATH": slide_path,
-            "OUTPUT_H5_PATH": output_h5_path,
-            "OUTPUT_PT_PATH": output_pt_path,
+        env_vars = {}
+        
+        # Handle batch vs single slide processing
+        if slide_paths and len(slide_paths) > 1:
+            # Batch processing mode
+            env_vars["SLIDE_PATHS"] = ",".join(slide_paths)
+            if slide_ids:
+                env_vars["SLIDE_IDS"] = ",".join(slide_ids)
+            if output_dir_for_batch:
+                env_vars["OUTPUT_DIR"] = output_dir_for_batch
+            env_vars["SLIDE_BATCH_SIZE"] = str(slide_batch_size)
+        else:
+            # Single slide mode (backward compatible)
+            # If slide_paths has one element, use it; otherwise use slide_path parameter
+            if slide_paths and not slide_path:
+                slide_path = slide_paths[0]
+            env_vars["SLIDE_PATH"] = slide_path
+            env_vars["OUTPUT_H5_PATH"] = output_h5_path
+            env_vars["OUTPUT_PT_PATH"] = output_pt_path
+        
+        # Common environment variables
+        env_vars.update({
             "CLASSIFIER_THRESHOLD": str(classifier_threshold),
             "PREFILTER_MODEL_TYPE": prefilter_model_type,
             "SEGMENT_THRESHOLD": str(segment_threshold),
@@ -107,7 +133,7 @@ class CondorJobSubmitter:
             "BATCH_SIZE": str(batch_size),
             "USE_GPU": "true" if use_gpu else "false",
             "AWS_DEFAULT_REGION": aws_region,
-        }
+        })
         
         if intermediate_h5_path:
             env_vars["INTERMEDIATE_H5_PATH"] = intermediate_h5_path
@@ -231,11 +257,25 @@ queue 1
         
         return None
 
+    def _should_use_batch_encoding(self, **kwargs) -> bool:
+        """Determine if we should use batch slide encoding optimization.
+        
+        Batch encoding is beneficial when:
+        1. Using model-based aggregation (aggregation_method="model")
+        2. Using a slide encoder (slide_model_type is specified)
+        3. Processing multiple slides
+        """
+        return (
+            kwargs.get('aggregation_method') == 'model' and
+            kwargs.get('slide_model_type') is not None
+        )
+
     def submit_tasks_from_csv(
         self,
         csv_file: str,
         output_dir: Optional[str] = None,
         output_s3_prefix: Optional[str] = None,
+        distributed_slide_batch_size: int = 1,
         **kwargs
     ) -> List[Optional[str]]:
         """
@@ -243,18 +283,90 @@ queue 1
         
         CSV format: slide_id,slide_path
         
+        Args:
+            csv_file: Path to CSV manifest file
+            output_dir: Output directory for results
+            output_s3_prefix: S3 prefix for outputs
+            distributed_slide_batch_size: Number of slides to group per task for batch encoding (default: 1).
+                When > 1 and using slide-level model aggregation, slides are grouped into batches
+                to optimize slide encoder loading. Recommended: 8-16 for GIGAPATH_SLIDE/TITAN_SLIDE.
+            **kwargs: Additional task parameters
+        
         Returns:
             List of job IDs
         """
         print(f"Reading CSV manifest: {csv_file}")
         
-        job_ids = []
-        
+        # Read all slides from CSV
+        slides = []
         with open(csv_file, 'r') as f:
             reader = csv.DictReader(f)
             for row in reader:
-                slide_id = row['slide_id']
-                slide_path = row['slide_path']
+                slides.append({
+                    'slide_id': row['slide_id'],
+                    'slide_path': row['slide_path']
+                })
+        
+        # Determine if we should use batch encoding
+        use_batch_encoding = (
+            distributed_slide_batch_size > 1 and 
+            self._should_use_batch_encoding(**kwargs)
+        )
+        
+        if use_batch_encoding:
+            print(f"\n[Batch Encoding Optimization] Enabled")
+            print(f"  Grouping slides into batches of {distributed_slide_batch_size}")
+            print(f"  Slide encoder: {kwargs.get('slide_model_type')}")
+            print(f"  This reduces model loading overhead from {len(slides)}x to {(len(slides) + distributed_slide_batch_size - 1) // distributed_slide_batch_size}x")
+        
+        job_ids = []
+        
+        # Process slides in batches if batch encoding is enabled
+        if use_batch_encoding:
+            # Group slides into batches
+            for batch_idx in range(0, len(slides), distributed_slide_batch_size):
+                batch_slides = slides[batch_idx:batch_idx + distributed_slide_batch_size]
+                batch_size = len(batch_slides)
+                
+                # Create batch task ID
+                batch_id = f"batch_{batch_idx // distributed_slide_batch_size + 1}_of_{(len(slides) + distributed_slide_batch_size - 1) // distributed_slide_batch_size}"
+                
+                # Extract slide IDs and paths for this batch
+                slide_ids = [s['slide_id'] for s in batch_slides]
+                slide_paths = [s['slide_path'] for s in batch_slides]
+                
+                print(f"\nSubmitting batch task: {batch_id}")
+                print(f"  Slides: {', '.join(slide_ids)}")
+                
+                # Determine output directory for batch
+                if output_s3_prefix:
+                    model_type = kwargs.get('prefilter_model_type', 'CTRANSPATH')
+                    if kwargs.get('postfilter_model_types'):
+                        models = kwargs['postfilter_model_types'].split(',')
+                        model_type = models[0]
+                    output_dir_for_batch = f"{output_s3_prefix.rstrip('/')}/{model_type}"
+                elif output_dir:
+                    output_dir_for_batch = output_dir
+                else:
+                    print(f"ERROR: Must specify --output-dir or --output-s3-prefix")
+                    sys.exit(1)
+                
+                # Submit batch task
+                job_id = self.submit_task(
+                    task_id=batch_id,
+                    slide_paths=slide_paths,
+                    slide_ids=slide_ids,
+                    output_dir_for_batch=output_dir_for_batch,
+                    output_dir=kwargs.get('output_dir', 'condor_logs'),
+                    slide_batch_size=kwargs.get('slide_batch_size', 8),
+                    **kwargs
+                )
+                job_ids.append(job_id)
+        else:
+            # Single-slide tasks (original behavior)
+            for slide in slides:
+                slide_id = slide['slide_id']
+                slide_path = slide['slide_path']
                 
                 # Generate output paths
                 if output_s3_prefix:
@@ -326,6 +438,12 @@ def main():
     parser.add_argument("--mpp", type=float, default=0.5)
     parser.add_argument("--num-workers", type=int, default=4)
     parser.add_argument("--batch-size", type=int, default=64)
+    parser.add_argument("--slide-batch-size", type=int, default=8, 
+                        help="Slides per batch during slide-level aggregation (default: 8)")
+    parser.add_argument("--distributed-slide-batch-size", type=int, default=1,
+                        help="Number of slides to group per distributed task for batch encoding optimization (default: 1). "
+                             "When > 1 and using slide-level model aggregation (e.g., GIGAPATH_SLIDE), slides are grouped "
+                             "into batches to optimize slide encoder loading. Recommended: 8-16 for better efficiency.")
     parser.add_argument("--use-gpu", action="store_true", default=True)
     parser.add_argument("--no-gpu", action="store_false", dest="use_gpu")
     
@@ -476,6 +594,7 @@ def main():
             csv_file=args.csv_manifest,
             output_dir=args.output_dir,
             output_s3_prefix=args.output_s3_prefix,
+            distributed_slide_batch_size=args.distributed_slide_batch_size,
             classifier_pkl=args.classifier_pkl,
             classifier_threshold=args.classifier_threshold,
             prefilter_model_type=args.prefilter_model_type,
@@ -491,6 +610,7 @@ def main():
             mpp=args.mpp,
             num_workers=args.num_workers,
             batch_size=args.batch_size,
+            slide_batch_size=args.slide_batch_size,
             use_gpu=args.use_gpu,
             request_cpus=args.request_cpus,
             request_memory=args.request_memory,

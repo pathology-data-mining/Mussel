@@ -69,19 +69,33 @@ cleanup() {
 trap cleanup EXIT INT TERM
 
 # Check required environment variables
-if [ -z "$SLIDE_PATH" ]; then
-    log "ERROR: SLIDE_PATH environment variable is required"
+# Support both single-slide (SLIDE_PATH) and batch (SLIDE_PATHS) modes
+if [ -z "$SLIDE_PATH" ] && [ -z "$SLIDE_PATHS" ]; then
+    log "ERROR: Either SLIDE_PATH or SLIDE_PATHS environment variable is required"
     exit 1
 fi
 
-if [ -z "$OUTPUT_H5_PATH" ]; then
-    log "ERROR: OUTPUT_H5_PATH environment variable is required"
-    exit 1
-fi
-
-if [ -z "$OUTPUT_PT_PATH" ]; then
-    log "ERROR: OUTPUT_PT_PATH environment variable is required"
-    exit 1
+# Batch mode detection
+if [ -n "$SLIDE_PATHS" ]; then
+    BATCH_MODE=true
+    log "Batch processing mode detected"
+    
+    if [ -z "$OUTPUT_DIR" ]; then
+        log "ERROR: OUTPUT_DIR environment variable is required for batch processing"
+        exit 1
+    fi
+else
+    BATCH_MODE=false
+    
+    if [ -z "$OUTPUT_H5_PATH" ]; then
+        log "ERROR: OUTPUT_H5_PATH environment variable is required"
+        exit 1
+    fi
+    
+    if [ -z "$OUTPUT_PT_PATH" ]; then
+        log "ERROR: OUTPUT_PT_PATH environment variable is required"
+        exit 1
+    fi
 fi
 
 # Set defaults for optional parameters
@@ -92,6 +106,7 @@ PATCH_SIZE=${PATCH_SIZE:-256}
 MPP=${MPP:-0.5}
 NUM_WORKERS=${NUM_WORKERS:-4}
 BATCH_SIZE=${BATCH_SIZE:-64}
+SLIDE_BATCH_SIZE=${SLIDE_BATCH_SIZE:-8}
 USE_GPU=${USE_GPU:-true}
 KEEP_INTERMEDIATE_FILES=${KEEP_INTERMEDIATE_FILES:-false}
 AWS_DEFAULT_REGION=${AWS_DEFAULT_REGION:-us-east-1}
@@ -252,6 +267,104 @@ else
     fi
 fi
 
+# Handle batch processing mode
+if [ "$BATCH_MODE" = true ]; then
+    log ""
+    log "=========================================="
+    log "Batch Processing Mode"
+    log "=========================================="
+    log "Slides: $SLIDE_PATHS"
+    log "Slide IDs: ${SLIDE_IDS:-auto-generated}"
+    log "Output directory: $OUTPUT_DIR"
+    log "Slide batch size: $SLIDE_BATCH_SIZE"
+    log ""
+    
+    # Build command for batch processing
+    # Note: slide_paths parameter uses Hydra list syntax: slide_paths=[item1,item2,...]
+    CMD_ARGS=(
+        "tessellate_extract_features"
+        "slide_paths=[${SLIDE_PATHS}]"
+        "output_dir=${OUTPUT_DIR}"
+        "prefilter_model_type=${PREFILTER_MODEL_TYPE}"
+        "seg_config.segment_threshold=${SEGMENT_THRESHOLD}"
+        "seg_config.patch_size=${PATCH_SIZE}"
+        "seg_config.mpp=${MPP}"
+        "num_workers=${NUM_WORKERS}"
+        "batch_size=${BATCH_SIZE}"
+        "slide_batch_size=${SLIDE_BATCH_SIZE}"
+        "use_gpu=${USE_GPU}"
+    )
+    
+    # Add slide IDs if provided
+    if [ -n "$SLIDE_IDS" ]; then
+        CMD_ARGS+=("slide_ids=[${SLIDE_IDS}]")
+    fi
+    
+    # Add prefilter model path if specified
+    if [ -n "$PREFILTER_MODEL_PATH" ]; then
+        CMD_ARGS+=("prefilter_model_path=$PREFILTER_MODEL_PATH")
+    fi
+    
+    # Add classifier if specified
+    if [ -n "$CLASSIFIER_PKL" ]; then
+        CMD_ARGS+=("classifier_pkl=$CLASSIFIER_PKL")
+        CMD_ARGS+=("classifier_threshold=$CLASSIFIER_THRESHOLD")
+    fi
+    
+    # Add postfilter if specified
+    if [ -n "$POSTFILTER_MODEL_TYPE" ]; then
+        CMD_ARGS+=("postfilter_model_type=$POSTFILTER_MODEL_TYPE")
+    fi
+    
+    if [ -n "$POSTFILTER_MODEL_PATH" ]; then
+        CMD_ARGS+=("postfilter_model_path=$POSTFILTER_MODEL_PATH")
+    fi
+    
+    # Add aggregation parameters if specified
+    if [ "$AGGREGATION_METHOD" != "identity" ]; then
+        CMD_ARGS+=("aggregation_method=$AGGREGATION_METHOD")
+    fi
+    
+    if [ -n "$SLIDE_MODEL_TYPE" ]; then
+        CMD_ARGS+=("slide_model_type=$SLIDE_MODEL_TYPE")
+    fi
+    
+    if [ -n "$SLIDE_MODEL_PATH" ]; then
+        CMD_ARGS+=("slide_model_path=$SLIDE_MODEL_PATH")
+    fi
+    
+    log "Executing batch processing command:"
+    log "${CMD_ARGS[*]}"
+    echo ""
+    
+    # Execute the command
+    START_TIME=$(date +%s)
+    ${UV_PREFIX} "${CMD_ARGS[@]}"
+    EXIT_CODE=$?
+    END_TIME=$(date +%s)
+    DURATION=$((END_TIME - START_TIME))
+    
+    echo ""
+    if [ $EXIT_CODE -ne 0 ]; then
+        log "ERROR: Batch processing failed with exit code $EXIT_CODE (duration: $DURATION seconds)"
+        exit $EXIT_CODE
+    fi
+    
+    log "SUCCESS: Batch processing completed in $DURATION seconds"
+    
+    log ""
+    log "=========================================="
+    log "Processing completed successfully"
+    log "=========================================="
+    
+    echo "============================================"
+    echo "End time: $(date)"
+    echo "============================================"
+    
+    exit 0
+fi
+
+# Single-slide processing mode (original behavior)
 # Create output directory if it doesn't exist (for local outputs)
 OUTPUT_DIR=$(dirname "$LOCAL_OUTPUT_H5_PATH")
 if [ ! -d "$OUTPUT_DIR" ]; then

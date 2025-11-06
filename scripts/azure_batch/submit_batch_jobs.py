@@ -99,6 +99,23 @@ class AzureBatchJobSubmitter:
             )
         else:
             self.blob_client = None
+    
+    def _should_use_batch_encoding(self, **kwargs) -> bool:
+        """Determine if we should use batch slide encoding optimization.
+        
+        Batch encoding is beneficial when:
+        1. Using model-based aggregation (aggregation_method="model")
+        2. Using a slide encoder (slide_model_type is specified)
+        3. Processing multiple slides
+        
+        Note: For Azure Batch, batch encoding optimization is implemented at the
+        task script level (run_tessellate_extract_features.sh) by passing multiple
+        slides to a single task when beneficial.
+        """
+        return (
+            kwargs.get('aggregation_method') == 'model' and
+            kwargs.get('slide_model_type') is not None
+        )
         
         # Initialize Azure Files staging client if configured
         if storage_account_name and storage_account_key and azure_files_share_name and AzureFilesStaging:
@@ -537,6 +554,7 @@ class AzureBatchJobSubmitter:
         container_image: str = "mskmind/mussel:latest-torch-gpu",
         postfilter_models: Optional[List[str]] = None,
         staged_slide_paths: Optional[Dict[str, str]] = None,
+        distributed_slide_batch_size: int = 1,
         **default_params,
     ) -> None:
         """
@@ -555,6 +573,9 @@ class AzureBatchJobSubmitter:
             container_image: Docker image to use
             postfilter_models: List of postfilter model types to run sequentially in same task
             staged_slide_paths: Optional dict mapping slide_id to staged Azure Files paths
+            distributed_slide_batch_size: Number of slides to group per task for batch encoding (default: 1).
+                When > 1 and using slide-level model aggregation, slides are grouped into batches
+                to optimize slide encoder loading. Recommended: 8-16 for GIGAPATH_SLIDE/TITAN_SLIDE.
             **default_params: Default parameters for all tasks (e.g., prefilter_model_type, batch_size)
         """
         print(f"Loading task manifest from '{csv_file}'...")
@@ -978,6 +999,11 @@ def main():
     parser.add_argument("--output-dir", default="/mnt/output", help="Output directory for results (when using CSV)")
     parser.add_argument("--output-s3-prefix", help="S3 prefix for outputs (e.g., s3://bucket/results/)")
     parser.add_argument("--postfilter-models", help="Comma-separated list of postfilter model types to run (e.g., CTRANSPATH,CLIP,VIRCHOW)")
+    parser.add_argument("--distributed-slide-batch-size", type=int, default=1,
+                        help="Number of slides to group per distributed task for batch encoding optimization (default: 1). "
+                             "When > 1 and using slide-level model aggregation (e.g., GIGAPATH_SLIDE), slides are grouped "
+                             "into batches to optimize slide encoder loading. Recommended: 8-16 for better efficiency. "
+                             "Note: Not applicable when using --stage-to-azure-files (incremental staging).")
     parser.add_argument("--task-id", help="Single task ID")
     parser.add_argument("--slide-path", help="Path to slide file (for single task, can be s3://)")
     parser.add_argument("--output-h5-path", help="Output H5 path (for single task, can be s3://)")
@@ -1172,6 +1198,7 @@ def main():
                 output_s3_prefix=args.output_s3_prefix,
                 container_image=args.container_image,
                 postfilter_models=postfilter_models_list,
+                distributed_slide_batch_size=args.distributed_slide_batch_size,
                 **default_params,
             )
     elif args.task_id and args.slide_path:
