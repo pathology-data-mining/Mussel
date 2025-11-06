@@ -57,7 +57,7 @@ def test_default_patch_size_for_model():
     )
     assert cfg.seg_config.patch_size == 224
     
-    # Test with GIGAPATH which should keep DEFAULT_PATCH_SIZE
+    # Test with GIGAPATH which uses 256 (same as DEFAULT_PATCH_SIZE, so no change logged)
     seg_config = SegConfig()  # Uses DEFAULT_PATCH_SIZE
     cfg = TessellateExtractFeaturesConfig(
         slide_path="test.svs",
@@ -66,7 +66,7 @@ def test_default_patch_size_for_model():
         prefilter_model_type=ModelType.GIGAPATH,
         seg_config=seg_config,
     )
-    assert cfg.seg_config.patch_size == SegConfig.DEFAULT_PATCH_SIZE
+    assert cfg.seg_config.patch_size == SegConfig.DEFAULT_PATCH_SIZE  # 256
 
 
 def test_explicit_patch_size_preserved():
