@@ -208,10 +208,12 @@ python scripts/azure_batch/submit_batch_jobs.py \
 For optimal performance when processing many slides, you can stage input files to Azure Files before processing. Azure Files can be mounted directly to batch nodes, eliminating download overhead during task execution.
 
 **Benefits:**
-- Faster task startup (no download time)
-- Reduced egress costs from S3
-- Centralized storage accessible by all batch nodes
-- Automatic cleanup after processing
+- **Incremental processing**: Tasks start as soon as slides are staged (no waiting for full batch)
+- **Faster task startup**: No per-task download time
+- **Reduced egress costs**: Lower S3 egress costs
+- **Better resource utilization**: Batch nodes can start processing immediately
+- **Centralized storage**: All batch nodes access same files
+- **Automatic cleanup**: Staged files removed after processing
 
 **Setup:**
 
@@ -248,14 +250,24 @@ python scripts/azure_batch/submit_batch_jobs.py \
 ```
 
 **Workflow:**
-1. Files from S3 (or local paths in manifest) are staged to Azure Files share
-2. Pool is created with Azure Files mount at `/mnt/batch/tasks/fsmounts/azfiles/`
+1. Pool is created with Azure Files mount at `/mnt/batch/tasks/fsmounts/azfiles/`
+2. For each slide in the manifest:
+   - Slide is staged to Azure Files share
+   - Task is immediately submitted to process the staged slide
+   - Processing can start as soon as the first slide is staged (no need to wait for all slides)
 3. Tasks access slides directly from mounted Azure Files (no download needed)
-4. After processing, staged files are cleaned up if `--cleanup-staged-files` is specified
+4. After all tasks complete, staged files are cleaned up if `--cleanup-staged-files` is specified
+
+**Incremental Processing:**
+When `--stage-to-azure-files` is enabled, slides are staged and tasks are submitted one by one. This means:
+- Processing starts as soon as the first slide is uploaded
+- No need to wait for all slides to be staged before processing begins
+- Better utilization of batch resources (nodes can start working immediately)
+- Faster overall throughput for large batches
 
 **Key Arguments:**
 - `--azure-files-share-name`: Name of Azure Files share for staging
-- `--stage-to-azure-files`: Enable staging of input files to Azure Files
+- `--stage-to-azure-files`: Enable incremental staging of input files to Azure Files
 - `--mount-azure-files`: Mount Azure Files share to batch pool nodes
 - `--cleanup-staged-files`: Remove staged files after job completion
 

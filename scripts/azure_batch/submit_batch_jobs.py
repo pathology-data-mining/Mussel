@@ -375,6 +375,147 @@ class AzureBatchJobSubmitter:
                 container_image=container_image,
             )
 
+    def stage_and_submit_tasks_from_csv(
+        self,
+        job_id: str,
+        csv_file: str,
+        output_dir: str = "/mnt/output",
+        output_s3_prefix: Optional[str] = None,
+        container_image: str = "mskmind/mussel:latest-torch-gpu",
+        postfilter_models: Optional[List[str]] = None,
+        remote_dir: str = "slides",
+        **default_params,
+    ) -> None:
+        """
+        Stage slides to Azure Files and submit tasks incrementally.
+        
+        This method stages each slide to Azure Files and immediately submits
+        the corresponding task, allowing processing to start as soon as the
+        first slide is staged rather than waiting for all slides to be staged.
+        
+        CSV format:
+            slide_id,slide_path
+            slide_001,s3://bucket/slides/slide_001.svs
+            slide_002,/local/path/slide_002.svs
+        
+        Args:
+            job_id: Azure Batch job ID
+            csv_file: Path to CSV manifest file
+            output_dir: Local output directory for results (default: /mnt/output)
+            output_s3_prefix: S3 prefix for outputs (e.g., s3://bucket/results/)
+            container_image: Docker image to use
+            postfilter_models: List of postfilter model types to run sequentially in same task
+            remote_dir: Remote directory for slides in Azure Files
+            **default_params: Default parameters for all tasks (e.g., prefilter_model_type, batch_size)
+        """
+        if not self.azure_files_staging:
+            raise ValueError("Azure Files staging not configured. Provide storage account details and share name.")
+        
+        print(f"Loading task manifest from '{csv_file}'...")
+
+        # Get prefilter model type (used for directory organization when single model)
+        prefilter_model = default_params.get('prefilter_model_type', 'CTRANSPATH')
+        
+        # Determine model type for directory structure
+        if postfilter_models and len(postfilter_models) > 1:
+            # Multiple models - use first model for base directory, but actual paths will be model-specific
+            model_type = postfilter_models[0]
+            print(f"Will process each slide with {len(postfilter_models)} postfilter models sequentially: {', '.join(postfilter_models)}")
+        elif postfilter_models and len(postfilter_models) == 1:
+            model_type = postfilter_models[0]
+        else:
+            # Single model from default_params or prefilter
+            model_type = default_params.get('postfilter_model_type', prefilter_model)
+        
+        # Read CSV and process slides one by one
+        tasks_submitted = 0
+        with open(csv_file, 'r') as f:
+            reader = csv.DictReader(f)
+            slides = list(reader)
+        
+        print(f"[Azure Files] Staging and submitting {len(slides)} slides...")
+        print(f"[Azure Files] Tasks will start processing as slides are staged")
+        
+        for idx, row in enumerate(slides, 1):
+            slide_id = row['slide_id']
+            slide_path = row['slide_path']
+            
+            # Stage slide to Azure Files
+            filename = os.path.basename(slide_path)
+            remote_path = f"{remote_dir}/{filename}"
+            
+            print(f"[{idx}/{len(slides)}] Staging {slide_id}...")
+            self.azure_files_staging.upload_file(slide_path, remote_path)
+            
+            # Create azfiles:// path
+            azfiles_path = f"azfiles://{self.storage_account_name}/{self.azure_files_share_name}/{remote_path}"
+            
+            # Track for cleanup
+            self.staged_files.append(remote_path)
+            
+            # Create task with staged path
+            task_id = slide_id
+            
+            # For multi-model, base output paths use the first model's directory
+            # The bash script will handle creating model-specific subdirectories
+            if output_s3_prefix:
+                base_prefix = output_s3_prefix.rstrip('/')
+                output_h5_path = f"{base_prefix}/{model_type}/h5/{slide_id}_features.h5"
+                output_pt_path = f"{base_prefix}/{model_type}/pt/{slide_id}_features.pt"
+                intermediate_h5_path = f"{base_prefix}/{model_type}/tile_h5/{slide_id}_tile_features.h5"
+            else:
+                output_h5_path = f"{output_dir}/{model_type}/h5/{slide_id}_features.h5"
+                output_pt_path = f"{output_dir}/{model_type}/pt/{slide_id}_features.pt"
+                intermediate_h5_path = f"{output_dir}/{model_type}/tile_h5/{slide_id}_tile_features.h5"
+            
+            # Merge with default parameters
+            merged_config = {**default_params}
+            merged_config['task_id'] = task_id
+            merged_config['slide_path'] = azfiles_path
+            merged_config['output_h5_path'] = output_h5_path
+            merged_config['output_pt_path'] = output_pt_path
+            merged_config['intermediate_h5_path'] = intermediate_h5_path
+            
+            # Add postfilter models as comma-separated list if multiple
+            if postfilter_models and len(postfilter_models) > 1:
+                merged_config['postfilter_model_types'] = ','.join(postfilter_models)
+            elif postfilter_models and len(postfilter_models) == 1:
+                merged_config['postfilter_model_type'] = postfilter_models[0]
+            
+            # Submit task immediately
+            print(f"[{idx}/{len(slides)}] Submitting task for {slide_id}...")
+            self.submit_task(
+                job_id=job_id,
+                task_id=merged_config['task_id'],
+                slide_path=merged_config['slide_path'],
+                output_h5_path=merged_config['output_h5_path'],
+                output_pt_path=merged_config['output_pt_path'],
+                intermediate_h5_path=merged_config.get('intermediate_h5_path'),
+                aggregation_method=merged_config.get("aggregation_method", "identity"),
+                slide_model_type=merged_config.get("slide_model_type"),
+                classifier_pkl=merged_config.get("classifier_pkl"),
+                classifier_threshold=merged_config.get("classifier_threshold", 0.75),
+                prefilter_model_type=merged_config.get("prefilter_model_type", "CTRANSPATH"),
+                postfilter_model_type=merged_config.get("postfilter_model_type"),
+                postfilter_model_types=merged_config.get("postfilter_model_types"),
+                segment_threshold=merged_config.get("segment_threshold", 0),
+                patch_size=merged_config.get("patch_size", 256),
+                mpp=merged_config.get("mpp", 0.5),
+                num_workers=merged_config.get("num_workers", 4),
+                batch_size=merged_config.get("batch_size", 64),
+                use_gpu=merged_config.get("use_gpu", True),
+                keep_intermediate_files=merged_config.get("keep_intermediate_files", False),
+                hf_token=merged_config.get("hf_token"),
+                aws_access_key_id=merged_config.get("aws_access_key_id"),
+                aws_secret_access_key=merged_config.get("aws_secret_access_key"),
+                aws_region=merged_config.get("aws_region"),
+                max_retry_count=merged_config.get("max_retry_count", 3),
+                container_image=container_image,
+            )
+            tasks_submitted += 1
+        
+        print(f"\n[Azure Files] Staged and submitted {tasks_submitted} tasks")
+
     def submit_tasks_from_csv(
         self,
         job_id: str,
@@ -957,31 +1098,6 @@ def main():
             container_image=args.container_image,
         )
     elif args.csv_manifest:
-        # Stage slides to Azure Files if requested
-        staged_slide_paths = {}
-        if args.stage_to_azure_files:
-            if not args.azure_files_share_name:
-                print("ERROR: --azure-files-share-name required when using --stage-to-azure-files")
-                sys.exit(1)
-            
-            # Read CSV to get slide paths
-            slides_to_stage = []
-            with open(args.csv_manifest, 'r') as f:
-                reader = csv.DictReader(f)
-                for row in reader:
-                    slides_to_stage.append({
-                        'slide_id': row['slide_id'],
-                        'slide_path': row['slide_path']
-                    })
-            
-            # Stage slides to Azure Files
-            print(f"\n[Azure Files Staging] Staging {len(slides_to_stage)} slides...")
-            staged_slide_paths = submitter.stage_slides_to_azure_files(
-                slides=slides_to_stage,
-                remote_dir="slides",
-            )
-            print(f"[Azure Files Staging] Staging complete. Files available at /mnt/batch/tasks/fsmounts/azfiles/slides/\n")
-        
         # Prepare default parameters for CSV tasks
         default_params = {}
         if args.aws_access_key_id:
@@ -1011,16 +1127,34 @@ def main():
         if args.postfilter_models:
             postfilter_models_list = [m.strip() for m in args.postfilter_models.split(',')]
         
-        submitter.submit_tasks_from_csv(
-            job_id=args.job_id,
-            csv_file=args.csv_manifest,
-            output_dir=args.output_dir,
-            output_s3_prefix=args.output_s3_prefix,
-            container_image=args.container_image,
-            postfilter_models=postfilter_models_list,
-            staged_slide_paths=staged_slide_paths if staged_slide_paths else None,
-            **default_params,
-        )
+        # Use incremental staging and submission if Azure Files staging is enabled
+        if args.stage_to_azure_files:
+            if not args.azure_files_share_name:
+                print("ERROR: --azure-files-share-name required when using --stage-to-azure-files")
+                sys.exit(1)
+            
+            # Stage and submit tasks incrementally
+            submitter.stage_and_submit_tasks_from_csv(
+                job_id=args.job_id,
+                csv_file=args.csv_manifest,
+                output_dir=args.output_dir,
+                output_s3_prefix=args.output_s3_prefix,
+                container_image=args.container_image,
+                postfilter_models=postfilter_models_list,
+                remote_dir="slides",
+                **default_params,
+            )
+        else:
+            # Standard workflow without staging
+            submitter.submit_tasks_from_csv(
+                job_id=args.job_id,
+                csv_file=args.csv_manifest,
+                output_dir=args.output_dir,
+                output_s3_prefix=args.output_s3_prefix,
+                container_image=args.container_image,
+                postfilter_models=postfilter_models_list,
+                **default_params,
+            )
     elif args.task_id and args.slide_path:
         # Prepare model paths for single task
         task_model_paths = {}

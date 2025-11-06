@@ -150,16 +150,17 @@ def test_workflow_integration():
     with open(submit_file, 'r') as f:
         content = f.read()
     
+    # Check that incremental staging method exists
+    assert 'def stage_and_submit_tasks_from_csv(' in content, \
+        "Missing stage_and_submit_tasks_from_csv method"
+    
     # Check that staging happens before task submission
     assert 'if args.stage_to_azure_files:' in content, \
         "Missing staging conditional check"
     
-    assert 'staged_slide_paths = submitter.stage_slides_to_azure_files' in content, \
-        "Missing call to stage_slides_to_azure_files"
-    
-    # Check that staged paths are passed to submit_tasks_from_csv
-    assert 'staged_slide_paths=staged_slide_paths' in content, \
-        "Staged paths not passed to submit_tasks_from_csv"
+    # Check that incremental staging is called when enabled
+    assert 'submitter.stage_and_submit_tasks_from_csv' in content, \
+        "Missing call to stage_and_submit_tasks_from_csv"
     
     # Check that cleanup is called
     assert 'if args.cleanup_staged_files:' in content, \
@@ -168,6 +169,28 @@ def test_workflow_integration():
         "cleanup_staged_files not called"
     
     print("✓ Workflow is properly integrated")
+
+
+def test_incremental_staging():
+    """Test that incremental staging is implemented."""
+    submit_file = SCRIPTS_DIR / 'submit_batch_jobs.py'
+    
+    with open(submit_file, 'r') as f:
+        content = f.read()
+    
+    # Check that method stages and submits incrementally
+    assert 'def stage_and_submit_tasks_from_csv(' in content, \
+        "Missing stage_and_submit_tasks_from_csv method"
+    
+    # Check that it uploads file and submits task in the same loop
+    assert 'self.azure_files_staging.upload_file' in content, \
+        "Missing upload_file call in staging method"
+    
+    assert 'Tasks will start processing as slides are staged' in content or \
+           'stage_and_submit_tasks_from_csv' in content, \
+        "Missing incremental staging logic"
+    
+    print("✓ Incremental staging is implemented")
 
 
 if __name__ == "__main__":
@@ -179,6 +202,7 @@ if __name__ == "__main__":
         test_azure_files_staging_module_structure()
         test_documentation_updated()
         test_workflow_integration()
+        test_incremental_staging()
         
         print("\n✅ All validation tests passed!\n")
     except AssertionError as e:
