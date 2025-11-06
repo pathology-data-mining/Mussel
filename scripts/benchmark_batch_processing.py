@@ -14,6 +14,18 @@ import time
 from typing import List
 
 
+# Default batch efficiency factor: 0.6 represents realistic GPU batch processing
+# This means batch processing is ~60% as efficient as perfect parallelization.
+# Perfect parallelization (1.0) = batch of 8 slides takes same time as 1 slide
+# Sequential (0.125) = batch of 8 slides takes 8x time of 1 slide
+# Realistic (0.6) = accounts for:
+#   - Memory transfer overhead
+#   - GPU kernel launch latency
+#   - Non-perfect tensor operation parallelization
+# Based on typical GPU batch processing benchmarks for transformer models.
+DEFAULT_BATCH_EFFICIENCY = 0.6
+
+
 def simulate_slide_processing_sequential(
     num_slides: int,
     model_load_time: float = 2.0,
@@ -64,7 +76,7 @@ def simulate_slide_processing_batch(
     batch_size: int = 8,
     model_load_time: float = 2.0,
     inference_time_per_slide: float = 0.5,
-    batch_efficiency: float = 0.6,
+    batch_efficiency: float = DEFAULT_BATCH_EFFICIENCY,
 ) -> dict:
     """
     Simulate batch slide processing (new approach).

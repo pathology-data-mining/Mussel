@@ -607,7 +607,11 @@ def aggregate_slide_features_batch(
         # Process batch based on model type requirements
         with torch.no_grad():
             if model_type == ModelType.TITAN_SLIDE:
-                # TITAN requires features, coords, and patch_size
+                # TITAN requires features, coords, and patch_size per slide
+                # Note: We process slides sequentially here because TITAN_SLIDE expects
+                # variable-length sequences per slide. The main performance benefit comes
+                # from loading the model once rather than N times.
+                # Future optimization: Implement true batching with padding if model supports it
                 aggregated_batch = []
                 for features, coords, patch_size in zip(batch_features, batch_coords, batch_patch_sizes):
                     if coords is None:
@@ -622,7 +626,11 @@ def aggregate_slide_features_batch(
                     aggregated_batch.append(agg_features)
                     
             elif model_type == ModelType.GIGAPATH_SLIDE:
-                # GIGAPATH requires features and coords
+                # GIGAPATH requires features and coords per slide
+                # Note: We process slides sequentially here because GIGAPATH_SLIDE expects
+                # variable-length sequences per slide. The main performance benefit comes
+                # from loading the model once rather than N times.
+                # Future optimization: Implement true batching with padding if model supports it
                 aggregated_batch = []
                 for features, coords in zip(batch_features, batch_coords):
                     if coords is None:
@@ -635,11 +643,11 @@ def aggregate_slide_features_batch(
                     
             else:
                 # Other slide encoders may only need features
-                # Stack features from all slides in batch
+                # Stack features from all slides in batch and process together
                 features_list = [torch.from_numpy(f).unsqueeze(0) for f in batch_features]
                 features_batch = torch.cat(features_list, dim=0)
                 
-                # Process entire batch at once
+                # Process entire batch at once for maximum efficiency
                 aggregated_batch_tensor = model_fun(features_batch).cpu().numpy()
                 aggregated_batch = [aggregated_batch_tensor[i:i+1] for i in range(len(batch_features))]
         
