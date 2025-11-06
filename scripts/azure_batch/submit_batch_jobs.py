@@ -227,6 +227,7 @@ class AzureBatchJobSubmitter:
         aws_region: Optional[str] = None,
         max_retry_count: int = 3,
         container_image: str = "mskmind/mussel:latest-torch-gpu",
+        cleanup_staged_file: bool = False,
     ) -> None:
         """Submit a tessellate-extract-features task to Azure Batch."""
         print(f"Submitting task '{task_id}' to job '{job_id}'...")
@@ -283,6 +284,16 @@ class AzureBatchJobSubmitter:
             env_vars.append(batchmodels.EnvironmentSetting("AWS_SECRET_ACCESS_KEY", aws_secret_access_key))
         if aws_region:
             env_vars.append(batchmodels.EnvironmentSetting("AWS_DEFAULT_REGION", aws_region))
+        
+        # Add Azure Files cleanup settings if enabled
+        if cleanup_staged_file:
+            env_vars.append(batchmodels.EnvironmentSetting("CLEANUP_STAGED_FILE", "true"))
+            if self.storage_account_name:
+                env_vars.append(batchmodels.EnvironmentSetting("AZURE_STORAGE_ACCOUNT", self.storage_account_name))
+            if self.storage_account_key:
+                env_vars.append(batchmodels.EnvironmentSetting("AZURE_STORAGE_KEY", self.storage_account_key))
+            if self.azure_files_share_name:
+                env_vars.append(batchmodels.EnvironmentSetting("AZURE_FILES_SHARE", self.azure_files_share_name))
 
         # Container settings
         container_settings = batchmodels.TaskContainerSettings(
@@ -511,6 +522,7 @@ class AzureBatchJobSubmitter:
                 aws_region=merged_config.get("aws_region"),
                 max_retry_count=merged_config.get("max_retry_count", 3),
                 container_image=container_image,
+                cleanup_staged_file=True,  # Enable per-task cleanup for staged files
             )
             tasks_submitted += 1
         
@@ -887,7 +899,14 @@ class AzureBatchJobSubmitter:
         return staged_paths
     
     def cleanup_staged_files(self) -> None:
-        """Clean up all staged files from Azure Files."""
+        """
+        Clean up all staged files from Azure Files.
+        
+        Note: When using incremental staging (stage_and_submit_tasks_from_csv),
+        files are automatically cleaned up after each task completes. This method
+        is primarily for cleaning up files staged using stage_slides_to_azure_files
+        or for manual cleanup operations.
+        """
         if not self.azure_files_staging or not self.staged_files:
             return
         

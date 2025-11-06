@@ -4,7 +4,7 @@
 # This script runs on Azure Batch compute nodes to process whole-slide images
 #
 # Environment variables expected:
-#   SLIDE_PATH - Path to the input slide file (can be s3:// URL)
+#   SLIDE_PATH - Path to the input slide file (can be s3:// or azfiles:// URL)
 #   OUTPUT_H5_PATH - Path for output HDF5 file (can be s3:// URL or local path)
 #   OUTPUT_PT_PATH - Path for output PyTorch file (can be s3:// URL or local path)
 #   INTERMEDIATE_H5_PATH - (Optional) Path for intermediate tile-level features (two-step aggregation)
@@ -22,6 +22,10 @@
 #   BATCH_SIZE - Batch size for feature extraction (default: 64)
 #   USE_GPU - Whether to use GPU (default: true)
 #   KEEP_INTERMEDIATE_FILES - Keep intermediate files (default: false)
+#   CLEANUP_STAGED_FILE - (Optional) Cleanup staged Azure Files file after task completion (default: false)
+#   AZURE_STORAGE_ACCOUNT - (Optional) Azure Storage account name for cleanup
+#   AZURE_STORAGE_KEY - (Optional) Azure Storage account key for cleanup
+#   AZURE_FILES_SHARE - (Optional) Azure Files share name for cleanup
 #   HF_TOKEN - (Optional) HuggingFace token for gated models
 #   AWS_ACCESS_KEY_ID - (Optional) AWS access key for S3
 #   AWS_SECRET_ACCESS_KEY - (Optional) AWS secret key for S3
@@ -45,10 +49,35 @@ log() {
 # Cleanup function to remove temporary files
 cleanup() {
     local exit_code=$?
+    
+    # Cleanup temporary work directory
     if [ -n "$WORK_DIR" ] && [ -d "$WORK_DIR" ]; then
         log "Cleanup: Removing work directory: $WORK_DIR"
         rm -rf "$WORK_DIR" || log "Warning: Failed to remove work directory"
     fi
+    
+    # Cleanup staged Azure Files file if requested and task succeeded
+    if [ "$CLEANUP_STAGED_FILE" = "true" ] && [ $exit_code -eq 0 ] && [ -n "$STAGED_FILE_PATH" ]; then
+        log "Cleanup: Removing staged file from Azure Files: $STAGED_FILE_PATH"
+        
+        # Check if we have the required Azure credentials
+        if [ -n "$AZURE_STORAGE_ACCOUNT" ] && [ -n "$AZURE_STORAGE_KEY" ] && [ -n "$AZURE_FILES_SHARE" ]; then
+            # Use az CLI to delete the file
+            if command -v az &> /dev/null; then
+                az storage file delete \
+                    --account-name "$AZURE_STORAGE_ACCOUNT" \
+                    --account-key "$AZURE_STORAGE_KEY" \
+                    --share-name "$AZURE_FILES_SHARE" \
+                    --path "$STAGED_FILE_PATH" 2>&1 | grep -v "^$" || log "Warning: Failed to delete staged file from Azure Files"
+                log "Cleanup: Staged file deleted successfully"
+            else
+                log "Warning: az CLI not available, cannot cleanup staged file"
+            fi
+        else
+            log "Warning: Missing Azure credentials for cleanup, skipping staged file deletion"
+        fi
+    fi
+    
     # Don't exit here, let the script continue to its natural exit
 }
 
@@ -83,6 +112,10 @@ USE_GPU=${USE_GPU:-true}
 KEEP_INTERMEDIATE_FILES=${KEEP_INTERMEDIATE_FILES:-false}
 AWS_DEFAULT_REGION=${AWS_DEFAULT_REGION:-us-east-1}
 AGGREGATION_METHOD=${AGGREGATION_METHOD:-identity}
+CLEANUP_STAGED_FILE=${CLEANUP_STAGED_FILE:-false}
+
+# Variable to track staged file path for cleanup
+STAGED_FILE_PATH=""
 
 # Storage helper functions
 is_s3_path() {
@@ -168,8 +201,17 @@ ORIGINAL_SLIDE_PATH="$SLIDE_PATH"
 if is_azfiles_path "$SLIDE_PATH"; then
     # Resolve Azure Files path to local mount point
     log "Slide is in Azure Files, resolving to mount point..."
+    
+    # Extract the file path from azfiles:// URL for cleanup
+    # Format: azfiles://account/share/path -> path
+    STAGED_FILE_PATH=$(echo "$SLIDE_PATH" | sed 's|^azfiles://[^/]*/[^/]*/||')
+    
     SLIDE_PATH=$(resolve_azfiles_path "$SLIDE_PATH")
     log "Resolved to: $SLIDE_PATH"
+    
+    if [ "$CLEANUP_STAGED_FILE" = "true" ]; then
+        log "Staged file will be cleaned up after task completion: $STAGED_FILE_PATH"
+    fi
 elif is_s3_path "$SLIDE_PATH"; then
     log "Slide is in S3, staging locally..."
     WORK_DIR="/tmp/mussel_work_$$"

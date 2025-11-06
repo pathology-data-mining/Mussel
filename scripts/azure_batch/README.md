@@ -212,8 +212,9 @@ For optimal performance when processing many slides, you can stage input files t
 - **Faster task startup**: No per-task download time
 - **Reduced egress costs**: Lower S3 egress costs
 - **Better resource utilization**: Batch nodes can start processing immediately
+- **Automatic per-task cleanup**: Staged files removed after each task completes, freeing storage space progressively
 - **Centralized storage**: All batch nodes access same files
-- **Automatic cleanup**: Staged files removed after processing
+- **Lower storage costs**: Per-task cleanup means you only pay for storage during active processing
 
 **Setup:**
 
@@ -255,8 +256,9 @@ python scripts/azure_batch/submit_batch_jobs.py \
    - Slide is staged to Azure Files share
    - Task is immediately submitted to process the staged slide
    - Processing can start as soon as the first slide is staged (no need to wait for all slides)
+   - **After task completes successfully, the staged file is automatically cleaned up**
 3. Tasks access slides directly from mounted Azure Files (no download needed)
-4. After all tasks complete, staged files are cleaned up if `--cleanup-staged-files` is specified
+4. Cleanup happens per-task, so storage space is freed as tasks complete
 
 **Incremental Processing:**
 When `--stage-to-azure-files` is enabled, slides are staged and tasks are submitted one by one. This means:
@@ -264,12 +266,13 @@ When `--stage-to-azure-files` is enabled, slides are staged and tasks are submit
 - No need to wait for all slides to be staged before processing begins
 - Better utilization of batch resources (nodes can start working immediately)
 - Faster overall throughput for large batches
+- **Automatic per-task cleanup**: Each task cleans up its staged file after successful completion
 
 **Key Arguments:**
 - `--azure-files-share-name`: Name of Azure Files share for staging
 - `--stage-to-azure-files`: Enable incremental staging of input files to Azure Files
 - `--mount-azure-files`: Mount Azure Files share to batch pool nodes
-- `--cleanup-staged-files`: Remove staged files after job completion
+- `--cleanup-staged-files`: (Optional) Remove any remaining staged files after all tasks complete (normally not needed with incremental staging)
 
 ## Configuration
 

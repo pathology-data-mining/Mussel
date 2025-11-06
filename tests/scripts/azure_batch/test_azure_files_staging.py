@@ -190,7 +190,39 @@ def test_incremental_staging():
            'stage_and_submit_tasks_from_csv' in content, \
         "Missing incremental staging logic"
     
+    # Check that per-task cleanup is enabled
+    assert 'cleanup_staged_file=True' in content, \
+        "Missing per-task cleanup flag"
+    
     print("✓ Incremental staging is implemented")
+
+
+def test_per_task_cleanup():
+    """Test that per-task cleanup is implemented."""
+    run_script = SCRIPTS_DIR / 'run_tessellate_extract_features.sh'
+    
+    with open(run_script, 'r') as f:
+        content = f.read()
+    
+    # Check for cleanup environment variables
+    assert 'CLEANUP_STAGED_FILE' in content, \
+        "Missing CLEANUP_STAGED_FILE environment variable"
+    
+    assert 'AZURE_STORAGE_ACCOUNT' in content, \
+        "Missing AZURE_STORAGE_ACCOUNT for cleanup"
+    
+    assert 'AZURE_FILES_SHARE' in content, \
+        "Missing AZURE_FILES_SHARE for cleanup"
+    
+    # Check for cleanup logic in cleanup function
+    assert 'az storage file delete' in content, \
+        "Missing Azure Files delete command for cleanup"
+    
+    # Check for STAGED_FILE_PATH tracking
+    assert 'STAGED_FILE_PATH' in content, \
+        "Missing STAGED_FILE_PATH variable for tracking staged files"
+    
+    print("✓ Per-task cleanup is implemented")
 
 
 if __name__ == "__main__":
@@ -203,6 +235,7 @@ if __name__ == "__main__":
         test_documentation_updated()
         test_workflow_integration()
         test_incremental_staging()
+        test_per_task_cleanup()
         
         print("\n✅ All validation tests passed!\n")
     except AssertionError as e:
