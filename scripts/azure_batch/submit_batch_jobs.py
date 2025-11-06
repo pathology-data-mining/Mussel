@@ -136,8 +136,32 @@ class AzureBatchJobSubmitter:
         use_gpu: bool = True,
         mount_azure_files: bool = False,
     ) -> None:
-        """Create a pool of compute nodes with optional Azure Files mount."""
+        """Create a pool of compute nodes with optional Azure Files mount.
+        
+        Args:
+            pool_id: Unique identifier for the pool
+            vm_size: Azure VM size (e.g., Standard_NC6s_v3 for GPU)
+            node_count: Number of VMs in the pool
+            container_image: Docker image to use
+            use_gpu: Whether GPU support is intended (used for validation and logging)
+            mount_azure_files: Whether to mount Azure Files share
+        """
         print(f"Creating pool '{pool_id}'...")
+        
+        # Validate GPU configuration
+        gpu_vm_prefixes = ['Standard_NC', 'Standard_ND', 'Standard_NV']
+        is_gpu_vm = any(vm_size.startswith(prefix) for prefix in gpu_vm_prefixes)
+        
+        if use_gpu and not is_gpu_vm:
+            print(f"  WARNING: GPU support requested but VM size '{vm_size}' does not appear to be a GPU-enabled VM")
+            print(f"  GPU-enabled VM sizes typically start with: {', '.join(gpu_vm_prefixes)}")
+        elif not use_gpu and is_gpu_vm:
+            print(f"  NOTE: GPU support disabled but VM size '{vm_size}' appears to be GPU-enabled")
+        
+        if use_gpu:
+            print(f"  GPU support: Enabled (VM size: {vm_size})")
+        else:
+            print(f"  GPU support: Disabled (VM size: {vm_size})")
 
         # Container configuration
         container_conf = batchmodels.ContainerConfiguration(
