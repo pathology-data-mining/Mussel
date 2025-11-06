@@ -321,7 +321,31 @@ Control the compute resources:
   - GPU VMs: `Standard_NC6s_v3`, `Standard_NC12s_v3`, `Standard_NC24s_v3`
   - CPU VMs: `Standard_D4s_v3`, `Standard_D8s_v3`
 - `--node-count`: Number of nodes in the pool
+- `--use-gpu`: Enable GPU support for pool nodes (default: True)
+- `--no-gpu`: Disable GPU support for pool nodes (for CPU-only workloads)
 - `--container-image`: Docker image to use
+  - For GPU workloads: `mskmind/mussel:latest-torch-gpu` (default)
+  - For CPU workloads: `mskmind/mussel:latest-torch-cpu`
+
+**Example: Create a GPU pool**
+```bash
+--pool-id mussel-gpu-pool \
+--create-pool \
+--vm-size Standard_NC6s_v3 \
+--node-count 2 \
+--use-gpu \
+--container-image mskmind/mussel:latest-torch-gpu
+```
+
+**Example: Create a CPU-only pool**
+```bash
+--pool-id mussel-cpu-pool \
+--create-pool \
+--vm-size Standard_D4s_v3 \
+--node-count 4 \
+--no-gpu \
+--container-image mskmind/mussel:latest-torch-cpu
+```
 
 ### Task Configuration
 
@@ -689,6 +713,36 @@ The task execution script automatically cleans up temporary files when tasks com
 **Note:** Only temporary files are removed. Final output files stored in local directories (non-S3 paths) are preserved.
 
 ## Cleanup
+
+### Automatic Cleanup After Completion
+
+When you want to automatically delete resources after all tasks complete, use the cleanup flags with `--monitor`:
+
+```bash
+python scripts/azure_batch/submit_batch_jobs.py \
+  --batch-account-name mybatchaccount \
+  --batch-account-key <your-batch-key> \
+  --batch-account-url https://mybatchaccount.eastus.batch.azure.com \
+  --pool-id mussel-pool \
+  --create-pool \
+  --job-id mussel-job-001 \
+  --create-job \
+  --csv-manifest slides.csv \
+  --output-dir /mnt/output \
+  --monitor \
+  --delete-job \
+  --delete-pool
+```
+
+**How it works:**
+- The script will monitor tasks until all complete
+- After monitoring completes, the job is deleted (if `--delete-job` is specified)
+- Then the pool is deleted (if `--delete-pool` is specified)
+- This ensures resources are cleaned up only after processing finishes
+
+**Note:** If you use `--delete-job` or `--delete-pool` without `--monitor`, the resources will be deleted immediately, which may terminate running tasks. Always use these flags together with `--monitor` when you want cleanup after completion.
+
+### Manual Cleanup
 
 ### Delete Job
 

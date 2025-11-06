@@ -986,6 +986,10 @@ def main():
     parser.add_argument("--create-pool", action="store_true", help="Create pool if it doesn't exist")
     parser.add_argument("--vm-size", default="Standard_NC6s_v3", help="VM size for pool nodes")
     parser.add_argument("--node-count", type=int, default=1, help="Number of nodes in pool")
+    parser.add_argument("--use-gpu", action="store_true", default=True, 
+                        help="Enable GPU support for pool nodes (default: True)")
+    parser.add_argument("--no-gpu", dest="use_gpu", action="store_false",
+                        help="Disable GPU support for pool nodes")
     parser.add_argument("--container-image", default="mskmind/mussel:latest-torch-gpu", 
                         help="Docker container image")
     
@@ -1034,7 +1038,10 @@ def main():
     # Monitoring and cleanup
     parser.add_argument("--monitor", action="store_true", help="Monitor task progress")
     parser.add_argument("--delete-job", action="store_true", help="Delete job after completion")
-    parser.add_argument("--delete-pool", action="store_true", help="Delete pool after completion")
+    parser.add_argument("--delete-pool", action="store_true", 
+                        help="Delete pool after completion. When used with --monitor, "
+                        "the pool will be deleted after all tasks complete. "
+                        "Otherwise, it will be deleted immediately.")
     
     args = parser.parse_args()
 
@@ -1128,6 +1135,7 @@ def main():
             vm_size=args.vm_size,
             node_count=args.node_count,
             container_image=args.container_image,
+            use_gpu=args.use_gpu,
             mount_azure_files=args.mount_azure_files,
         )
 

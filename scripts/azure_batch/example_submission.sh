@@ -220,11 +220,74 @@ example_monitor_job() {
 }
 
 # ==============================================================================
-# Example 5: Cleanup (delete job and pool)
+# Example 5: Process with automatic cleanup after completion
+# ==============================================================================
+
+example_with_auto_cleanup() {
+    log "Example 5: Process slides with automatic cleanup after completion"
+    
+    python "$SCRIPT_DIR/submit_batch_jobs.py" \
+        --batch-account-name "$BATCH_ACCOUNT_NAME" \
+        --batch-account-key "$BATCH_ACCOUNT_KEY" \
+        --batch-account-url "$BATCH_ACCOUNT_URL" \
+        --pool-id "$POOL_ID" \
+        --create-pool \
+        --vm-size "$VM_SIZE" \
+        --node-count 1 \
+        --use-gpu \
+        --container-image "$CONTAINER_IMAGE" \
+        --job-id "$JOB_ID" \
+        --create-job \
+        --task-id "slide-001" \
+        --slide-path "/mnt/data/slides/slide_001.svs" \
+        --output-h5-path "/mnt/output/slide_001_features.h5" \
+        --output-pt-path "/mnt/output/slide_001_features.pt" \
+        --monitor \
+        --delete-job \
+        --delete-pool
+    
+    log "Processing complete and resources cleaned up"
+}
+
+# ==============================================================================
+# Example 6: Create CPU-only pool (no GPU)
+# ==============================================================================
+
+example_cpu_pool() {
+    log "Example 6: Create a CPU-only pool and process a slide"
+    
+    CPU_POOL_ID="mussel-cpu-pool-$(date +%Y%m%d)"
+    CPU_JOB_ID="mussel-cpu-job-$(date +%Y%m%d-%H%M%S)"
+    
+    python "$SCRIPT_DIR/submit_batch_jobs.py" \
+        --batch-account-name "$BATCH_ACCOUNT_NAME" \
+        --batch-account-key "$BATCH_ACCOUNT_KEY" \
+        --batch-account-url "$BATCH_ACCOUNT_URL" \
+        --pool-id "$CPU_POOL_ID" \
+        --create-pool \
+        --vm-size "Standard_D4s_v3" \
+        --node-count 1 \
+        --no-gpu \
+        --container-image "mskmind/mussel:latest-torch-cpu" \
+        --job-id "$CPU_JOB_ID" \
+        --create-job \
+        --task-id "slide-001-cpu" \
+        --slide-path "/mnt/data/slides/slide_001.svs" \
+        --output-h5-path "/mnt/output/slide_001_cpu_features.h5" \
+        --output-pt-path "/mnt/output/slide_001_cpu_features.pt" \
+        --monitor \
+        --delete-job \
+        --delete-pool
+    
+    log "CPU processing complete"
+}
+
+# ==============================================================================
+# Example 7: Cleanup (delete job and pool)
 # ==============================================================================
 
 example_cleanup() {
-    log "Example 5: Cleaning up resources"
+    log "Example 7: Cleaning up resources"
     
     read -p "Enter Job ID to delete (or press Enter to skip): " DELETE_JOB_ID
     read -p "Enter Pool ID to delete (or press Enter to skip): " DELETE_POOL_ID
@@ -269,7 +332,9 @@ main() {
     echo "  2) Batch process multiple slides"
     echo "  3) Process with tissue filtering (dual extraction)"
     echo "  4) Monitor an existing job"
-    echo "  5) Cleanup (delete job/pool)"
+    echo "  5) Process with automatic cleanup after completion"
+    echo "  6) Create CPU-only pool (no GPU)"
+    echo "  7) Cleanup (delete job/pool)"
     echo "  q) Quit"
     echo ""
     read -p "Enter choice: " choice
@@ -279,7 +344,9 @@ main() {
         2) example_batch_processing ;;
         3) example_with_filtering ;;
         4) example_monitor_job ;;
-        5) example_cleanup ;;
+        5) example_with_auto_cleanup ;;
+        6) example_cpu_pool ;;
+        7) example_cleanup ;;
         q|Q) log "Exiting"; exit 0 ;;
         *) log "Invalid choice"; exit 1 ;;
     esac
