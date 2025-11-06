@@ -25,7 +25,7 @@ from mussel.cli.tessellate import (
     VisConfig,
     PngConfig,
 )
-from mussel.models import ModelType
+from mussel.models import ModelType, get_default_patch_size
 from mussel.utils import save_features, filter_features, save_hdf5
 from mussel.utils.segment import draw_slide_mask, save_patches_png, segment_tissue
 
@@ -90,8 +90,6 @@ class FilterTessellateConfig:
 
     def __post_init__(self):
         """Set default patch size based on model type if not explicitly set."""
-        from mussel.models import get_default_patch_size
-        
         # Only set patch size if seg_config.patch_size is at the default value (256)
         # This allows users to override if they explicitly set a different value
         if self.seg_config.patch_size == 256:  # Default value from SegConfig

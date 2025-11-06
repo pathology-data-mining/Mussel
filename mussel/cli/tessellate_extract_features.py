@@ -23,7 +23,7 @@ from mussel.cli.tessellate_extract_features_common import (
     process_slide_tessellation_and_filtering,
     create_visualizations,
 )
-from mussel.models import ModelType, get_required_patch_encoder
+from mussel.models import ModelType, get_required_patch_encoder, get_default_patch_size
 from mussel.utils import aggregate_slide_features_batch
 
 ssl._create_default_https_context = ssl._create_unverified_context
@@ -146,8 +146,6 @@ class TessellateExtractFeaturesConfig:
 
     def __post_init__(self):
         """Set default patch size based on model type if not explicitly set."""
-        from mussel.models import get_default_patch_size
-        
         # Only set patch size if seg_config.patch_size is at the default value (256)
         # This allows users to override if they explicitly set a different value
         if self.seg_config.patch_size == 256:  # Default value from SegConfig
