@@ -392,6 +392,8 @@ class TitanSlideEncoderModel(TorchModel):
                 torch.inference_mode(),
                 torch.autocast(device_type=self.device.type, dtype=torch.float16),
             ):
+                patch_features = patch_features.to(self.device, non_blocking=True)
+                coords = coords.to(self.device, non_blocking=True)
                 return self.obj.encode_slide_from_patch_features(
                     patch_features, coords, patch_size
                 ).cpu()
@@ -492,6 +494,7 @@ class GigapathSlideEncoderModel(TorchModel):
                 torch.autocast(device_type=self.device.type, dtype=torch.float16),
             ):
                 features = features.to(self.device, non_blocking=True)
+                coords = coords.to(self.device, non_blocking=True)
                 return self.obj(features, coords)[0].cpu()
 
         return model_fun
