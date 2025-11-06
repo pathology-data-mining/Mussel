@@ -545,24 +545,56 @@ def aggregate_slide_features_batch(
     
     num_slides = len(patch_features_h5_paths)
     
-    # For non-model aggregation methods, fall back to sequential processing
-    # as batch processing doesn't provide benefits
+    # For non-model aggregation methods, process each slide directly
+    # without loading a model
     if aggregation_method != "model":
-        logger.info(f"Using sequential processing for aggregation_method={aggregation_method}")
+        logger.info(f"Processing {num_slides} slides with aggregation_method={aggregation_method}")
         for i, patch_h5_path in enumerate(patch_features_h5_paths):
             output_h5 = output_h5_paths[i] if output_h5_paths else None
             output_pt = output_pt_paths[i] if output_pt_paths else None
-            aggregate_slide_features(
-                patch_features_h5_path=patch_h5_path,
-                output_h5_path=output_h5,
-                output_pt_path=output_pt,
-                aggregation_method=aggregation_method,
-                model_type=model_type,
-                model_path=model_path,
-                use_gpu=use_gpu,
-                gpu_device_id=gpu_device_id,
-                gpu_device_ids=gpu_device_ids,
-            )
+            
+            with h5py.File(patch_h5_path, "r") as file:
+                features = file["features"][:]
+                logger.info(f"Loaded patch features with shape: {features.shape} for slide {i+1}/{num_slides}")
+                
+                # Load coordinates if available
+                coords = file["coords"][:] if "coords" in file else None
+                
+                # Load patch_size from coords attributes if available
+                patch_size = None
+                if "coords" in file and "patch_size" in file["coords"].attrs:
+                    patch_size = file["coords"].attrs["patch_size"]
+                
+                # Apply aggregation using shared helper function
+                aggregated_features = _apply_slide_aggregation(
+                    features,
+                    aggregation_method=aggregation_method,
+                    slide_model_type=model_type,
+                    slide_model_path=model_path,
+                    use_gpu=use_gpu,
+                    gpu_device_id=gpu_device_id,
+                    gpu_device_ids=gpu_device_ids,
+                    coords=coords,
+                    patch_size=patch_size,
+                )
+                
+                # Save to HDF5 if requested
+                if output_h5:
+                    logger.info(f"Saving aggregated features to {output_h5}")
+                    asset_dict = {"features": aggregated_features}
+                    
+                    # Copy coordinates if they exist and we're using identity
+                    if aggregation_method == "identity" and "coords" in file:
+                        asset_dict["coords"] = file["coords"][:]
+                    
+                    save_hdf5(output_h5, asset_dict, attr_h5_path=None, mode="w")
+                
+                # Save to PyTorch if requested
+                if output_pt:
+                    logger.info(f"Saving aggregated features to {output_pt}")
+                    features_tensor = torch.from_numpy(aggregated_features)
+                    torch.save(features_tensor, output_pt)
+        
         return output_h5_paths, output_pt_paths
     
     # Model-based aggregation with batching
