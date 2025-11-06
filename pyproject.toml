@@ -7,7 +7,7 @@ readme = "README.md"
 requires-python = ">=3.10, <3.12"
 dependencies = [
   "pandas",
-  "numpy<2.3",
+  "numpy<2",
   "h5py",
   "matplotlib",
   "tiffslide",
@@ -16,7 +16,7 @@ dependencies = [
   "loguru",
   "geopandas",
   "scikit-learn",
-  "transformers",
+  "transformers<4.46",
   "transpath@git+https://github.com/msk-mind/TransPath/",
   "timm_ctranspath@git+https://github.com/msk-mind/timm-ctranspath",
   "shapely>=2.0.7",
@@ -47,6 +47,28 @@ dev = ["mypy", "isort", "black", "pytest", "ipython>=8.37.0"]
 ]
 "torch-cpu" = ["torch < 2.6", "torchvision", "open-clip-torch"]
 "torch-gpu" = ["torch < 2.6", "torchvision", "open-clip-torch"]
+"gigapath" = [
+  "gigapath@git+https://github.com/prov-gigapath/prov-gigapath",
+  "torch==2.1.2",
+  "torchvision==0.16.2",
+  "xformers>=0.0.23,<0.0.24",
+  "huggingface-hub>=0.20,<0.21",
+  "transformers==4.36.2",
+  "flash-attn==2.5.9",
+  "timm>=1.0.3",
+  "omegaconf",
+  "torchmetrics==0.10.3",
+  "fvcore",
+  "iopath",
+  "webdataset",
+  "lifelines",
+  "scikit-survival",
+  "fairscale",
+  "wandb",
+  "open-clip-torch",
+  "packaging==23.2",
+  "ninja==1.11.1.1",
+]
 
 [tool.uv]
 conflicts = [
@@ -55,6 +77,7 @@ conflicts = [
     { extra = "tensorflow-cpu" },
     { extra = "torch-cpu" },
     { extra = "torch-gpu" },
+    { extra = "gigapath" },
   ],
 ]
 
@@ -64,12 +87,21 @@ torch = [
   { index = "torch-cpu", extra = "tensorflow-cpu" },
   { index = "torch-cpu", extra = "torch-cpu" },
   { index = "torch-gpu", extra = "torch-gpu" },
+  { index = "torch-gpu-cu118", extra = "gigapath" },
 ]
 torchvision = [
   { index = "torch-cpu", extra = "tensorflow-gpu" },
   { index = "torch-cpu", extra = "tensorflow-cpu" },
   { index = "torch-cpu", extra = "torch-cpu" },
   { index = "torch-gpu", extra = "torch-gpu" },
+  { index = "torch-gpu-cu118", extra = "gigapath" },
+]
+xformers = [
+  { index = "torch-gpu-cu118", extra = "gigapath" },
+]
+flash-attn = [
+  { url = "https://github.com/mjun0812/flash-attention-prebuild-wheels/releases/download/v0.0.1/flash_attn-2.5.9+cu118torch2.1-cp310-cp310-linux_x86_64.whl", marker = "python_version == '3.10'" },
+  { url = "https://github.com/mjun0812/flash-attention-prebuild-wheels/releases/download/v0.0.1/flash_attn-2.5.9+cu118torch2.1-cp311-cp311-linux_x86_64.whl", marker = "python_version == '3.11'" },
 ]
 
 [[tool.uv.index]]
@@ -80,6 +112,11 @@ explicit = true
 [[tool.uv.index]]
 name = "torch-gpu"
 url = "https://download.pytorch.org/whl/cu121"
+explicit = true
+
+[[tool.uv.index]]
+name = "torch-gpu-cu118"
+url = "https://download.pytorch.org/whl/cu118"
 explicit = true
 
 [tool.setuptools.packages.find]
