@@ -4,6 +4,7 @@ from .feature_extract import (
     filter_features,
     extract_patch_features,
     aggregate_slide_features,
+    aggregate_slide_features_batch,
 )
 from .file import save_hdf5
 from .ml import collate_features
