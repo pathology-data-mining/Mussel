@@ -8,20 +8,20 @@ import h5py
 import torch
 import pytest
 
-from mussel.cli.tessellate_extract_features_batch import TessellateExtractFeaturesBatchConfig, main
+from mussel.cli.tessellate_extract_features import TessellateExtractFeaturesConfig, main
 from mussel.cli.tessellate import SegConfig
 from mussel.models import ModelType
 
 
 def test_tessellate_extract_features_batch_basic(tmp_path):
-    """Test basic batch processing of multiple slides."""
+    """Test basic batch processing of multiple slides using the unified command."""
     slide_path = "tests/testdata/948176.svs"
     # Use the same slide twice to test batch processing
     slide_paths = [slide_path, slide_path]
     output_dir = str(tmp_path / "batch_output")
     
     seg_config = SegConfig(segment_threshold=0)
-    cfg = TessellateExtractFeaturesBatchConfig(
+    cfg = TessellateExtractFeaturesConfig(
         slide_paths=slide_paths,
         slide_ids=["slide1", "slide2"],
         output_dir=output_dir,
@@ -57,7 +57,7 @@ def test_tessellate_extract_features_batch_with_filtering(tmp_path):
     output_dir = str(tmp_path / "batch_output")
     
     seg_config = SegConfig(segment_threshold=0)
-    cfg = TessellateExtractFeaturesBatchConfig(
+    cfg = TessellateExtractFeaturesConfig(
         slide_paths=slide_paths,
         slide_ids=["slide1", "slide2"],
         output_dir=output_dir,
@@ -86,7 +86,7 @@ def test_tessellate_extract_features_batch_with_model_aggregation(tmp_path):
     output_dir = str(tmp_path / "batch_output")
     
     seg_config = SegConfig(segment_threshold=0)
-    cfg = TessellateExtractFeaturesBatchConfig(
+    cfg = TessellateExtractFeaturesConfig(
         slide_paths=slide_paths,
         slide_ids=["slide1", "slide2"],
         output_dir=output_dir,
@@ -178,7 +178,7 @@ def test_auto_slide_id_generation(tmp_path):
     output_dir = str(tmp_path / "batch_output")
     
     seg_config = SegConfig(segment_threshold=0)
-    cfg = TessellateExtractFeaturesBatchConfig(
+    cfg = TessellateExtractFeaturesConfig(
         slide_paths=slide_paths,
         slide_ids=None,  # Should auto-generate from filenames
         output_dir=output_dir,

@@ -2,7 +2,7 @@
 #
 # Example: Batch processing multiple whole-slide images with slide-level aggregation
 #
-# This script demonstrates how to use tessellate-extract-features-batch to process
+# This script demonstrates how to use tessellate-extract-features (in batch mode) to process
 # multiple slides efficiently with GigaPath slide encoder for batch aggregation.
 #
 # Prerequisites:
@@ -22,7 +22,8 @@ BATCH_SIZE=128
 SLIDE_PATHS=$(find "$SLIDES_DIR" -name "*.svs" -type f | tr '\n' ',' | sed 's/,$//')
 
 # Run batch processing with GigaPath slide encoder
-tessellate_extract_features_batch \
+# Note: tessellate-extract-features automatically operates in batch mode when slide_paths is provided
+tessellate_extract_features \
   slide_paths="[$SLIDE_PATHS]" \
   output_dir="$OUTPUT_DIR" \
   aggregation_method=model \

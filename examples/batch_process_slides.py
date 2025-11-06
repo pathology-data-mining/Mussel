@@ -9,8 +9,8 @@ programmatically in Python code.
 from pathlib import Path
 from omegaconf import OmegaConf
 
-from mussel.cli.tessellate_extract_features_batch import (
-    TessellateExtractFeaturesBatchConfig,
+from mussel.cli.tessellate_extract_features import (
+    TessellateExtractFeaturesConfig,
     main,
 )
 from mussel.cli.tessellate import SegConfig
@@ -42,7 +42,7 @@ def batch_process_slides_example():
         mpp=None,
     )
     
-    cfg = TessellateExtractFeaturesBatchConfig(
+    cfg = TessellateExtractFeaturesConfig(
         # Input slides
         slide_paths=[str(p) for p in slide_paths],
         slide_ids=None,  # Auto-generate from filenames
@@ -103,7 +103,7 @@ def batch_process_with_filtering_example():
     
     seg_config = SegConfig(segment_threshold=0)
     
-    cfg = TessellateExtractFeaturesBatchConfig(
+    cfg = TessellateExtractFeaturesConfig(
         slide_paths=slide_paths,
         output_dir=str(output_dir),
         
@@ -135,7 +135,7 @@ def simple_batch_example():
         "/path/to/slide2.svs",
     ]
     
-    cfg = TessellateExtractFeaturesBatchConfig(
+    cfg = TessellateExtractFeaturesConfig(
         slide_paths=slide_paths,
         output_dir="./simple_output",
         prefilter_model_type=ModelType.RESNET50,
