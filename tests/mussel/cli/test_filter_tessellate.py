@@ -9,6 +9,71 @@ from mussel.cli.tessellate import SegConfig
 from mussel.models import ModelType
 
 
+def test_filter_tessellate_default_patch_size_for_model():
+    """Test that patch size is automatically set based on model type in filter_tessellate."""
+    # Test with CONCH1_5 which should use 512
+    seg_config = SegConfig()  # Default patch_size is 256
+    cfg = FilterTessellateConfig(
+        slide_path="test.svs",
+        output_h5_path="test.h5",
+        output_pt_path="test.pt",
+        classifier_pkl="test.pkl",
+        model_type=ModelType.CONCH1_5,
+        seg_config=seg_config,
+    )
+    assert cfg.seg_config.patch_size == 512
+    
+    # Test with VIRCHOW which should use 224
+    seg_config = SegConfig()
+    cfg = FilterTessellateConfig(
+        slide_path="test.svs",
+        output_h5_path="test.h5",
+        output_pt_path="test.pt",
+        classifier_pkl="test.pkl",
+        model_type=ModelType.VIRCHOW,
+        seg_config=seg_config,
+    )
+    assert cfg.seg_config.patch_size == 224
+    
+    # Test with CLIP which should use 224
+    seg_config = SegConfig()
+    cfg = FilterTessellateConfig(
+        slide_path="test.svs",
+        output_h5_path="test.h5",
+        output_pt_path="test.pt",
+        classifier_pkl="test.pkl",
+        model_type=ModelType.CLIP,
+        seg_config=seg_config,
+    )
+    assert cfg.seg_config.patch_size == 224
+    
+    # Test with GOOGLEPATH which should use 224
+    seg_config = SegConfig()
+    cfg = FilterTessellateConfig(
+        slide_path="test.svs",
+        output_h5_path="test.h5",
+        output_pt_path="test.pt",
+        classifier_pkl="test.pkl",
+        model_type=ModelType.GOOGLEPATH,
+        seg_config=seg_config,
+    )
+    assert cfg.seg_config.patch_size == 224
+
+
+def test_filter_tessellate_explicit_patch_size_preserved():
+    """Test that explicitly set patch size is not overridden in filter_tessellate."""
+    seg_config = SegConfig(patch_size=384)
+    cfg = FilterTessellateConfig(
+        slide_path="test.svs",
+        output_h5_path="test.h5",
+        output_pt_path="test.pt",
+        classifier_pkl="test.pkl",
+        model_type=ModelType.CONCH1_5,
+        seg_config=seg_config,
+    )
+    assert cfg.seg_config.patch_size == 384
+
+
 def test_filter_tessellate(tmp_path):
     """Test the integrated filter-tessellate workflow."""
     slide_path = "tests/testdata/948176.svs"

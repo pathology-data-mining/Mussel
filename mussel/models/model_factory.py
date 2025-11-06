@@ -56,6 +56,24 @@ SLIDE_ENCODER_COMPATIBILITY = {
 }
 
 
+# Recommended patch sizes for each model type based on TRIDENT repository
+# https://github.com/mahmoodlab/TRIDENT
+MODEL_PATCH_SIZES = {
+    ModelType.RESNET50: 256,
+    ModelType.CTRANSPATH: 256,
+    ModelType.GIGAPATH: 256,
+    ModelType.VIRCHOW: 224,
+    ModelType.VIRCHOW2: 224,
+    ModelType.OPTIMUS: 224,
+    ModelType.CLIP: 224,  # QuiltNet
+    ModelType.GOOGLEPATH: 224,  # Google Path Foundation
+    ModelType.CONCH1_5: 512,
+    # Slide encoders inherit from their patch encoders
+    ModelType.GIGAPATH_SLIDE: 256,
+    ModelType.TITAN_SLIDE: 512,
+}
+
+
 def get_required_patch_encoder(slide_encoder: ModelType) -> ModelType:
     """Get the required patch encoder for a given slide encoder.
 
@@ -78,6 +96,30 @@ def get_required_patch_encoder(slide_encoder: ModelType) -> ModelType:
         )
 
     return SLIDE_ENCODER_COMPATIBILITY[slide_encoder]
+
+
+def get_default_patch_size(model_type: ModelType) -> int:
+    """Get the recommended default patch size for a model type.
+
+    Patch sizes are based on the TRIDENT repository recommendations:
+    https://github.com/mahmoodlab/TRIDENT
+
+    Args:
+        model_type: The model type to get the patch size for.
+
+    Returns:
+        The recommended patch size in pixels.
+
+    Raises:
+        ValueError: If the model type is not recognized.
+    """
+    if model_type not in MODEL_PATCH_SIZES:
+        raise ValueError(
+            f"Unknown model type: {model_type}. "
+            f"Available model types: {list(MODEL_PATCH_SIZES.keys())}"
+        )
+
+    return MODEL_PATCH_SIZES[model_type]
 
 
 def validate_slide_encoder_compatibility(

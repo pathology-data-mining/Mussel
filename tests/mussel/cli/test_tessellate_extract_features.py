@@ -11,6 +11,78 @@ from mussel.cli.tessellate import SegConfig
 from mussel.models import ModelType
 
 
+def test_default_patch_size_for_model():
+    """Test that patch size is automatically set based on model type."""
+    # Test with CONCH1_5 which should use 512
+    seg_config = SegConfig()  # Default patch_size is 256
+    cfg = TessellateExtractFeaturesConfig(
+        slide_path="test.svs",
+        output_h5_path="test.h5",
+        output_pt_path="test.pt",
+        prefilter_model_type=ModelType.CONCH1_5,
+        seg_config=seg_config,
+    )
+    assert cfg.seg_config.patch_size == 512
+    
+    # Test with VIRCHOW which should use 224
+    seg_config = SegConfig()  # Default patch_size is 256
+    cfg = TessellateExtractFeaturesConfig(
+        slide_path="test.svs",
+        output_h5_path="test.h5",
+        output_pt_path="test.pt",
+        prefilter_model_type=ModelType.VIRCHOW,
+        seg_config=seg_config,
+    )
+    assert cfg.seg_config.patch_size == 224
+    
+    # Test with CLIP which should use 224
+    seg_config = SegConfig()  # Default patch_size is 256
+    cfg = TessellateExtractFeaturesConfig(
+        slide_path="test.svs",
+        output_h5_path="test.h5",
+        output_pt_path="test.pt",
+        prefilter_model_type=ModelType.CLIP,
+        seg_config=seg_config,
+    )
+    assert cfg.seg_config.patch_size == 224
+    
+    # Test with GOOGLEPATH which should use 224
+    seg_config = SegConfig()  # Default patch_size is 256
+    cfg = TessellateExtractFeaturesConfig(
+        slide_path="test.svs",
+        output_h5_path="test.h5",
+        output_pt_path="test.pt",
+        prefilter_model_type=ModelType.GOOGLEPATH,
+        seg_config=seg_config,
+    )
+    assert cfg.seg_config.patch_size == 224
+    
+    # Test with GIGAPATH which should keep 256
+    seg_config = SegConfig()  # Default patch_size is 256
+    cfg = TessellateExtractFeaturesConfig(
+        slide_path="test.svs",
+        output_h5_path="test.h5",
+        output_pt_path="test.pt",
+        prefilter_model_type=ModelType.GIGAPATH,
+        seg_config=seg_config,
+    )
+    assert cfg.seg_config.patch_size == 256
+
+
+def test_explicit_patch_size_preserved():
+    """Test that explicitly set patch size is not overridden."""
+    # Even though CONCH1_5 recommends 512, if user sets 384 explicitly, it should be kept
+    seg_config = SegConfig(patch_size=384)
+    cfg = TessellateExtractFeaturesConfig(
+        slide_path="test.svs",
+        output_h5_path="test.h5",
+        output_pt_path="test.pt",
+        prefilter_model_type=ModelType.CONCH1_5,
+        seg_config=seg_config,
+    )
+    assert cfg.seg_config.patch_size == 384
+
+
 def test_tessellate_extract_features(tmp_path):
     """Test the integrated tessellate-extract-features workflow with dual extraction."""
     slide_path = "tests/testdata/948176.svs"

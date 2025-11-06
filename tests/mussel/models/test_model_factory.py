@@ -6,6 +6,8 @@ from mussel.models.model_factory import (
     MODEL_FACTORIES,
     ModelType,
     get_model_factory,
+    get_default_patch_size,
+    MODEL_PATCH_SIZES,
 )
 
 
@@ -141,3 +143,50 @@ def test_gigapath_slide_encoder_model_fun():
             assert call_args[0][0] is not None  # features
             assert call_args[0][1] is not None  # coords
 
+
+def test_model_patch_sizes_mapping():
+    """Test that MODEL_PATCH_SIZES contains all model types."""
+    # Check that all patch encoder models have a patch size mapping
+    assert ModelType.RESNET50 in MODEL_PATCH_SIZES
+    assert ModelType.CTRANSPATH in MODEL_PATCH_SIZES
+    assert ModelType.GIGAPATH in MODEL_PATCH_SIZES
+    assert ModelType.VIRCHOW in MODEL_PATCH_SIZES
+    assert ModelType.VIRCHOW2 in MODEL_PATCH_SIZES
+    assert ModelType.OPTIMUS in MODEL_PATCH_SIZES
+    assert ModelType.CLIP in MODEL_PATCH_SIZES
+    assert ModelType.GOOGLEPATH in MODEL_PATCH_SIZES
+    assert ModelType.CONCH1_5 in MODEL_PATCH_SIZES
+    assert ModelType.GIGAPATH_SLIDE in MODEL_PATCH_SIZES
+    assert ModelType.TITAN_SLIDE in MODEL_PATCH_SIZES
+
+
+def test_get_default_patch_size():
+    """Test get_default_patch_size function returns correct values."""
+    # Test 256 pixel models
+    assert get_default_patch_size(ModelType.RESNET50) == 256
+    assert get_default_patch_size(ModelType.CTRANSPATH) == 256
+    assert get_default_patch_size(ModelType.GIGAPATH) == 256
+    assert get_default_patch_size(ModelType.GIGAPATH_SLIDE) == 256
+    
+    # Test 224 pixel models
+    assert get_default_patch_size(ModelType.VIRCHOW) == 224
+    assert get_default_patch_size(ModelType.VIRCHOW2) == 224
+    assert get_default_patch_size(ModelType.OPTIMUS) == 224
+    assert get_default_patch_size(ModelType.CLIP) == 224
+    assert get_default_patch_size(ModelType.GOOGLEPATH) == 224
+    
+    # Test 512 pixel models
+    assert get_default_patch_size(ModelType.CONCH1_5) == 512
+    assert get_default_patch_size(ModelType.TITAN_SLIDE) == 512
+
+
+def test_get_default_patch_size_invalid():
+    """Test get_default_patch_size raises ValueError for invalid model type."""
+    # Create a mock ModelType that doesn't exist in the mapping
+    class FakeModelType:
+        pass
+    
+    fake_model = FakeModelType()
+    
+    with pytest.raises(ValueError, match="Unknown model type"):
+        get_default_patch_size(fake_model)
