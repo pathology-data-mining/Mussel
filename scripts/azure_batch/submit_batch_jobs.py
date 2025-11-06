@@ -68,6 +68,9 @@ class AzureBatchJobSubmitter:
         submitter.submit_task(job_id="my-job", task_id="task-1", ...)
         submitter.monitor_tasks(job_id="my-job")
     """
+    
+    # Azure GPU VM family prefixes
+    GPU_VM_PREFIXES = ['Standard_NC', 'Standard_ND', 'Standard_NV']
 
     def __init__(
         self,
@@ -149,12 +152,11 @@ class AzureBatchJobSubmitter:
         print(f"Creating pool '{pool_id}'...")
         
         # Validate GPU configuration
-        gpu_vm_prefixes = ['Standard_NC', 'Standard_ND', 'Standard_NV']
-        is_gpu_vm = any(vm_size.startswith(prefix) for prefix in gpu_vm_prefixes)
+        is_gpu_vm = any(vm_size.startswith(prefix) for prefix in self.GPU_VM_PREFIXES)
         
         if use_gpu and not is_gpu_vm:
             print(f"  WARNING: GPU support requested but VM size '{vm_size}' does not appear to be a GPU-enabled VM")
-            print(f"  GPU-enabled VM sizes typically start with: {', '.join(gpu_vm_prefixes)}")
+            print(f"  GPU-enabled VM sizes typically start with: {', '.join(self.GPU_VM_PREFIXES)}")
         elif not use_gpu and is_gpu_vm:
             print(f"  NOTE: GPU support disabled but VM size '{vm_size}' appears to be GPU-enabled")
         
