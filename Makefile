@@ -1,7 +1,7 @@
 .PHONY: help build build-cpu build-tf build-tf-cpu shell test clean
 
 # Default Docker image name
-IMAGE_NAME ?= mussel
+IMAGE_NAME ?= mskmind/mussel
 IMAGE_TAG ?= latest
 FULL_IMAGE = $(IMAGE_NAME):$(IMAGE_TAG)
 
@@ -26,6 +26,9 @@ build-tf: ## Build Docker image with TensorFlow GPU support
 
 build-tf-cpu: ## Build Docker image with TensorFlow CPU support
 	$(MAKE) build BACKEND=tensorflow-cpu IMAGE_TAG=tf-cpu
+
+build-gigapath: ## Build Docker image with gigapath
+	$(MAKE) build BACKEND=gigapath IMAGE_TAG=gigapath
 
 shell: ## Start an interactive shell in the container
 	docker run --rm -it \

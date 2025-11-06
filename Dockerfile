@@ -1,11 +1,16 @@
-FROM nvidia/cuda:12.1.1-cudnn8-devel-ubuntu22.04
+#FROM nvidia/cuda:12.1.1-cudnn8-devel-ubuntu22.04
+FROM python:3.11-slim
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
 
 ARG BACKEND=torch-gpu
 ENV BACKEND=$BACKEND
 
+ENV UV_SYSTEM_PYTHON=1
+
 ENV DEBIAN_FRONTEND=noninteractive
 
-RUN apt-get update && apt-get install \
+# Install system dependencies in a single layer and clean up to reduce size
+RUN apt-get update && apt-get install -y \
   build-essential \
   libgdal-dev \
   liblapack-dev \
@@ -18,29 +23,44 @@ RUN apt-get update && apt-get install \
   libxext6 \
   curl \
   zip \
-  git -y
+  git \
+  ca-certificates \
+  sudo \
+  vim-tiny \
+  && rm -rf /var/lib/apt/lists/*
 
-# Install uv package manager
-# Download and install uv with proper SSL handling
-RUN apt-get update && apt-get install -y ca-certificates && \
-    curl -LsSf https://astral.sh/uv/install.sh -o /tmp/install.sh && \
-    sh /tmp/install.sh && rm /tmp/install.sh
 
-# Ensure the installed binary is on the `PATH`
-ENV PATH="/root/.local/bin/:$PATH"
+# Install AWS CLI
+RUN curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip" && \
+  unzip awscliv2.zip && \
+  ./aws/install && \
+  rm -rf awscliv2.zip aws
 
-RUN curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
-RUN unzip awscliv2.zip
-RUN ./aws/install
+RUN curl -fsSL "https://github.com/tianon/gosu/releases/download/1.17/gosu-$(dpkg --print-architecture)" -o /usr/local/bin/gosu && \
+  chmod +x /usr/local/bin/gosu && \
+  gosu nobody true
 
 # Set working directory
-WORKDIR /code/mussel
+WORKDIR /app
 
-# Copy only dependency files first to leverage Docker cache
-COPY pyproject.toml uv.lock ./
+# Install dependencies
+RUN --mount=type=cache,target=/root/.cache/uv \
+  --mount=type=bind,source=uv.lock,target=uv.lock \
+  --mount=type=bind,source=pyproject.toml,target=pyproject.toml \
+  uv pip install --system -r pyproject.toml --extra $BACKEND
 
-# Install dependencies (this layer will be cached if dependencies don't change)
-RUN uv sync --frozen --extra $BACKEND
+# Copy the project into the image
+ADD . /app
 
-# Copy the rest of the application code
-COPY . .
+# Sync the project
+RUN --mount=type=cache,target=/root/.cache/uv \
+  uv pip install --system . --no-deps --force-reinstall 
+
+COPY entrypoint.sh /usr/local/bin/entrypoint.sh
+RUN chmod +x /usr/local/bin/entrypoint.sh
+
+# Set entrypoint to handle user permissions
+ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
+
+# Default command
+CMD ["python", "-c", "print('Mussel container ready. Use mussel-docker <command>')"]

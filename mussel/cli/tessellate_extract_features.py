@@ -25,7 +25,7 @@ from mussel.cli.tessellate import (
     VisConfig,
     PngConfig,
 )
-from mussel.models import ModelType
+from mussel.models import ModelType, get_required_patch_encoder
 from mussel.utils import save_features, filter_features, save_hdf5
 from mussel.utils.segment import draw_slide_mask, save_patches_png, segment_tissue
 
@@ -55,7 +55,7 @@ class TessellateExtractFeaturesConfig:
         prefilter_model_path (Optional[str]): Path to pre-filtering model weights, if applicable.
     
     Model Parameters (Post-Filter Extraction):
-        postfilter_model_type (Optional[ModelType]): Type of model for post-filtering extraction. If None, uses prefilter_model_type.
+        postfilter_model_type (Optional[ModelType]): Type of model for post-filtering extraction. If None and aggregation_method="model" with slide_model_type specified, automatically infers the required patch encoder from slide_model_type. Otherwise, uses prefilter_model_type.
         postfilter_model_path (Optional[str]): Path to post-filtering model weights, if applicable.
         intermediate_h5_path (Optional[str]): Path for intermediate patch features (two-step mode for post-filtering).
         aggregation_method (str): Aggregation method for post-filtering: identity (single-step), mean/max/model (two-step).
@@ -166,8 +166,21 @@ def main(
     use_filtering = cfg.classifier_pkl is not None
     
     # Determine models for each extraction step
-    # If postfilter_model_type is not specified, use the same model as prefilter
-    postfilter_model_type = cfg.postfilter_model_type if cfg.postfilter_model_type is not None else cfg.prefilter_model_type
+    # If postfilter_model_type is not specified, infer from slide_model_type when using model aggregation
+    postfilter_model_type = cfg.postfilter_model_type
+    if postfilter_model_type is None:
+        # Check if we're using slide-level aggregation with a model
+        if cfg.aggregation_method == "model" and cfg.slide_model_type is not None:
+            # Infer the required patch encoder from the slide encoder
+            postfilter_model_type = get_required_patch_encoder(cfg.slide_model_type)
+            logger.info(
+                f"Auto-inferring postfilter_model_type={postfilter_model_type.name} "
+                f"from slide_model_type={cfg.slide_model_type.name}"
+            )
+        else:
+            # Default to using the same model as prefilter
+            postfilter_model_type = cfg.prefilter_model_type
+    
     postfilter_model_path = cfg.postfilter_model_path if cfg.postfilter_model_path is not None else cfg.prefilter_model_path
     
     # Optimization: If filtering is enabled and models are the same, skip second extraction
