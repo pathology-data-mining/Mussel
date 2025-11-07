@@ -74,6 +74,11 @@ def run_save_model(model_type: str, output_path: str, model_path: Optional[str] 
         commands_to_try.append(['save_model'] + cmd_args)
     
     # If uv is available, try uv run (but only if we're in a virtual environment)
+    # IMPORTANT: Check both conditions to avoid SLURM issues:
+    # - shutil.which('uv'): Ensures uv is available
+    # - os.getenv('VIRTUAL_ENV'): Ensures we're in an activated venv
+    # Without the VIRTUAL_ENV check, this would fail on SLURM submission nodes
+    # where uv is available but the venv is not activated.
     if shutil.which('uv') and os.getenv('VIRTUAL_ENV'):
         commands_to_try.append(['uv', 'run', 'save_model'] + cmd_args)
     
