@@ -318,10 +318,65 @@ When `--stage-to-azure-files` is enabled, slides are staged and tasks are submit
 Control the compute resources:
 
 - `--vm-size`: VM size (default: `Standard_NC6s_v3` with 1 GPU)
-  - GPU VMs: `Standard_NC6s_v3`, `Standard_NC12s_v3`, `Standard_NC24s_v3`
+  - GPU VMs (V100): `Standard_NC6s_v3`, `Standard_NC12s_v3`, `Standard_NC24s_v3`
+  - GPU VMs (A100): `Standard_NC24ads_A100_v4`, `Standard_NC48ads_A100_v4`, `Standard_NC96ads_A100_v4`
+  - GPU VMs (H100): `Standard_NC40ads_H100_v5`, `Standard_NC80ads_H100_v5`
   - CPU VMs: `Standard_D4s_v3`, `Standard_D8s_v3`
-- `--node-count`: Number of nodes in the pool
+- `--node-count`: Number of nodes in the pool (or initial/min count for auto-scaling)
+- `--use-gpu`: Enable GPU support for pool nodes (default: True)
+- `--no-gpu`: Disable GPU support for pool nodes (for CPU-only workloads)
 - `--container-image`: Docker image to use
+  - For GPU workloads: `mskmind/mussel:latest-torch-gpu` (default)
+  - For CPU workloads: `mskmind/mussel:latest-torch-cpu`
+
+#### Auto-Scaling Configuration
+
+Enable auto-scaling to dynamically adjust pool size based on workload:
+
+- `--enable-auto-scale`: Enable auto-scaling based on pending tasks
+- `--min-node-count`: Minimum number of nodes (defaults to `--node-count`)
+- `--max-node-count`: Maximum number of nodes (required if auto-scaling is enabled)
+- `--auto-scale-evaluation-interval`: Evaluation interval in minutes (default: 15)
+
+**How auto-scaling works:**
+- Pool starts with `--min-node-count` nodes (or `--node-count` if min not specified)
+- Scales up to `--max-node-count` based on pending tasks
+- Evaluates workload every `--auto-scale-evaluation-interval` minutes
+- Automatically scales down when tasks complete
+- **Handles unusable nodes**: Automatically accounts for and replaces nodes that become unusable, maintaining pool capacity
+
+**Example: Create a GPU pool with fixed size**
+```bash
+--pool-id mussel-gpu-pool \
+--create-pool \
+--vm-size Standard_NC6s_v3 \
+--node-count 2 \
+--use-gpu \
+--container-image mskmind/mussel:latest-torch-gpu
+```
+
+**Example: Create an auto-scaling GPU pool**
+```bash
+--pool-id mussel-autoscale-pool \
+--create-pool \
+--vm-size Standard_NC6s_v3 \
+--node-count 1 \
+--enable-auto-scale \
+--min-node-count 1 \
+--max-node-count 10 \
+--use-gpu \
+--container-image mskmind/mussel:latest-torch-gpu
+```
+
+**Example: Create a CPU-only pool**
+```bash
+--pool-id mussel-cpu-pool \
+--create-pool \
+--vm-size Standard_D4s_v3 \
+--node-count 4 \
+--no-gpu \
+--container-image mskmind/mussel:latest-torch-cpu
+```
 
 ### Task Configuration
 
@@ -689,6 +744,36 @@ The task execution script automatically cleans up temporary files when tasks com
 **Note:** Only temporary files are removed. Final output files stored in local directories (non-S3 paths) are preserved.
 
 ## Cleanup
+
+### Automatic Cleanup After Completion
+
+When you want to automatically delete resources after all tasks complete, use the cleanup flags with `--monitor`:
+
+```bash
+python scripts/azure_batch/submit_batch_jobs.py \
+  --batch-account-name mybatchaccount \
+  --batch-account-key <your-batch-key> \
+  --batch-account-url https://mybatchaccount.eastus.batch.azure.com \
+  --pool-id mussel-pool \
+  --create-pool \
+  --job-id mussel-job-001 \
+  --create-job \
+  --csv-manifest slides.csv \
+  --output-dir /mnt/output \
+  --monitor \
+  --delete-job \
+  --delete-pool
+```
+
+**How it works:**
+- The script will monitor tasks until all complete
+- After monitoring completes, the job is deleted (if `--delete-job` is specified)
+- Then the pool is deleted (if `--delete-pool` is specified)
+- This ensures resources are cleaned up only after processing finishes
+
+**Note:** If you use `--delete-job` or `--delete-pool` without `--monitor`, the resources will be deleted immediately, which may terminate running tasks. Always use these flags together with `--monitor` when you want cleanup after completion.
+
+### Manual Cleanup
 
 ### Delete Job
 

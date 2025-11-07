@@ -68,6 +68,9 @@ class AzureBatchJobSubmitter:
         submitter.submit_task(job_id="my-job", task_id="task-1", ...)
         submitter.monitor_tasks(job_id="my-job")
     """
+    
+    # Azure GPU VM family prefixes
+    GPU_VM_PREFIXES = ['Standard_NC', 'Standard_ND', 'Standard_NV']
 
     def __init__(
         self,
@@ -135,9 +138,52 @@ class AzureBatchJobSubmitter:
         container_image: str = "mskmind/mussel:latest-torch-gpu",
         use_gpu: bool = True,
         mount_azure_files: bool = False,
+        enable_auto_scale: bool = False,
+        min_node_count: Optional[int] = None,
+        max_node_count: Optional[int] = None,
+        auto_scale_evaluation_interval: int = 15,
     ) -> None:
-        """Create a pool of compute nodes with optional Azure Files mount."""
+        """Create a pool of compute nodes with optional Azure Files mount and auto-scaling.
+        
+        Args:
+            pool_id: Unique identifier for the pool
+            vm_size: Azure VM size (e.g., Standard_NC6s_v3 for GPU)
+            node_count: Number of VMs in the pool (used as initial target for auto-scale or fixed count)
+            container_image: Docker image to use
+            use_gpu: Whether GPU support is intended (used for validation and logging)
+            mount_azure_files: Whether to mount Azure Files share
+            enable_auto_scale: Enable auto-scaling based on pending tasks
+            min_node_count: Minimum number of nodes for auto-scaling (defaults to node_count)
+            max_node_count: Maximum number of nodes for auto-scaling (required if enable_auto_scale=True)
+            auto_scale_evaluation_interval: Auto-scale evaluation interval in minutes (default: 15)
+        """
         print(f"Creating pool '{pool_id}'...")
+        
+        # Validate auto-scale configuration
+        if enable_auto_scale:
+            if max_node_count is None:
+                raise ValueError("max_node_count is required when enable_auto_scale is True")
+            if min_node_count is None:
+                min_node_count = node_count
+            if min_node_count > max_node_count:
+                raise ValueError(f"min_node_count ({min_node_count}) cannot be greater than max_node_count ({max_node_count})")
+            print(f"  Auto-scaling: Enabled (min: {min_node_count}, max: {max_node_count} nodes)")
+        else:
+            print(f"  Node count: {node_count} (fixed)")
+        
+        # Validate GPU configuration
+        is_gpu_vm = any(vm_size.startswith(prefix) for prefix in self.GPU_VM_PREFIXES)
+        
+        if use_gpu and not is_gpu_vm:
+            print(f"  WARNING: GPU support requested but VM size '{vm_size}' does not appear to be a GPU-enabled VM")
+            print(f"  GPU-enabled VM sizes typically start with: {', '.join(self.GPU_VM_PREFIXES)}")
+        elif not use_gpu and is_gpu_vm:
+            print(f"  NOTE: GPU support disabled but VM size '{vm_size}' appears to be GPU-enabled")
+        
+        if use_gpu:
+            print(f"  GPU support: Enabled (VM size: {vm_size})")
+        else:
+            print(f"  GPU support: Disabled (VM size: {vm_size})")
 
         # Container configuration
         container_conf = batchmodels.ContainerConfiguration(
@@ -175,14 +221,47 @@ class AzureBatchJobSubmitter:
             ]
 
         # Pool configuration
-        pool = batchmodels.PoolAddParameter(
-            id=pool_id,
-            virtual_machine_configuration=vm_config,
-            vm_size=vm_size,
-            target_dedicated_nodes=node_count,
-            enable_auto_scale=False,
-            mount_configuration=mount_config,
-        )
+        if enable_auto_scale:
+            # Auto-scale formula based on pending tasks with unusable node handling
+            # Based on: https://learn.microsoft.com/en-us/answers/questions/1699080/azure-batch-better-handle-unusable-nodes
+            auto_scale_formula = f"""
+                // Configuration
+                startingNumberOfVMs = {min_node_count};
+                maxNumberofVMs = {max_node_count};
+                
+                // Get pending tasks count
+                pendingTaskSamplePercent = $PendingTasks.GetSamplePercent(180 * TimeInterval_Second);
+                pendingTaskSamples = pendingTaskSamplePercent < 70 ? startingNumberOfVMs : avg($PendingTasks.GetSample(180 * TimeInterval_Second));
+                
+                // Calculate target based on pending tasks
+                targetVMs = min(maxNumberofVMs, pendingTaskSamples);
+                
+                // Handle unusable nodes - add them to target to maintain capacity
+                // Unusable nodes are those in unusable state that cannot run tasks
+                unusableNodes = $CurrentDedicatedNodes - $RunningTasks - $ActiveTasks - $IdleNodes;
+                
+                // Ensure we have enough nodes to handle workload even with unusable nodes
+                $TargetDedicatedNodes = min(maxNumberofVMs, max(startingNumberOfVMs, targetVMs + max(0, unusableNodes)));
+            """
+            
+            pool = batchmodels.PoolAddParameter(
+                id=pool_id,
+                virtual_machine_configuration=vm_config,
+                vm_size=vm_size,
+                enable_auto_scale=True,
+                auto_scale_formula=auto_scale_formula,
+                auto_scale_evaluation_interval=datetime.timedelta(minutes=auto_scale_evaluation_interval),
+                mount_configuration=mount_config,
+            )
+        else:
+            pool = batchmodels.PoolAddParameter(
+                id=pool_id,
+                virtual_machine_configuration=vm_config,
+                vm_size=vm_size,
+                target_dedicated_nodes=node_count,
+                enable_auto_scale=False,
+                mount_configuration=mount_config,
+            )
 
         try:
             self.batch_client.pool.add(pool)
@@ -985,9 +1064,22 @@ def main():
     parser.add_argument("--pool-id", required=True, help="Pool ID")
     parser.add_argument("--create-pool", action="store_true", help="Create pool if it doesn't exist")
     parser.add_argument("--vm-size", default="Standard_NC6s_v3", help="VM size for pool nodes")
-    parser.add_argument("--node-count", type=int, default=1, help="Number of nodes in pool")
+    parser.add_argument("--node-count", type=int, default=1, 
+                        help="Number of nodes in pool (or initial/min count for auto-scaling)")
+    parser.add_argument("--use-gpu", action="store_true", default=True, 
+                        help="Enable GPU support for pool nodes (default: True)")
+    parser.add_argument("--no-gpu", dest="use_gpu", action="store_false",
+                        help="Disable GPU support for pool nodes")
     parser.add_argument("--container-image", default="mskmind/mussel:latest-torch-gpu", 
                         help="Docker container image")
+    parser.add_argument("--enable-auto-scale", action="store_true",
+                        help="Enable auto-scaling based on pending tasks")
+    parser.add_argument("--min-node-count", type=int,
+                        help="Minimum number of nodes for auto-scaling (defaults to --node-count)")
+    parser.add_argument("--max-node-count", type=int,
+                        help="Maximum number of nodes for auto-scaling (required if --enable-auto-scale)")
+    parser.add_argument("--auto-scale-evaluation-interval", type=int, default=15,
+                        help="Auto-scale evaluation interval in minutes (default: 15)")
     
     # Job configuration
     parser.add_argument("--job-id", required=True, help="Job ID")
@@ -1034,7 +1126,10 @@ def main():
     # Monitoring and cleanup
     parser.add_argument("--monitor", action="store_true", help="Monitor task progress")
     parser.add_argument("--delete-job", action="store_true", help="Delete job after completion")
-    parser.add_argument("--delete-pool", action="store_true", help="Delete pool after completion")
+    parser.add_argument("--delete-pool", action="store_true", 
+                        help="Delete pool after completion. When used with --monitor, "
+                        "the pool will be deleted after all tasks complete. "
+                        "Otherwise, it will be deleted immediately.")
     
     args = parser.parse_args()
 
@@ -1128,7 +1223,12 @@ def main():
             vm_size=args.vm_size,
             node_count=args.node_count,
             container_image=args.container_image,
+            use_gpu=args.use_gpu,
             mount_azure_files=args.mount_azure_files,
+            enable_auto_scale=args.enable_auto_scale,
+            min_node_count=args.min_node_count,
+            max_node_count=args.max_node_count,
+            auto_scale_evaluation_interval=args.auto_scale_evaluation_interval,
         )
 
     # Create job if requested
