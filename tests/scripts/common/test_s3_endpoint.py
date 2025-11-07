@@ -13,7 +13,9 @@ from unittest.mock import patch, MagicMock, call
 TEST_DIR = Path(__file__).parent
 SCRIPTS_COMMON_DIR = TEST_DIR / '..' / '..' / '..' / 'scripts' / 'common'
 
-# Add scripts directory to path to import modules
+# Add scripts directory to path to import modules for testing
+# Note: This is necessary because scripts/ is not a Python package
+# and we need to test standalone modules without installing them
 sys.path.insert(0, str(SCRIPTS_COMMON_DIR))
 
 
