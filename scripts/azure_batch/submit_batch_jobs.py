@@ -318,9 +318,22 @@ class AzureBatchJobSubmitter:
         postfilter_model_path: Optional[str] = None,
         postfilter_model_types: Optional[str] = None,
         slide_model_path: Optional[str] = None,
-        segment_threshold: int = 0,
-        patch_size: int = 256,
-        mpp: float = 0.5,
+        seg_config_group: Optional[str] = None,
+        segment_threshold: Optional[int] = None,
+        patch_size: Optional[int] = None,
+        step_size: Optional[int] = None,
+        mpp: Optional[float] = None,
+        seg_level: Optional[int] = None,
+        segment_max_value: Optional[int] = None,
+        median_blur_ksize: Optional[int] = None,
+        morphology_ex_kernel: Optional[int] = None,
+        ref_patch_size: Optional[int] = None,
+        use_otsu: Optional[bool] = None,
+        tissue_area_threshold: Optional[int] = None,
+        hole_area_threshold: Optional[int] = None,
+        max_num_holes: Optional[int] = None,
+        keep_ids: Optional[str] = None,
+        exclude_ids: Optional[str] = None,
         num_workers: int = 4,
         batch_size: int = 64,
         use_gpu: bool = True,
@@ -343,15 +356,48 @@ class AzureBatchJobSubmitter:
             batchmodels.EnvironmentSetting("OUTPUT_H5_PATH", output_h5_path),
             batchmodels.EnvironmentSetting("OUTPUT_PT_PATH", output_pt_path),
             batchmodels.EnvironmentSetting("PREFILTER_MODEL_TYPE", prefilter_model_type),
-            batchmodels.EnvironmentSetting("SEGMENT_THRESHOLD", str(segment_threshold)),
-            batchmodels.EnvironmentSetting("PATCH_SIZE", str(patch_size)),
-            batchmodels.EnvironmentSetting("MPP", str(mpp)),
             batchmodels.EnvironmentSetting("NUM_WORKERS", str(num_workers)),
             batchmodels.EnvironmentSetting("BATCH_SIZE", str(batch_size)),
             batchmodels.EnvironmentSetting("USE_GPU", str(use_gpu).lower()),
             batchmodels.EnvironmentSetting("KEEP_INTERMEDIATE_FILES", str(keep_intermediate_files).lower()),
             batchmodels.EnvironmentSetting("AGGREGATION_METHOD", aggregation_method),
         ]
+        
+        # SegConfig group or individual parameters
+        if seg_config_group:
+            env_vars.append(batchmodels.EnvironmentSetting("SEG_CONFIG_GROUP", seg_config_group))
+        
+        # Individual SegConfig parameters (only set if provided)
+        if segment_threshold is not None:
+            env_vars.append(batchmodels.EnvironmentSetting("SEGMENT_THRESHOLD", str(segment_threshold)))
+        if patch_size is not None:
+            env_vars.append(batchmodels.EnvironmentSetting("PATCH_SIZE", str(patch_size)))
+        if step_size is not None:
+            env_vars.append(batchmodels.EnvironmentSetting("STEP_SIZE", str(step_size)))
+        if mpp is not None:
+            env_vars.append(batchmodels.EnvironmentSetting("MPP", str(mpp)))
+        if seg_level is not None:
+            env_vars.append(batchmodels.EnvironmentSetting("SEG_LEVEL", str(seg_level)))
+        if segment_max_value is not None:
+            env_vars.append(batchmodels.EnvironmentSetting("SEGMENT_MAX_VALUE", str(segment_max_value)))
+        if median_blur_ksize is not None:
+            env_vars.append(batchmodels.EnvironmentSetting("MEDIAN_BLUR_KSIZE", str(median_blur_ksize)))
+        if morphology_ex_kernel is not None:
+            env_vars.append(batchmodels.EnvironmentSetting("MORPHOLOGY_EX_KERNEL", str(morphology_ex_kernel)))
+        if ref_patch_size is not None:
+            env_vars.append(batchmodels.EnvironmentSetting("REF_PATCH_SIZE", str(ref_patch_size)))
+        if use_otsu is not None:
+            env_vars.append(batchmodels.EnvironmentSetting("USE_OTSU", str(use_otsu).lower()))
+        if tissue_area_threshold is not None:
+            env_vars.append(batchmodels.EnvironmentSetting("TISSUE_AREA_THRESHOLD", str(tissue_area_threshold)))
+        if hole_area_threshold is not None:
+            env_vars.append(batchmodels.EnvironmentSetting("HOLE_AREA_THRESHOLD", str(hole_area_threshold)))
+        if max_num_holes is not None:
+            env_vars.append(batchmodels.EnvironmentSetting("MAX_NUM_HOLES", str(max_num_holes)))
+        if keep_ids is not None:
+            env_vars.append(batchmodels.EnvironmentSetting("KEEP_IDS", keep_ids))
+        if exclude_ids is not None:
+            env_vars.append(batchmodels.EnvironmentSetting("EXCLUDE_IDS", exclude_ids))
 
         if intermediate_h5_path:
             env_vars.append(batchmodels.EnvironmentSetting("INTERMEDIATE_H5_PATH", intermediate_h5_path))

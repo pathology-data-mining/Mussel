@@ -81,9 +81,22 @@ class CondorJobSubmitter:
         aggregation_method: Optional[str] = None,
         slide_model_type: Optional[str] = None,
         slide_model_path: Optional[str] = None,
-        segment_threshold: int = 0,
-        patch_size: int = 256,
-        mpp: float = 0.5,
+        seg_config_group: Optional[str] = None,
+        segment_threshold: Optional[int] = None,
+        patch_size: Optional[int] = None,
+        step_size: Optional[int] = None,
+        mpp: Optional[float] = None,
+        seg_level: Optional[int] = None,
+        segment_max_value: Optional[int] = None,
+        median_blur_ksize: Optional[int] = None,
+        morphology_ex_kernel: Optional[int] = None,
+        ref_patch_size: Optional[int] = None,
+        use_otsu: Optional[bool] = None,
+        tissue_area_threshold: Optional[int] = None,
+        hole_area_threshold: Optional[int] = None,
+        max_num_holes: Optional[int] = None,
+        keep_ids: Optional[str] = None,
+        exclude_ids: Optional[str] = None,
         num_workers: int = 4,
         batch_size: int = 64,
         use_gpu: bool = True,
@@ -134,14 +147,47 @@ class CondorJobSubmitter:
         env_vars.update({
             "CLASSIFIER_THRESHOLD": str(classifier_threshold),
             "PREFILTER_MODEL_TYPE": prefilter_model_type,
-            "SEGMENT_THRESHOLD": str(segment_threshold),
-            "PATCH_SIZE": str(patch_size),
-            "MPP": str(mpp),
             "NUM_WORKERS": str(num_workers),
             "BATCH_SIZE": str(batch_size),
             "USE_GPU": "true" if use_gpu else "false",
             "AWS_DEFAULT_REGION": aws_region,
         })
+        
+        # SegConfig group or individual parameters
+        if seg_config_group:
+            env_vars["SEG_CONFIG_GROUP"] = seg_config_group
+        
+        # Individual SegConfig parameters (only set if provided)
+        if segment_threshold is not None:
+            env_vars["SEGMENT_THRESHOLD"] = str(segment_threshold)
+        if patch_size is not None:
+            env_vars["PATCH_SIZE"] = str(patch_size)
+        if step_size is not None:
+            env_vars["STEP_SIZE"] = str(step_size)
+        if mpp is not None:
+            env_vars["MPP"] = str(mpp)
+        if seg_level is not None:
+            env_vars["SEG_LEVEL"] = str(seg_level)
+        if segment_max_value is not None:
+            env_vars["SEGMENT_MAX_VALUE"] = str(segment_max_value)
+        if median_blur_ksize is not None:
+            env_vars["MEDIAN_BLUR_KSIZE"] = str(median_blur_ksize)
+        if morphology_ex_kernel is not None:
+            env_vars["MORPHOLOGY_EX_KERNEL"] = str(morphology_ex_kernel)
+        if ref_patch_size is not None:
+            env_vars["REF_PATCH_SIZE"] = str(ref_patch_size)
+        if use_otsu is not None:
+            env_vars["USE_OTSU"] = "true" if use_otsu else "false"
+        if tissue_area_threshold is not None:
+            env_vars["TISSUE_AREA_THRESHOLD"] = str(tissue_area_threshold)
+        if hole_area_threshold is not None:
+            env_vars["HOLE_AREA_THRESHOLD"] = str(hole_area_threshold)
+        if max_num_holes is not None:
+            env_vars["MAX_NUM_HOLES"] = str(max_num_holes)
+        if keep_ids is not None:
+            env_vars["KEEP_IDS"] = keep_ids
+        if exclude_ids is not None:
+            env_vars["EXCLUDE_IDS"] = exclude_ids
         
         if intermediate_h5_path:
             env_vars["INTERMEDIATE_H5_PATH"] = intermediate_h5_path
@@ -527,9 +573,26 @@ def main():
     parser.add_argument("--postfilter-models", help="Comma-separated list of postfilter models")
     parser.add_argument("--aggregation-method", choices=["identity", "mean", "max", "model"])
     parser.add_argument("--slide-model-type", help="Model for aggregation_method=model")
-    parser.add_argument("--segment-threshold", type=int, default=0)
-    parser.add_argument("--patch-size", type=int, default=256)
-    parser.add_argument("--mpp", type=float, default=0.5)
+    
+    # SegConfig parameters
+    parser.add_argument("--seg-config-group", choices=["default", "biopsy", "resection", "tcga"],
+                        help="SegConfig group preset (biopsy, resection, tcga). Overrides individual seg_config parameters.")
+    parser.add_argument("--segment-threshold", type=int, help="Tissue segmentation threshold (default: 20 for default, varies by group)")
+    parser.add_argument("--patch-size", type=int, help="Patch size in pixels (default: 256)")
+    parser.add_argument("--step-size", type=int, help="Step size for patch extraction (default: same as patch_size)")
+    parser.add_argument("--mpp", type=float, help="Microns per pixel (default: 0.5)")
+    parser.add_argument("--seg-level", type=int, help="Segmentation pyramid level (default: -1 for auto)")
+    parser.add_argument("--segment-max-value", type=int, help="Maximum pixel value for segmentation (default: 255)")
+    parser.add_argument("--median-blur-ksize", type=int, help="Median blur kernel size (default: 7, varies by group)")
+    parser.add_argument("--morphology-ex-kernel", type=int, help="Morphological closing kernel size (default: 0, varies by group)")
+    parser.add_argument("--ref-patch-size", type=int, help="Reference patch size for thresholding (default: 512)")
+    parser.add_argument("--use-otsu", action="store_true", help="Use Otsu thresholding (default: False)")
+    parser.add_argument("--tissue-area-threshold", type=int, help="Tissue area threshold (default: 100, varies by group)")
+    parser.add_argument("--hole-area-threshold", type=int, help="Hole area threshold (default: 16, varies by group)")
+    parser.add_argument("--max-num-holes", type=int, help="Maximum number of holes (default: 8, varies by group)")
+    parser.add_argument("--keep-ids", help="Comma-separated list of contour IDs to keep")
+    parser.add_argument("--exclude-ids", help="Comma-separated list of contour IDs to exclude")
+    
     parser.add_argument("--num-workers", type=int, default=4)
     parser.add_argument("--batch-size", type=int, default=64)
     parser.add_argument("--slide-batch-size", type=int, default=8, 

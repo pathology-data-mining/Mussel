@@ -344,14 +344,65 @@ if [ "$BATCH_MODE" = true ]; then
         "slide_paths=[${SLIDE_PATHS}]"
         "output_dir=${OUTPUT_DIR}"
         "prefilter_model_type=${PREFILTER_MODEL_TYPE}"
-        "seg_config.segment_threshold=${SEGMENT_THRESHOLD}"
-        "seg_config.patch_size=${PATCH_SIZE}"
-        "seg_config.mpp=${MPP}"
         "num_workers=${NUM_WORKERS}"
         "batch_size=${BATCH_SIZE}"
         "slide_batch_size=${SLIDE_BATCH_SIZE}"
         "use_gpu=${USE_GPU}"
     )
+    
+    # Add seg_config group if specified (overrides individual parameters)
+    if [ -n "$SEG_CONFIG_GROUP" ]; then
+        CMD_ARGS+=("seg_config=${SEG_CONFIG_GROUP}")
+    fi
+    
+    # Add individual SegConfig parameters if specified (and no group specified)
+    if [ -z "$SEG_CONFIG_GROUP" ]; then
+        if [ -n "$SEGMENT_THRESHOLD" ]; then
+            CMD_ARGS+=("seg_config.segment_threshold=${SEGMENT_THRESHOLD}")
+        fi
+        if [ -n "$PATCH_SIZE" ]; then
+            CMD_ARGS+=("seg_config.patch_size=${PATCH_SIZE}")
+        fi
+        if [ -n "$STEP_SIZE" ]; then
+            CMD_ARGS+=("seg_config.step_size=${STEP_SIZE}")
+        fi
+        if [ -n "$MPP" ]; then
+            CMD_ARGS+=("seg_config.mpp=${MPP}")
+        fi
+        if [ -n "$SEG_LEVEL" ]; then
+            CMD_ARGS+=("seg_config.seg_level=${SEG_LEVEL}")
+        fi
+        if [ -n "$SEGMENT_MAX_VALUE" ]; then
+            CMD_ARGS+=("seg_config.segment_max_value=${SEGMENT_MAX_VALUE}")
+        fi
+        if [ -n "$MEDIAN_BLUR_KSIZE" ]; then
+            CMD_ARGS+=("seg_config.median_blur_ksize=${MEDIAN_BLUR_KSIZE}")
+        fi
+        if [ -n "$MORPHOLOGY_EX_KERNEL" ]; then
+            CMD_ARGS+=("seg_config.morphology_ex_kernel=${MORPHOLOGY_EX_KERNEL}")
+        fi
+        if [ -n "$REF_PATCH_SIZE" ]; then
+            CMD_ARGS+=("seg_config.ref_patch_size=${REF_PATCH_SIZE}")
+        fi
+        if [ -n "$USE_OTSU" ]; then
+            CMD_ARGS+=("seg_config.use_otsu=${USE_OTSU}")
+        fi
+        if [ -n "$TISSUE_AREA_THRESHOLD" ]; then
+            CMD_ARGS+=("seg_config.tissue_area_threshold=${TISSUE_AREA_THRESHOLD}")
+        fi
+        if [ -n "$HOLE_AREA_THRESHOLD" ]; then
+            CMD_ARGS+=("seg_config.hole_area_threshold=${HOLE_AREA_THRESHOLD}")
+        fi
+        if [ -n "$MAX_NUM_HOLES" ]; then
+            CMD_ARGS+=("seg_config.max_num_holes=${MAX_NUM_HOLES}")
+        fi
+        if [ -n "$KEEP_IDS" ]; then
+            CMD_ARGS+=("seg_config.keep_ids=[${KEEP_IDS}]")
+        fi
+        if [ -n "$EXCLUDE_IDS" ]; then
+            CMD_ARGS+=("seg_config.exclude_ids=[${EXCLUDE_IDS}]")
+        fi
+    fi
     
     # Add slide IDs if provided
     if [ -n "$SLIDE_IDS" ]; then
@@ -461,14 +512,65 @@ if [ -n "$POSTFILTER_MODEL_TYPES" ]; then
         "model_type=$PREFILTER_MODEL_TYPE"
         "classifier_pkl=$CLASSIFIER_PKL"
         "classifier_threshold=$CLASSIFIER_THRESHOLD"
-        "seg_config.segment_threshold=$SEGMENT_THRESHOLD"
-        "seg_config.patch_size=$PATCH_SIZE"
-        "seg_config.mpp=$MPP"
         "num_workers=$NUM_WORKERS"
         "batch_size=$BATCH_SIZE"
         "use_gpu=$USE_GPU"
         "keep_intermediate_files=false"
     )
+    
+    # Add seg_config group if specified (overrides individual parameters)
+    if [ -n "$SEG_CONFIG_GROUP" ]; then
+        FILTER_CMD_ARGS+=("seg_config=${SEG_CONFIG_GROUP}")
+    fi
+    
+    # Add individual SegConfig parameters if specified (and no group specified)
+    if [ -z "$SEG_CONFIG_GROUP" ]; then
+        if [ -n "$SEGMENT_THRESHOLD" ]; then
+            FILTER_CMD_ARGS+=("seg_config.segment_threshold=$SEGMENT_THRESHOLD")
+        fi
+        if [ -n "$PATCH_SIZE" ]; then
+            FILTER_CMD_ARGS+=("seg_config.patch_size=$PATCH_SIZE")
+        fi
+        if [ -n "$STEP_SIZE" ]; then
+            FILTER_CMD_ARGS+=("seg_config.step_size=$STEP_SIZE")
+        fi
+        if [ -n "$MPP" ]; then
+            FILTER_CMD_ARGS+=("seg_config.mpp=$MPP")
+        fi
+        if [ -n "$SEG_LEVEL" ]; then
+            FILTER_CMD_ARGS+=("seg_config.seg_level=$SEG_LEVEL")
+        fi
+        if [ -n "$SEGMENT_MAX_VALUE" ]; then
+            FILTER_CMD_ARGS+=("seg_config.segment_max_value=$SEGMENT_MAX_VALUE")
+        fi
+        if [ -n "$MEDIAN_BLUR_KSIZE" ]; then
+            FILTER_CMD_ARGS+=("seg_config.median_blur_ksize=$MEDIAN_BLUR_KSIZE")
+        fi
+        if [ -n "$MORPHOLOGY_EX_KERNEL" ]; then
+            FILTER_CMD_ARGS+=("seg_config.morphology_ex_kernel=$MORPHOLOGY_EX_KERNEL")
+        fi
+        if [ -n "$REF_PATCH_SIZE" ]; then
+            FILTER_CMD_ARGS+=("seg_config.ref_patch_size=$REF_PATCH_SIZE")
+        fi
+        if [ -n "$USE_OTSU" ]; then
+            FILTER_CMD_ARGS+=("seg_config.use_otsu=$USE_OTSU")
+        fi
+        if [ -n "$TISSUE_AREA_THRESHOLD" ]; then
+            FILTER_CMD_ARGS+=("seg_config.tissue_area_threshold=$TISSUE_AREA_THRESHOLD")
+        fi
+        if [ -n "$HOLE_AREA_THRESHOLD" ]; then
+            FILTER_CMD_ARGS+=("seg_config.hole_area_threshold=$HOLE_AREA_THRESHOLD")
+        fi
+        if [ -n "$MAX_NUM_HOLES" ]; then
+            FILTER_CMD_ARGS+=("seg_config.max_num_holes=$MAX_NUM_HOLES")
+        fi
+        if [ -n "$KEEP_IDS" ]; then
+            FILTER_CMD_ARGS+=("seg_config.keep_ids=[${KEEP_IDS}]")
+        fi
+        if [ -n "$EXCLUDE_IDS" ]; then
+            FILTER_CMD_ARGS+=("seg_config.exclude_ids=[${EXCLUDE_IDS}]")
+        fi
+    fi
     
     # Add model_path if specified
     if [ -n "$PREFILTER_MODEL_PATH" ]; then
@@ -630,14 +732,65 @@ if [ -z "$POSTFILTER_MODEL_TYPES" ]; then
         "output_h5_path=$MODEL_H5_PATH"
         "output_pt_path=$MODEL_PT_PATH"
         "prefilter_model_type=$PREFILTER_MODEL_TYPE"
-        "seg_config.segment_threshold=$SEGMENT_THRESHOLD"
-        "seg_config.patch_size=$PATCH_SIZE"
-        "seg_config.mpp=$MPP"
         "num_workers=$NUM_WORKERS"
         "batch_size=$BATCH_SIZE"
         "use_gpu=$USE_GPU"
         "keep_intermediate_files=$KEEP_INTERMEDIATE_FILES"
     )
+    
+    # Add seg_config group if specified (overrides individual parameters)
+    if [ -n "$SEG_CONFIG_GROUP" ]; then
+        CMD_ARGS+=("seg_config=${SEG_CONFIG_GROUP}")
+    fi
+    
+    # Add individual SegConfig parameters if specified (and no group specified)
+    if [ -z "$SEG_CONFIG_GROUP" ]; then
+        if [ -n "$SEGMENT_THRESHOLD" ]; then
+            CMD_ARGS+=("seg_config.segment_threshold=$SEGMENT_THRESHOLD")
+        fi
+        if [ -n "$PATCH_SIZE" ]; then
+            CMD_ARGS+=("seg_config.patch_size=$PATCH_SIZE")
+        fi
+        if [ -n "$STEP_SIZE" ]; then
+            CMD_ARGS+=("seg_config.step_size=$STEP_SIZE")
+        fi
+        if [ -n "$MPP" ]; then
+            CMD_ARGS+=("seg_config.mpp=$MPP")
+        fi
+        if [ -n "$SEG_LEVEL" ]; then
+            CMD_ARGS+=("seg_config.seg_level=$SEG_LEVEL")
+        fi
+        if [ -n "$SEGMENT_MAX_VALUE" ]; then
+            CMD_ARGS+=("seg_config.segment_max_value=$SEGMENT_MAX_VALUE")
+        fi
+        if [ -n "$MEDIAN_BLUR_KSIZE" ]; then
+            CMD_ARGS+=("seg_config.median_blur_ksize=$MEDIAN_BLUR_KSIZE")
+        fi
+        if [ -n "$MORPHOLOGY_EX_KERNEL" ]; then
+            CMD_ARGS+=("seg_config.morphology_ex_kernel=$MORPHOLOGY_EX_KERNEL")
+        fi
+        if [ -n "$REF_PATCH_SIZE" ]; then
+            CMD_ARGS+=("seg_config.ref_patch_size=$REF_PATCH_SIZE")
+        fi
+        if [ -n "$USE_OTSU" ]; then
+            CMD_ARGS+=("seg_config.use_otsu=$USE_OTSU")
+        fi
+        if [ -n "$TISSUE_AREA_THRESHOLD" ]; then
+            CMD_ARGS+=("seg_config.tissue_area_threshold=$TISSUE_AREA_THRESHOLD")
+        fi
+        if [ -n "$HOLE_AREA_THRESHOLD" ]; then
+            CMD_ARGS+=("seg_config.hole_area_threshold=$HOLE_AREA_THRESHOLD")
+        fi
+        if [ -n "$MAX_NUM_HOLES" ]; then
+            CMD_ARGS+=("seg_config.max_num_holes=$MAX_NUM_HOLES")
+        fi
+        if [ -n "$KEEP_IDS" ]; then
+            CMD_ARGS+=("seg_config.keep_ids=[${KEEP_IDS}]")
+        fi
+        if [ -n "$EXCLUDE_IDS" ]; then
+            CMD_ARGS+=("seg_config.exclude_ids=[${EXCLUDE_IDS}]")
+        fi
+    fi
 
     # Add optional parameters
     if [ -n "$CLASSIFIER_PKL" ]; then
