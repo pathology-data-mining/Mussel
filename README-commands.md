@@ -134,7 +134,15 @@ This command processes the tiles identified by `tessellate` and generates featur
 
 **Default Model**: OpenCLIP with QuiltNet-B-16-PMB weights is used by default. This model works well for general histopathology tasks and doesn't require authentication.
 
-**Example - Using the default CLIP model:**
+**Automatic Patch Size Selection**: When using integrated workflows like `tessellate_extract_features` or `filter_tessellate`, the patch size for tessellation is automatically set based on the model type to match recommended values for optimal performance. The default patch sizes are:
+
+| Model Type | Default Patch Size | Note |
+|------------|-------------------|------|
+| CONCH1_5, TITAN_SLIDE | 512 | Higher resolution capture |
+| RESNET50, CTRANSPATH, GIGAPATH, GIGAPATH_SLIDE | 256 | Standard resolution |
+| VIRCHOW, VIRCHOW2, OPTIMUS, CLIP, GOOGLEPATH | 224 | Optimized for ViT models |
+
+You can override these defaults by explicitly setting `seg_config.patch_size` to a different value. The model will automatically resize patches to its expected input size during inference.
 
 **Example - Using the default CLIP model:**
 ```bash

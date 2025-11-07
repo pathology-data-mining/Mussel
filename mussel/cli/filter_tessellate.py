@@ -25,7 +25,7 @@ from mussel.cli.tessellate import (
     VisConfig,
     PngConfig,
 )
-from mussel.models import ModelType
+from mussel.models import ModelType, get_default_patch_size
 from mussel.utils import save_features, filter_features, save_hdf5
 from mussel.utils.segment import draw_slide_mask, save_patches_png, segment_tissue
 
@@ -87,6 +87,24 @@ class FilterTessellateConfig:
     seg_config: SegConfig = MISSING
     vis_config: VisConfig = field(default_factory=VisConfig)
     png_config: PngConfig = field(default_factory=PngConfig)
+
+    def __post_init__(self):
+        """Set default patch size based on model type if not explicitly set."""
+        # Only set patch size if seg_config.patch_size is at the default value
+        # This allows users to override if they explicitly set a different value
+        if self.seg_config.patch_size == SegConfig.DEFAULT_PATCH_SIZE:
+            # Get recommended patch size for the model
+            try:
+                recommended_patch_size = get_default_patch_size(self.model_type)
+                if recommended_patch_size != SegConfig.DEFAULT_PATCH_SIZE:
+                    logger.info(
+                        f"Setting seg_config.patch_size={recommended_patch_size} based on "
+                        f"model_type={self.model_type.name} (recommended default for this model)"
+                    )
+                    self.seg_config.patch_size = recommended_patch_size
+            except ValueError:
+                # Model not in mapping, keep default
+                pass
 
 
 desc_doc = """== ${hydra.help.app_name} ==
