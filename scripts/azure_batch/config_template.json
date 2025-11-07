@@ -1,29 +1,19 @@
 {
-  "defaults": {
-    "prefilter_model_type": "CTRANSPATH",
-    "segment_threshold": 0,
-    "patch_size": 256,
-    "mpp": 0.5,
-    "num_workers": 4,
-    "batch_size": 64,
-    "use_gpu": true,
-    "keep_intermediate_files": false
-  },
-  "tasks": [
-    {
-      "task_id": "slide_001",
-      "slide_path": "/mnt/data/slides/slide_001.svs",
-      "output_h5_path": "/mnt/output/slide_001_features.h5",
-      "output_pt_path": "/mnt/output/slide_001_features.pt"
+  "comment": "This template is deprecated. Use YAML configuration files with CSV manifests instead.",
+  "comment2": "See examples/batch_params_azure_example.yaml for the recommended approach.",
+  "comment3": "Task lists should be provided via CSV manifest files, not in config files.",
+  
+  "deprecated_example": {
+    "defaults": {
+      "prefilter_model_type": "CTRANSPATH",
+      "segment_threshold": 0,
+      "patch_size": 256,
+      "mpp": 0.5,
+      "num_workers": 4,
+      "batch_size": 64,
+      "use_gpu": true,
+      "keep_intermediate_files": false
     },
-    {
-      "task_id": "slide_002",
-      "slide_path": "/mnt/data/slides/slide_002.svs",
-      "output_h5_path": "/mnt/output/slide_002_features.h5",
-      "output_pt_path": "/mnt/output/slide_002_features.pt",
-      "classifier_pkl": "/mnt/data/classifier.pkl",
-      "classifier_threshold": 0.75,
-      "postfilter_model_type": "CLIP"
-    }
-  ]
+    "tasks": "Use CSV manifest files for task lists instead"
+  }
 }
