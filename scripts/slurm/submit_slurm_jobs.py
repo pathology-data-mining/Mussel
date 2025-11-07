@@ -109,6 +109,7 @@ class SlurmJobSubmitter:
         hf_token: Optional[str] = None,
         output_dir: Optional[str] = None,
         slide_batch_size: int = 8,
+        **kwargs  # Accept and ignore extra parameters from config merging
     ) -> str:
         """Generate SLURM batch script content.
         
@@ -612,14 +613,20 @@ bash {self.task_script}
         
         if kwargs.get('classifier_pkl'):
             static_env["CLASSIFIER_PKL"] = kwargs['classifier_pkl']
+        if kwargs.get('prefilter_model_path'):
+            static_env["PREFILTER_MODEL_PATH"] = kwargs['prefilter_model_path']
         if kwargs.get('postfilter_model_type'):
             static_env["POSTFILTER_MODEL_TYPE"] = kwargs['postfilter_model_type']
+        if kwargs.get('postfilter_model_path'):
+            static_env["POSTFILTER_MODEL_PATH"] = kwargs['postfilter_model_path']
         if kwargs.get('postfilter_model_types'):
             static_env["POSTFILTER_MODEL_TYPES"] = kwargs['postfilter_model_types']
         if kwargs.get('aggregation_method'):
             static_env["AGGREGATION_METHOD"] = kwargs['aggregation_method']
         if kwargs.get('slide_model_type'):
             static_env["SLIDE_MODEL_TYPE"] = kwargs['slide_model_type']
+        if kwargs.get('slide_model_path'):
+            static_env["SLIDE_MODEL_PATH"] = kwargs['slide_model_path']
         if kwargs.get('aws_access_key_id'):
             static_env["AWS_ACCESS_KEY_ID"] = kwargs['aws_access_key_id']
         if kwargs.get('aws_secret_access_key'):
@@ -938,31 +945,13 @@ def main():
         # CSV manifest (with optional config file for parameters)
         
         # Prepare kwargs dict starting with command-line args
+        # Note: Only include arguments with explicit defaults to prevent None values
+        # from overriding config file parameters. Optional arguments with None defaults
+        # are added conditionally below after config merge.
         csv_kwargs = {
-            'classifier_pkl': args.classifier_pkl,
             'classifier_threshold': args.classifier_threshold,
             'prefilter_model_type': args.prefilter_model_type,
-            'prefilter_model_path': model_paths.get('CTRANSPATH') if model_paths else None,
-            'postfilter_model_type': args.postfilter_model_type,
-            'postfilter_model_path': args.postfilter_model_path,
             'postfilter_model_types': args.postfilter_models,
-            'aggregation_method': args.aggregation_method,
-            'slide_model_type': args.slide_model_type,
-            'slide_model_path': model_paths.get(args.slide_model_type) if model_paths and args.slide_model_type else None,
-            'seg_config_group': args.seg_config_group,
-            'segment_threshold': args.segment_threshold,
-            'patch_size': args.patch_size,
-            'step_size': args.step_size,
-            'mpp': args.mpp,
-            'seg_level': args.seg_level,
-            'segment_max_value': args.segment_max_value,
-            'median_blur_ksize': args.median_blur_ksize,
-            'morphology_ex_kernel': args.morphology_ex_kernel,
-            'ref_patch_size': args.ref_patch_size,
-            'use_otsu': args.use_otsu,
-            'tissue_area_threshold': args.tissue_area_threshold,
-            'hole_area_threshold': args.hole_area_threshold,
-            'max_num_holes': args.max_num_holes,
             'num_workers': args.num_workers,
             'batch_size': args.batch_size,
             'slide_batch_size': args.slide_batch_size,
@@ -971,12 +960,7 @@ def main():
             'cpus_per_task': args.cpus_per_task,
             'mem': args.mem,
             'time': args.time,
-            'gres': args.gres,
-            'qos': args.qos,
-            'aws_access_key_id': args.aws_access_key_id,
-            'aws_secret_access_key': args.aws_secret_access_key,
             'aws_region': args.aws_region,
-            'hf_token': args.hf_token,
             'submit': args.submit,
         }
         
@@ -995,6 +979,67 @@ def main():
                     print("Continuing with command-line parameters only")
             else:
                 print("WARNING: config_loader not available, ignoring --config")
+        
+        # Add optional arguments from command line only if explicitly provided
+        # This ensures they don't override config file values with None
+        if args.classifier_pkl:
+            csv_kwargs['classifier_pkl'] = args.classifier_pkl
+        if args.postfilter_model_type:
+            csv_kwargs['postfilter_model_type'] = args.postfilter_model_type
+        if args.aggregation_method:
+            csv_kwargs['aggregation_method'] = args.aggregation_method
+        if args.slide_model_type:
+            csv_kwargs['slide_model_type'] = args.slide_model_type
+        if args.seg_config_group:
+            csv_kwargs['seg_config_group'] = args.seg_config_group
+        if args.segment_threshold is not None:
+            csv_kwargs['segment_threshold'] = args.segment_threshold
+        if args.patch_size is not None:
+            csv_kwargs['patch_size'] = args.patch_size
+        if args.step_size is not None:
+            csv_kwargs['step_size'] = args.step_size
+        if args.mpp is not None:
+            csv_kwargs['mpp'] = args.mpp
+        if args.seg_level is not None:
+            csv_kwargs['seg_level'] = args.seg_level
+        if args.segment_max_value is not None:
+            csv_kwargs['segment_max_value'] = args.segment_max_value
+        if args.median_blur_ksize is not None:
+            csv_kwargs['median_blur_ksize'] = args.median_blur_ksize
+        if args.morphology_ex_kernel is not None:
+            csv_kwargs['morphology_ex_kernel'] = args.morphology_ex_kernel
+        if args.ref_patch_size is not None:
+            csv_kwargs['ref_patch_size'] = args.ref_patch_size
+        if args.use_otsu:  # Only override config if user explicitly enabled it
+            csv_kwargs['use_otsu'] = args.use_otsu
+        if args.tissue_area_threshold is not None:
+            csv_kwargs['tissue_area_threshold'] = args.tissue_area_threshold
+        if args.hole_area_threshold is not None:
+            csv_kwargs['hole_area_threshold'] = args.hole_area_threshold
+        if args.max_num_holes is not None:
+            csv_kwargs['max_num_holes'] = args.max_num_holes
+        if args.gres:
+            csv_kwargs['gres'] = args.gres
+        if args.qos:
+            csv_kwargs['qos'] = args.qos
+        if args.aws_access_key_id:
+            csv_kwargs['aws_access_key_id'] = args.aws_access_key_id
+        if args.aws_secret_access_key:
+            csv_kwargs['aws_secret_access_key'] = args.aws_secret_access_key
+        if args.aws_endpoint_url:
+            csv_kwargs['aws_endpoint_url'] = args.aws_endpoint_url
+        if args.hf_token:
+            csv_kwargs['hf_token'] = args.hf_token
+        
+        # Add model paths from pre-download or user-provided (only if they have values)
+        # These override config file values to ensure pre-downloaded models are used
+        if model_paths and model_paths.get('CTRANSPATH'):
+            csv_kwargs['prefilter_model_path'] = model_paths['CTRANSPATH']
+        # Command-line args also override config values if explicitly provided
+        if args.postfilter_model_path:
+            csv_kwargs['postfilter_model_path'] = args.postfilter_model_path
+        if model_paths and args.slide_model_type and model_paths.get(args.slide_model_type):
+            csv_kwargs['slide_model_path'] = model_paths[args.slide_model_type]
         
         submitter.submit_tasks_from_csv(
             csv_file=args.csv_manifest,
