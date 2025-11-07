@@ -41,6 +41,13 @@ echo
 
 # Submit to SLURM using config file (dry run - remove --submit flag)
 echo "Submitting to SLURM (dry run)..."
+
+# Check if AWS credentials are set
+if [ -z "$AWS_ACCESS_KEY_ID" ] || [ -z "$AWS_SECRET_ACCESS_KEY" ]; then
+  echo "WARNING: AWS credentials not set. Set AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY environment variables."
+  echo "Proceeding with dry run only..."
+fi
+
 python3 scripts/slurm/submit_slurm_jobs.py \
   --config-file batch_config_example.yaml \
   --partition gpu \
@@ -48,8 +55,8 @@ python3 scripts/slurm/submit_slurm_jobs.py \
   --cpus-per-task 8 \
   --mem 32G \
   --time 04:00:00 \
-  --aws-access-key-id "${AWS_ACCESS_KEY_ID:-YOUR_KEY}" \
-  --aws-secret-access-key "${AWS_SECRET_ACCESS_KEY:-YOUR_SECRET}"
+  ${AWS_ACCESS_KEY_ID:+--aws-access-key-id "$AWS_ACCESS_KEY_ID"} \
+  ${AWS_SECRET_ACCESS_KEY:+--aws-secret-access-key "$AWS_SECRET_ACCESS_KEY"}
   # Add --submit flag to actually submit jobs
 
 echo

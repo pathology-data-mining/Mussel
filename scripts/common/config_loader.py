@@ -55,7 +55,7 @@ def load_config(config_file: str) -> Dict[str, Any]:
             if yaml is None:
                 raise ImportError(
                     "PyYAML is required to load YAML configuration files. "
-                    "Install it with: pip install pyyaml"
+                    "Install it with: pip install PyYAML"
                 )
             config = yaml.safe_load(f)
         else:
