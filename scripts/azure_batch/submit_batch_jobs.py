@@ -111,6 +111,23 @@ class AzureBatchJobSubmitter:
         else:
             self.blob_client = None
     
+    def _should_set_intermediate_h5_path(self, aggregation_method: Optional[str]) -> bool:
+        """
+        Determine if intermediate_h5_path should be set based on aggregation method.
+        
+        Intermediate files are needed for aggregation methods that operate on tile-level features:
+        - "mean", "max", "model" require intermediate files
+        - "identity" does not require intermediate files (direct pass-through)
+        - None/unspecified does not require intermediate files
+        
+        Args:
+            aggregation_method: The aggregation method to check
+            
+        Returns:
+            True if intermediate_h5_path should be set, False otherwise
+        """
+        return aggregation_method is not None and aggregation_method != 'identity'
+
     def _should_use_batch_encoding(self, **kwargs) -> bool:
         """Determine if we should use batch slide encoding optimization.
         
@@ -640,11 +657,19 @@ class AzureBatchJobSubmitter:
                 base_prefix = output_s3_prefix.rstrip('/')
                 output_h5_path = f"{base_prefix}/{model_type}/h5/{slide_id}_features.h5"
                 output_pt_path = f"{base_prefix}/{model_type}/pt/{slide_id}_features.pt"
-                intermediate_h5_path = f"{base_prefix}/{model_type}/tile_h5/{slide_id}_tile_features.h5"
+                # Only set intermediate_h5_path if aggregation method requires it
+                if self._should_set_intermediate_h5_path(default_params.get('aggregation_method')):
+                    intermediate_h5_path = f"{base_prefix}/{model_type}/tile_h5/{slide_id}_tile_features.h5"
+                else:
+                    intermediate_h5_path = None
             else:
                 output_h5_path = f"{output_dir}/{model_type}/h5/{slide_id}_features.h5"
                 output_pt_path = f"{output_dir}/{model_type}/pt/{slide_id}_features.pt"
-                intermediate_h5_path = f"{output_dir}/{model_type}/tile_h5/{slide_id}_tile_features.h5"
+                # Only set intermediate_h5_path if aggregation method requires it
+                if self._should_set_intermediate_h5_path(default_params.get('aggregation_method')):
+                    intermediate_h5_path = f"{output_dir}/{model_type}/tile_h5/{slide_id}_tile_features.h5"
+                else:
+                    intermediate_h5_path = None
             
             # Merge with default parameters
             merged_config = {**default_params}
@@ -652,7 +677,8 @@ class AzureBatchJobSubmitter:
             merged_config['slide_path'] = azfiles_path
             merged_config['output_h5_path'] = output_h5_path
             merged_config['output_pt_path'] = output_pt_path
-            merged_config['intermediate_h5_path'] = intermediate_h5_path
+            if intermediate_h5_path:
+                merged_config['intermediate_h5_path'] = intermediate_h5_path
             
             # Add postfilter models as comma-separated list if multiple
             if postfilter_models and len(postfilter_models) > 1:
@@ -776,11 +802,19 @@ class AzureBatchJobSubmitter:
                     base_prefix = output_s3_prefix.rstrip('/')
                     output_h5_path = f"{base_prefix}/{model_type}/h5/{slide_id}_features.h5"
                     output_pt_path = f"{base_prefix}/{model_type}/pt/{slide_id}_features.pt"
-                    intermediate_h5_path = f"{base_prefix}/{model_type}/tile_h5/{slide_id}_tile_features.h5"
+                    # Only set intermediate_h5_path if aggregation method requires it
+                    if self._should_set_intermediate_h5_path(default_params.get('aggregation_method')):
+                        intermediate_h5_path = f"{base_prefix}/{model_type}/tile_h5/{slide_id}_tile_features.h5"
+                    else:
+                        intermediate_h5_path = None
                 else:
                     output_h5_path = f"{output_dir}/{model_type}/h5/{slide_id}_features.h5"
                     output_pt_path = f"{output_dir}/{model_type}/pt/{slide_id}_features.pt"
-                    intermediate_h5_path = f"{output_dir}/{model_type}/tile_h5/{slide_id}_tile_features.h5"
+                    # Only set intermediate_h5_path if aggregation method requires it
+                    if self._should_set_intermediate_h5_path(default_params.get('aggregation_method')):
+                        intermediate_h5_path = f"{output_dir}/{model_type}/tile_h5/{slide_id}_tile_features.h5"
+                    else:
+                        intermediate_h5_path = None
                 
                 # Create task config
                 task_config = {
@@ -788,8 +822,11 @@ class AzureBatchJobSubmitter:
                     'slide_path': slide_path,
                     'output_h5_path': output_h5_path,
                     'output_pt_path': output_pt_path,
-                    'intermediate_h5_path': intermediate_h5_path,
                 }
+                
+                # Only add intermediate_h5_path if it's set
+                if intermediate_h5_path:
+                    task_config['intermediate_h5_path'] = intermediate_h5_path
                 
                 # Add postfilter models as comma-separated list if multiple
                 if postfilter_models and len(postfilter_models) > 1:
