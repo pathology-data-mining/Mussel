@@ -770,6 +770,9 @@ class AzureBatchJobSubmitter:
         for task_config in tasks:
             # Merge with default parameters
             merged_config = {**default_params, **task_config}
+            
+            # Normalize empty string to None for intermediate_h5_path
+            intermediate_h5_path = merged_config.get('intermediate_h5_path') or None
 
             self.submit_task(
                 job_id=job_id,
@@ -777,7 +780,7 @@ class AzureBatchJobSubmitter:
                 slide_path=merged_config['slide_path'],
                 output_h5_path=merged_config['output_h5_path'],
                 output_pt_path=merged_config['output_pt_path'],
-                intermediate_h5_path=merged_config.get('intermediate_h5_path'),
+                intermediate_h5_path=intermediate_h5_path,
                 aggregation_method=merged_config.get("aggregation_method", "identity"),
                 slide_model_type=merged_config.get("slide_model_type"),
                 classifier_pkl=merged_config.get("classifier_pkl"),
