@@ -776,8 +776,9 @@ def main():
         # CSV manifest (with optional config file for parameters)
         
         # Prepare kwargs dict starting with command-line args
-        # Note: Only include arguments that have explicit defaults or are always provided
-        # Arguments that default to None should be added conditionally after config merge
+        # Note: Only include arguments with explicit defaults to prevent None values
+        # from overriding config file parameters. Optional arguments with None defaults
+        # are added conditionally below after config merge.
         csv_kwargs = {
             'classifier_threshold': args.classifier_threshold,
             'prefilter_model_type': args.prefilter_model_type,
@@ -840,7 +841,7 @@ def main():
             csv_kwargs['morphology_ex_kernel'] = args.morphology_ex_kernel
         if args.ref_patch_size is not None:
             csv_kwargs['ref_patch_size'] = args.ref_patch_size
-        if args.use_otsu:
+        if args.use_otsu:  # Only override config if user explicitly enabled it
             csv_kwargs['use_otsu'] = args.use_otsu
         if args.tissue_area_threshold is not None:
             csv_kwargs['tissue_area_threshold'] = args.tissue_area_threshold
