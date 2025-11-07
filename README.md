@@ -26,7 +26,7 @@ This is a fork of Faisal Mahmood's [CLAM repository](https://github.com/mahmoodl
 
 ## Key Features
 
-- **Multiple Foundation Models**: Support for ResNet-50, TransPath, Prov-GigaPath, Virchow, Virchow2, H-Optimus-0, OpenCLIP (QuiltNet), GooglePath, and Conch v1.5
+- **Multiple Foundation Models**: Support for ResNet-50, TransPath, Prov-GigaPath, Virchow, Virchow2, H-Optimus-0, OpenCLIP (QuiltNet), GooglePath, Conch v1.5, UNI, and UNI2
 - **Zero-Shot Classification**: Annotate tissue tiles using natural language descriptions without training
 - **Flexible Tiling**: Microns per pixel (mpp) specification for tiling, independent of native slide resolution
 - **Efficient Processing**: Optimized for batch processing and job submission systems
@@ -109,6 +109,8 @@ PyTorch is required for the following models:
 * [Virchow](https://huggingface.co/paige-ai/Virchow)
 * [H-Optimus-0](https://huggingface.co/bioptimus/H-optimus-0)
 * [OpenCLIP](https://github.com/mlfoundations/open_clip)
+* [UNI](https://huggingface.co/MahmoodLab/UNI)
+* [UNI2](https://huggingface.co/MahmoodLab/UNI2-h)
 
 
 ##### GPU (CUDA)

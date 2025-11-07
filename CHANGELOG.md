@@ -5,6 +5,15 @@ All notable changes to Mussel will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- Support for UNI and UNI2 foundation models from MahmoodLab
+  - Added ModelType.UNI with default patch size of 256 (per TRIDENT recommendations)
+  - Added ModelType.UNI2 with default patch size of 256 (per TRIDENT recommendations)
+  - Both models use timm-based implementation similar to Virchow
+
 ## [1.0.2]
 
 ### Added
