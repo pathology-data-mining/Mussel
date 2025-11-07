@@ -4,6 +4,8 @@
 
 This implementation adds slide batch feature extraction support to the distributed processing scripts (SLURM, HTCondor, Azure Batch), enabling significant performance improvements for slide-level aggregation workloads.
 
+Additionally, all distributed batch scripts now support **YAML and JSON configuration files** for easier task definition and parameter management, with automatic configuration tracking in output manifests.
+
 ## Problem Statement
 
 When processing multiple whole-slide images with slide-level model aggregation (e.g., GIGAPATH_SLIDE, TITAN_SLIDE), the traditional approach processes slides one at a time, loading the slide encoder model for each slide. This is inefficient and slow.
@@ -19,7 +21,16 @@ Implemented slide batch feature extraction that groups multiple slides together 
 
 ## Key Features
 
-### 1. Enhanced Batch Mode in run_tessellate_extract_features.sh
+### 1. Configuration File Support (NEW)
+
+- **YAML and JSON Support**: All batch submission scripts now accept configuration files in YAML or JSON format
+- **Default Parameters**: Define common parameters once in a `defaults` section
+- **Task-Specific Overrides**: Override defaults for individual tasks as needed
+- **Configuration Tracking**: Non-sensitive configuration saved to result manifests for reproducibility
+- **Security**: Sensitive fields (credentials, tokens) automatically filtered from manifests
+- **Documentation**: Complete guide in `docs/BATCH_CONFIG_FILES.md`
+
+### 2. Enhanced Batch Mode in run_tessellate_extract_features.sh
 
 - **S3 Slide Staging**: Automatically downloads S3 slides to local storage before batch processing
 - **Improved Logging**: Clear distinction between batch and single-slide modes
