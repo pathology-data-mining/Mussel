@@ -850,6 +850,27 @@ def main():
     if args.slide_model_path and args.slide_model_type:
         model_paths[args.slide_model_type] = args.slide_model_path
     
+    # Validate CTRANSPATH configuration
+    # CTRANSPATH requires a model_path to be provided via configuration
+    if args.csv_manifest or args.config_file:
+        # Determine the prefilter model type from config or default
+        prefilter_model = args.prefilter_model_type or 'CTRANSPATH'  # Default
+        if args.config_file_for_csv and load_config_defaults:
+            try:
+                config_defaults = load_config_defaults(args.config_file_for_csv, backend='slurm')
+                prefilter_model = config_defaults.get('prefilter_model_type', prefilter_model)
+            except:
+                pass
+        
+        # Check if CTRANSPATH is being used without a model_path
+        if prefilter_model.upper() == 'CTRANSPATH' and not model_paths.get('CTRANSPATH'):
+            print("\n⚠️  WARNING: CTRANSPATH model requires a model_path to be provided via configuration")
+            print("   CTRANSPATH does not have a default HuggingFace path and cannot be automatically downloaded.")
+            print("   Please provide the model path using one of the following methods:")
+            print("     1. Command line: --prefilter-model-path /path/to/ctranspath.pth")
+            print("     2. Configuration file: prefilter_model_path: /path/to/ctranspath.pth")
+            print("   Tasks will fail if CTRANSPATH model path is not provided.\n")
+    
     # Validate single task arguments
     if args.job_name:
         if not args.slide_path or not args.output_h5_path or not args.output_pt_path:

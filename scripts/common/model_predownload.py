@@ -14,6 +14,36 @@ from pathlib import Path
 from typing import List, Optional, Dict
 
 
+def can_model_be_saved(model_type: str) -> bool:
+    """
+    Check if a model type can be saved via save_model CLI.
+    
+    Models with empty paths in ModelType enum cannot be automatically saved
+    and must be provided via configuration (e.g., CTRANSPATH, RESNET50).
+    
+    Args:
+        model_type: Type of model (e.g., CTRANSPATH, CLIP, VIRCHOW)
+        
+    Returns:
+        True if model can be saved, False otherwise
+    """
+    # Import here to avoid circular dependencies
+    try:
+        from mussel.models.model_factory import ModelType
+        
+        # Try to get the ModelType enum value
+        try:
+            model_enum = ModelType[model_type.upper()]
+            # Check if path is empty or None
+            return model_enum.path and model_enum.path.strip() != ""
+        except KeyError:
+            # Unknown model type, assume it can't be saved
+            return False
+    except ImportError:
+        # Can't import, assume it can be saved (fallback)
+        return True
+
+
 def run_save_model(model_type: str, output_path: str, model_path: Optional[str] = None) -> bool:
     """
     Run save_model CLI to download a model.
@@ -58,24 +88,36 @@ def pre_download_models(
     """
     Pre-download all required models to a cache directory.
     
+    Models without paths in ModelType enum (e.g., CTRANSPATH, RESNET50) cannot be
+    automatically downloaded and will be skipped. These models must be provided
+    via configuration using model_path parameters.
+    
     Args:
         model_types: List of model types to download
         cache_dir: Directory to cache models
         model_paths: Optional dict of model_type -> HuggingFace path mappings
         
     Returns:
-        Dict mapping model_type to cached file path
+        Dict mapping model_type to cached file path (only for successfully downloaded models)
         
     Raises:
-        RuntimeError: If any model download fails
+        RuntimeError: If any downloadable model fails to download
     """
     print(f"[Pre-download] Creating cache directory: {cache_dir}")
     Path(cache_dir).mkdir(parents=True, exist_ok=True)
     
     cached_models = {}
     model_paths = model_paths or {}
+    skipped_models = []
     
     for model_type in model_types:
+        # Check if model can be saved via save_model
+        if not can_model_be_saved(model_type):
+            print(f"[Pre-download] ⚠️  Skipping {model_type}: model does not have a default path in ModelType")
+            print(f"[Pre-download]     {model_type} must be provided via configuration (e.g., prefilter_model_path)")
+            skipped_models.append(model_type)
+            continue
+        
         # Generate cache filename
         cache_file = os.path.join(cache_dir, f"{model_type.lower()}.pth")
         
@@ -92,6 +134,9 @@ def pre_download_models(
             raise RuntimeError(f"Failed to download model: {model_type}")
         
         cached_models[model_type] = cache_file
+    
+    if skipped_models:
+        print(f"\n[Pre-download] ℹ️  Skipped models (must be provided via config): {', '.join(skipped_models)}")
     
     return cached_models
 
