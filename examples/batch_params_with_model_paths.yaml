@@ -1,0 +1,43 @@
+# Example: Configuration file demonstrating prefilter_model_path usage
+# This example shows how to specify model paths in the config file
+# Use with: --csv-manifest <manifest.csv> --config <this-file>
+
+# Model configuration
+# The prefilter_model_path can now be specified here and will be correctly used
+prefilter_model_type: CTRANSPATH
+prefilter_model_path: /shared/models/ctranspath.pth
+
+# Optional: Slide model configuration for aggregation
+# slide_model_type: GIGAPATH_SLIDE
+# slide_model_path: /shared/models/gigapath_slide.pth
+# aggregation_method: model
+
+# Processing parameters
+batch_size: 64
+num_workers: 4
+use_gpu: true
+classifier_threshold: 0.75
+
+# Segmentation configuration (uses the seg_config section for organization)
+seg_config:
+  group: default
+  segment_threshold: 20
+  patch_size: 256
+  mpp: 0.5
+
+# Standardized resource requirements (works across all backends)
+# These will be automatically mapped to backend-specific parameters:
+#   - SLURM: cpus -> cpus_per_task, memory -> mem, gpus -> gres
+#   - HTCondor: cpus -> request_cpus, memory -> request_memory, gpus -> request_gpus
+resources:
+  cpus: 8
+  memory: 32GB
+  gpus: 1
+
+# AWS S3 configuration (optional, for S3-compatible storage)
+aws:
+  region: us-east-1
+  # endpoint_url: https://s3.example.com  # Optional: for S3-compatible storage like MinIO
+
+# Note: Sensitive fields like AWS credentials and HF tokens should be provided
+# via command-line arguments or environment variables, not in the config file
