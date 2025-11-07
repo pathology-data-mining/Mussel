@@ -6,11 +6,28 @@
 prefilter_model_type: CTRANSPATH
 batch_size: 64
 num_workers: 4
-patch_size: 256
-mpp: 0.5
 use_gpu: true
-segment_threshold: 0
 classifier_threshold: 0.75
+
+# Segmentation configuration
+seg_config:
+  # Option 1: Use a preset group (biopsy, resection, tcga, or default)
+  # group: biopsy
+  
+  # Option 2: Specify individual parameters (overrides group if both specified)
+  patch_size: 256
+  mpp: 0.5
+  segment_threshold: 0
+  # step_size: 256  # Optional: defaults to patch_size
+  # seg_level: -1  # Optional: -1 for auto
+  # segment_max_value: 255
+  # median_blur_ksize: 7
+  # morphology_ex_kernel: 0
+  # ref_patch_size: 512
+  # use_otsu: false
+  # tissue_area_threshold: 100
+  # hole_area_threshold: 16
+  # max_num_holes: 8
 
 # Aggregation settings
 aggregation_method: identity
