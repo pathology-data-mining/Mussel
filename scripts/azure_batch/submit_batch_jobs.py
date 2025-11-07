@@ -39,6 +39,13 @@ except ImportError:
     AzureFilesStaging = None
 
 try:
+    from config_loader import load_config, add_config_to_metadata
+except ImportError:
+    print("WARNING: Could not import config_loader module. YAML config support will be unavailable.")
+    load_config = None
+    add_config_to_metadata = None
+
+try:
     from azure.batch import BatchServiceClient
     from azure.batch.batch_auth import SharedKeyCredentials
     from azure.batch import models as batchmodels
@@ -440,11 +447,16 @@ class AzureBatchJobSubmitter:
         config_file: str,
         container_image: str = "mskmind/mussel:latest-torch-gpu",
     ) -> None:
-        """Submit multiple tasks from a configuration file."""
+        """Submit multiple tasks from a configuration file (JSON or YAML)."""
         print(f"Loading task configuration from '{config_file}'...")
 
-        with open(config_file, 'r') as f:
-            config = json.load(f)
+        # Use config loader to support both JSON and YAML
+        if load_config:
+            config = load_config(config_file)
+        else:
+            # Fallback to JSON only
+            with open(config_file, 'r') as f:
+                config = json.load(f)
 
         tasks = config.get("tasks", [])
         defaults = config.get("defaults", {})
@@ -484,6 +496,10 @@ class AzureBatchJobSubmitter:
                 max_retry_count=merged_config.get("max_retry_count", 3),
                 container_image=container_image,
             )
+            
+            # Store task configuration in metadata (excluding secrets)
+            if add_config_to_metadata:
+                add_config_to_metadata(self.task_metadata, merged_config, task_id)
 
     def stage_and_submit_tasks_from_csv(
         self,
@@ -753,6 +769,10 @@ class AzureBatchJobSubmitter:
                 max_retry_count=merged_config.get("max_retry_count", 3),
                 container_image=container_image,
             )
+            
+            # Store task configuration in metadata (excluding secrets)
+            if add_config_to_metadata:
+                add_config_to_metadata(self.task_metadata, merged_config, merged_config['task_id'])
 
     def monitor_tasks(self, job_id: str, poll_interval: int = 30) -> None:
         """Monitor task progress."""
@@ -911,6 +931,15 @@ class AzureBatchJobSubmitter:
                 # Add intermediate path if present
                 if 'intermediate_h5_path' in metadata:
                     task_info['intermediate_h5_path'] = metadata.get('intermediate_h5_path', '')
+                
+                # Add configuration parameters if present (excluding secrets)
+                if 'config' in metadata:
+                    config_data = metadata['config']
+                    # Flatten configuration into task_info with 'config_' prefix
+                    for key, value in config_data.items():
+                        # Skip nested dictionaries and lists for CSV simplicity
+                        if not isinstance(value, (dict, list)):
+                            task_info[f'config_{key}'] = value
                 
                 # Extract model type from output path
                 output_h5 = metadata.get('output_h5_path', '')
@@ -1089,7 +1118,7 @@ def main():
     parser.add_argument("--create-job", action="store_true", help="Create job")
     
     # Task configuration
-    parser.add_argument("--config-file", help="JSON file with task configurations")
+    parser.add_argument("--config-file", help="Configuration file with task definitions (JSON or YAML format)")
     parser.add_argument("--csv-manifest", help="CSV manifest file with slide_id,slide_path columns")
     parser.add_argument("--output-dir", default="/mnt/output", help="Output directory for results (when using CSV)")
     parser.add_argument("--output-s3-prefix", help="S3 prefix for outputs (e.g., s3://bucket/results/)")

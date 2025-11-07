@@ -26,6 +26,12 @@ except ImportError:
     print("WARNING: Could not import model_predownload module. Pre-download features will be unavailable.")
     pre_download_models = None
 
+try:
+    from config_loader import load_config
+except ImportError:
+    print("WARNING: Could not import config_loader module. YAML config support will be unavailable.")
+    load_config = None
+
 
 class SlurmJobSubmitter:
     """
@@ -267,6 +273,82 @@ bash {self.task_script}
             kwargs.get('aggregation_method') == 'model' and
             kwargs.get('slide_model_type') is not None
         )
+
+    def submit_tasks_from_config(
+        self,
+        config_file: str,
+        **kwargs
+    ) -> List[Optional[str]]:
+        """
+        Submit tasks from a configuration file (JSON or YAML).
+        
+        Config format:
+            defaults:
+                prefilter_model_type: CTRANSPATH
+                batch_size: 64
+                ...
+            tasks:
+                - task_id: task_1
+                  slide_path: /path/to/slide1.svs
+                  output_h5_path: /path/to/output1.h5
+                  output_pt_path: /path/to/output1.pt
+                - task_id: task_2
+                  ...
+        
+        Args:
+            config_file: Path to configuration file
+            **kwargs: Additional parameters passed to submit_task
+            
+        Returns:
+            List of job IDs
+        """
+        print(f"Loading task configuration from '{config_file}'...")
+        
+        # Use config loader to support both JSON and YAML
+        if load_config:
+            config = load_config(config_file)
+        else:
+            # Fallback to JSON only
+            import json
+            with open(config_file, 'r') as f:
+                config = json.load(f)
+        
+        tasks = config.get("tasks", [])
+        defaults = config.get("defaults", {})
+        
+        print(f"Submitting {len(tasks)} tasks from config file...")
+        
+        job_ids = []
+        for task_config in tasks:
+            # Merge with defaults and kwargs
+            merged_config = {**defaults, **kwargs, **task_config}
+            
+            task_id = merged_config.get("task_id")
+            if not task_id:
+                print("ERROR: task_id is required for each task in config file")
+                continue
+            
+            slide_path = merged_config.get("slide_path")
+            output_h5_path = merged_config.get("output_h5_path")
+            output_pt_path = merged_config.get("output_pt_path")
+            
+            if not slide_path or not output_h5_path or not output_pt_path:
+                print(f"ERROR: slide_path, output_h5_path, and output_pt_path required for task {task_id}")
+                continue
+            
+            # Submit task (use job_name instead of task_id for SLURM)
+            job_id = self.submit_task(
+                job_name=task_id,
+                slide_path=slide_path,
+                output_h5_path=output_h5_path,
+                output_pt_path=output_pt_path,
+                **{k: v for k, v in merged_config.items() 
+                   if k not in ['task_id', 'slide_path', 'output_h5_path', 'output_pt_path']}
+            )
+            job_ids.append(job_id)
+        
+        print(f"\nSubmitted {len(job_ids)} tasks from config file")
+        return job_ids
 
     def submit_tasks_from_csv(
         self,
@@ -578,6 +660,7 @@ def main():
     input_group = parser.add_mutually_exclusive_group(required=True)
     input_group.add_argument("--job-name", help="Single job name/task ID")
     input_group.add_argument("--csv-manifest", help="CSV manifest file with slide_id,slide_path")
+    input_group.add_argument("--config-file", help="Configuration file with task definitions (JSON or YAML format)")
     
     # Slide parameters
     parser.add_argument("--slide-path", help="Path to slide file (required for single task)")
@@ -754,6 +837,40 @@ def main():
             aws_secret_access_key=args.aws_secret_access_key,
             aws_region=args.aws_region,
             hf_token=args.hf_token,
+            submit=args.submit,
+        )
+    elif args.config_file:
+        # Submit from config file
+        submitter.submit_tasks_from_config(
+            config_file=args.config_file,
+            classifier_pkl=args.classifier_pkl,
+            classifier_threshold=args.classifier_threshold,
+            prefilter_model_type=args.prefilter_model_type,
+            prefilter_model_path=model_paths.get('CTRANSPATH') if model_paths else None,
+            postfilter_model_type=args.postfilter_model_type,
+            postfilter_model_path=args.postfilter_model_path,
+            postfilter_model_types=args.postfilter_models,
+            aggregation_method=args.aggregation_method,
+            slide_model_type=args.slide_model_type,
+            slide_model_path=model_paths.get(args.slide_model_type) if model_paths and args.slide_model_type else None,
+            segment_threshold=args.segment_threshold,
+            patch_size=args.patch_size,
+            mpp=args.mpp,
+            num_workers=args.num_workers,
+            batch_size=args.batch_size,
+            slide_batch_size=args.slide_batch_size,
+            use_gpu=args.use_gpu,
+            partition=args.partition,
+            cpus_per_task=args.cpus_per_task,
+            mem=args.mem,
+            time=args.time,
+            gres=args.gres,
+            qos=args.qos,
+            aws_access_key_id=args.aws_access_key_id,
+            aws_secret_access_key=args.aws_secret_access_key,
+            aws_region=args.aws_region,
+            hf_token=args.hf_token,
+            model_paths=model_paths,
             submit=args.submit,
         )
     else:
