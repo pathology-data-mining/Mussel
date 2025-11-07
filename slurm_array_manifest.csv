@@ -1,0 +1,3 @@
+slide_id,slide_path,output_h5_path,output_pt_path,intermediate_h5_path
+test_001,/tmp/test1.svs,/tmp/output/test_001_features.h5,/tmp/output/test_001_features.pt,
+test_002,/tmp/test2.svs,/tmp/output/test_002_features.h5,/tmp/output/test_002_features.pt,
