@@ -656,15 +656,28 @@ def main():
         
         # Add prefilter model if not provided by user
         if not user_provided_paths['prefilter']:
-            # Default prefilter is CTRANSPATH
-            models_to_download.append('CTRANSPATH')
+            # Get the actual prefilter model type from args or config (default: CTRANSPATH)
+            prefilter_model_type = args.prefilter_model_type or config_defaults.get('prefilter_model_type', 'CTRANSPATH')
+            models_to_download.append(prefilter_model_type)
         
         # Add postfilter models if not provided by user
-        # Check both command-line args and config file for postfilter_models
-        postfilter_models_arg = args.postfilter_models or config_defaults.get('postfilter_model_types')
-        if not user_provided_paths['postfilter'] and postfilter_models_arg:
-            postfilter_list = [m.strip() for m in postfilter_models_arg.split(',')]
-            models_to_download.extend(postfilter_list)
+        if not user_provided_paths['postfilter']:
+            # Check for both single postfilter_model_type and multiple postfilter_models
+            postfilter_model_type = args.postfilter_model_type or config_defaults.get('postfilter_model_type')
+            postfilter_models_arg = args.postfilter_models or config_defaults.get('postfilter_model_types')
+            
+            if postfilter_model_type:
+                # Single postfilter model specified
+                models_to_download.append(postfilter_model_type)
+            elif postfilter_models_arg:
+                # Multiple postfilter models specified (comma-separated)
+                postfilter_list = [m.strip() for m in postfilter_models_arg.split(',')]
+                models_to_download.extend(postfilter_list)
+        
+        # Add slide model if not provided by user and slide model type is specified
+        slide_model_type = args.slide_model_type or config_defaults.get('slide_model_type')
+        if not user_provided_paths['slide'] and slide_model_type:
+            models_to_download.append(slide_model_type)
         
         # Remove duplicates
         models_to_download = list(set(models_to_download))
@@ -690,7 +703,9 @@ def main():
     
     # Apply user-provided model paths (override pre-downloaded if both specified)
     if args.prefilter_model_path:
-        model_paths['CTRANSPATH'] = args.prefilter_model_path  # Assume prefilter is CTRANSPATH
+        # Use the actual prefilter model type, not hardcoded CTRANSPATH
+        prefilter_model_type = args.prefilter_model_type or config_defaults.get('prefilter_model_type', 'CTRANSPATH')
+        model_paths[prefilter_model_type] = args.prefilter_model_path
     if args.postfilter_model_path:
         # Apply to all postfilter models if multi-model
         if args.postfilter_models:
