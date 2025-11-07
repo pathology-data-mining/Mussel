@@ -84,8 +84,9 @@ def load_config_defaults(config_file: str, backend: str = None) -> Dict[str, Any
     mapped to aws_* parameter names (e.g., region -> aws_region, endpoint_url -> aws_endpoint_url).
     
     The 'seg_config:' section (if present) contains segmentation configuration parameters
-    that are flattened to individual seg_config_* parameter names (e.g., patch_size -> 
-    seg_config_patch_size, or group -> seg_config_group).
+    that are flattened to individual parameter names (e.g., patch_size -> patch_size, 
+    group -> seg_config_group). All parameters from seg_config are extracted and made 
+    available as top-level parameters for the submission scripts.
     
     Args:
         config_file: Path to configuration file (.json, .yaml, or .yml)
@@ -126,8 +127,9 @@ def load_config_defaults(config_file: str, backend: str = None) -> Dict[str, Any
         if 'group' in seg_config_params:
             params['seg_config_group'] = seg_config_params['group']
         
-        # Map individual seg_config parameters (only if no group specified, or always depending on use case)
-        # Since individual params can override group settings, include all of them
+        # Map individual seg_config parameters
+        # Note: Individual parameters are always included, allowing them to override
+        # group defaults when both group and individual parameters are specified
         seg_config_mappings = {
             'segment_threshold': 'segment_threshold',
             'patch_size': 'patch_size',

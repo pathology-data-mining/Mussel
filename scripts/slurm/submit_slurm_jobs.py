@@ -728,7 +728,7 @@ def main():
     
     # SegConfig parameters
     parser.add_argument("--seg-config-group", choices=["default", "biopsy", "resection", "tcga"],
-                        help="SegConfig group preset (biopsy, resection, tcga). Overrides individual seg_config parameters.")
+                        help="SegConfig group preset (default, biopsy, resection, tcga). Overrides individual seg_config parameters.")
     parser.add_argument("--segment-threshold", type=int, help="Tissue segmentation threshold (default: 20 for default, varies by group)")
     parser.add_argument("--patch-size", type=int, help="Patch size in pixels (default: 256)")
     parser.add_argument("--step-size", type=int, help="Step size for patch extraction (default: same as patch_size)")
