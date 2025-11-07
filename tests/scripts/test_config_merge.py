@@ -252,3 +252,65 @@ prefilter_model_type: CTRANSPATH
         
     finally:
         os.unlink(config_file)
+
+
+def test_optional_args_from_config():
+    """
+    Test that optional arguments from config file are correctly loaded.
+    
+    This tests that arguments with None defaults don't override config values.
+    """
+    yaml_content = """
+# Test config with various optional parameters
+aggregation_method: model
+slide_model_type: GIGAPATH_SLIDE
+postfilter_model_type: UNI
+classifier_pkl: /path/to/classifier.pkl
+aws:
+  endpoint_url: https://s3.example.com
+seg_config:
+  group: biopsy
+  segment_threshold: 30
+  patch_size: 512
+"""
+    
+    with tempfile.NamedTemporaryFile(mode='w', suffix='.yaml', delete=False) as f:
+        f.write(yaml_content)
+        config_file = f.name
+    
+    try:
+        # Load config defaults
+        config_defaults = load_config_defaults(config_file, backend='condor')
+        
+        # Verify optional parameters are present in loaded config
+        assert config_defaults['aggregation_method'] == 'model'
+        assert config_defaults['slide_model_type'] == 'GIGAPATH_SLIDE'
+        assert config_defaults['postfilter_model_type'] == 'UNI'
+        assert config_defaults['classifier_pkl'] == '/path/to/classifier.pkl'
+        assert config_defaults['aws_endpoint_url'] == 'https://s3.example.com'
+        assert config_defaults['seg_config_group'] == 'biopsy'
+        assert config_defaults['segment_threshold'] == 30
+        assert config_defaults['patch_size'] == 512
+        
+        # Simulate csv_kwargs without these optional parameters (they're None by default)
+        csv_kwargs_fixed = {
+            'batch_size': 64,
+            'num_workers': 4,
+            # Optional parameters are NOT included if they're None
+        }
+        
+        # Fixed merge: config first, then csv_kwargs
+        merged_fixed = {**config_defaults, **csv_kwargs_fixed}
+        
+        # The fix: optional parameters retain config values
+        assert merged_fixed['aggregation_method'] == 'model'
+        assert merged_fixed['slide_model_type'] == 'GIGAPATH_SLIDE'
+        assert merged_fixed['postfilter_model_type'] == 'UNI'
+        assert merged_fixed['classifier_pkl'] == '/path/to/classifier.pkl'
+        assert merged_fixed['aws_endpoint_url'] == 'https://s3.example.com'
+        assert merged_fixed['seg_config_group'] == 'biopsy'
+        assert merged_fixed['segment_threshold'] == 30
+        assert merged_fixed['patch_size'] == 512
+        
+    finally:
+        os.unlink(config_file)
