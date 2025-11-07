@@ -1170,14 +1170,21 @@ def main():
     # Pool configuration
     parser.add_argument("--pool-id", required=True, help="Pool ID")
     parser.add_argument("--create-pool", action="store_true", help="Create pool if it doesn't exist")
-    parser.add_argument("--vm-size", default="Standard_NC6s_v3", help="VM size for pool nodes")
-    parser.add_argument("--node-count", type=int, default=1, 
+    
+    # Default values for pool parameters (used for detecting if config should override)
+    DEFAULT_VM_SIZE = "Standard_NC6s_v3"
+    DEFAULT_NODE_COUNT = 1
+    DEFAULT_CONTAINER_IMAGE = "mskmind/mussel:latest-torch-gpu"
+    DEFAULT_AUTO_SCALE_INTERVAL = 15
+    
+    parser.add_argument("--vm-size", default=DEFAULT_VM_SIZE, help="VM size for pool nodes")
+    parser.add_argument("--node-count", type=int, default=DEFAULT_NODE_COUNT, 
                         help="Number of nodes in pool (or initial/min count for auto-scaling)")
     parser.add_argument("--use-gpu", action="store_true", default=True, 
                         help="Enable GPU support for pool nodes (default: True)")
     parser.add_argument("--no-gpu", dest="use_gpu", action="store_false",
                         help="Disable GPU support for pool nodes")
-    parser.add_argument("--container-image", default="mskmind/mussel:latest-torch-gpu", 
+    parser.add_argument("--container-image", default=DEFAULT_CONTAINER_IMAGE, 
                         help="Docker container image")
     parser.add_argument("--enable-auto-scale", action="store_true",
                         help="Enable auto-scaling based on pending tasks")
@@ -1185,7 +1192,7 @@ def main():
                         help="Minimum number of nodes for auto-scaling (defaults to --node-count)")
     parser.add_argument("--max-node-count", type=int,
                         help="Maximum number of nodes for auto-scaling (required if --enable-auto-scale)")
-    parser.add_argument("--auto-scale-evaluation-interval", type=int, default=15,
+    parser.add_argument("--auto-scale-evaluation-interval", type=int, default=DEFAULT_AUTO_SCALE_INTERVAL,
                         help="Auto-scale evaluation interval in minutes (default: 15)")
     
     # Job configuration
@@ -1260,17 +1267,16 @@ def main():
         if not args.storage_account_name and 'storage_account_name' in config_defaults:
             args.storage_account_name = config_defaults['storage_account_name']
         
-        # Container image
-        # Only override if the default value is still being used
-        if args.container_image == "mskmind/mussel:latest-torch-gpu" and 'container_image' in config_defaults:
+        # Container image - only override if the default value is still being used
+        if args.container_image == DEFAULT_CONTAINER_IMAGE and 'container_image' in config_defaults:
             args.container_image = config_defaults['container_image']
         
         # VM size - only override if default is being used
-        if args.vm_size == "Standard_NC6s_v3" and 'vm_size' in config_defaults:
+        if args.vm_size == DEFAULT_VM_SIZE and 'vm_size' in config_defaults:
             args.vm_size = config_defaults['vm_size']
         
         # Node count - only override if default is being used
-        if args.node_count == 1 and 'node_count' in config_defaults:
+        if args.node_count == DEFAULT_NODE_COUNT and 'node_count' in config_defaults:
             args.node_count = config_defaults['node_count']
         
         # Auto-scaling parameters
@@ -1283,7 +1289,7 @@ def main():
         if args.max_node_count is None and 'max_node_count' in config_defaults:
             args.max_node_count = config_defaults['max_node_count']
         
-        if args.auto_scale_evaluation_interval == 15 and 'auto_scale_evaluation_interval' in config_defaults:
+        if args.auto_scale_evaluation_interval == DEFAULT_AUTO_SCALE_INTERVAL and 'auto_scale_evaluation_interval' in config_defaults:
             args.auto_scale_evaluation_interval = config_defaults['auto_scale_evaluation_interval']
 
     # Pre-download models if requested and using batch processing

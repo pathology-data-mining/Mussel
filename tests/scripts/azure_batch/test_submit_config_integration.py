@@ -114,7 +114,7 @@ azure:
         assert args.node_count == 5, \
             f"node_count not applied from config: {args.node_count}"
         
-        assert args.enable_auto_scale == True, \
+        assert args.enable_auto_scale is True, \
             f"enable_auto_scale not applied from config: {args.enable_auto_scale}"
         
         assert args.min_node_count == 3, \
