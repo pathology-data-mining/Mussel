@@ -240,6 +240,55 @@ def test_intermediate_h5_path_stage_and_submit():
             os.unlink(csv_file)
 
 
+def test_intermediate_h5_path_empty_string_from_config():
+    """Test that empty string intermediate_h5_path from config is treated as None."""
+    from submit_batch_jobs import AzureBatchJobSubmitter
+    
+    # Mock Azure Batch client
+    with patch('submit_batch_jobs.BatchServiceClient'):
+        submitter = AzureBatchJobSubmitter(
+            batch_account_name="test",
+            batch_account_key="test",
+            batch_account_url="https://test.batch.azure.com"
+        )
+        
+        # Test CSV submission with empty string in default params
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.csv', delete=False) as f:
+            f.write("slide_id,slide_path\n")
+            f.write("slide1,/path/to/slide1.svs\n")
+            csv_file = f.name
+        
+        try:
+            # Mock submit_task to capture parameters
+            captured_params = []
+            def mock_submit_task(**kwargs):
+                captured_params.append(kwargs)
+            
+            submitter.submit_task = mock_submit_task
+            
+            # Submit with empty string for intermediate_h5_path (simulating config file issue)
+            submitter.submit_tasks_from_csv(
+                job_id="test-job",
+                csv_file=csv_file,
+                output_s3_prefix="s3://bucket/output",
+                intermediate_h5_path=""  # Empty string from config
+            )
+            
+            # Verify intermediate_h5_path was normalized to None
+            assert len(captured_params) == 1, "Expected 1 task to be submitted"
+            params = captured_params[0]
+            
+            # Empty string should be normalized to None
+            intermediate_path = params.get('intermediate_h5_path')
+            assert intermediate_path is None, \
+                f"intermediate_h5_path should be None when empty string is provided: {intermediate_path}"
+            
+            print("✓ Empty string intermediate_h5_path normalized to None")
+            
+        finally:
+            os.unlink(csv_file)
+
+
 if __name__ == '__main__':
     # Run tests
     test_intermediate_h5_path_with_aggregation()
@@ -252,6 +301,9 @@ if __name__ == '__main__':
     print()
     
     test_intermediate_h5_path_stage_and_submit()
+    print()
+    
+    test_intermediate_h5_path_empty_string_from_config()
     print()
     
     print("All intermediate_h5_path tests passed!")
