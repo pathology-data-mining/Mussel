@@ -5,6 +5,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, List, Optional, Union
 
+import h5py
+import torch
 import hydra
 from hydra.conf import HelpConf, HydraConf
 from hydra.core.config_store import ConfigStore
@@ -21,10 +23,12 @@ from mussel.cli.tessellate import (
 )
 from mussel.cli.tessellate_extract_features_common import (
     process_slide_tessellation_and_filtering,
+    process_slide_tessellation_only,
     create_visualizations,
 )
+
 from mussel.models import ModelType, get_required_patch_encoder, get_default_patch_size
-from mussel.utils import aggregate_slide_features_batch
+from mussel.utils import aggregate_slide_features_batch, aggregate_slide_features, extract_patch_features_batch
 
 ssl._create_default_https_context = ssl._create_unverified_context
 
@@ -311,7 +315,7 @@ def _main_single(cfg: TessellateExtractFeaturesConfig):
 
 
 def _main_batch(cfg: TessellateExtractFeaturesConfig):
-    """Process multiple slides in batch mode."""
+    """Process multiple slides in batch mode with tile-level batching."""
     if cfg.slide_paths is None or cfg.output_dir is None:
         raise ValueError(
             "Batch mode requires slide_paths and output_dir to be specified"
@@ -354,124 +358,174 @@ def _main_batch(cfg: TessellateExtractFeaturesConfig):
     if slide_ids is None:
         slide_ids = [Path(sp).stem for sp in cfg.slide_paths]
     
-    # Process each slide
-    logger.info(f"Processing {len(cfg.slide_paths)} slides in batch mode")
+    # Phase 1: Tessellate all slides and perform filtering if needed
+    logger.info(f"\n=== Phase 1: Tessellating {len(cfg.slide_paths)} slides ===")
     
-    slides_for_batch_aggregation = []
-    
+    slide_results = []
     for i, (slide_path, slide_id) in enumerate(zip(cfg.slide_paths, slide_ids)):
-        logger.info(f"\n=== Processing slide {i+1}/{len(cfg.slide_paths)}: {slide_id} ===")
+        logger.info(f"\nTessellating slide {i+1}/{len(cfg.slide_paths)}: {slide_id}")
         
         # Determine output paths
         base_path = output_dir
-        output_h5_path = str(output_dir / f"{slide_id}.{cfg.output_h5_suffix}")
-        output_pt_path = str(output_dir / f"{slide_id}.{cfg.output_pt_suffix}")
         
         # Determine output mask path
         output_mask_path = None
         if cfg.output_mask_suffix:
             output_mask_path = str(base_path / f"{slide_id}{cfg.output_mask_suffix}")
         
-        # Use two-step mode for batch aggregation
-        two_step_mode = cfg.aggregation_method != "identity"
-        
-        # Process slide using shared logic
-        result = process_slide_tessellation_and_filtering(
+        # Tessellate and filter (but don't extract features yet)
+        result = process_slide_tessellation_only(
             slide_path=slide_path,
             slide_id=slide_id,
-            output_h5_path=output_h5_path,
-            output_pt_path=output_pt_path,
             cfg=cfg,
             temp_dir=temp_dir,
             base_path=base_path,
             use_filtering=use_filtering,
             prefilter_model_type=cfg.prefilter_model_type,
             prefilter_model_path=cfg.prefilter_model_path,
-            postfilter_model_type=postfilter_model_type,
-            postfilter_model_path=postfilter_model_path,
             skip_second_extraction=skip_second_extraction,
             output_mask_path=output_mask_path,
-            two_step_mode=two_step_mode,
         )
         
         if result is None:
-            # Processing failed or was completed early
+            logger.warning(f"Skipping slide {slide_id} due to tessellation failure")
             continue
         
-        # Check if we need batch aggregation
-        if 'intermediate_h5_path' in result:
-            slides_for_batch_aggregation.append(result)
-        else:
-            # Create visualizations for completed slides
-            output_grid_mask_path = None
-            if cfg.output_grid_mask_suffix:
-                output_grid_mask_path = str(base_path / f"{slide_id}{cfg.output_grid_mask_suffix}")
-            
-            output_png_dir = None
-            if cfg.output_png_dir_suffix:
-                output_png_dir = str(base_path / f"{slide_id}{cfg.output_png_dir_suffix}")
-            
-            output_thumbnail_path = None
-            if cfg.output_thumbnail_suffix:
-                output_thumbnail_path = str(base_path / f"{slide_id}{cfg.output_thumbnail_suffix}")
-            
-            create_visualizations(
-                slide_path=slide_path,
-                final_coords=result['final_coords'],
-                tessellate_h5_path=result['tessellate_h5_path'],
-                cfg=cfg,
-                output_grid_mask_path=output_grid_mask_path,
-                output_png_dir=output_png_dir,
-                output_thumbnail_path=output_thumbnail_path,
-            )
+        # Add output paths to result
+        result['slide_id'] = slide_id
+        result['output_h5_path'] = str(output_dir / f"{slide_id}.{cfg.output_h5_suffix}")
+        result['output_pt_path'] = str(output_dir / f"{slide_id}.{cfg.output_pt_suffix}")
+        slide_results.append(result)
     
-    # Perform batch aggregation if needed
-    if slides_for_batch_aggregation and cfg.aggregation_method == "model":
-        logger.info(f"\n=== Batch aggregating {len(slides_for_batch_aggregation)} slides ===")
+    if not slide_results:
+        logger.error("No slides to process after tessellation phase")
+        if temp_dir:
+            import shutil
+            shutil.rmtree(temp_dir)
+        return
+    
+    # Phase 2: Batch extract patch features for all slides
+    logger.info(f"\n=== Phase 2: Batch extracting patch features for {len(slide_results)} slides ===")
+    
+    # Prepare paths for batch extraction
+    patch_h5_paths = [r['final_coords_h5_path'] for r in slide_results]
+    slide_paths = [r['slide_path'] for r in slide_results]
+    
+    # Determine if we need two-step processing (patch features + slide aggregation)
+    use_two_step = cfg.aggregation_method != "identity"
+    
+    if use_two_step:
+        # Extract to intermediate patch feature files for later aggregation
+        intermediate_h5_paths = [
+            str(base_path / f"{r['slide_id']}.patch.h5") 
+            for r in slide_results
+        ]
         
-        patch_h5_paths = [s['intermediate_h5_path'] for s in slides_for_batch_aggregation]
-        output_h5_paths = [s['output_h5_path'] for s in slides_for_batch_aggregation]
-        output_pt_paths = [s['output_pt_path'] for s in slides_for_batch_aggregation]
-        
-        aggregate_slide_features_batch(
-            patch_features_h5_paths=patch_h5_paths,
-            output_h5_paths=output_h5_paths,
-            output_pt_paths=output_pt_paths,
-            aggregation_method=cfg.aggregation_method,
-            model_type=cfg.slide_model_type,
-            model_path=cfg.slide_model_path,
+        extract_patch_features_batch(
+            patch_h5_paths=patch_h5_paths,
+            slide_paths=slide_paths,
+            output_h5_paths=intermediate_h5_paths,
+            model_type=postfilter_model_type,
+            model_path=postfilter_model_path,
+            batch_size=cfg.batch_size,
             use_gpu=cfg.use_gpu,
             gpu_device_id=cfg.gpu_device_id,
             gpu_device_ids=cfg.gpu_device_ids,
-            slide_batch_size=cfg.slide_batch_size,
+            num_workers=cfg.num_workers,
+            pin_memory=True,
+            is_test_run=False,
         )
         
-        # Create visualizations for batch-processed slides
-        for result in slides_for_batch_aggregation:
-            slide_id = Path(result['slide_path']).stem
-            base_path = output_dir
+        # Add intermediate paths to results
+        for r, intermediate_h5_path in zip(slide_results, intermediate_h5_paths):
+            r['intermediate_h5_path'] = intermediate_h5_path
+        
+        # Phase 3: Batch aggregate to slide level
+        if cfg.aggregation_method == "model":
+            logger.info(f"\n=== Phase 3: Batch aggregating {len(slide_results)} slides ===")
             
-            output_grid_mask_path = None
-            if cfg.output_grid_mask_suffix:
-                output_grid_mask_path = str(base_path / f"{slide_id}{cfg.output_grid_mask_suffix}")
+            output_h5_paths = [r['output_h5_path'] for r in slide_results]
+            output_pt_paths = [r['output_pt_path'] for r in slide_results]
             
-            output_png_dir = None
-            if cfg.output_png_dir_suffix:
-                output_png_dir = str(base_path / f"{slide_id}{cfg.output_png_dir_suffix}")
-            
-            output_thumbnail_path = None
-            if cfg.output_thumbnail_suffix:
-                output_thumbnail_path = str(base_path / f"{slide_id}{cfg.output_thumbnail_suffix}")
-            
-            create_visualizations(
-                slide_path=result['slide_path'],
-                final_coords=result['final_coords'],
-                tessellate_h5_path=result['tessellate_h5_path'],
-                cfg=cfg,
-                output_grid_mask_path=output_grid_mask_path,
-                output_png_dir=output_png_dir,
-                output_thumbnail_path=output_thumbnail_path,
+            aggregate_slide_features_batch(
+                patch_features_h5_paths=intermediate_h5_paths,
+                output_h5_paths=output_h5_paths,
+                output_pt_paths=output_pt_paths,
+                aggregation_method=cfg.aggregation_method,
+                model_type=cfg.slide_model_type,
+                model_path=cfg.slide_model_path,
+                use_gpu=cfg.use_gpu,
+                gpu_device_id=cfg.gpu_device_id,
+                gpu_device_ids=cfg.gpu_device_ids,
+                slide_batch_size=cfg.slide_batch_size,
             )
+        else:
+            # For mean/max aggregation, aggregate each slide individually
+            logger.info(f"\n=== Phase 3: Aggregating {len(slide_results)} slides (non-model) ===")
+            
+            for r in slide_results:
+                aggregate_slide_features(
+                    patch_features_h5_path=r['intermediate_h5_path'],
+                    output_h5_path=r['output_h5_path'],
+                    output_pt_path=r['output_pt_path'],
+                    aggregation_method=cfg.aggregation_method,
+                    model_type=None,
+                    model_path=None,
+                    use_gpu=cfg.use_gpu,
+                    gpu_device_id=cfg.gpu_device_id,
+                    gpu_device_ids=cfg.gpu_device_ids,
+                )
+    else:
+        # Single-step: extract directly to final output (no aggregation)
+        output_h5_paths = [r['output_h5_path'] for r in slide_results]
+        
+        extract_patch_features_batch(
+            patch_h5_paths=patch_h5_paths,
+            slide_paths=slide_paths,
+            output_h5_paths=output_h5_paths,
+            model_type=postfilter_model_type,
+            model_path=postfilter_model_path,
+            batch_size=cfg.batch_size,
+            use_gpu=cfg.use_gpu,
+            gpu_device_id=cfg.gpu_device_id,
+            gpu_device_ids=cfg.gpu_device_ids,
+            num_workers=cfg.num_workers,
+            pin_memory=True,
+            is_test_run=False,
+        )
+        
+        # Also save as PT format for consistency
+        for r in slide_results:
+            with h5py.File(r['output_h5_path'], "r") as f:
+                features = torch.from_numpy(f["features"][:])
+                torch.save(features, r['output_pt_path'])
+    
+    # Phase 4: Create visualizations
+    logger.info(f"\n=== Phase 4: Creating visualizations ===")
+    for r in slide_results:
+        slide_id = r['slide_id']
+        
+        output_grid_mask_path = None
+        if cfg.output_grid_mask_suffix:
+            output_grid_mask_path = str(output_dir / f"{slide_id}{cfg.output_grid_mask_suffix}")
+        
+        output_png_dir = None
+        if cfg.output_png_dir_suffix:
+            output_png_dir = str(output_dir / f"{slide_id}{cfg.output_png_dir_suffix}")
+        
+        output_thumbnail_path = None
+        if cfg.output_thumbnail_suffix:
+            output_thumbnail_path = str(output_dir / f"{slide_id}{cfg.output_thumbnail_suffix}")
+        
+        create_visualizations(
+            slide_path=r['slide_path'],
+            final_coords=r['final_coords'],
+            tessellate_h5_path=r['tessellate_h5_path'],
+            cfg=cfg,
+            output_grid_mask_path=output_grid_mask_path,
+            output_png_dir=output_png_dir,
+            output_thumbnail_path=output_thumbnail_path,
+        )
     
     # Clean up temporary directory if not keeping intermediate files
     if temp_dir:
