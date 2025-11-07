@@ -175,8 +175,19 @@ class AzureFilesStaging:
         temp_path = temp_file.name
         temp_file.close()
         
-        # Download from S3 using AWS CLI
-        cmd = ["aws", "s3", "cp", s3_path, temp_path]
+        # Build AWS CLI command
+        # Using list arguments for subprocess.run is safe against command injection
+        cmd = ["aws", "s3"]
+        
+        # Add custom endpoint URL if specified
+        endpoint_url = os.environ.get("AWS_ENDPOINT_URL")
+        if endpoint_url:
+            # Add endpoint URL before the subcommand
+            cmd.extend(["--endpoint-url", endpoint_url])
+        
+        # Add the actual S3 copy command
+        cmd.extend(["cp", s3_path, temp_path])
+        
         result = subprocess.run(cmd, capture_output=True, text=True)
         
         if result.returncode != 0:

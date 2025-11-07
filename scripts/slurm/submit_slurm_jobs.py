@@ -87,6 +87,7 @@ class SlurmJobSubmitter:
         aws_access_key_id: Optional[str] = None,
         aws_secret_access_key: Optional[str] = None,
         aws_region: str = "us-east-1",
+        aws_endpoint_url: Optional[str] = None,
         hf_token: Optional[str] = None,
         output_dir: Optional[str] = None,
         slide_batch_size: int = 8,
@@ -174,6 +175,8 @@ class SlurmJobSubmitter:
             env_vars["AWS_ACCESS_KEY_ID"] = aws_access_key_id
         if aws_secret_access_key:
             env_vars["AWS_SECRET_ACCESS_KEY"] = aws_secret_access_key
+        if aws_endpoint_url:
+            env_vars["AWS_ENDPOINT_URL"] = aws_endpoint_url
         if hf_token:
             env_vars["HF_TOKEN"] = hf_token
         
@@ -496,6 +499,8 @@ bash {self.task_script}
             static_env["AWS_ACCESS_KEY_ID"] = kwargs['aws_access_key_id']
         if kwargs.get('aws_secret_access_key'):
             static_env["AWS_SECRET_ACCESS_KEY"] = kwargs['aws_secret_access_key']
+        if kwargs.get('aws_endpoint_url'):
+            static_env["AWS_ENDPOINT_URL"] = kwargs['aws_endpoint_url']
         if kwargs.get('hf_token'):
             static_env["HF_TOKEN"] = kwargs['hf_token']
         
@@ -618,6 +623,7 @@ def main():
     parser.add_argument("--aws-access-key-id", help="AWS access key ID")
     parser.add_argument("--aws-secret-access-key", help="AWS secret access key")
     parser.add_argument("--aws-region", default="us-east-1")
+    parser.add_argument("--aws-endpoint-url", help="Custom S3 endpoint URL (e.g., for MinIO or Ceph)")
     
     # HuggingFace token
     parser.add_argument("--hf-token", help="HuggingFace token for gated models")

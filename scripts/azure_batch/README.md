@@ -617,6 +617,7 @@ s3://bucket/results/
    - `--aws-access-key-id`
    - `--aws-secret-access-key`
    - `--aws-region` (default: us-east-1)
+   - `--aws-endpoint-url` (optional, for S3-compatible storage like MinIO or Ceph)
 
 **Example with S3:**
 ```bash
@@ -634,6 +635,12 @@ s3://bucket/results/
 --slide-path /mnt/data/slide.svs \
 --output-h5-path s3://my-bucket/results/slide.h5 \
 --output-pt-path s3://my-bucket/results/slide.pt
+
+# Using custom S3 endpoint (e.g., MinIO)
+--slide-path s3://my-bucket/slides/slide.svs \
+--output-h5-path s3://my-bucket/results/slide.h5 \
+--output-pt-path s3://my-bucket/results/slide.pt \
+--aws-endpoint-url http://minio.example.com:9000
 ```
 
 ### CSV Manifest Format

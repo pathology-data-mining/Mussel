@@ -181,6 +181,20 @@ python scripts/slurm/submit_slurm_jobs.py \
   --submit
 ```
 
+**Using custom S3 endpoint (e.g., MinIO, Ceph):**
+
+```bash
+python scripts/slurm/submit_slurm_jobs.py \
+  --csv-manifest manifest.csv \
+  --output-s3-prefix s3://bucket/results/ \
+  --aws-access-key-id $AWS_ACCESS_KEY_ID \
+  --aws-secret-access-key $AWS_SECRET_ACCESS_KEY \
+  --aws-endpoint-url http://minio.example.com:9000 \
+  --partition gpu \
+  --gres gpu:1 \
+  --submit
+```
+
 ## Advanced Usage
 
 ### Environment Modules
