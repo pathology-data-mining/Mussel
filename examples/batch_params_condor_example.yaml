@@ -23,6 +23,10 @@ resources:
   memory: 32GB
   gpus: 1
 
+# AWS S3 configuration (optional, for S3-compatible storage)
+aws_region: us-east-1
+aws_endpoint_url: https://s3.example.com  # Optional: for S3-compatible storage like MinIO
+
 # HTCondor-specific parameters (optional, for HTCondor-only settings)
 condor:
   max_retries: 3

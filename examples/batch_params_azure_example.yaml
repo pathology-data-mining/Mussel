@@ -1,4 +1,4 @@
-# Example: parameters configuration with SLURM-specific settings
+# Example: parameters configuration with Azure Batch-specific settings
 # Use this file with --config when specifying --csv-manifest
 
 # General processing parameters
@@ -27,11 +27,11 @@ resources:
 aws_region: us-east-1
 aws_endpoint_url: https://s3.example.com  # Optional: for S3-compatible storage like MinIO
 
-# SLURM-specific parameters (optional, for SLURM-only settings)
-slurm:
-  partition: gpu
-  time: "04:00:00"
-  qos: high
+# Azure Batch-specific parameters (optional, for Azure Batch-only settings)
+azure:
+  container_image: "mskmind/mussel:latest-torch-gpu"
+  storage_account_name: "mystorageaccount"
+  # Note: storage_account_key should be provided via command-line for security
 
-# Note: Sensitive fields like AWS credentials should be provided via command-line
-# not in the config file for security
+# Note: Sensitive fields like AWS credentials and storage keys should be provided 
+# via command-line, not in the config file for security

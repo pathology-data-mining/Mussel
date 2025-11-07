@@ -90,6 +90,10 @@ resources:
   memory: 32G
   gpus: 1
 
+# AWS S3 configuration (optional)
+aws_region: us-east-1
+aws_endpoint_url: https://s3.example.com  # Optional: for S3-compatible storage
+
 # Backend-specific parameters (optional, for backend-only settings)
 slurm:
   partition: gpu
@@ -297,7 +301,7 @@ Resource requirements (CPU, memory, GPU) should be specified in the top-level `r
 - **HTCondor**: `cpus` → `request_cpus`, `memory` → `request_memory`, `gpus` → `request_gpus`
 - **Azure**: Uses values as-is
 
-**Example with standardized resources:**
+**Example with standardized resources for all backends:**
 ```yaml
 prefilter_model_type: CTRANSPATH
 batch_size: 64
@@ -307,17 +311,28 @@ resources:
   memory: 32G
   gpus: 1
 
+# AWS S3 configuration (optional, for S3-compatible storage)
+aws_region: us-east-1
+aws_endpoint_url: https://s3.example.com
+
+# SLURM-specific parameters
 slurm:
   partition: gpu
   time: "04:00:00"
 
+# HTCondor-specific parameters
 condor:
   max_retries: 3
+
+# Azure Batch-specific parameters
+azure:
+  container_image: "mskmind/mussel:latest-torch-gpu"
+  storage_account_name: "mystorageaccount"
 ```
 
 ### Backend-Specific Parameters
 
-Backend-specific parameters (non-resource settings) should be grouped under their respective backend sections (`slurm:`, `condor:`, or `azure:`).
+Backend-specific parameters (non-resource settings) should be grouped under their respective backend sections (`slurm:`, `condor:`, or `azure:`). This keeps configuration organized and allows a single config file to work with multiple backends.
 
 #### SLURM Parameters
 
