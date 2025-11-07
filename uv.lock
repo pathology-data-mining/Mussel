@@ -61,6 +61,21 @@ wheels = [
 ]
 
 [[package]]
+name = "adal"
+version = "1.2.7"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "cryptography" },
+    { name = "pyjwt" },
+    { name = "python-dateutil" },
+    { name = "requests" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/90/d7/a829bc5e8ff28f82f9e2dc9b363f3b7b9c1194766d5a75105e3885bfa9a8/adal-1.2.7.tar.gz", hash = "sha256:d74f45b81317454d96e982fd1c50e6fb5c99ac2223728aea8764433a39f566f1", size = 35196, upload-time = "2021-04-05T16:33:40.88Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/49/8d/58008a9a86075827f99aa8bb75d8db515bb9c34654f95e647cda31987db7/adal-1.2.7-py2.py3-none-any.whl", hash = "sha256:2a7451ed7441ddbc57703042204a3e30ef747478eea022c70f789fc7f084bc3d", size = 55539, upload-time = "2021-04-05T16:33:39.544Z" },
+]
+
+[[package]]
 name = "annotated-types"
 version = "0.7.0"
 source = { registry = "https://pypi.org/simple" }
@@ -127,6 +142,87 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/85/ae/7f2031ea76140444b2453fa139041e5afd4a09fc5300cfefeb1103291f80/autograd-gamma-0.5.0.tar.gz", hash = "sha256:f27abb7b8bb9cffc8badcbf59f3fe44a9db39e124ecacf1992b6d952934ac9c4", size = 3952, upload-time = "2020-10-15T16:51:06.785Z" }
 
 [[package]]
+name = "azure-batch"
+version = "14.2.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "azure-common" },
+    { name = "msrestazure" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/35/3e/4611960f8ceb281285d764f32a0e88515fab4e1e32ff5d02bc77e55bbcb6/azure-batch-14.2.0.tar.gz", hash = "sha256:c79267d6c3d3fe14a16a422ab5bbfabcbd68ed0b58b6bbcdfa0c8345c4c78532", size = 243784, upload-time = "2024-03-27T20:05:11.192Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/14/15/42aa83f62dc47e00bed0e590d19252c24b94b8c3b740d9bce33ec867e785/azure_batch-14.2.0-py3-none-any.whl", hash = "sha256:115ccff0007852784ccf8fc12f5f3d415ed80513be306da7a8938ca82d948ee7", size = 243322, upload-time = "2024-03-27T20:05:13.803Z" },
+]
+
+[[package]]
+name = "azure-common"
+version = "1.1.28"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/3e/71/f6f71a276e2e69264a97ad39ef850dca0a04fce67b12570730cb38d0ccac/azure-common-1.1.28.zip", hash = "sha256:4ac0cd3214e36b6a1b6a442686722a5d8cc449603aa833f3f0f40bda836704a3", size = 20914, upload-time = "2022-02-03T19:39:44.373Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/62/55/7f118b9c1b23ec15ca05d15a578d8207aa1706bc6f7c87218efffbbf875d/azure_common-1.1.28-py2.py3-none-any.whl", hash = "sha256:5c12d3dcf4ec20599ca6b0d3e09e86e146353d443e7fcc050c9a19c1f9df20ad", size = 14462, upload-time = "2022-02-03T19:39:42.417Z" },
+]
+
+[[package]]
+name = "azure-core"
+version = "1.36.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "requests" },
+    { name = "typing-extensions" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/0a/c4/d4ff3bc3ddf155156460bff340bbe9533f99fac54ddea165f35a8619f162/azure_core-1.36.0.tar.gz", hash = "sha256:22e5605e6d0bf1d229726af56d9e92bc37b6e726b141a18be0b4d424131741b7", size = 351139, upload-time = "2025-10-15T00:33:49.083Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/b1/3c/b90d5afc2e47c4a45f4bba00f9c3193b0417fad5ad3bb07869f9d12832aa/azure_core-1.36.0-py3-none-any.whl", hash = "sha256:fee9923a3a753e94a259563429f3644aaf05c486d45b1215d098115102d91d3b", size = 213302, upload-time = "2025-10-15T00:33:51.058Z" },
+]
+
+[[package]]
+name = "azure-identity"
+version = "1.25.1"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "azure-core" },
+    { name = "cryptography" },
+    { name = "msal" },
+    { name = "msal-extensions" },
+    { name = "typing-extensions" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/06/8d/1a6c41c28a37eab26dc85ab6c86992c700cd3f4a597d9ed174b0e9c69489/azure_identity-1.25.1.tar.gz", hash = "sha256:87ca8328883de6036443e1c37b40e8dc8fb74898240f61071e09d2e369361456", size = 279826, upload-time = "2025-10-06T20:30:02.194Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/83/7b/5652771e24fff12da9dde4c20ecf4682e606b104f26419d139758cc935a6/azure_identity-1.25.1-py3-none-any.whl", hash = "sha256:e9edd720af03dff020223cd269fa3a61e8f345ea75443858273bcb44844ab651", size = 191317, upload-time = "2025-10-06T20:30:04.251Z" },
+]
+
+[[package]]
+name = "azure-storage-blob"
+version = "12.27.1"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "azure-core" },
+    { name = "cryptography" },
+    { name = "isodate" },
+    { name = "typing-extensions" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/36/7c/2fd872e11a88163f208b9c92de273bf64bb22d0eef9048cc6284d128a77a/azure_storage_blob-12.27.1.tar.gz", hash = "sha256:a1596cc4daf5dac9be115fcb5db67245eae894cf40e4248243754261f7b674a6", size = 597579, upload-time = "2025-10-29T12:27:16.185Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/3d/9e/1c90a122ea6180e8c72eb7294adc92531b0e08eb3d2324c2ba70d37f4802/azure_storage_blob-12.27.1-py3-none-any.whl", hash = "sha256:65d1e25a4628b7b6acd20ff7902d8da5b4fde8e46e19c8f6d213a3abc3ece272", size = 428954, upload-time = "2025-10-29T12:27:18.072Z" },
+]
+
+[[package]]
+name = "azure-storage-file-share"
+version = "12.23.1"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "azure-core" },
+    { name = "cryptography" },
+    { name = "isodate" },
+    { name = "typing-extensions" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/68/e6/b4b92a94728430ecf4022a3ca3cdb7e5e7f2a724fbd16464a3adaff54488/azure_storage_file_share-12.23.1.tar.gz", hash = "sha256:9da53b56f8090fc53d933ece5a9fb247010c3b4a75ff908a948e248defb21fae", size = 366079, upload-time = "2025-10-29T13:39:45.219Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/dc/41/f03fca7144b4a20419cdec03feb2020d3a44fe815de9ee52f089dc59ba95/azure_storage_file_share-12.23.1-py3-none-any.whl", hash = "sha256:10f83e82e68fb071bed3302614e35027ac9e03b63d0d850b81671e08936b0134", size = 307616, upload-time = "2025-10-29T13:39:46.896Z" },
+]
+
+[[package]]
 name = "black"
 version = "25.9.0"
 source = { registry = "https://pypi.org/simple" }
@@ -155,6 +251,34 @@ wheels = [
 ]
 
 [[package]]
+name = "boto3"
+version = "1.40.68"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "botocore" },
+    { name = "jmespath" },
+    { name = "s3transfer" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/df/3e/6c8ab966798f4e07651009ad08efc3ed4ffccf2662318790574695c740f7/boto3-1.40.68.tar.gz", hash = "sha256:c7994989e5bbba071b7c742adfba35773cf03e87f5d3f9f2b0a18c1664417b61", size = 111629, upload-time = "2025-11-06T20:49:32.414Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/07/e6/b9df94d3a51ad658ef1974da6c0d7401b6aed7be50a2ee57bf1de1ef9517/boto3-1.40.68-py3-none-any.whl", hash = "sha256:4f08115e3a4d1e1056003e433d393e78c20da6af7753409992bb33fb69f04186", size = 139361, upload-time = "2025-11-06T20:49:30.781Z" },
+]
+
+[[package]]
+name = "botocore"
+version = "1.40.68"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "jmespath" },
+    { name = "python-dateutil" },
+    { name = "urllib3" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/eb/df/b0300da4cc1fe3e37c8d7a44d835518004454c7d21b579fce9ef2cd691ce/botocore-1.40.68.tar.gz", hash = "sha256:28f41b463d9f012a711ee8b61d4e26cd14ee3b450b816d5dee849aa79155e856", size = 14435596, upload-time = "2025-11-06T20:49:22.311Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/7a/72/ac8123169ce48cb2eb593cd4c6a22e66d72bf8dc30fe75191a7669dd036d/botocore-1.40.68-py3-none-any.whl", hash = "sha256:9d514f9c9054e1af055f2cbe9e0d6771d407a600206d45a01b54d5f09538fecb", size = 14097634, upload-time = "2025-11-06T20:49:19.235Z" },
+]
+
+[[package]]
 name = "braceexpand"
 version = "0.1.7"
 source = { registry = "https://pypi.org/simple" }
@@ -170,6 +294,42 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/4c/5b/b6ce21586237c77ce67d01dc5507039d444b630dd76611bbca2d8e5dcd91/certifi-2025.10.5.tar.gz", hash = "sha256:47c09d31ccf2acf0be3f701ea53595ee7e0b8fa08801c6624be771df09ae7b43", size = 164519, upload-time = "2025-10-05T04:12:15.808Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/e4/37/af0d2ef3967ac0d6113837b44a4f0bfe1328c2b9763bd5b1744520e5cfed/certifi-2025.10.5-py3-none-any.whl", hash = "sha256:0f212c2744a9bb6de0c56639a6f68afe01ecd92d91f14ae897c4fe7bbeeef0de", size = 163286, upload-time = "2025-10-05T04:12:14.03Z" },
+]
+
+[[package]]
+name = "cffi"
+version = "2.0.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "pycparser", marker = "implementation_name != 'PyPy' or (extra == 'extra-6-mussel-gigapath' and extra == 'extra-6-mussel-tensorflow-cpu') or (extra == 'extra-6-mussel-gigapath' and extra == 'extra-6-mussel-tensorflow-gpu') or (extra == 'extra-6-mussel-gigapath' and extra == 'extra-6-mussel-torch-cpu') or (extra == 'extra-6-mussel-gigapath' and extra == 'extra-6-mussel-torch-gpu') or (extra == 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-tensorflow-gpu') or (extra == 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-torch-cpu') or (extra == 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-torch-gpu') or (extra == 'extra-6-mussel-tensorflow-gpu' and extra == 'extra-6-mussel-torch-cpu') or (extra == 'extra-6-mussel-tensorflow-gpu' and extra == 'extra-6-mussel-torch-gpu') or (extra == 'extra-6-mussel-torch-cpu' and extra == 'extra-6-mussel-torch-gpu')" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/eb/56/b1ba7935a17738ae8453301356628e8147c79dbb825bcbc73dc7401f9846/cffi-2.0.0.tar.gz", hash = "sha256:44d1b5909021139fe36001ae048dbdde8214afa20200eda0f64c068cac5d5529", size = 523588, upload-time = "2025-09-08T23:24:04.541Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/93/d7/516d984057745a6cd96575eea814fe1edd6646ee6efd552fb7b0921dec83/cffi-2.0.0-cp310-cp310-macosx_10_13_x86_64.whl", hash = "sha256:0cf2d91ecc3fcc0625c2c530fe004f82c110405f101548512cce44322fa8ac44", size = 184283, upload-time = "2025-09-08T23:22:08.01Z" },
+    { url = "https://files.pythonhosted.org/packages/9e/84/ad6a0b408daa859246f57c03efd28e5dd1b33c21737c2db84cae8c237aa5/cffi-2.0.0-cp310-cp310-macosx_11_0_arm64.whl", hash = "sha256:f73b96c41e3b2adedc34a7356e64c8eb96e03a3782b535e043a986276ce12a49", size = 180504, upload-time = "2025-09-08T23:22:10.637Z" },
+    { url = "https://files.pythonhosted.org/packages/50/bd/b1a6362b80628111e6653c961f987faa55262b4002fcec42308cad1db680/cffi-2.0.0-cp310-cp310-manylinux1_i686.manylinux2014_i686.manylinux_2_17_i686.manylinux_2_5_i686.whl", hash = "sha256:53f77cbe57044e88bbd5ed26ac1d0514d2acf0591dd6bb02a3ae37f76811b80c", size = 208811, upload-time = "2025-09-08T23:22:12.267Z" },
+    { url = "https://files.pythonhosted.org/packages/4f/27/6933a8b2562d7bd1fb595074cf99cc81fc3789f6a6c05cdabb46284a3188/cffi-2.0.0-cp310-cp310-manylinux2014_aarch64.manylinux_2_17_aarch64.whl", hash = "sha256:3e837e369566884707ddaf85fc1744b47575005c0a229de3327f8f9a20f4efeb", size = 216402, upload-time = "2025-09-08T23:22:13.455Z" },
+    { url = "https://files.pythonhosted.org/packages/05/eb/b86f2a2645b62adcfff53b0dd97e8dfafb5c8aa864bd0d9a2c2049a0d551/cffi-2.0.0-cp310-cp310-manylinux2014_ppc64le.manylinux_2_17_ppc64le.whl", hash = "sha256:5eda85d6d1879e692d546a078b44251cdd08dd1cfb98dfb77b670c97cee49ea0", size = 203217, upload-time = "2025-09-08T23:22:14.596Z" },
+    { url = "https://files.pythonhosted.org/packages/9f/e0/6cbe77a53acf5acc7c08cc186c9928864bd7c005f9efd0d126884858a5fe/cffi-2.0.0-cp310-cp310-manylinux2014_s390x.manylinux_2_17_s390x.whl", hash = "sha256:9332088d75dc3241c702d852d4671613136d90fa6881da7d770a483fd05248b4", size = 203079, upload-time = "2025-09-08T23:22:15.769Z" },
+    { url = "https://files.pythonhosted.org/packages/98/29/9b366e70e243eb3d14a5cb488dfd3a0b6b2f1fb001a203f653b93ccfac88/cffi-2.0.0-cp310-cp310-manylinux2014_x86_64.manylinux_2_17_x86_64.whl", hash = "sha256:fc7de24befaeae77ba923797c7c87834c73648a05a4bde34b3b7e5588973a453", size = 216475, upload-time = "2025-09-08T23:22:17.427Z" },
+    { url = "https://files.pythonhosted.org/packages/21/7a/13b24e70d2f90a322f2900c5d8e1f14fa7e2a6b3332b7309ba7b2ba51a5a/cffi-2.0.0-cp310-cp310-musllinux_1_2_aarch64.whl", hash = "sha256:cf364028c016c03078a23b503f02058f1814320a56ad535686f90565636a9495", size = 218829, upload-time = "2025-09-08T23:22:19.069Z" },
+    { url = "https://files.pythonhosted.org/packages/60/99/c9dc110974c59cc981b1f5b66e1d8af8af764e00f0293266824d9c4254bc/cffi-2.0.0-cp310-cp310-musllinux_1_2_i686.whl", hash = "sha256:e11e82b744887154b182fd3e7e8512418446501191994dbf9c9fc1f32cc8efd5", size = 211211, upload-time = "2025-09-08T23:22:20.588Z" },
+    { url = "https://files.pythonhosted.org/packages/49/72/ff2d12dbf21aca1b32a40ed792ee6b40f6dc3a9cf1644bd7ef6e95e0ac5e/cffi-2.0.0-cp310-cp310-musllinux_1_2_x86_64.whl", hash = "sha256:8ea985900c5c95ce9db1745f7933eeef5d314f0565b27625d9a10ec9881e1bfb", size = 218036, upload-time = "2025-09-08T23:22:22.143Z" },
+    { url = "https://files.pythonhosted.org/packages/e2/cc/027d7fb82e58c48ea717149b03bcadcbdc293553edb283af792bd4bcbb3f/cffi-2.0.0-cp310-cp310-win32.whl", hash = "sha256:1f72fb8906754ac8a2cc3f9f5aaa298070652a0ffae577e0ea9bd480dc3c931a", size = 172184, upload-time = "2025-09-08T23:22:23.328Z" },
+    { url = "https://files.pythonhosted.org/packages/33/fa/072dd15ae27fbb4e06b437eb6e944e75b068deb09e2a2826039e49ee2045/cffi-2.0.0-cp310-cp310-win_amd64.whl", hash = "sha256:b18a3ed7d5b3bd8d9ef7a8cb226502c6bf8308df1525e1cc676c3680e7176739", size = 182790, upload-time = "2025-09-08T23:22:24.752Z" },
+    { url = "https://files.pythonhosted.org/packages/12/4a/3dfd5f7850cbf0d06dc84ba9aa00db766b52ca38d8b86e3a38314d52498c/cffi-2.0.0-cp311-cp311-macosx_10_13_x86_64.whl", hash = "sha256:b4c854ef3adc177950a8dfc81a86f5115d2abd545751a304c5bcf2c2c7283cfe", size = 184344, upload-time = "2025-09-08T23:22:26.456Z" },
+    { url = "https://files.pythonhosted.org/packages/4f/8b/f0e4c441227ba756aafbe78f117485b25bb26b1c059d01f137fa6d14896b/cffi-2.0.0-cp311-cp311-macosx_11_0_arm64.whl", hash = "sha256:2de9a304e27f7596cd03d16f1b7c72219bd944e99cc52b84d0145aefb07cbd3c", size = 180560, upload-time = "2025-09-08T23:22:28.197Z" },
+    { url = "https://files.pythonhosted.org/packages/b1/b7/1200d354378ef52ec227395d95c2576330fd22a869f7a70e88e1447eb234/cffi-2.0.0-cp311-cp311-manylinux1_i686.manylinux2014_i686.manylinux_2_17_i686.manylinux_2_5_i686.whl", hash = "sha256:baf5215e0ab74c16e2dd324e8ec067ef59e41125d3eade2b863d294fd5035c92", size = 209613, upload-time = "2025-09-08T23:22:29.475Z" },
+    { url = "https://files.pythonhosted.org/packages/b8/56/6033f5e86e8cc9bb629f0077ba71679508bdf54a9a5e112a3c0b91870332/cffi-2.0.0-cp311-cp311-manylinux2014_aarch64.manylinux_2_17_aarch64.whl", hash = "sha256:730cacb21e1bdff3ce90babf007d0a0917cc3e6492f336c2f0134101e0944f93", size = 216476, upload-time = "2025-09-08T23:22:31.063Z" },
+    { url = "https://files.pythonhosted.org/packages/dc/7f/55fecd70f7ece178db2f26128ec41430d8720f2d12ca97bf8f0a628207d5/cffi-2.0.0-cp311-cp311-manylinux2014_ppc64le.manylinux_2_17_ppc64le.whl", hash = "sha256:6824f87845e3396029f3820c206e459ccc91760e8fa24422f8b0c3d1731cbec5", size = 203374, upload-time = "2025-09-08T23:22:32.507Z" },
+    { url = "https://files.pythonhosted.org/packages/84/ef/a7b77c8bdc0f77adc3b46888f1ad54be8f3b7821697a7b89126e829e676a/cffi-2.0.0-cp311-cp311-manylinux2014_s390x.manylinux_2_17_s390x.whl", hash = "sha256:9de40a7b0323d889cf8d23d1ef214f565ab154443c42737dfe52ff82cf857664", size = 202597, upload-time = "2025-09-08T23:22:34.132Z" },
+    { url = "https://files.pythonhosted.org/packages/d7/91/500d892b2bf36529a75b77958edfcd5ad8e2ce4064ce2ecfeab2125d72d1/cffi-2.0.0-cp311-cp311-manylinux2014_x86_64.manylinux_2_17_x86_64.whl", hash = "sha256:8941aaadaf67246224cee8c3803777eed332a19d909b47e29c9842ef1e79ac26", size = 215574, upload-time = "2025-09-08T23:22:35.443Z" },
+    { url = "https://files.pythonhosted.org/packages/44/64/58f6255b62b101093d5df22dcb752596066c7e89dd725e0afaed242a61be/cffi-2.0.0-cp311-cp311-musllinux_1_2_aarch64.whl", hash = "sha256:a05d0c237b3349096d3981b727493e22147f934b20f6f125a3eba8f994bec4a9", size = 218971, upload-time = "2025-09-08T23:22:36.805Z" },
+    { url = "https://files.pythonhosted.org/packages/ab/49/fa72cebe2fd8a55fbe14956f9970fe8eb1ac59e5df042f603ef7c8ba0adc/cffi-2.0.0-cp311-cp311-musllinux_1_2_i686.whl", hash = "sha256:94698a9c5f91f9d138526b48fe26a199609544591f859c870d477351dc7b2414", size = 211972, upload-time = "2025-09-08T23:22:38.436Z" },
+    { url = "https://files.pythonhosted.org/packages/0b/28/dd0967a76aab36731b6ebfe64dec4e981aff7e0608f60c2d46b46982607d/cffi-2.0.0-cp311-cp311-musllinux_1_2_x86_64.whl", hash = "sha256:5fed36fccc0612a53f1d4d9a816b50a36702c28a2aa880cb8a122b3466638743", size = 217078, upload-time = "2025-09-08T23:22:39.776Z" },
+    { url = "https://files.pythonhosted.org/packages/2b/c0/015b25184413d7ab0a410775fdb4a50fca20f5589b5dab1dbbfa3baad8ce/cffi-2.0.0-cp311-cp311-win32.whl", hash = "sha256:c649e3a33450ec82378822b3dad03cc228b8f5963c0c12fc3b1e0ab940f768a5", size = 172076, upload-time = "2025-09-08T23:22:40.95Z" },
+    { url = "https://files.pythonhosted.org/packages/ae/8f/dc5531155e7070361eb1b7e4c1a9d896d0cb21c49f807a6c03fd63fc877e/cffi-2.0.0-cp311-cp311-win_amd64.whl", hash = "sha256:66f011380d0e49ed280c789fbd08ff0d40968ee7b665575489afa95c98196ab5", size = 182820, upload-time = "2025-09-08T23:22:42.463Z" },
+    { url = "https://files.pythonhosted.org/packages/95/5c/1b493356429f9aecfd56bc171285a4c4ac8697f76e9bbbbb105e537853a1/cffi-2.0.0-cp311-cp311-win_arm64.whl", hash = "sha256:c6638687455baf640e37344fe26d37c404db8b80d037c3d29f58fe8d1c3b194d", size = 177635, upload-time = "2025-09-08T23:22:43.623Z" },
 ]
 
 [[package]]
@@ -340,6 +500,56 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/0a/59/ebfb8c677c75605cc27f7122c90313fd2f375ff3c8d19a1694bda74aaa63/contourpy-1.3.3-pp311-pypy311_pp73-manylinux_2_26_aarch64.manylinux_2_28_aarch64.whl", hash = "sha256:70f9aad7de812d6541d29d2bbf8feb22ff7e1c299523db288004e3157ff4674e", size = 302202, upload-time = "2025-07-26T12:02:55.947Z" },
     { url = "https://files.pythonhosted.org/packages/3c/37/21972a15834d90bfbfb009b9d004779bd5a07a0ec0234e5ba8f64d5736f4/contourpy-1.3.3-pp311-pypy311_pp73-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:5ed3657edf08512fc3fe81b510e35c2012fbd3081d2e26160f27ca28affec989", size = 329207, upload-time = "2025-07-26T12:02:57.468Z" },
     { url = "https://files.pythonhosted.org/packages/0c/58/bd257695f39d05594ca4ad60df5bcb7e32247f9951fd09a9b8edb82d1daa/contourpy-1.3.3-pp311-pypy311_pp73-win_amd64.whl", hash = "sha256:3d1a3799d62d45c18bafd41c5fa05120b96a28079f2393af559b843d1a966a77", size = 225315, upload-time = "2025-07-26T12:02:58.801Z" },
+]
+
+[[package]]
+name = "cryptography"
+version = "46.0.3"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "cffi", marker = "platform_python_implementation != 'PyPy' or (extra == 'extra-6-mussel-gigapath' and extra == 'extra-6-mussel-tensorflow-cpu') or (extra == 'extra-6-mussel-gigapath' and extra == 'extra-6-mussel-tensorflow-gpu') or (extra == 'extra-6-mussel-gigapath' and extra == 'extra-6-mussel-torch-cpu') or (extra == 'extra-6-mussel-gigapath' and extra == 'extra-6-mussel-torch-gpu') or (extra == 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-tensorflow-gpu') or (extra == 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-torch-cpu') or (extra == 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-torch-gpu') or (extra == 'extra-6-mussel-tensorflow-gpu' and extra == 'extra-6-mussel-torch-cpu') or (extra == 'extra-6-mussel-tensorflow-gpu' and extra == 'extra-6-mussel-torch-gpu') or (extra == 'extra-6-mussel-torch-cpu' and extra == 'extra-6-mussel-torch-gpu')" },
+    { name = "typing-extensions", marker = "python_full_version < '3.11' or (extra == 'extra-6-mussel-gigapath' and extra == 'extra-6-mussel-tensorflow-cpu') or (extra == 'extra-6-mussel-gigapath' and extra == 'extra-6-mussel-tensorflow-gpu') or (extra == 'extra-6-mussel-gigapath' and extra == 'extra-6-mussel-torch-cpu') or (extra == 'extra-6-mussel-gigapath' and extra == 'extra-6-mussel-torch-gpu') or (extra == 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-tensorflow-gpu') or (extra == 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-torch-cpu') or (extra == 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-torch-gpu') or (extra == 'extra-6-mussel-tensorflow-gpu' and extra == 'extra-6-mussel-torch-cpu') or (extra == 'extra-6-mussel-tensorflow-gpu' and extra == 'extra-6-mussel-torch-gpu') or (extra == 'extra-6-mussel-torch-cpu' and extra == 'extra-6-mussel-torch-gpu')" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/9f/33/c00162f49c0e2fe8064a62cb92b93e50c74a72bc370ab92f86112b33ff62/cryptography-46.0.3.tar.gz", hash = "sha256:a8b17438104fed022ce745b362294d9ce35b4c2e45c1d958ad4a4b019285f4a1", size = 749258, upload-time = "2025-10-15T23:18:31.74Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/1d/42/9c391dd801d6cf0d561b5890549d4b27bafcc53b39c31a817e69d87c625b/cryptography-46.0.3-cp311-abi3-macosx_10_9_universal2.whl", hash = "sha256:109d4ddfadf17e8e7779c39f9b18111a09efb969a301a31e987416a0191ed93a", size = 7225004, upload-time = "2025-10-15T23:16:52.239Z" },
+    { url = "https://files.pythonhosted.org/packages/1c/67/38769ca6b65f07461eb200e85fc1639b438bdc667be02cf7f2cd6a64601c/cryptography-46.0.3-cp311-abi3-manylinux2014_aarch64.manylinux_2_17_aarch64.whl", hash = "sha256:09859af8466b69bc3c27bdf4f5d84a665e0f7ab5088412e9e2ec49758eca5cbc", size = 4296667, upload-time = "2025-10-15T23:16:54.369Z" },
+    { url = "https://files.pythonhosted.org/packages/5c/49/498c86566a1d80e978b42f0d702795f69887005548c041636df6ae1ca64c/cryptography-46.0.3-cp311-abi3-manylinux2014_x86_64.manylinux_2_17_x86_64.whl", hash = "sha256:01ca9ff2885f3acc98c29f1860552e37f6d7c7d013d7334ff2a9de43a449315d", size = 4450807, upload-time = "2025-10-15T23:16:56.414Z" },
+    { url = "https://files.pythonhosted.org/packages/4b/0a/863a3604112174c8624a2ac3c038662d9e59970c7f926acdcfaed8d61142/cryptography-46.0.3-cp311-abi3-manylinux_2_28_aarch64.whl", hash = "sha256:6eae65d4c3d33da080cff9c4ab1f711b15c1d9760809dad6ea763f3812d254cb", size = 4299615, upload-time = "2025-10-15T23:16:58.442Z" },
+    { url = "https://files.pythonhosted.org/packages/64/02/b73a533f6b64a69f3cd3872acb6ebc12aef924d8d103133bb3ea750dc703/cryptography-46.0.3-cp311-abi3-manylinux_2_28_armv7l.manylinux_2_31_armv7l.whl", hash = "sha256:e5bf0ed4490068a2e72ac03d786693adeb909981cc596425d09032d372bcc849", size = 4016800, upload-time = "2025-10-15T23:17:00.378Z" },
+    { url = "https://files.pythonhosted.org/packages/25/d5/16e41afbfa450cde85a3b7ec599bebefaef16b5c6ba4ec49a3532336ed72/cryptography-46.0.3-cp311-abi3-manylinux_2_28_ppc64le.whl", hash = "sha256:5ecfccd2329e37e9b7112a888e76d9feca2347f12f37918facbb893d7bb88ee8", size = 4984707, upload-time = "2025-10-15T23:17:01.98Z" },
+    { url = "https://files.pythonhosted.org/packages/c9/56/e7e69b427c3878352c2fb9b450bd0e19ed552753491d39d7d0a2f5226d41/cryptography-46.0.3-cp311-abi3-manylinux_2_28_x86_64.whl", hash = "sha256:a2c0cd47381a3229c403062f764160d57d4d175e022c1df84e168c6251a22eec", size = 4482541, upload-time = "2025-10-15T23:17:04.078Z" },
+    { url = "https://files.pythonhosted.org/packages/78/f6/50736d40d97e8483172f1bb6e698895b92a223dba513b0ca6f06b2365339/cryptography-46.0.3-cp311-abi3-manylinux_2_34_aarch64.whl", hash = "sha256:549e234ff32571b1f4076ac269fcce7a808d3bf98b76c8dd560e42dbc66d7d91", size = 4299464, upload-time = "2025-10-15T23:17:05.483Z" },
+    { url = "https://files.pythonhosted.org/packages/00/de/d8e26b1a855f19d9994a19c702fa2e93b0456beccbcfe437eda00e0701f2/cryptography-46.0.3-cp311-abi3-manylinux_2_34_ppc64le.whl", hash = "sha256:c0a7bb1a68a5d3471880e264621346c48665b3bf1c3759d682fc0864c540bd9e", size = 4950838, upload-time = "2025-10-15T23:17:07.425Z" },
+    { url = "https://files.pythonhosted.org/packages/8f/29/798fc4ec461a1c9e9f735f2fc58741b0daae30688f41b2497dcbc9ed1355/cryptography-46.0.3-cp311-abi3-manylinux_2_34_x86_64.whl", hash = "sha256:10b01676fc208c3e6feeb25a8b83d81767e8059e1fe86e1dc62d10a3018fa926", size = 4481596, upload-time = "2025-10-15T23:17:09.343Z" },
+    { url = "https://files.pythonhosted.org/packages/15/8d/03cd48b20a573adfff7652b76271078e3045b9f49387920e7f1f631d125e/cryptography-46.0.3-cp311-abi3-musllinux_1_2_aarch64.whl", hash = "sha256:0abf1ffd6e57c67e92af68330d05760b7b7efb243aab8377e583284dbab72c71", size = 4426782, upload-time = "2025-10-15T23:17:11.22Z" },
+    { url = "https://files.pythonhosted.org/packages/fa/b1/ebacbfe53317d55cf33165bda24c86523497a6881f339f9aae5c2e13e57b/cryptography-46.0.3-cp311-abi3-musllinux_1_2_x86_64.whl", hash = "sha256:a04bee9ab6a4da801eb9b51f1b708a1b5b5c9eb48c03f74198464c66f0d344ac", size = 4698381, upload-time = "2025-10-15T23:17:12.829Z" },
+    { url = "https://files.pythonhosted.org/packages/96/92/8a6a9525893325fc057a01f654d7efc2c64b9de90413adcf605a85744ff4/cryptography-46.0.3-cp311-abi3-win32.whl", hash = "sha256:f260d0d41e9b4da1ed1e0f1ce571f97fe370b152ab18778e9e8f67d6af432018", size = 3055988, upload-time = "2025-10-15T23:17:14.65Z" },
+    { url = "https://files.pythonhosted.org/packages/7e/bf/80fbf45253ea585a1e492a6a17efcb93467701fa79e71550a430c5e60df0/cryptography-46.0.3-cp311-abi3-win_amd64.whl", hash = "sha256:a9a3008438615669153eb86b26b61e09993921ebdd75385ddd748702c5adfddb", size = 3514451, upload-time = "2025-10-15T23:17:16.142Z" },
+    { url = "https://files.pythonhosted.org/packages/2e/af/9b302da4c87b0beb9db4e756386a7c6c5b8003cd0e742277888d352ae91d/cryptography-46.0.3-cp311-abi3-win_arm64.whl", hash = "sha256:5d7f93296ee28f68447397bf5198428c9aeeab45705a55d53a6343455dcb2c3c", size = 2928007, upload-time = "2025-10-15T23:17:18.04Z" },
+    { url = "https://files.pythonhosted.org/packages/fd/23/45fe7f376a7df8daf6da3556603b36f53475a99ce4faacb6ba2cf3d82021/cryptography-46.0.3-cp38-abi3-macosx_10_9_universal2.whl", hash = "sha256:cb3d760a6117f621261d662bccc8ef5bc32ca673e037c83fbe565324f5c46936", size = 7218248, upload-time = "2025-10-15T23:17:46.294Z" },
+    { url = "https://files.pythonhosted.org/packages/27/32/b68d27471372737054cbd34c84981f9edbc24fe67ca225d389799614e27f/cryptography-46.0.3-cp38-abi3-manylinux2014_aarch64.manylinux_2_17_aarch64.whl", hash = "sha256:4b7387121ac7d15e550f5cb4a43aef2559ed759c35df7336c402bb8275ac9683", size = 4294089, upload-time = "2025-10-15T23:17:48.269Z" },
+    { url = "https://files.pythonhosted.org/packages/26/42/fa8389d4478368743e24e61eea78846a0006caffaf72ea24a15159215a14/cryptography-46.0.3-cp38-abi3-manylinux2014_x86_64.manylinux_2_17_x86_64.whl", hash = "sha256:15ab9b093e8f09daab0f2159bb7e47532596075139dd74365da52ecc9cb46c5d", size = 4440029, upload-time = "2025-10-15T23:17:49.837Z" },
+    { url = "https://files.pythonhosted.org/packages/5f/eb/f483db0ec5ac040824f269e93dd2bd8a21ecd1027e77ad7bdf6914f2fd80/cryptography-46.0.3-cp38-abi3-manylinux_2_28_aarch64.whl", hash = "sha256:46acf53b40ea38f9c6c229599a4a13f0d46a6c3fa9ef19fc1a124d62e338dfa0", size = 4297222, upload-time = "2025-10-15T23:17:51.357Z" },
+    { url = "https://files.pythonhosted.org/packages/fd/cf/da9502c4e1912cb1da3807ea3618a6829bee8207456fbbeebc361ec38ba3/cryptography-46.0.3-cp38-abi3-manylinux_2_28_armv7l.manylinux_2_31_armv7l.whl", hash = "sha256:10ca84c4668d066a9878890047f03546f3ae0a6b8b39b697457b7757aaf18dbc", size = 4012280, upload-time = "2025-10-15T23:17:52.964Z" },
+    { url = "https://files.pythonhosted.org/packages/6b/8f/9adb86b93330e0df8b3dcf03eae67c33ba89958fc2e03862ef1ac2b42465/cryptography-46.0.3-cp38-abi3-manylinux_2_28_ppc64le.whl", hash = "sha256:36e627112085bb3b81b19fed209c05ce2a52ee8b15d161b7c643a7d5a88491f3", size = 4978958, upload-time = "2025-10-15T23:17:54.965Z" },
+    { url = "https://files.pythonhosted.org/packages/d1/a0/5fa77988289c34bdb9f913f5606ecc9ada1adb5ae870bd0d1054a7021cc4/cryptography-46.0.3-cp38-abi3-manylinux_2_28_x86_64.whl", hash = "sha256:1000713389b75c449a6e979ffc7dcc8ac90b437048766cef052d4d30b8220971", size = 4473714, upload-time = "2025-10-15T23:17:56.754Z" },
+    { url = "https://files.pythonhosted.org/packages/14/e5/fc82d72a58d41c393697aa18c9abe5ae1214ff6f2a5c18ac470f92777895/cryptography-46.0.3-cp38-abi3-manylinux_2_34_aarch64.whl", hash = "sha256:b02cf04496f6576afffef5ddd04a0cb7d49cf6be16a9059d793a30b035f6b6ac", size = 4296970, upload-time = "2025-10-15T23:17:58.588Z" },
+    { url = "https://files.pythonhosted.org/packages/78/06/5663ed35438d0b09056973994f1aec467492b33bd31da36e468b01ec1097/cryptography-46.0.3-cp38-abi3-manylinux_2_34_ppc64le.whl", hash = "sha256:71e842ec9bc7abf543b47cf86b9a743baa95f4677d22baa4c7d5c69e49e9bc04", size = 4940236, upload-time = "2025-10-15T23:18:00.897Z" },
+    { url = "https://files.pythonhosted.org/packages/fc/59/873633f3f2dcd8a053b8dd1d38f783043b5fce589c0f6988bf55ef57e43e/cryptography-46.0.3-cp38-abi3-manylinux_2_34_x86_64.whl", hash = "sha256:402b58fc32614f00980b66d6e56a5b4118e6cb362ae8f3fda141ba4689bd4506", size = 4472642, upload-time = "2025-10-15T23:18:02.749Z" },
+    { url = "https://files.pythonhosted.org/packages/3d/39/8e71f3930e40f6877737d6f69248cf74d4e34b886a3967d32f919cc50d3b/cryptography-46.0.3-cp38-abi3-musllinux_1_2_aarch64.whl", hash = "sha256:ef639cb3372f69ec44915fafcd6698b6cc78fbe0c2ea41be867f6ed612811963", size = 4423126, upload-time = "2025-10-15T23:18:04.85Z" },
+    { url = "https://files.pythonhosted.org/packages/cd/c7/f65027c2810e14c3e7268353b1681932b87e5a48e65505d8cc17c99e36ae/cryptography-46.0.3-cp38-abi3-musllinux_1_2_x86_64.whl", hash = "sha256:3b51b8ca4f1c6453d8829e1eb7299499ca7f313900dd4d89a24b8b87c0a780d4", size = 4686573, upload-time = "2025-10-15T23:18:06.908Z" },
+    { url = "https://files.pythonhosted.org/packages/0a/6e/1c8331ddf91ca4730ab3086a0f1be19c65510a33b5a441cb334e7a2d2560/cryptography-46.0.3-cp38-abi3-win32.whl", hash = "sha256:6276eb85ef938dc035d59b87c8a7dc559a232f954962520137529d77b18ff1df", size = 3036695, upload-time = "2025-10-15T23:18:08.672Z" },
+    { url = "https://files.pythonhosted.org/packages/90/45/b0d691df20633eff80955a0fc7695ff9051ffce8b69741444bd9ed7bd0db/cryptography-46.0.3-cp38-abi3-win_amd64.whl", hash = "sha256:416260257577718c05135c55958b674000baef9a1c7d9e8f306ec60d71db850f", size = 3501720, upload-time = "2025-10-15T23:18:10.632Z" },
+    { url = "https://files.pythonhosted.org/packages/e8/cb/2da4cc83f5edb9c3257d09e1e7ab7b23f049c7962cae8d842bbef0a9cec9/cryptography-46.0.3-cp38-abi3-win_arm64.whl", hash = "sha256:d89c3468de4cdc4f08a57e214384d0471911a3830fcdaf7a8cc587e42a866372", size = 2918740, upload-time = "2025-10-15T23:18:12.277Z" },
+    { url = "https://files.pythonhosted.org/packages/d9/cd/1a8633802d766a0fa46f382a77e096d7e209e0817892929655fe0586ae32/cryptography-46.0.3-pp310-pypy310_pp73-macosx_10_9_x86_64.whl", hash = "sha256:a23582810fedb8c0bc47524558fb6c56aac3fc252cb306072fd2815da2a47c32", size = 3689163, upload-time = "2025-10-15T23:18:13.821Z" },
+    { url = "https://files.pythonhosted.org/packages/4c/59/6b26512964ace6480c3e54681a9859c974172fb141c38df11eadd8416947/cryptography-46.0.3-pp310-pypy310_pp73-win_amd64.whl", hash = "sha256:e7aec276d68421f9574040c26e2a7c3771060bc0cff408bae1dcb19d3ab1e63c", size = 3429474, upload-time = "2025-10-15T23:18:15.477Z" },
+    { url = "https://files.pythonhosted.org/packages/06/8a/e60e46adab4362a682cf142c7dcb5bf79b782ab2199b0dcb81f55970807f/cryptography-46.0.3-pp311-pypy311_pp73-macosx_10_9_x86_64.whl", hash = "sha256:7ce938a99998ed3c8aa7e7272dca1a610401ede816d36d0693907d863b10d9ea", size = 3698132, upload-time = "2025-10-15T23:18:17.056Z" },
+    { url = "https://files.pythonhosted.org/packages/da/38/f59940ec4ee91e93d3311f7532671a5cef5570eb04a144bf203b58552d11/cryptography-46.0.3-pp311-pypy311_pp73-manylinux_2_28_aarch64.whl", hash = "sha256:191bb60a7be5e6f54e30ba16fdfae78ad3a342a0599eb4193ba88e3f3d6e185b", size = 4243992, upload-time = "2025-10-15T23:18:18.695Z" },
+    { url = "https://files.pythonhosted.org/packages/b0/0c/35b3d92ddebfdfda76bb485738306545817253d0a3ded0bfe80ef8e67aa5/cryptography-46.0.3-pp311-pypy311_pp73-manylinux_2_28_x86_64.whl", hash = "sha256:c70cc23f12726be8f8bc72e41d5065d77e4515efae3690326764ea1b07845cfb", size = 4409944, upload-time = "2025-10-15T23:18:20.597Z" },
+    { url = "https://files.pythonhosted.org/packages/99/55/181022996c4063fc0e7666a47049a1ca705abb9c8a13830f074edb347495/cryptography-46.0.3-pp311-pypy311_pp73-manylinux_2_34_aarch64.whl", hash = "sha256:9394673a9f4de09e28b5356e7fff97d778f8abad85c9d5ac4a4b7e25a0de7717", size = 4242957, upload-time = "2025-10-15T23:18:22.18Z" },
+    { url = "https://files.pythonhosted.org/packages/ba/af/72cd6ef29f9c5f731251acadaeb821559fe25f10852f44a63374c9ca08c1/cryptography-46.0.3-pp311-pypy311_pp73-manylinux_2_34_x86_64.whl", hash = "sha256:94cd0549accc38d1494e1f8de71eca837d0509d0d44bf11d158524b0e12cebf9", size = 4409447, upload-time = "2025-10-15T23:18:24.209Z" },
+    { url = "https://files.pythonhosted.org/packages/0d/c3/e90f4a4feae6410f914f8ebac129b9ae7a8c92eb60a638012dde42030a9d/cryptography-46.0.3-pp311-pypy311_pp73-win_amd64.whl", hash = "sha256:6b5063083824e5509fdba180721d55909ffacccc8adbec85268b48439423d78c", size = 3438528, upload-time = "2025-10-15T23:18:26.227Z" },
 ]
 
 [[package]]
@@ -578,7 +788,7 @@ name = "ftfy"
 version = "6.3.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "wcwidth", marker = "extra == 'extra-6-mussel-gigapath' or extra == 'extra-6-mussel-tensorflow-cpu' or extra == 'extra-6-mussel-tensorflow-gpu' or extra == 'extra-6-mussel-torch-cpu' or extra == 'extra-6-mussel-torch-gpu'" },
+    { name = "wcwidth" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/a5/d3/8650919bc3c7c6e90ee3fa7fd618bf373cbbe55dff043bd67353dbb20cd8/ftfy-6.3.1.tar.gz", hash = "sha256:9b3c3d90f84fb267fe64d375a07b7f8912d817cf86009ae134aa03e1819506ec", size = 308927, upload-time = "2024-10-26T00:50:35.149Z" }
 wheels = [
@@ -1065,6 +1275,15 @@ wheels = [
 ]
 
 [[package]]
+name = "isodate"
+version = "0.7.2"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/54/4d/e940025e2ce31a8ce1202635910747e5a87cc3a6a6bb2d00973375014749/isodate-0.7.2.tar.gz", hash = "sha256:4cd1aa0f43ca76f4a6c6c0292a85f40b35ec2e43e315b59f06e6d32171a953e6", size = 29705, upload-time = "2024-10-08T23:04:11.5Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/15/aa/0aca39a37d3c7eb941ba736ede56d689e7be91cab5d9ca846bde3999eba6/isodate-0.7.2-py3-none-any.whl", hash = "sha256:28009937d8031054830160fce6d409ed342816b543597cece116d966c6d99e15", size = 22320, upload-time = "2024-10-08T23:04:09.501Z" },
+]
+
+[[package]]
 name = "isort"
 version = "7.0.0"
 source = { registry = "https://pypi.org/simple" }
@@ -1090,11 +1309,20 @@ name = "jinja2"
 version = "3.1.6"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "markupsafe", marker = "extra == 'extra-6-mussel-gigapath' or extra == 'extra-6-mussel-tensorflow-cpu' or extra == 'extra-6-mussel-tensorflow-gpu' or extra == 'extra-6-mussel-torch-cpu' or extra == 'extra-6-mussel-torch-gpu'" },
+    { name = "markupsafe" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/df/bf/f7da0350254c0ed7c72f3e33cef02e048281fec7ecec5f032d4aac52226b/jinja2-3.1.6.tar.gz", hash = "sha256:0137fb05990d35f1275a587e9aee6d56da821fc83491a0fb838183be43f66d6d", size = 245115, upload-time = "2025-03-05T20:05:02.478Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/62/a1/3d680cbfd5f4b8f15abc1d571870c5fc3e594bb582bc3b64ea099db13e56/jinja2-3.1.6-py3-none-any.whl", hash = "sha256:85ece4451f492d0c13c5dd7c13a64681a86afae63a5f347908daf103ce6d2f67", size = 134899, upload-time = "2025-03-05T20:05:00.369Z" },
+]
+
+[[package]]
+name = "jmespath"
+version = "1.0.1"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/00/2a/e867e8531cf3e36b41201936b7fa7ba7b5702dbef42922193f05c8976cd6/jmespath-1.0.1.tar.gz", hash = "sha256:90261b206d6defd58fdd5e85f478bf633a2901798906be2ad389150c5c60edbe", size = 25843, upload-time = "2022-06-17T18:00:12.224Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/31/b4/b9b800c45527aadd64d5b442f9b932b00648617eb5d63d2c7a6587b7cafc/jmespath-1.0.1-py3-none-any.whl", hash = "sha256:02e2e4cc71b5bcab88332eebf907519190dd9e6e82107fa7f83b1003a6252980", size = 20256, upload-time = "2022-06-17T18:00:10.251Z" },
 ]
 
 [[package]]
@@ -1360,6 +1588,62 @@ wheels = [
 ]
 
 [[package]]
+name = "msal"
+version = "1.34.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "cryptography" },
+    { name = "pyjwt", extra = ["crypto"] },
+    { name = "requests" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/cf/0e/c857c46d653e104019a84f22d4494f2119b4fe9f896c92b4b864b3b045cc/msal-1.34.0.tar.gz", hash = "sha256:76ba83b716ea5a6d75b0279c0ac353a0e05b820ca1f6682c0eb7f45190c43c2f", size = 153961, upload-time = "2025-09-22T23:05:48.989Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/c2/dc/18d48843499e278538890dc709e9ee3dea8375f8be8e82682851df1b48b5/msal-1.34.0-py3-none-any.whl", hash = "sha256:f669b1644e4950115da7a176441b0e13ec2975c29528d8b9e81316023676d6e1", size = 116987, upload-time = "2025-09-22T23:05:47.294Z" },
+]
+
+[[package]]
+name = "msal-extensions"
+version = "1.3.1"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "msal" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/01/99/5d239b6156eddf761a636bded1118414d161bd6b7b37a9335549ed159396/msal_extensions-1.3.1.tar.gz", hash = "sha256:c5b0fd10f65ef62b5f1d62f4251d51cbcaf003fcedae8c91b040a488614be1a4", size = 23315, upload-time = "2025-03-14T23:51:03.902Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/5e/75/bd9b7bb966668920f06b200e84454c8f3566b102183bc55c5473d96cb2b9/msal_extensions-1.3.1-py3-none-any.whl", hash = "sha256:96d3de4d034504e969ac5e85bae8106c8373b5c6568e4c8fa7af2eca9dbe6bca", size = 20583, upload-time = "2025-03-14T23:51:03.016Z" },
+]
+
+[[package]]
+name = "msrest"
+version = "0.7.1"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "azure-core" },
+    { name = "certifi" },
+    { name = "isodate" },
+    { name = "requests" },
+    { name = "requests-oauthlib" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/68/77/8397c8fb8fc257d8ea0fa66f8068e073278c65f05acb17dcb22a02bfdc42/msrest-0.7.1.zip", hash = "sha256:6e7661f46f3afd88b75667b7187a92829924446c7ea1d169be8c4bb7eeb788b9", size = 175332, upload-time = "2022-06-13T22:41:25.111Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/15/cf/f2966a2638144491f8696c27320d5219f48a072715075d168b31d3237720/msrest-0.7.1-py3-none-any.whl", hash = "sha256:21120a810e1233e5e6cc7fe40b474eeb4ec6f757a15d7cf86702c369f9567c32", size = 85384, upload-time = "2022-06-13T22:41:22.42Z" },
+]
+
+[[package]]
+name = "msrestazure"
+version = "0.6.4.post1"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "adal" },
+    { name = "msrest" },
+    { name = "six" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/5d/86/06a086e4ed3523765a1917665257b1828f1bf882130768445f082a4c3484/msrestazure-0.6.4.post1.tar.gz", hash = "sha256:39842007569e8c77885ace5c46e4bf2a9108fcb09b1e6efdf85b6e2c642b55d4", size = 47728, upload-time = "2024-04-10T21:00:51.79Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/c9/7e/620e883def84ae56b8a9da382d960f7f801e37518fe930085cf72c148dae/msrestazure-0.6.4.post1-py2.py3-none-any.whl", hash = "sha256:2264493b086c2a0a82ddf5fd87b35b3fffc443819127fed992ac5028354c151e", size = 40789, upload-time = "2024-04-10T21:00:49.359Z" },
+]
+
+[[package]]
 name = "mussel"
 version = "1.1.1"
 source = { editable = "." }
@@ -1385,6 +1669,13 @@ dependencies = [
 ]
 
 [package.optional-dependencies]
+distributed = [
+    { name = "azure-batch" },
+    { name = "azure-identity" },
+    { name = "azure-storage-blob" },
+    { name = "azure-storage-file-share" },
+    { name = "boto3" },
+]
 gigapath = [
     { name = "fairscale" },
     { name = "flash-attn", version = "2.5.9", source = { url = "https://github.com/mjun0812/flash-attention-prebuild-wheels/releases/download/v0.0.1/flash_attn-2.5.9+cu118torch2.1-cp310-cp310-linux_x86_64.whl" }, marker = "(python_full_version < '3.11' and extra == 'extra-6-mussel-gigapath') or (extra == 'extra-6-mussel-gigapath' and extra == 'extra-6-mussel-tensorflow-cpu') or (extra == 'extra-6-mussel-gigapath' and extra == 'extra-6-mussel-tensorflow-gpu') or (extra == 'extra-6-mussel-gigapath' and extra == 'extra-6-mussel-torch-cpu') or (extra == 'extra-6-mussel-gigapath' and extra == 'extra-6-mussel-torch-gpu') or (extra == 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-tensorflow-gpu') or (extra == 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-torch-cpu') or (extra == 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-torch-gpu') or (extra == 'extra-6-mussel-tensorflow-gpu' and extra == 'extra-6-mussel-torch-cpu') or (extra == 'extra-6-mussel-tensorflow-gpu' and extra == 'extra-6-mussel-torch-gpu') or (extra == 'extra-6-mussel-torch-cpu' and extra == 'extra-6-mussel-torch-gpu')" },
@@ -1455,6 +1746,11 @@ dev = [
 
 [package.metadata]
 requires-dist = [
+    { name = "azure-batch", marker = "extra == 'distributed'" },
+    { name = "azure-identity", marker = "extra == 'distributed'" },
+    { name = "azure-storage-blob", marker = "extra == 'distributed'" },
+    { name = "azure-storage-file-share", marker = "extra == 'distributed'" },
+    { name = "boto3", marker = "extra == 'distributed'" },
     { name = "einops", specifier = ">=0.8.1" },
     { name = "einops-exts", specifier = ">=0.0.4" },
     { name = "fairscale", marker = "extra == 'gigapath'" },
@@ -1513,7 +1809,7 @@ requires-dist = [
     { name = "webdataset", marker = "extra == 'gigapath'" },
     { name = "xformers", marker = "extra == 'gigapath'", specifier = ">=0.0.23,<0.0.24", index = "https://download.pytorch.org/whl/cu118", conflict = { package = "mussel", extra = "gigapath" } },
 ]
-provides-extras = ["tensorflow-gpu", "tensorflow-cpu", "torch-cpu", "torch-gpu", "gigapath"]
+provides-extras = ["tensorflow-gpu", "tensorflow-cpu", "torch-cpu", "torch-gpu", "gigapath", "distributed"]
 
 [package.metadata.requires-dev]
 dev = [
@@ -2171,6 +2467,15 @@ wheels = [
 ]
 
 [[package]]
+name = "oauthlib"
+version = "3.3.1"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/0b/5f/19930f824ffeb0ad4372da4812c50edbd1434f678c90c2733e1188edfc63/oauthlib-3.3.1.tar.gz", hash = "sha256:0f0f8aa759826a193cf66c12ea1af1637f87b9b4622d46e866952bb022e538c9", size = 185918, upload-time = "2025-06-19T22:48:08.269Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/be/9c/92789c596b8df838baa98fa71844d84283302f7604ed565dafe5a6b5041a/oauthlib-3.3.1-py3-none-any.whl", hash = "sha256:88119c938d2b8fb88561af5f6ee0eec8cc8d552b7bb1f712743136eb7523b7a1", size = 160065, upload-time = "2025-06-19T22:48:06.508Z" },
+]
+
+[[package]]
 name = "omegaconf"
 version = "2.3.0"
 source = { registry = "https://pypi.org/simple" }
@@ -2188,13 +2493,13 @@ name = "open-clip-torch"
 version = "3.2.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "ftfy", marker = "extra == 'extra-6-mussel-gigapath' or extra == 'extra-6-mussel-tensorflow-cpu' or extra == 'extra-6-mussel-tensorflow-gpu' or extra == 'extra-6-mussel-torch-cpu' or extra == 'extra-6-mussel-torch-gpu'" },
+    { name = "ftfy" },
     { name = "huggingface-hub", version = "0.19.4", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'extra-6-mussel-tensorflow-gpu' or (extra == 'extra-6-mussel-gigapath' and extra == 'extra-6-mussel-tensorflow-cpu') or (extra == 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-torch-cpu') or (extra == 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-torch-gpu') or (extra == 'extra-6-mussel-torch-cpu' and extra == 'extra-6-mussel-torch-gpu') or (extra == 'extra-6-mussel-gigapath' and extra != 'extra-6-mussel-tensorflow-gpu' and extra == 'extra-6-mussel-torch-cpu') or (extra == 'extra-6-mussel-gigapath' and extra != 'extra-6-mussel-tensorflow-gpu' and extra == 'extra-6-mussel-torch-gpu')" },
     { name = "huggingface-hub", version = "0.20.3", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'extra-6-mussel-gigapath' or (extra == 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-tensorflow-gpu') or (extra == 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-torch-cpu') or (extra == 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-torch-gpu') or (extra == 'extra-6-mussel-tensorflow-gpu' and extra == 'extra-6-mussel-torch-cpu') or (extra == 'extra-6-mussel-tensorflow-gpu' and extra == 'extra-6-mussel-torch-gpu') or (extra == 'extra-6-mussel-torch-cpu' and extra == 'extra-6-mussel-torch-gpu')" },
     { name = "huggingface-hub", version = "0.36.0", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'extra-6-mussel-tensorflow-cpu' or (extra == 'extra-6-mussel-gigapath' and extra == 'extra-6-mussel-tensorflow-gpu') or (extra != 'extra-6-mussel-tensorflow-gpu' and extra == 'extra-6-mussel-torch-cpu') or (extra != 'extra-6-mussel-tensorflow-gpu' and extra == 'extra-6-mussel-torch-gpu') or (extra != 'extra-6-mussel-gigapath' and extra == 'extra-6-mussel-torch-cpu') or (extra != 'extra-6-mussel-gigapath' and extra == 'extra-6-mussel-torch-gpu')" },
-    { name = "regex", marker = "extra == 'extra-6-mussel-gigapath' or extra == 'extra-6-mussel-tensorflow-cpu' or extra == 'extra-6-mussel-tensorflow-gpu' or extra == 'extra-6-mussel-torch-cpu' or extra == 'extra-6-mussel-torch-gpu'" },
-    { name = "safetensors", marker = "extra == 'extra-6-mussel-gigapath' or extra == 'extra-6-mussel-tensorflow-cpu' or extra == 'extra-6-mussel-tensorflow-gpu' or extra == 'extra-6-mussel-torch-cpu' or extra == 'extra-6-mussel-torch-gpu'" },
-    { name = "timm", marker = "extra == 'extra-6-mussel-gigapath' or extra == 'extra-6-mussel-tensorflow-cpu' or extra == 'extra-6-mussel-tensorflow-gpu' or extra == 'extra-6-mussel-torch-cpu' or extra == 'extra-6-mussel-torch-gpu'" },
+    { name = "regex" },
+    { name = "safetensors" },
+    { name = "timm" },
     { name = "torch", version = "2.1.2+cu118", source = { registry = "https://download.pytorch.org/whl/cu118" }, marker = "extra == 'extra-6-mussel-gigapath' or (extra == 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-tensorflow-gpu') or (extra == 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-torch-cpu') or (extra == 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-torch-gpu') or (extra == 'extra-6-mussel-tensorflow-gpu' and extra == 'extra-6-mussel-torch-cpu') or (extra == 'extra-6-mussel-tensorflow-gpu' and extra == 'extra-6-mussel-torch-gpu') or (extra == 'extra-6-mussel-torch-cpu' and extra == 'extra-6-mussel-torch-gpu')" },
     { name = "torch", version = "2.5.1", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "(platform_machine == 'aarch64' and sys_platform == 'linux' and extra == 'extra-6-mussel-tensorflow-cpu') or (platform_machine == 'aarch64' and sys_platform == 'linux' and extra == 'extra-6-mussel-tensorflow-gpu') or (platform_machine == 'aarch64' and sys_platform == 'linux' and extra == 'extra-6-mussel-torch-cpu') or (platform_machine != 'aarch64' and extra == 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-tensorflow-gpu') or (platform_machine != 'aarch64' and extra == 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-torch-cpu') or (platform_machine != 'aarch64' and extra == 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-torch-gpu') or (platform_machine != 'aarch64' and extra == 'extra-6-mussel-tensorflow-gpu' and extra == 'extra-6-mussel-torch-cpu') or (platform_machine != 'aarch64' and extra == 'extra-6-mussel-tensorflow-gpu' and extra == 'extra-6-mussel-torch-gpu') or (platform_machine != 'aarch64' and extra == 'extra-6-mussel-torch-cpu' and extra == 'extra-6-mussel-torch-gpu') or (sys_platform == 'darwin' and extra == 'extra-6-mussel-tensorflow-cpu') or (sys_platform == 'darwin' and extra == 'extra-6-mussel-tensorflow-gpu') or (sys_platform == 'darwin' and extra == 'extra-6-mussel-torch-cpu') or (sys_platform != 'linux' and extra == 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-tensorflow-gpu') or (sys_platform != 'linux' and extra == 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-torch-cpu') or (sys_platform != 'linux' and extra == 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-torch-gpu') or (sys_platform != 'linux' and extra == 'extra-6-mussel-tensorflow-gpu' and extra == 'extra-6-mussel-torch-cpu') or (sys_platform != 'linux' and extra == 'extra-6-mussel-tensorflow-gpu' and extra == 'extra-6-mussel-torch-gpu') or (sys_platform != 'linux' and extra == 'extra-6-mussel-torch-cpu' and extra == 'extra-6-mussel-torch-gpu') or (extra == 'extra-6-mussel-gigapath' and extra == 'extra-6-mussel-tensorflow-cpu') or (extra == 'extra-6-mussel-gigapath' and extra == 'extra-6-mussel-tensorflow-gpu') or (extra == 'extra-6-mussel-gigapath' and extra == 'extra-6-mussel-torch-cpu') or (extra == 'extra-6-mussel-gigapath' and extra == 'extra-6-mussel-torch-gpu')" },
     { name = "torch", version = "2.5.1+cpu", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "(platform_machine != 'aarch64' and sys_platform == 'linux' and extra == 'extra-6-mussel-tensorflow-cpu') or (platform_machine != 'aarch64' and sys_platform == 'linux' and extra == 'extra-6-mussel-tensorflow-gpu') or (platform_machine != 'aarch64' and sys_platform == 'linux' and extra == 'extra-6-mussel-torch-cpu') or (sys_platform != 'darwin' and sys_platform != 'linux' and extra == 'extra-6-mussel-tensorflow-cpu') or (sys_platform != 'darwin' and sys_platform != 'linux' and extra == 'extra-6-mussel-tensorflow-gpu') or (sys_platform != 'darwin' and sys_platform != 'linux' and extra == 'extra-6-mussel-torch-cpu') or (sys_platform == 'darwin' and extra == 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-tensorflow-gpu') or (sys_platform == 'darwin' and extra == 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-torch-cpu') or (sys_platform == 'darwin' and extra == 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-torch-gpu') or (sys_platform == 'darwin' and extra == 'extra-6-mussel-tensorflow-gpu' and extra == 'extra-6-mussel-torch-cpu') or (sys_platform == 'darwin' and extra == 'extra-6-mussel-tensorflow-gpu' and extra == 'extra-6-mussel-torch-gpu') or (sys_platform == 'darwin' and extra == 'extra-6-mussel-torch-cpu' and extra == 'extra-6-mussel-torch-gpu') or (sys_platform == 'linux' and extra == 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-tensorflow-gpu') or (sys_platform == 'linux' and extra == 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-torch-cpu') or (sys_platform == 'linux' and extra == 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-torch-gpu') or (sys_platform == 'linux' and extra == 'extra-6-mussel-tensorflow-gpu' and extra == 'extra-6-mussel-torch-cpu') or (sys_platform == 'linux' and extra == 'extra-6-mussel-tensorflow-gpu' and extra == 'extra-6-mussel-torch-gpu') or (sys_platform == 'linux' and extra == 'extra-6-mussel-torch-cpu' and extra == 'extra-6-mussel-torch-gpu') or (extra == 'extra-6-mussel-gigapath' and extra == 'extra-6-mussel-tensorflow-cpu') or (extra == 'extra-6-mussel-gigapath' and extra == 'extra-6-mussel-tensorflow-gpu') or (extra == 'extra-6-mussel-gigapath' and extra == 'extra-6-mussel-torch-cpu') or (extra == 'extra-6-mussel-gigapath' and extra == 'extra-6-mussel-torch-gpu')" },
@@ -2204,7 +2509,7 @@ dependencies = [
     { name = "torchvision", version = "0.20.1", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "(platform_machine == 'aarch64' and sys_platform == 'linux' and extra == 'extra-6-mussel-tensorflow-cpu') or (platform_machine == 'aarch64' and sys_platform == 'linux' and extra == 'extra-6-mussel-tensorflow-gpu') or (platform_machine == 'aarch64' and sys_platform == 'linux' and extra == 'extra-6-mussel-torch-cpu') or (platform_machine != 'aarch64' and extra == 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-tensorflow-gpu') or (platform_machine != 'aarch64' and extra == 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-torch-cpu') or (platform_machine != 'aarch64' and extra == 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-torch-gpu') or (platform_machine != 'aarch64' and extra == 'extra-6-mussel-tensorflow-gpu' and extra == 'extra-6-mussel-torch-cpu') or (platform_machine != 'aarch64' and extra == 'extra-6-mussel-tensorflow-gpu' and extra == 'extra-6-mussel-torch-gpu') or (platform_machine != 'aarch64' and extra == 'extra-6-mussel-torch-cpu' and extra == 'extra-6-mussel-torch-gpu') or (sys_platform == 'darwin' and extra == 'extra-6-mussel-tensorflow-cpu') or (sys_platform == 'darwin' and extra == 'extra-6-mussel-tensorflow-gpu') or (sys_platform == 'darwin' and extra == 'extra-6-mussel-torch-cpu') or (sys_platform != 'linux' and extra == 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-tensorflow-gpu') or (sys_platform != 'linux' and extra == 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-torch-cpu') or (sys_platform != 'linux' and extra == 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-torch-gpu') or (sys_platform != 'linux' and extra == 'extra-6-mussel-tensorflow-gpu' and extra == 'extra-6-mussel-torch-cpu') or (sys_platform != 'linux' and extra == 'extra-6-mussel-tensorflow-gpu' and extra == 'extra-6-mussel-torch-gpu') or (sys_platform != 'linux' and extra == 'extra-6-mussel-torch-cpu' and extra == 'extra-6-mussel-torch-gpu') or (extra == 'extra-6-mussel-gigapath' and extra == 'extra-6-mussel-tensorflow-cpu') or (extra == 'extra-6-mussel-gigapath' and extra == 'extra-6-mussel-tensorflow-gpu') or (extra == 'extra-6-mussel-gigapath' and extra == 'extra-6-mussel-torch-cpu') or (extra == 'extra-6-mussel-gigapath' and extra == 'extra-6-mussel-torch-gpu')" },
     { name = "torchvision", version = "0.20.1+cpu", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "(platform_machine != 'aarch64' and sys_platform == 'linux' and extra == 'extra-6-mussel-tensorflow-cpu') or (platform_machine != 'aarch64' and sys_platform == 'linux' and extra == 'extra-6-mussel-tensorflow-gpu') or (platform_machine != 'aarch64' and sys_platform == 'linux' and extra == 'extra-6-mussel-torch-cpu') or (sys_platform != 'darwin' and sys_platform != 'linux' and extra == 'extra-6-mussel-tensorflow-cpu') or (sys_platform != 'darwin' and sys_platform != 'linux' and extra == 'extra-6-mussel-tensorflow-gpu') or (sys_platform != 'darwin' and sys_platform != 'linux' and extra == 'extra-6-mussel-torch-cpu') or (sys_platform == 'darwin' and extra == 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-tensorflow-gpu') or (sys_platform == 'darwin' and extra == 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-torch-cpu') or (sys_platform == 'darwin' and extra == 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-torch-gpu') or (sys_platform == 'darwin' and extra == 'extra-6-mussel-tensorflow-gpu' and extra == 'extra-6-mussel-torch-cpu') or (sys_platform == 'darwin' and extra == 'extra-6-mussel-tensorflow-gpu' and extra == 'extra-6-mussel-torch-gpu') or (sys_platform == 'darwin' and extra == 'extra-6-mussel-torch-cpu' and extra == 'extra-6-mussel-torch-gpu') or (sys_platform == 'linux' and extra == 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-tensorflow-gpu') or (sys_platform == 'linux' and extra == 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-torch-cpu') or (sys_platform == 'linux' and extra == 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-torch-gpu') or (sys_platform == 'linux' and extra == 'extra-6-mussel-tensorflow-gpu' and extra == 'extra-6-mussel-torch-cpu') or (sys_platform == 'linux' and extra == 'extra-6-mussel-tensorflow-gpu' and extra == 'extra-6-mussel-torch-gpu') or (sys_platform == 'linux' and extra == 'extra-6-mussel-torch-cpu' and extra == 'extra-6-mussel-torch-gpu') or (extra == 'extra-6-mussel-gigapath' and extra == 'extra-6-mussel-tensorflow-cpu') or (extra == 'extra-6-mussel-gigapath' and extra == 'extra-6-mussel-tensorflow-gpu') or (extra == 'extra-6-mussel-gigapath' and extra == 'extra-6-mussel-torch-cpu') or (extra == 'extra-6-mussel-gigapath' and extra == 'extra-6-mussel-torch-gpu')" },
     { name = "torchvision", version = "0.20.1+cu121", source = { registry = "https://download.pytorch.org/whl/cu121" }, marker = "(extra == 'extra-6-mussel-gigapath' and extra == 'extra-6-mussel-tensorflow-cpu') or (extra == 'extra-6-mussel-gigapath' and extra == 'extra-6-mussel-tensorflow-gpu') or (extra == 'extra-6-mussel-gigapath' and extra == 'extra-6-mussel-torch-cpu') or (extra == 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-tensorflow-gpu') or (extra == 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-torch-cpu') or (extra == 'extra-6-mussel-tensorflow-gpu' and extra == 'extra-6-mussel-torch-cpu') or (extra != 'extra-6-mussel-torch-cpu' and extra == 'extra-6-mussel-torch-gpu') or (extra != 'extra-6-mussel-gigapath' and extra != 'extra-6-mussel-tensorflow-cpu' and extra != 'extra-6-mussel-tensorflow-gpu' and extra == 'extra-6-mussel-torch-gpu')" },
-    { name = "tqdm", marker = "extra == 'extra-6-mussel-gigapath' or extra == 'extra-6-mussel-tensorflow-cpu' or extra == 'extra-6-mussel-tensorflow-gpu' or extra == 'extra-6-mussel-torch-cpu' or extra == 'extra-6-mussel-torch-gpu'" },
+    { name = "tqdm" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/30/46/fb8be250fa7fcfc56fbeb41583645e18d868268f67fbbbeb8ed62a8ff18a/open_clip_torch-3.2.0.tar.gz", hash = "sha256:62b7743012ccc40fb7c64819fa762fba0a13dd74585ac733babe58c2974c2506", size = 1502853, upload-time = "2025-09-21T17:32:08.289Z" }
 wheels = [
@@ -2508,6 +2813,15 @@ wheels = [
 ]
 
 [[package]]
+name = "pycparser"
+version = "2.23"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/fe/cf/d2d3b9f5699fb1e4615c8e32ff220203e43b248e1dfcc6736ad9057731ca/pycparser-2.23.tar.gz", hash = "sha256:78816d4f24add8f10a06d6f05b4d424ad9e96cfebf68a4ddc99c65c0720d00c2", size = 173734, upload-time = "2025-09-09T13:23:47.91Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/a0/e3/59cd50310fc9b59512193629e1984c1f95e5c8ae6e5d8c69532ccc65a7fe/pycparser-2.23-py3-none-any.whl", hash = "sha256:e5c6e8d3fbad53479cab09ac03729e0a9faf2bee3db8208a550daf5af81a5934", size = 118140, upload-time = "2025-09-09T13:23:46.651Z" },
+]
+
+[[package]]
 name = "pydantic"
 version = "2.12.3"
 source = { registry = "https://pypi.org/simple" }
@@ -2587,6 +2901,20 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/b0/77/a5b8c569bf593b0140bde72ea885a803b82086995367bf2037de0159d924/pygments-2.19.2.tar.gz", hash = "sha256:636cb2477cec7f8952536970bc533bc43743542f70392ae026374600add5b887", size = 4968631, upload-time = "2025-06-21T13:39:12.283Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/c7/21/705964c7812476f378728bdf590ca4b771ec72385c533964653c68e86bdc/pygments-2.19.2-py3-none-any.whl", hash = "sha256:86540386c03d588bb81d44bc3928634ff26449851e99741617ecb9037ee5ec0b", size = 1225217, upload-time = "2025-06-21T13:39:07.939Z" },
+]
+
+[[package]]
+name = "pyjwt"
+version = "2.10.1"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/e7/46/bd74733ff231675599650d3e47f361794b22ef3e3770998dda30d3b63726/pyjwt-2.10.1.tar.gz", hash = "sha256:3cc5772eb20009233caf06e9d8a0577824723b44e6648ee0a2aedb6cf9381953", size = 87785, upload-time = "2024-11-28T03:43:29.933Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/61/ad/689f02752eeec26aed679477e80e632ef1b682313be70793d798c1d5fc8f/PyJWT-2.10.1-py3-none-any.whl", hash = "sha256:dcdd193e30abefd5debf142f9adfcdd2b58004e644f25406ffaebd50bd98dacb", size = 22997, upload-time = "2024-11-28T03:43:27.893Z" },
+]
+
+[package.optional-dependencies]
+crypto = [
+    { name = "cryptography" },
 ]
 
 [[package]]
@@ -2879,6 +3207,19 @@ wheels = [
 ]
 
 [[package]]
+name = "requests-oauthlib"
+version = "2.0.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "oauthlib" },
+    { name = "requests" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/42/f2/05f29bc3913aea15eb670be136045bf5c5bbf4b99ecb839da9b422bb2c85/requests-oauthlib-2.0.0.tar.gz", hash = "sha256:b3dffaebd884d8cd778494369603a9e7b58d29111bf6b41bdc2dcd87203af4e9", size = 55650, upload-time = "2024-03-22T20:32:29.939Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/3b/5d/63d4ae3b9daea098d5d6f5da83984853c1bbacd5dc826764b249fe119d24/requests_oauthlib-2.0.0-py2.py3-none-any.whl", hash = "sha256:7dd8a5c40426b779b0868c404bdef9768deccf22749cde15852df527e6269b36", size = 24179, upload-time = "2024-03-22T20:32:28.055Z" },
+]
+
+[[package]]
 name = "rich"
 version = "14.2.0"
 source = { registry = "https://pypi.org/simple" }
@@ -2889,6 +3230,18 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/fb/d2/8920e102050a0de7bfabeb4c4614a49248cf8d5d7a8d01885fbb24dc767a/rich-14.2.0.tar.gz", hash = "sha256:73ff50c7c0c1c77c8243079283f4edb376f0f6442433aecb8ce7e6d0b92d1fe4", size = 219990, upload-time = "2025-10-09T14:16:53.064Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/25/7a/b0178788f8dc6cafce37a212c99565fa1fe7872c70c6c9c1e1a372d9d88f/rich-14.2.0-py3-none-any.whl", hash = "sha256:76bc51fe2e57d2b1be1f96c524b890b816e334ab4c1e45888799bfaab0021edd", size = 243393, upload-time = "2025-10-09T14:16:51.245Z" },
+]
+
+[[package]]
+name = "s3transfer"
+version = "0.14.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "botocore" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/62/74/8d69dcb7a9efe8baa2046891735e5dfe433ad558ae23d9e3c14c633d1d58/s3transfer-0.14.0.tar.gz", hash = "sha256:eff12264e7c8b4985074ccce27a3b38a485bb7f7422cc8046fee9be4983e4125", size = 151547, upload-time = "2025-09-09T19:23:31.089Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/48/f0/ae7ca09223a81a1d890b2557186ea015f6e0502e9b8cb8e1813f1d8cfa4e/s3transfer-0.14.0-py3-none-any.whl", hash = "sha256:ea3b790c7077558ed1f02a3072fb3cb992bbbd253392f4b6e9e8976941c7d456", size = 85712, upload-time = "2025-09-09T19:23:30.041Z" },
 ]
 
 [[package]]
@@ -3145,7 +3498,7 @@ name = "sympy"
 version = "1.13.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "mpmath", marker = "extra == 'extra-6-mussel-gigapath' or extra == 'extra-6-mussel-tensorflow-cpu' or extra == 'extra-6-mussel-tensorflow-gpu' or extra == 'extra-6-mussel-torch-cpu' or extra == 'extra-6-mussel-torch-gpu'" },
+    { name = "mpmath" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/ca/99/5a5b6f19ff9f083671ddf7b9632028436167cd3d33e11015754e41b249a4/sympy-1.13.1.tar.gz", hash = "sha256:9cebf7e04ff162015ce31c9c6c9144daa34a93bd082f54fd8f12deca4f47515f", size = 7533040, upload-time = "2024-07-19T09:26:51.238Z" }
 wheels = [
@@ -3330,8 +3683,8 @@ dependencies = [
     { name = "huggingface-hub", version = "0.19.4", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'extra-6-mussel-tensorflow-gpu' or (extra == 'extra-6-mussel-gigapath' and extra == 'extra-6-mussel-tensorflow-cpu') or (extra == 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-torch-cpu') or (extra == 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-torch-gpu') or (extra == 'extra-6-mussel-torch-cpu' and extra == 'extra-6-mussel-torch-gpu') or (extra == 'extra-6-mussel-gigapath' and extra != 'extra-6-mussel-tensorflow-gpu' and extra == 'extra-6-mussel-torch-cpu') or (extra == 'extra-6-mussel-gigapath' and extra != 'extra-6-mussel-tensorflow-gpu' and extra == 'extra-6-mussel-torch-gpu')" },
     { name = "huggingface-hub", version = "0.20.3", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'extra-6-mussel-gigapath' or (extra == 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-tensorflow-gpu') or (extra == 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-torch-cpu') or (extra == 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-torch-gpu') or (extra == 'extra-6-mussel-tensorflow-gpu' and extra == 'extra-6-mussel-torch-cpu') or (extra == 'extra-6-mussel-tensorflow-gpu' and extra == 'extra-6-mussel-torch-gpu') or (extra == 'extra-6-mussel-torch-cpu' and extra == 'extra-6-mussel-torch-gpu')" },
     { name = "huggingface-hub", version = "0.36.0", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'extra-6-mussel-tensorflow-cpu' or (extra == 'extra-6-mussel-gigapath' and extra == 'extra-6-mussel-tensorflow-gpu') or (extra != 'extra-6-mussel-tensorflow-gpu' and extra == 'extra-6-mussel-torch-cpu') or (extra != 'extra-6-mussel-tensorflow-gpu' and extra == 'extra-6-mussel-torch-gpu') or (extra != 'extra-6-mussel-gigapath' and extra == 'extra-6-mussel-torch-cpu') or (extra != 'extra-6-mussel-gigapath' and extra == 'extra-6-mussel-torch-gpu')" },
-    { name = "pyyaml", marker = "extra == 'extra-6-mussel-gigapath' or extra == 'extra-6-mussel-tensorflow-cpu' or extra == 'extra-6-mussel-tensorflow-gpu' or extra == 'extra-6-mussel-torch-cpu' or extra == 'extra-6-mussel-torch-gpu'" },
-    { name = "safetensors", marker = "extra == 'extra-6-mussel-gigapath' or extra == 'extra-6-mussel-tensorflow-cpu' or extra == 'extra-6-mussel-tensorflow-gpu' or extra == 'extra-6-mussel-torch-cpu' or extra == 'extra-6-mussel-torch-gpu'" },
+    { name = "pyyaml" },
+    { name = "safetensors" },
     { name = "torch", version = "2.1.2+cu118", source = { registry = "https://download.pytorch.org/whl/cu118" }, marker = "extra == 'extra-6-mussel-gigapath' or (extra == 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-tensorflow-gpu') or (extra == 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-torch-cpu') or (extra == 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-torch-gpu') or (extra == 'extra-6-mussel-tensorflow-gpu' and extra == 'extra-6-mussel-torch-cpu') or (extra == 'extra-6-mussel-tensorflow-gpu' and extra == 'extra-6-mussel-torch-gpu') or (extra == 'extra-6-mussel-torch-cpu' and extra == 'extra-6-mussel-torch-gpu')" },
     { name = "torch", version = "2.5.1", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "(platform_machine == 'aarch64' and sys_platform == 'linux' and extra == 'extra-6-mussel-tensorflow-cpu') or (platform_machine == 'aarch64' and sys_platform == 'linux' and extra == 'extra-6-mussel-tensorflow-gpu') or (platform_machine == 'aarch64' and sys_platform == 'linux' and extra == 'extra-6-mussel-torch-cpu') or (platform_machine != 'aarch64' and extra == 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-tensorflow-gpu') or (platform_machine != 'aarch64' and extra == 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-torch-cpu') or (platform_machine != 'aarch64' and extra == 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-torch-gpu') or (platform_machine != 'aarch64' and extra == 'extra-6-mussel-tensorflow-gpu' and extra == 'extra-6-mussel-torch-cpu') or (platform_machine != 'aarch64' and extra == 'extra-6-mussel-tensorflow-gpu' and extra == 'extra-6-mussel-torch-gpu') or (platform_machine != 'aarch64' and extra == 'extra-6-mussel-torch-cpu' and extra == 'extra-6-mussel-torch-gpu') or (sys_platform == 'darwin' and extra == 'extra-6-mussel-tensorflow-cpu') or (sys_platform == 'darwin' and extra == 'extra-6-mussel-tensorflow-gpu') or (sys_platform == 'darwin' and extra == 'extra-6-mussel-torch-cpu') or (sys_platform != 'linux' and extra == 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-tensorflow-gpu') or (sys_platform != 'linux' and extra == 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-torch-cpu') or (sys_platform != 'linux' and extra == 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-torch-gpu') or (sys_platform != 'linux' and extra == 'extra-6-mussel-tensorflow-gpu' and extra == 'extra-6-mussel-torch-cpu') or (sys_platform != 'linux' and extra == 'extra-6-mussel-tensorflow-gpu' and extra == 'extra-6-mussel-torch-gpu') or (sys_platform != 'linux' and extra == 'extra-6-mussel-torch-cpu' and extra == 'extra-6-mussel-torch-gpu') or (extra == 'extra-6-mussel-gigapath' and extra == 'extra-6-mussel-tensorflow-cpu') or (extra == 'extra-6-mussel-gigapath' and extra == 'extra-6-mussel-tensorflow-gpu') or (extra == 'extra-6-mussel-gigapath' and extra == 'extra-6-mussel-torch-cpu') or (extra == 'extra-6-mussel-gigapath' and extra == 'extra-6-mussel-torch-gpu')" },
     { name = "torch", version = "2.5.1+cpu", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "(platform_machine != 'aarch64' and sys_platform == 'linux' and extra == 'extra-6-mussel-tensorflow-cpu') or (platform_machine != 'aarch64' and sys_platform == 'linux' and extra == 'extra-6-mussel-tensorflow-gpu') or (platform_machine != 'aarch64' and sys_platform == 'linux' and extra == 'extra-6-mussel-torch-cpu') or (sys_platform != 'darwin' and sys_platform != 'linux' and extra == 'extra-6-mussel-tensorflow-cpu') or (sys_platform != 'darwin' and sys_platform != 'linux' and extra == 'extra-6-mussel-tensorflow-gpu') or (sys_platform != 'darwin' and sys_platform != 'linux' and extra == 'extra-6-mussel-torch-cpu') or (sys_platform == 'darwin' and extra == 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-tensorflow-gpu') or (sys_platform == 'darwin' and extra == 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-torch-cpu') or (sys_platform == 'darwin' and extra == 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-torch-gpu') or (sys_platform == 'darwin' and extra == 'extra-6-mussel-tensorflow-gpu' and extra == 'extra-6-mussel-torch-cpu') or (sys_platform == 'darwin' and extra == 'extra-6-mussel-tensorflow-gpu' and extra == 'extra-6-mussel-torch-gpu') or (sys_platform == 'darwin' and extra == 'extra-6-mussel-torch-cpu' and extra == 'extra-6-mussel-torch-gpu') or (sys_platform == 'linux' and extra == 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-tensorflow-gpu') or (sys_platform == 'linux' and extra == 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-torch-cpu') or (sys_platform == 'linux' and extra == 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-torch-gpu') or (sys_platform == 'linux' and extra == 'extra-6-mussel-tensorflow-gpu' and extra == 'extra-6-mussel-torch-cpu') or (sys_platform == 'linux' and extra == 'extra-6-mussel-tensorflow-gpu' and extra == 'extra-6-mussel-torch-gpu') or (sys_platform == 'linux' and extra == 'extra-6-mussel-torch-cpu' and extra == 'extra-6-mussel-torch-gpu') or (extra == 'extra-6-mussel-gigapath' and extra == 'extra-6-mussel-tensorflow-cpu') or (extra == 'extra-6-mussel-gigapath' and extra == 'extra-6-mussel-tensorflow-gpu') or (extra == 'extra-6-mussel-gigapath' and extra == 'extra-6-mussel-torch-cpu') or (extra == 'extra-6-mussel-gigapath' and extra == 'extra-6-mussel-torch-gpu')" },
@@ -3898,7 +4251,7 @@ resolution-markers = [
     "python_full_version < '3.11' and platform_machine != 'aarch64' and sys_platform == 'linux'",
 ]
 dependencies = [
-    { name = "filelock", marker = "extra == 'extra-6-mussel-gigapath' or (extra == 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-tensorflow-gpu') or (extra == 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-torch-cpu') or (extra == 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-torch-gpu') or (extra == 'extra-6-mussel-tensorflow-gpu' and extra == 'extra-6-mussel-torch-cpu') or (extra == 'extra-6-mussel-tensorflow-gpu' and extra == 'extra-6-mussel-torch-gpu') or (extra == 'extra-6-mussel-torch-cpu' and extra == 'extra-6-mussel-torch-gpu')" },
+    { name = "filelock", marker = "(platform_machine != 'aarch64' and sys_platform == 'linux' and extra == 'extra-6-mussel-gigapath') or (platform_machine == 'aarch64' and extra == 'extra-6-mussel-gigapath' and extra == 'extra-6-mussel-tensorflow-cpu') or (platform_machine == 'aarch64' and extra == 'extra-6-mussel-gigapath' and extra == 'extra-6-mussel-tensorflow-gpu') or (platform_machine == 'aarch64' and extra == 'extra-6-mussel-gigapath' and extra == 'extra-6-mussel-torch-cpu') or (platform_machine == 'aarch64' and extra == 'extra-6-mussel-gigapath' and extra == 'extra-6-mussel-torch-gpu') or (sys_platform != 'linux' and extra == 'extra-6-mussel-gigapath' and extra == 'extra-6-mussel-tensorflow-cpu') or (sys_platform != 'linux' and extra == 'extra-6-mussel-gigapath' and extra == 'extra-6-mussel-tensorflow-gpu') or (sys_platform != 'linux' and extra == 'extra-6-mussel-gigapath' and extra == 'extra-6-mussel-torch-cpu') or (sys_platform != 'linux' and extra == 'extra-6-mussel-gigapath' and extra == 'extra-6-mussel-torch-gpu') or (sys_platform != 'linux' and extra == 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-tensorflow-gpu') or (sys_platform != 'linux' and extra == 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-torch-cpu') or (sys_platform != 'linux' and extra == 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-torch-gpu') or (sys_platform != 'linux' and extra == 'extra-6-mussel-tensorflow-gpu' and extra == 'extra-6-mussel-torch-cpu') or (sys_platform != 'linux' and extra == 'extra-6-mussel-tensorflow-gpu' and extra == 'extra-6-mussel-torch-gpu') or (sys_platform != 'linux' and extra == 'extra-6-mussel-torch-cpu' and extra == 'extra-6-mussel-torch-gpu') or (extra != 'extra-6-mussel-gigapath' and extra == 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-tensorflow-gpu') or (extra != 'extra-6-mussel-gigapath' and extra == 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-torch-cpu') or (extra != 'extra-6-mussel-gigapath' and extra == 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-torch-gpu') or (extra != 'extra-6-mussel-gigapath' and extra == 'extra-6-mussel-tensorflow-gpu' and extra == 'extra-6-mussel-torch-cpu') or (extra != 'extra-6-mussel-gigapath' and extra == 'extra-6-mussel-tensorflow-gpu' and extra == 'extra-6-mussel-torch-gpu') or (extra != 'extra-6-mussel-gigapath' and extra == 'extra-6-mussel-torch-cpu' and extra == 'extra-6-mussel-torch-gpu')" },
 ]
 wheels = [
     { url = "https://files.pythonhosted.org/packages/4d/22/91a8af421c8a8902dde76e6ef3db01b258af16c53d81e8c0d0dc13900a9e/triton-2.1.0-0-cp310-cp310-manylinux2014_x86_64.manylinux_2_17_x86_64.whl", hash = "sha256:66439923a30d5d48399b08a9eae10370f6c261a5ec864a64983bae63152d39d7", size = 89215103, upload-time = "2023-09-01T07:26:13.625Z" },
