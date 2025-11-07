@@ -177,6 +177,13 @@ class AzureFilesStaging:
         
         # Download from S3 using AWS CLI
         cmd = ["aws", "s3", "cp", s3_path, temp_path]
+        
+        # Add custom endpoint URL if specified
+        endpoint_url = os.environ.get("AWS_ENDPOINT_URL")
+        if endpoint_url:
+            cmd.insert(2, "--endpoint-url")
+            cmd.insert(3, endpoint_url)
+        
         result = subprocess.run(cmd, capture_output=True, text=True)
         
         if result.returncode != 0:

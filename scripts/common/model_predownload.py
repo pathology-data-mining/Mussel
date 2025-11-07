@@ -130,7 +130,13 @@ def upload_models_to_s3(cached_models: Dict[str, str], s3_prefix: str) -> Dict[s
     print(f"[Pre-download] Uploading models to S3: {s3_prefix}")
     
     try:
-        s3_client = boto3.client('s3')
+        # Create S3 client with optional custom endpoint
+        endpoint_url = os.environ.get("AWS_ENDPOINT_URL")
+        if endpoint_url:
+            s3_client = boto3.client('s3', endpoint_url=endpoint_url)
+            print(f"  Using custom S3 endpoint: {endpoint_url}")
+        else:
+            s3_client = boto3.client('s3')
         
         for model_type, local_path in cached_models.items():
             filename = os.path.basename(local_path)

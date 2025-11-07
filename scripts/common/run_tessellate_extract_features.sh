@@ -30,6 +30,7 @@
 #   AWS_ACCESS_KEY_ID - (Optional) AWS access key for S3
 #   AWS_SECRET_ACCESS_KEY - (Optional) AWS secret key for S3
 #   AWS_DEFAULT_REGION - (Optional) AWS region (default: us-east-1)
+#   AWS_ENDPOINT_URL - (Optional) Custom S3 endpoint URL for S3-compatible storage (e.g., MinIO, Ceph)
 
 set -e
 set -o pipefail
@@ -123,7 +124,12 @@ download_from_s3() {
     log "Downloading from S3: $s3_path -> $local_path"
     
     if command -v aws &> /dev/null; then
-        aws s3 cp "$s3_path" "$local_path"
+        local aws_cmd="aws s3 cp"
+        # Add custom endpoint URL if specified
+        if [ -n "$AWS_ENDPOINT_URL" ]; then
+            aws_cmd="aws s3 --endpoint-url $AWS_ENDPOINT_URL cp"
+        fi
+        $aws_cmd "$s3_path" "$local_path"
     else
         log "ERROR: aws CLI not found. Install with: pip install awscli"
         exit 1
@@ -136,7 +142,12 @@ upload_to_s3() {
     log "Uploading to S3: $local_path -> $s3_path"
     
     if command -v aws &> /dev/null; then
-        aws s3 cp "$local_path" "$s3_path"
+        local aws_cmd="aws s3 cp"
+        # Add custom endpoint URL if specified
+        if [ -n "$AWS_ENDPOINT_URL" ]; then
+            aws_cmd="aws s3 --endpoint-url $AWS_ENDPOINT_URL cp"
+        fi
+        $aws_cmd "$local_path" "$s3_path"
     else
         log "ERROR: aws CLI not found. Install with: pip install awscli"
         exit 1
