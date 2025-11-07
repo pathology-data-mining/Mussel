@@ -24,6 +24,7 @@ SENSITIVE_FIELDS: Set[str] = {
     'batch_account_key',
     'storage_account_key',
     'azure_files_share_name',
+    'azure_storage_account_key',
 }
 
 

@@ -19,9 +19,11 @@ The Azure Batch integration allows you to:
 
 - **`submit_batch_jobs.py`**: Python script to submit jobs to Azure Batch
 - **`run_tessellate_extract_features.sh`**: Bash script that runs on Azure Batch compute nodes
-- **`config_template.json`**: Template for batch job configuration
 - **`manifest_template.csv`**: Template for CSV slide manifest
+- **`config_template.json`**: Deprecated template (use YAML configs with CSV manifests instead)
 - **`README.md`**: This file
+
+For configuration examples, see `examples/batch_params_azure_example.yaml` in the repository root.
 
 ## Prerequisites
 
@@ -77,6 +79,45 @@ The scripts use the Mussel Docker image. The default image is `mskmind/mussel:la
 
 ## Quick Start
 
+### Credential Management
+
+Azure Batch and AWS credentials can be provided in three ways (in order of priority):
+
+1. **Command-line arguments** (highest priority)
+2. **Environment variables**
+3. **Configuration file** (lowest priority)
+
+**Environment variables supported:**
+- `AZURE_BATCH_ACCOUNT_NAME` - Azure Batch account name
+- `AZURE_BATCH_ACCOUNT_KEY` - Azure Batch account key
+- `AZURE_BATCH_ACCOUNT_URL` - Azure Batch account URL
+- `AZURE_STORAGE_ACCOUNT_NAME` - Azure Storage account name
+- `AZURE_STORAGE_ACCOUNT_KEY` - Azure Storage account key
+- `AWS_ACCESS_KEY_ID` - AWS access key ID for S3
+- `AWS_SECRET_ACCESS_KEY` - AWS secret access key for S3
+- `AWS_DEFAULT_REGION` or `AWS_REGION` - AWS region
+- `AWS_ENDPOINT_URL` - Custom S3 endpoint URL
+- `HF_TOKEN` - HuggingFace token for model downloads
+
+**Example using environment variables:**
+```bash
+export AZURE_BATCH_ACCOUNT_NAME=mybatchaccount
+export AZURE_BATCH_ACCOUNT_KEY=<your-batch-key>
+export AZURE_BATCH_ACCOUNT_URL=https://mybatchaccount.eastus.batch.azure.com
+export AWS_ACCESS_KEY_ID=<your-aws-key>
+export AWS_SECRET_ACCESS_KEY=<your-aws-secret>
+
+# No need to pass credentials on command line
+python scripts/azure_batch/submit_batch_jobs.py \
+  --pool-id mussel-pool \
+  --create-pool \
+  --job-id mussel-job-001 \
+  --create-job \
+  --csv-manifest manifest.csv \
+  --output-s3-prefix s3://my-bucket/results/ \
+  --monitor
+```
+
 ### Single Task Submission
 
 Submit a single slide for processing:
@@ -97,50 +138,48 @@ python scripts/azure_batch/submit_batch_jobs.py \
   --monitor
 ```
 
-### Batch Processing with Configuration File
+### Batch Processing with CSV Manifest and Configuration File
 
-For processing multiple slides, create a configuration file:
+For processing multiple slides, use a CSV manifest with a configuration file for default parameters.
 
-```json
-{
-  "defaults": {
-    "prefilter_model_type": "CTRANSPATH",
-    "segment_threshold": 0,
-    "patch_size": 256,
-    "mpp": 0.5,
-    "num_workers": 4,
-    "batch_size": 64,
-    "use_gpu": true
-  },
-  "tasks": [
-    {
-      "task_id": "slide_001",
-      "slide_path": "/mnt/data/slides/slide_001.svs",
-      "output_h5_path": "/mnt/output/slide_001_features.h5",
-      "output_pt_path": "/mnt/output/slide_001_features.pt"
-    },
-    {
-      "task_id": "slide_002",
-      "slide_path": "/mnt/data/slides/slide_002.svs",
-      "output_h5_path": "/mnt/output/slide_002_features.h5",
-      "output_pt_path": "/mnt/output/slide_002_features.pt"
-    }
-  ]
-}
+**Configuration file (config.yaml):**
+```yaml
+# Processing parameters
+prefilter_model_type: CTRANSPATH
+batch_size: 64
+num_workers: 4
+patch_size: 256
+mpp: 0.5
+use_gpu: true
+
+# Azure Batch configuration
+azure:
+  batch_account_name: mybatchaccount
+  batch_account_url: https://mybatchaccount.eastus.batch.azure.com
+  pool_id: mussel-pool
+  create_pool: true
+  create_job: true
 ```
 
-Submit the batch:
+**CSV manifest (manifest.csv):**
+```csv
+slide_id,slide_path
+slide_001,/mnt/data/slides/slide_001.svs
+slide_002,/mnt/data/slides/slide_002.svs
+slide_003,/mnt/data/slides/slide_003.svs
+```
+
+Submit with configuration file:
 
 ```bash
+# Credentials can be provided via environment variables or command-line
+export AZURE_BATCH_ACCOUNT_KEY=<your-batch-key>
+
 python scripts/azure_batch/submit_batch_jobs.py \
-  --batch-account-name mybatchaccount \
-  --batch-account-key <your-batch-key> \
-  --batch-account-url https://mybatchaccount.eastus.batch.azure.com \
-  --pool-id mussel-pool \
-  --create-pool \
+  --config config.yaml \
+  --csv-manifest manifest.csv \
   --job-id mussel-job-002 \
-  --create-job \
-  --config-file tasks.json \
+  --output-dir /mnt/output \
   --monitor
 ```
 

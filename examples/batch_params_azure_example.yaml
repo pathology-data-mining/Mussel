@@ -30,6 +30,13 @@ aws:
 
 # Azure Batch-specific parameters (optional, for Azure Batch-only settings)
 azure:
+  # Azure Batch account configuration
+  # Note: For security, credentials (batch_account_key, storage_account_key) should be 
+  # provided via environment variables or command-line, not in the config file
+  batch_account_name: "mybatchaccount"  # Or set AZURE_BATCH_ACCOUNT_NAME env var
+  batch_account_url: "https://mybatchaccount.eastus.batch.azure.com"  # Or set AZURE_BATCH_ACCOUNT_URL env var
+  # batch_account_key: "..."  # Use AZURE_BATCH_ACCOUNT_KEY env var instead
+  
   # Pool and job identifiers (optional, will be auto-generated if not specified)
   pool_id: "mussel-pool"  # Pool ID for batch processing
   job_id: "mussel-job-001"  # Job ID for this batch run
@@ -42,8 +49,8 @@ azure:
   container_image: "mskmind/mussel:latest-torch-gpu"
   
   # Azure Storage account for staging files (optional)
-  storage_account_name: "mystorageaccount"
-  # Note: storage_account_key should be provided via command-line for security
+  storage_account_name: "mystorageaccount"  # Or set AZURE_STORAGE_ACCOUNT_NAME env var
+  # storage_account_key: "..."  # Use AZURE_STORAGE_ACCOUNT_KEY env var instead
   
   # Azure Files configuration (optional)
   azure_files_share_name: "mussel-staging"  # Azure Files share for staging
@@ -59,5 +66,9 @@ azure:
   # max_node_count: 10
   # auto_scale_evaluation_interval: 15  # minutes
 
-# Note: Sensitive fields like AWS credentials and storage keys should be provided 
-# via command-line, not in the config file for security
+# Note: Sensitive credentials should be provided via environment variables:
+# - AZURE_BATCH_ACCOUNT_KEY
+# - AZURE_STORAGE_ACCOUNT_KEY
+# - AWS_ACCESS_KEY_ID
+# - AWS_SECRET_ACCESS_KEY
+# - HF_TOKEN

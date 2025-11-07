@@ -499,80 +499,6 @@ class AzureBatchJobSubmitter:
             print(f"Error submitting task: {e}")
             raise
 
-    def submit_tasks_from_config(
-        self,
-        job_id: str,
-        config_file: str,
-        container_image: str = "mskmind/mussel:latest-torch-gpu",
-    ) -> None:
-        """Submit multiple tasks from a configuration file (JSON or YAML)."""
-        print(f"Loading task configuration from '{config_file}'...")
-
-        # Use config loader to support both JSON and YAML
-        if load_config:
-            config = load_config(config_file)
-        else:
-            # Fallback to JSON only
-            with open(config_file, 'r') as f:
-                config = json.load(f)
-
-        tasks = config.get("tasks", [])
-        defaults = config.get("defaults", {})
-
-        print(f"Submitting {len(tasks)} tasks...")
-
-        for i, task_config in enumerate(tasks):
-            # Merge with defaults
-            merged_config = {**defaults, **task_config}
-
-            task_id = merged_config.get("task_id", f"task_{i}")
-            
-            # Normalize empty string to None for intermediate_h5_path
-            intermediate_h5_path = merged_config.get("intermediate_h5_path") or None
-
-            self.submit_task(
-                job_id=job_id,
-                task_id=task_id,
-                slide_path=merged_config["slide_path"],
-                output_h5_path=merged_config["output_h5_path"],
-                output_pt_path=merged_config["output_pt_path"],
-                intermediate_h5_path=intermediate_h5_path,
-                aggregation_method=merged_config.get("aggregation_method", "identity"),
-                slide_model_type=merged_config.get("slide_model_type"),
-                classifier_pkl=merged_config.get("classifier_pkl"),
-                classifier_threshold=merged_config.get("classifier_threshold", 0.75),
-                prefilter_model_type=merged_config.get("prefilter_model_type", "CTRANSPATH"),
-                postfilter_model_type=merged_config.get("postfilter_model_type"),
-                seg_config_group=merged_config.get("seg_config_group"),
-                segment_threshold=merged_config.get("segment_threshold"),
-                patch_size=merged_config.get("patch_size"),
-                step_size=merged_config.get("step_size"),
-                mpp=merged_config.get("mpp"),
-                seg_level=merged_config.get("seg_level"),
-                segment_max_value=merged_config.get("segment_max_value"),
-                median_blur_ksize=merged_config.get("median_blur_ksize"),
-                morphology_ex_kernel=merged_config.get("morphology_ex_kernel"),
-                ref_patch_size=merged_config.get("ref_patch_size"),
-                use_otsu=merged_config.get("use_otsu"),
-                tissue_area_threshold=merged_config.get("tissue_area_threshold"),
-                hole_area_threshold=merged_config.get("hole_area_threshold"),
-                max_num_holes=merged_config.get("max_num_holes"),
-                num_workers=merged_config.get("num_workers", 4),
-                batch_size=merged_config.get("batch_size", 64),
-                use_gpu=merged_config.get("use_gpu", True),
-                keep_intermediate_files=merged_config.get("keep_intermediate_files", False),
-                hf_token=merged_config.get("hf_token"),
-                aws_access_key_id=merged_config.get("aws_access_key_id"),
-                aws_secret_access_key=merged_config.get("aws_secret_access_key"),
-                aws_region=merged_config.get("aws_region"),
-                max_retry_count=merged_config.get("max_retry_count", 3),
-                container_image=container_image,
-            )
-            
-            # Store task configuration in metadata (excluding secrets)
-            if add_config_to_metadata:
-                add_config_to_metadata(self.task_metadata, merged_config, task_id)
-
     def stage_and_submit_tasks_from_csv(
         self,
         job_id: str,
@@ -1194,12 +1120,12 @@ def main():
         description="Submit tessellate-extract-features jobs to Azure Batch"
     )
     
-    # Azure credentials
-    parser.add_argument("--batch-account-name", required=True, help="Azure Batch account name")
-    parser.add_argument("--batch-account-key", required=True, help="Azure Batch account key")
-    parser.add_argument("--batch-account-url", required=True, help="Azure Batch account URL")
-    parser.add_argument("--storage-account-name", help="Azure Storage account name (optional)")
-    parser.add_argument("--storage-account-key", help="Azure Storage account key (optional)")
+    # Azure credentials (can be provided via command-line, environment variables, or config file)
+    parser.add_argument("--batch-account-name", help="Azure Batch account name (or set AZURE_BATCH_ACCOUNT_NAME env var)")
+    parser.add_argument("--batch-account-key", help="Azure Batch account key (or set AZURE_BATCH_ACCOUNT_KEY env var)")
+    parser.add_argument("--batch-account-url", help="Azure Batch account URL (or set AZURE_BATCH_ACCOUNT_URL env var)")
+    parser.add_argument("--storage-account-name", help="Azure Storage account name (optional, or set AZURE_STORAGE_ACCOUNT_NAME env var)")
+    parser.add_argument("--storage-account-key", help="Azure Storage account key (optional, or set AZURE_STORAGE_ACCOUNT_KEY env var)")
     
     # Azure Files staging configuration
     parser.add_argument("--azure-files-share-name", help="Azure Files share name for staging files")
@@ -1261,11 +1187,14 @@ def main():
     parser.add_argument("--output-h5-path", help="Output H5 path (for single task, can be s3://)")
     parser.add_argument("--output-pt-path", help="Output PT path (for single task, can be s3://)")
     
-    # AWS credentials for S3 access
-    parser.add_argument("--aws-access-key-id", help="AWS access key ID for S3")
-    parser.add_argument("--aws-secret-access-key", help="AWS secret access key for S3")
-    parser.add_argument("--aws-region", default="us-east-1", help="AWS region")
-    parser.add_argument("--aws-endpoint-url", help="Custom S3 endpoint URL (e.g., for MinIO or Ceph)")
+    # AWS credentials for S3 access (can be provided via command-line, environment variables, or config file)
+    parser.add_argument("--aws-access-key-id", help="AWS access key ID for S3 (or set AWS_ACCESS_KEY_ID env var)")
+    parser.add_argument("--aws-secret-access-key", help="AWS secret access key for S3 (or set AWS_SECRET_ACCESS_KEY env var)")
+    parser.add_argument("--aws-region", default="us-east-1", help="AWS region (or set AWS_DEFAULT_REGION env var)")
+    parser.add_argument("--aws-endpoint-url", help="Custom S3 endpoint URL (e.g., for MinIO or Ceph, or set AWS_ENDPOINT_URL env var)")
+    
+    # HuggingFace token for model downloads (can be provided via command-line, environment variables, or config file)
+    parser.add_argument("--hf-token", help="HuggingFace token for model downloads (or set HF_TOKEN env var)")
     
     # Model pre-download configuration
     parser.add_argument("--pre-download-models", action="store_true", default=True,
@@ -1302,6 +1231,60 @@ def main():
         except Exception as e:
             print(f"WARNING: Failed to load config file: {e}")
             config_defaults = {}
+    
+    # Priority order for credentials: CLI args > Environment variables > Config file
+    # This allows flexible credential management for CI/CD and local development
+    
+    # Azure Batch credentials
+    if not args.batch_account_name:
+        args.batch_account_name = os.environ.get('AZURE_BATCH_ACCOUNT_NAME') or config_defaults.get('batch_account_name')
+    
+    if not args.batch_account_key:
+        args.batch_account_key = os.environ.get('AZURE_BATCH_ACCOUNT_KEY') or config_defaults.get('batch_account_key')
+    
+    if not args.batch_account_url:
+        args.batch_account_url = os.environ.get('AZURE_BATCH_ACCOUNT_URL') or config_defaults.get('batch_account_url')
+    
+    # Azure Storage credentials
+    if not args.storage_account_name:
+        args.storage_account_name = os.environ.get('AZURE_STORAGE_ACCOUNT_NAME') or config_defaults.get('storage_account_name')
+    
+    if not args.storage_account_key:
+        args.storage_account_key = os.environ.get('AZURE_STORAGE_ACCOUNT_KEY') or config_defaults.get('storage_account_key')
+    
+    # AWS credentials for S3 access
+    if not args.aws_access_key_id:
+        args.aws_access_key_id = os.environ.get('AWS_ACCESS_KEY_ID') or config_defaults.get('aws_access_key_id')
+    
+    if not args.aws_secret_access_key:
+        args.aws_secret_access_key = os.environ.get('AWS_SECRET_ACCESS_KEY') or config_defaults.get('aws_secret_access_key')
+    
+    if args.aws_region == "us-east-1":  # Check if it's the default value
+        env_region = os.environ.get('AWS_DEFAULT_REGION') or os.environ.get('AWS_REGION')
+        if env_region:
+            args.aws_region = env_region
+        elif 'aws_region' in config_defaults:
+            args.aws_region = config_defaults['aws_region']
+    
+    if not args.aws_endpoint_url:
+        args.aws_endpoint_url = os.environ.get('AWS_ENDPOINT_URL') or config_defaults.get('aws_endpoint_url')
+    
+    # HuggingFace token
+    if not args.hf_token:
+        args.hf_token = os.environ.get('HF_TOKEN') or config_defaults.get('hf_token')
+    
+    # Validate required credentials
+    if not args.batch_account_name:
+        print("ERROR: --batch-account-name is required (or set AZURE_BATCH_ACCOUNT_NAME env var or specify in config file)")
+        sys.exit(1)
+    
+    if not args.batch_account_key:
+        print("ERROR: --batch-account-key is required (or set AZURE_BATCH_ACCOUNT_KEY env var or specify in config file)")
+        sys.exit(1)
+    
+    if not args.batch_account_url:
+        print("ERROR: --batch-account-url is required (or set AZURE_BATCH_ACCOUNT_URL env var or specify in config file)")
+        sys.exit(1)
     
     # Apply Azure-specific parameters from config file if provided
     # Command-line arguments take precedence over config file values
@@ -1512,20 +1495,12 @@ def main():
         submitter.create_job(job_id=args.job_id, pool_id=args.pool_id)
 
     # Submit tasks
-    # Handle three cases:
-    # 1. Config file only (with tasks defined in config)
-    # 2. CSV manifest only (parameters from command line)
-    # 3. Both CSV manifest and config file (slides from CSV, parameters from config)
+    # Handle two cases:
+    # 1. CSV manifest (with or without config file for parameters)
+    # 2. Single task submission
     
-    if args.config_file and not args.csv_manifest:
-        # Case 1: Config file with task definitions
-        submitter.submit_tasks_from_config(
-            job_id=args.job_id,
-            config_file=args.config_file,
-            container_image=args.container_image,
-        )
-    elif args.csv_manifest:
-        # Case 2 & 3: CSV manifest (with or without config file for parameters)
+    if args.csv_manifest:
+        # CSV manifest (with or without config file for parameters)
         
         # Prepare default parameters for CSV tasks
         # config_defaults is already loaded above
@@ -1544,6 +1519,8 @@ def main():
             default_params['aws_secret_access_key'] = args.aws_secret_access_key
         if args.aws_region:
             default_params['aws_region'] = args.aws_region
+        if args.hf_token:
+            default_params['hf_token'] = args.hf_token
         if args.max_retry_count is not None:
             default_params['max_retry_count'] = args.max_retry_count
         
@@ -1625,12 +1602,13 @@ def main():
             aws_access_key_id=args.aws_access_key_id,
             aws_secret_access_key=args.aws_secret_access_key,
             aws_region=args.aws_region,
+            hf_token=args.hf_token,
             max_retry_count=args.max_retry_count,
             container_image=args.container_image,
             **task_model_paths,
         )
     else:
-        print("ERROR: Must specify either --config-file (with tasks), --csv-manifest, or --task-id with --slide-path")
+        print("ERROR: Must specify either --csv-manifest or --task-id with --slide-path")
         sys.exit(1)
 
     # Monitor if requested
