@@ -124,12 +124,12 @@ download_from_s3() {
     log "Downloading from S3: $s3_path -> $local_path"
     
     if command -v aws &> /dev/null; then
-        local aws_cmd="aws s3 cp"
         # Add custom endpoint URL if specified
         if [ -n "$AWS_ENDPOINT_URL" ]; then
-            aws_cmd="aws s3 --endpoint-url $AWS_ENDPOINT_URL cp"
+            aws s3 --endpoint-url "$AWS_ENDPOINT_URL" cp "$s3_path" "$local_path"
+        else
+            aws s3 cp "$s3_path" "$local_path"
         fi
-        $aws_cmd "$s3_path" "$local_path"
     else
         log "ERROR: aws CLI not found. Install with: pip install awscli"
         exit 1
@@ -142,12 +142,12 @@ upload_to_s3() {
     log "Uploading to S3: $local_path -> $s3_path"
     
     if command -v aws &> /dev/null; then
-        local aws_cmd="aws s3 cp"
         # Add custom endpoint URL if specified
         if [ -n "$AWS_ENDPOINT_URL" ]; then
-            aws_cmd="aws s3 --endpoint-url $AWS_ENDPOINT_URL cp"
+            aws s3 --endpoint-url "$AWS_ENDPOINT_URL" cp "$local_path" "$s3_path"
+        else
+            aws s3 cp "$local_path" "$s3_path"
         fi
-        $aws_cmd "$local_path" "$s3_path"
     else
         log "ERROR: aws CLI not found. Install with: pip install awscli"
         exit 1

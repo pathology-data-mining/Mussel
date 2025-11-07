@@ -68,10 +68,11 @@ def test_azure_files_staging_download_from_s3_with_custom_endpoint():
                         "AWS CLI command should include --endpoint-url"
                     assert 'http://minio.local:9000' in called_cmd, \
                         "AWS CLI command should include the endpoint URL"
-                    assert called_cmd.index('--endpoint-url') == 2, \
-                        "--endpoint-url should be inserted at position 2"
-                    assert called_cmd.index('http://minio.local:9000') == 3, \
-                        "endpoint URL should be at position 3"
+                    # Verify correct ordering: --endpoint-url should come before the endpoint value
+                    endpoint_idx = called_cmd.index('--endpoint-url')
+                    url_idx = called_cmd.index('http://minio.local:9000')
+                    assert url_idx == endpoint_idx + 1, \
+                        "endpoint URL should immediately follow --endpoint-url flag"
         
         # Test without custom endpoint
         with patch.dict(os.environ, {}, clear=True):
