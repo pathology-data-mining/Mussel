@@ -1168,16 +1168,23 @@ def main():
                         help="Clean up staged files from Azure Files after processing")
     
     # Pool configuration
-    parser.add_argument("--pool-id", required=True, help="Pool ID")
+    parser.add_argument("--pool-id", help="Pool ID (can be specified in config file)")
     parser.add_argument("--create-pool", action="store_true", help="Create pool if it doesn't exist")
-    parser.add_argument("--vm-size", default="Standard_NC6s_v3", help="VM size for pool nodes")
-    parser.add_argument("--node-count", type=int, default=1, 
+    
+    # Default values for pool parameters (used for detecting if config should override)
+    DEFAULT_VM_SIZE = "Standard_NC6s_v3"
+    DEFAULT_NODE_COUNT = 1
+    DEFAULT_CONTAINER_IMAGE = "mskmind/mussel:latest-torch-gpu"
+    DEFAULT_AUTO_SCALE_INTERVAL = 15
+    
+    parser.add_argument("--vm-size", default=DEFAULT_VM_SIZE, help="VM size for pool nodes")
+    parser.add_argument("--node-count", type=int, default=DEFAULT_NODE_COUNT, 
                         help="Number of nodes in pool (or initial/min count for auto-scaling)")
     parser.add_argument("--use-gpu", action="store_true", default=True, 
                         help="Enable GPU support for pool nodes (default: True)")
     parser.add_argument("--no-gpu", dest="use_gpu", action="store_false",
                         help="Disable GPU support for pool nodes")
-    parser.add_argument("--container-image", default="mskmind/mussel:latest-torch-gpu", 
+    parser.add_argument("--container-image", default=DEFAULT_CONTAINER_IMAGE, 
                         help="Docker container image")
     parser.add_argument("--enable-auto-scale", action="store_true",
                         help="Enable auto-scaling based on pending tasks")
@@ -1185,11 +1192,11 @@ def main():
                         help="Minimum number of nodes for auto-scaling (defaults to --node-count)")
     parser.add_argument("--max-node-count", type=int,
                         help="Maximum number of nodes for auto-scaling (required if --enable-auto-scale)")
-    parser.add_argument("--auto-scale-evaluation-interval", type=int, default=15,
+    parser.add_argument("--auto-scale-evaluation-interval", type=int, default=DEFAULT_AUTO_SCALE_INTERVAL,
                         help="Auto-scale evaluation interval in minutes (default: 15)")
     
     # Job configuration
-    parser.add_argument("--job-id", required=True, help="Job ID")
+    parser.add_argument("--job-id", help="Job ID (can be specified in config file)")
     parser.add_argument("--create-job", action="store_true", help="Create job")
     
     # Task configuration
@@ -1252,6 +1259,71 @@ def main():
         except Exception as e:
             print(f"WARNING: Failed to load config file: {e}")
             config_defaults = {}
+    
+    # Apply Azure-specific parameters from config file if provided
+    # Command-line arguments take precedence over config file values
+    if config_defaults:
+        # Pool and job IDs
+        if not args.pool_id and 'pool_id' in config_defaults:
+            args.pool_id = config_defaults['pool_id']
+        
+        if not args.job_id and 'job_id' in config_defaults:
+            args.job_id = config_defaults['job_id']
+        
+        # Storage account parameters
+        if not args.storage_account_name and 'storage_account_name' in config_defaults:
+            args.storage_account_name = config_defaults['storage_account_name']
+        
+        # Azure Files share name
+        if not args.azure_files_share_name and 'azure_files_share_name' in config_defaults:
+            args.azure_files_share_name = config_defaults['azure_files_share_name']
+        
+        # Boolean flags (only set if not already set via command-line)
+        if not args.create_pool and config_defaults.get('create_pool'):
+            args.create_pool = config_defaults['create_pool']
+        
+        if not args.create_job and config_defaults.get('create_job'):
+            args.create_job = config_defaults['create_job']
+        
+        if not args.mount_azure_files and config_defaults.get('mount_azure_files'):
+            args.mount_azure_files = config_defaults['mount_azure_files']
+        
+        # Container image - only override if the default value is still being used
+        if args.container_image == DEFAULT_CONTAINER_IMAGE and 'container_image' in config_defaults:
+            args.container_image = config_defaults['container_image']
+        
+        # VM size - only override if default is being used
+        if args.vm_size == DEFAULT_VM_SIZE and 'vm_size' in config_defaults:
+            args.vm_size = config_defaults['vm_size']
+        
+        # Node count - only override if default is being used
+        if args.node_count == DEFAULT_NODE_COUNT and 'node_count' in config_defaults:
+            args.node_count = config_defaults['node_count']
+        
+        # Auto-scaling parameters
+        if not args.enable_auto_scale and config_defaults.get('enable_auto_scale'):
+            args.enable_auto_scale = config_defaults['enable_auto_scale']
+        
+        if args.min_node_count is None and 'min_node_count' in config_defaults:
+            args.min_node_count = config_defaults['min_node_count']
+        
+        if args.max_node_count is None and 'max_node_count' in config_defaults:
+            args.max_node_count = config_defaults['max_node_count']
+        
+        if args.auto_scale_evaluation_interval == DEFAULT_AUTO_SCALE_INTERVAL and 'auto_scale_evaluation_interval' in config_defaults:
+            args.auto_scale_evaluation_interval = config_defaults['auto_scale_evaluation_interval']
+    
+    # Auto-generate pool_id and job_id if not provided (use same timestamp for consistency)
+    if not args.pool_id or not args.job_id:
+        timestamp = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
+        
+        if not args.pool_id:
+            args.pool_id = f"mussel-pool-{timestamp}"
+            print(f"Auto-generated pool ID: {args.pool_id}")
+        
+        if not args.job_id:
+            args.job_id = f"mussel-job-{timestamp}"
+            print(f"Auto-generated job ID: {args.job_id}")
 
     # Pre-download models if requested and using batch processing
     model_paths = {}
