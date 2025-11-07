@@ -698,7 +698,7 @@ def main():
             try:
                 config_defaults = load_config_defaults(args.config_file_for_csv, backend='condor')
                 prefilter_model = config_defaults.get('prefilter_model_type', prefilter_model)
-            except (FileNotFoundError, ValueError, KeyError, IOError) as e:
+            except (FileNotFoundError, ValueError, KeyError, IOError):
                 # If config loading fails, use default - validation warning will still show
                 pass
         
