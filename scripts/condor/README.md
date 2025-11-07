@@ -21,6 +21,7 @@ HTCondor support enables distributed processing of whole-slide images on HPC clu
 - Access to HTCondor submit node
 - Python 3.7+
 - Mussel environment installed on worker nodes
+- (Optional) For S3 support: Install the `distributed` extra with `uv sync --extra distributed` or `pip install boto3`
 
 ## Quick Start
 
