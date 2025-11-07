@@ -194,6 +194,92 @@ azure:
         os.unlink(config_file)
 
 
+def test_pool_id_and_job_id_from_config():
+    """Test that pool_id and job_id can be loaded from config."""
+    if not HAS_YAML:
+        print("SKIP: test_pool_id_and_job_id_from_config (PyYAML not installed)")
+        return
+    
+    # Create a test config file
+    config_content = """
+azure:
+  pool_id: "test-pool-from-config"
+  job_id: "test-job-from-config"
+  create_pool: true
+  create_job: true
+  azure_files_share_name: "test-share"
+  mount_azure_files: true
+"""
+    
+    with tempfile.NamedTemporaryFile(mode='w', suffix='.yaml', delete=False) as f:
+        f.write(config_content)
+        config_file = f.name
+    
+    try:
+        from config_loader import load_config_defaults
+        
+        import argparse
+        
+        # Simulate command-line without pool_id or job_id
+        parser = argparse.ArgumentParser()
+        parser.add_argument("--config-file")
+        parser.add_argument("--pool-id")
+        parser.add_argument("--job-id")
+        parser.add_argument("--create-pool", action="store_true")
+        parser.add_argument("--create-job", action="store_true")
+        parser.add_argument("--azure-files-share-name")
+        parser.add_argument("--mount-azure-files", action="store_true")
+        
+        args = parser.parse_args([
+            '--config-file', config_file,
+        ])
+        
+        # Load config and apply Azure parameters
+        config_defaults = load_config_defaults(config_file, backend='azure')
+        
+        # Apply config parameters
+        if not args.pool_id and 'pool_id' in config_defaults:
+            args.pool_id = config_defaults['pool_id']
+        
+        if not args.job_id and 'job_id' in config_defaults:
+            args.job_id = config_defaults['job_id']
+        
+        if not args.create_pool and config_defaults.get('create_pool'):
+            args.create_pool = config_defaults['create_pool']
+        
+        if not args.create_job and config_defaults.get('create_job'):
+            args.create_job = config_defaults['create_job']
+        
+        if not args.azure_files_share_name and 'azure_files_share_name' in config_defaults:
+            args.azure_files_share_name = config_defaults['azure_files_share_name']
+        
+        if not args.mount_azure_files and config_defaults.get('mount_azure_files'):
+            args.mount_azure_files = config_defaults['mount_azure_files']
+        
+        # Verify the parameters were applied from config
+        assert args.pool_id == "test-pool-from-config", \
+            f"pool_id not applied from config: {args.pool_id}"
+        
+        assert args.job_id == "test-job-from-config", \
+            f"job_id not applied from config: {args.job_id}"
+        
+        assert args.create_pool is True, \
+            f"create_pool not applied from config: {args.create_pool}"
+        
+        assert args.create_job is True, \
+            f"create_job not applied from config: {args.create_job}"
+        
+        assert args.azure_files_share_name == "test-share", \
+            f"azure_files_share_name not applied from config: {args.azure_files_share_name}"
+        
+        assert args.mount_azure_files is True, \
+            f"mount_azure_files not applied from config: {args.mount_azure_files}"
+    
+    finally:
+        os.unlink(config_file)
+
+
+
 if __name__ == '__main__':
     # Run tests
     test_config_parameters_applied_to_pool_creation()
@@ -201,5 +287,8 @@ if __name__ == '__main__':
     
     test_command_line_overrides_config()
     print("✓ test_command_line_overrides_config passed")
+    
+    test_pool_id_and_job_id_from_config()
+    print("✓ test_pool_id_and_job_id_from_config passed")
     
     print("\nAll integration tests passed!")

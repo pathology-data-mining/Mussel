@@ -1168,7 +1168,7 @@ def main():
                         help="Clean up staged files from Azure Files after processing")
     
     # Pool configuration
-    parser.add_argument("--pool-id", required=True, help="Pool ID")
+    parser.add_argument("--pool-id", help="Pool ID (can be specified in config file)")
     parser.add_argument("--create-pool", action="store_true", help="Create pool if it doesn't exist")
     
     # Default values for pool parameters (used for detecting if config should override)
@@ -1196,7 +1196,7 @@ def main():
                         help="Auto-scale evaluation interval in minutes (default: 15)")
     
     # Job configuration
-    parser.add_argument("--job-id", required=True, help="Job ID")
+    parser.add_argument("--job-id", help="Job ID (can be specified in config file)")
     parser.add_argument("--create-job", action="store_true", help="Create job")
     
     # Task configuration
@@ -1263,9 +1263,30 @@ def main():
     # Apply Azure-specific parameters from config file if provided
     # Command-line arguments take precedence over config file values
     if config_defaults:
+        # Pool and job IDs
+        if not args.pool_id and 'pool_id' in config_defaults:
+            args.pool_id = config_defaults['pool_id']
+        
+        if not args.job_id and 'job_id' in config_defaults:
+            args.job_id = config_defaults['job_id']
+        
         # Storage account parameters
         if not args.storage_account_name and 'storage_account_name' in config_defaults:
             args.storage_account_name = config_defaults['storage_account_name']
+        
+        # Azure Files share name
+        if not args.azure_files_share_name and 'azure_files_share_name' in config_defaults:
+            args.azure_files_share_name = config_defaults['azure_files_share_name']
+        
+        # Boolean flags (only set if not already set via command-line)
+        if not args.create_pool and config_defaults.get('create_pool'):
+            args.create_pool = config_defaults['create_pool']
+        
+        if not args.create_job and config_defaults.get('create_job'):
+            args.create_job = config_defaults['create_job']
+        
+        if not args.mount_azure_files and config_defaults.get('mount_azure_files'):
+            args.mount_azure_files = config_defaults['mount_azure_files']
         
         # Container image - only override if the default value is still being used
         if args.container_image == DEFAULT_CONTAINER_IMAGE and 'container_image' in config_defaults:
@@ -1291,6 +1312,17 @@ def main():
         
         if args.auto_scale_evaluation_interval == DEFAULT_AUTO_SCALE_INTERVAL and 'auto_scale_evaluation_interval' in config_defaults:
             args.auto_scale_evaluation_interval = config_defaults['auto_scale_evaluation_interval']
+    
+    # Auto-generate pool_id and job_id if not provided
+    if not args.pool_id:
+        timestamp = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
+        args.pool_id = f"mussel-pool-{timestamp}"
+        print(f"Auto-generated pool ID: {args.pool_id}")
+    
+    if not args.job_id:
+        timestamp = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
+        args.job_id = f"mussel-job-{timestamp}"
+        print(f"Auto-generated job ID: {args.job_id}")
 
     # Pre-download models if requested and using batch processing
     model_paths = {}

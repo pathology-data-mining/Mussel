@@ -398,11 +398,23 @@ max_retry_count: 3
 
 # Azure Batch-specific parameters
 azure:
+  # Pool and job identifiers (optional, will be auto-generated if not specified)
+  pool_id: "mussel-pool"
+  job_id: "mussel-job-001"
+  
+  # Pool lifecycle flags
+  create_pool: true
+  create_job: true
+  
   # Docker container image
   container_image: "mskmind/mussel:latest-torch-gpu"
   
   # Storage account for staging
   storage_account_name: "mystorageaccount"
+  
+  # Azure Files configuration (optional)
+  azure_files_share_name: "mussel-staging"
+  mount_azure_files: true
   
   # Pool configuration
   vm_size: "Standard_NC6s_v3"
@@ -417,30 +429,55 @@ azure:
 
 **Usage with config file:**
 ```bash
+# With pool_id and job_id in config - no need to specify on command-line
 python scripts/azure_batch/submit_batch_jobs.py \
   --batch-account-name mybatchaccount \
   --batch-account-key <your-batch-key> \
   --batch-account-url https://mybatchaccount.eastus.batch.azure.com \
-  --pool-id mussel-pool \
-  --create-pool \
-  --job-id mussel-job \
-  --create-job \
   --config-file batch_params_azure.yaml \
   --csv-manifest slides.csv \
   --output-s3-prefix s3://my-bucket/results/
+
+# Or override config values via command-line
+python scripts/azure_batch/submit_batch_jobs.py \
+  --batch-account-name mybatchaccount \
+  --batch-account-key <your-batch-key> \
+  --batch-account-url https://mybatchaccount.eastus.batch.azure.com \
+  --pool-id custom-pool \
+  --job-id custom-job \
+  --config-file batch_params_azure.yaml \
+  --csv-manifest slides.csv
+
+# Without pool_id/job_id - they will be auto-generated with timestamps
+python scripts/azure_batch/submit_batch_jobs.py \
+  --batch-account-name mybatchaccount \
+  --batch-account-key <your-batch-key> \
+  --batch-account-url https://mybatchaccount.eastus.batch.azure.com \
+  --config-file batch_params_azure.yaml \
+  --csv-manifest slides.csv
 ```
 
 **How it works:**
 - Azure parameters in the `azure:` section are automatically loaded when using `--config-file`
 - Command-line arguments override config file values if both are specified
+- If `pool_id` or `job_id` are not provided (command-line or config), they are auto-generated with timestamps
 - Sensitive parameters like `storage_account_key` should still be provided via command-line
 - The config file can include both general parameters and Azure-specific parameters
+
+**Supported Azure parameters in config:**
+- **Identifiers**: `pool_id`, `job_id` (auto-generated if not provided)
+- **Lifecycle flags**: `create_pool`, `create_job`, `mount_azure_files`
+- **Container**: `container_image`
+- **Storage**: `storage_account_name`, `azure_files_share_name`
+- **Pool config**: `vm_size`, `node_count`
+- **Auto-scaling**: `enable_auto_scale`, `min_node_count`, `max_node_count`, `auto_scale_evaluation_interval`
 
 **Benefits:**
 - Keep Azure settings in version control without exposing secrets
 - Share configurations across team members
 - Easily switch between different Azure setups
 - Reduce command-line complexity for common configurations
+- Auto-generated IDs for ephemeral runs
 
 See `examples/batch_params_azure_example.yaml` for a complete example.
 
