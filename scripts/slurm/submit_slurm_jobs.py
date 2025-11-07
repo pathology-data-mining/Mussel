@@ -336,14 +336,16 @@ bash {self.task_script}
                 print(f"ERROR: slide_path, output_h5_path, and output_pt_path required for task {task_id}")
                 continue
             
+            # Filter out keys that were extracted or don't belong to submit_task
+            excluded_keys = ['task_id', 'slide_path', 'output_h5_path', 'output_pt_path', 'submit']
+            
             # Submit task (use job_name instead of task_id for SLURM)
             job_id = self.submit_task(
                 job_name=task_id,
                 slide_path=slide_path,
                 output_h5_path=output_h5_path,
                 output_pt_path=output_pt_path,
-                **{k: v for k, v in merged_config.items() 
-                   if k not in ['task_id', 'slide_path', 'output_h5_path', 'output_pt_path']}
+                **{k: v for k, v in merged_config.items() if k not in excluded_keys}
             )
             job_ids.append(job_id)
         
