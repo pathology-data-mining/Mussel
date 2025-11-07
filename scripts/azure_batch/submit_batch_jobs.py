@@ -39,6 +39,14 @@ except ImportError:
     AzureFilesStaging = None
 
 try:
+    from config_loader import load_config, load_config_defaults, add_config_to_metadata
+except ImportError:
+    print("WARNING: Could not import config_loader module. YAML config support will be unavailable.")
+    load_config = None
+    load_config_defaults = None
+    add_config_to_metadata = None
+
+try:
     from azure.batch import BatchServiceClient
     from azure.batch.batch_auth import SharedKeyCredentials
     from azure.batch import models as batchmodels
@@ -440,11 +448,16 @@ class AzureBatchJobSubmitter:
         config_file: str,
         container_image: str = "mskmind/mussel:latest-torch-gpu",
     ) -> None:
-        """Submit multiple tasks from a configuration file."""
+        """Submit multiple tasks from a configuration file (JSON or YAML)."""
         print(f"Loading task configuration from '{config_file}'...")
 
-        with open(config_file, 'r') as f:
-            config = json.load(f)
+        # Use config loader to support both JSON and YAML
+        if load_config:
+            config = load_config(config_file)
+        else:
+            # Fallback to JSON only
+            with open(config_file, 'r') as f:
+                config = json.load(f)
 
         tasks = config.get("tasks", [])
         defaults = config.get("defaults", {})
@@ -484,6 +497,10 @@ class AzureBatchJobSubmitter:
                 max_retry_count=merged_config.get("max_retry_count", 3),
                 container_image=container_image,
             )
+            
+            # Store task configuration in metadata (excluding secrets)
+            if add_config_to_metadata:
+                add_config_to_metadata(self.task_metadata, merged_config, task_id)
 
     def stage_and_submit_tasks_from_csv(
         self,
@@ -753,6 +770,10 @@ class AzureBatchJobSubmitter:
                 max_retry_count=merged_config.get("max_retry_count", 3),
                 container_image=container_image,
             )
+            
+            # Store task configuration in metadata (excluding secrets)
+            if add_config_to_metadata:
+                add_config_to_metadata(self.task_metadata, merged_config, merged_config['task_id'])
 
     def monitor_tasks(self, job_id: str, poll_interval: int = 30) -> None:
         """Monitor task progress."""
@@ -911,6 +932,16 @@ class AzureBatchJobSubmitter:
                 # Add intermediate path if present
                 if 'intermediate_h5_path' in metadata:
                     task_info['intermediate_h5_path'] = metadata.get('intermediate_h5_path', '')
+                
+                # Add configuration parameters if present (excluding secrets)
+                if 'config' in metadata:
+                    config_data = metadata['config']
+                    # Flatten configuration into task_info with 'config_' prefix
+                    # Note: Nested dictionaries and lists are skipped for CSV compatibility
+                    for key, value in config_data.items():
+                        # Skip nested dictionaries and lists for CSV simplicity
+                        if not isinstance(value, (dict, list)):
+                            task_info[f'config_{key}'] = value
                 
                 # Extract model type from output path
                 output_h5 = metadata.get('output_h5_path', '')
@@ -1089,8 +1120,11 @@ def main():
     parser.add_argument("--create-job", action="store_true", help="Create job")
     
     # Task configuration
-    parser.add_argument("--config-file", help="JSON file with task configurations")
-    parser.add_argument("--csv-manifest", help="CSV manifest file with slide_id,slide_path columns")
+    parser.add_argument("--config-file", "--config", dest="config_file", 
+                        help="Configuration file with parameters (JSON or YAML format). "
+                        "Can be used alone with task definitions, or with --csv-manifest to provide default parameters.")
+    parser.add_argument("--csv-manifest", help="CSV manifest file with slide_id,slide_path columns. "
+                        "Can be used with --config-file or --config to load parameters from config.")
     parser.add_argument("--output-dir", default="/mnt/output", help="Output directory for results (when using CSV)")
     parser.add_argument("--output-s3-prefix", help="S3 prefix for outputs (e.g., s3://bucket/results/)")
     parser.add_argument("--postfilter-models", help="Comma-separated list of postfilter model types to run (e.g., CTRANSPATH,CLIP,VIRCHOW)")
@@ -1240,15 +1274,39 @@ def main():
         submitter.create_job(job_id=args.job_id, pool_id=args.pool_id)
 
     # Submit tasks
-    if args.config_file:
+    # Handle three cases:
+    # 1. Config file only (with tasks defined in config)
+    # 2. CSV manifest only (parameters from command line)
+    # 3. Both CSV manifest and config file (slides from CSV, parameters from config)
+    
+    if args.config_file and not args.csv_manifest:
+        # Case 1: Config file with task definitions
         submitter.submit_tasks_from_config(
             job_id=args.job_id,
             config_file=args.config_file,
             container_image=args.container_image,
         )
     elif args.csv_manifest:
+        # Case 2 & 3: CSV manifest (with or without config file for parameters)
+        
         # Prepare default parameters for CSV tasks
         default_params = {}
+        
+        # If config file is provided, load defaults from it
+        if args.config_file:
+            if load_config_defaults:
+                try:
+                    print(f"Loading default parameters from config file: {args.config_file}")
+                    config_defaults = load_config_defaults(args.config_file, backend='azure')
+                    default_params.update(config_defaults)
+                    print(f"Loaded {len(config_defaults)} default parameters from config file")
+                except Exception as e:
+                    print(f"WARNING: Failed to load config file: {e}")
+                    print("Continuing with command-line parameters only")
+            else:
+                print("WARNING: config_loader not available, ignoring --config-file")
+        
+        # Command-line arguments override config file defaults
         if args.aws_access_key_id:
             default_params['aws_access_key_id'] = args.aws_access_key_id
         if args.aws_secret_access_key:
@@ -1306,6 +1364,7 @@ def main():
                 **default_params,
             )
     elif args.task_id and args.slide_path:
+        # Single task submission
         # Prepare model paths for single task
         task_model_paths = {}
         if model_paths.get('CTRANSPATH'):
@@ -1332,6 +1391,9 @@ def main():
             container_image=args.container_image,
             **task_model_paths,
         )
+    else:
+        print("ERROR: Must specify either --config-file (with tasks), --csv-manifest, or --task-id with --slide-path")
+        sys.exit(1)
 
     # Monitor if requested
     if args.monitor:

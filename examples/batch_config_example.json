@@ -1,0 +1,35 @@
+{
+  "defaults": {
+    "prefilter_model_type": "CTRANSPATH",
+    "batch_size": 64,
+    "num_workers": 4,
+    "patch_size": 256,
+    "mpp": 0.5,
+    "use_gpu": true,
+    "segment_threshold": 0,
+    "classifier_threshold": 0.75,
+    "max_retry_count": 3
+  },
+  "tasks": [
+    {
+      "task_id": "slide_001",
+      "slide_path": "s3://my-bucket/slides/slide_001.svs",
+      "output_h5_path": "s3://my-bucket/results/CTRANSPATH/h5/slide_001_features.h5",
+      "output_pt_path": "s3://my-bucket/results/CTRANSPATH/pt/slide_001_features.pt"
+    },
+    {
+      "task_id": "slide_002",
+      "slide_path": "s3://my-bucket/slides/slide_002.svs",
+      "output_h5_path": "s3://my-bucket/results/CTRANSPATH/h5/slide_002_features.h5",
+      "output_pt_path": "s3://my-bucket/results/CTRANSPATH/pt/slide_002_features.pt",
+      "batch_size": 128
+    },
+    {
+      "task_id": "slide_003",
+      "slide_path": "/local/path/slide_003.svs",
+      "output_h5_path": "/output/slide_003_features.h5",
+      "output_pt_path": "/output/slide_003_features.pt",
+      "postfilter_model_type": "VIRCHOW"
+    }
+  ]
+}

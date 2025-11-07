@@ -1,0 +1,30 @@
+# Example: parameters configuration for use with CSV manifest
+# Use this file with --config-file-params when specifying --csv-manifest
+# The CSV provides slide IDs and paths, this file provides all the parameters
+
+# Processing parameters
+prefilter_model_type: CTRANSPATH
+batch_size: 64
+num_workers: 4
+patch_size: 256
+mpp: 0.5
+use_gpu: true
+segment_threshold: 0
+classifier_threshold: 0.75
+
+# Aggregation settings
+aggregation_method: identity
+
+# Optional: Postfilter model
+# postfilter_model_type: VIRCHOW
+
+# Optional: Slide-level aggregation
+# aggregation_method: model
+# slide_model_type: GIGAPATH_SLIDE
+# slide_batch_size: 8
+
+# Retry configuration
+max_retry_count: 3
+
+# Note: Sensitive fields like AWS credentials should be provided via command-line
+# not in the config file for security

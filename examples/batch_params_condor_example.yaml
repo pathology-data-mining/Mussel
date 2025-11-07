@@ -1,0 +1,36 @@
+# Example: parameters configuration with HTCondor-specific settings
+# Use this file with --config when specifying --csv-manifest
+
+# General processing parameters
+prefilter_model_type: CTRANSPATH
+batch_size: 64
+num_workers: 4
+patch_size: 256
+mpp: 0.5
+use_gpu: true
+segment_threshold: 0
+classifier_threshold: 0.75
+
+# Aggregation settings
+aggregation_method: identity
+
+# Retry configuration
+max_retry_count: 3
+
+# Standardized resource requirements (works across all backends)
+resources:
+  cpus: 8
+  memory: 32GB
+  gpus: 1
+
+# AWS S3 configuration (optional, for S3-compatible storage)
+aws:
+  region: us-east-1
+  endpoint_url: https://s3.example.com  # Optional: for S3-compatible storage like MinIO
+
+# HTCondor-specific parameters (optional, for HTCondor-only settings)
+condor:
+  max_retries: 3
+
+# Note: Sensitive fields like AWS credentials should be provided via command-line
+# not in the config file for security

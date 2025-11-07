@@ -26,6 +26,13 @@ except ImportError:
     print("WARNING: Could not import model_predownload module. Pre-download features will be unavailable.")
     pre_download_models = None
 
+try:
+    from config_loader import load_config, load_config_defaults
+except ImportError:
+    print("WARNING: Could not import config_loader module. YAML config support will be unavailable.")
+    load_config = None
+    load_config_defaults = None
+
 
 class SlurmJobSubmitter:
     """
@@ -267,6 +274,84 @@ bash {self.task_script}
             kwargs.get('aggregation_method') == 'model' and
             kwargs.get('slide_model_type') is not None
         )
+
+    def submit_tasks_from_config(
+        self,
+        config_file: str,
+        **kwargs
+    ) -> List[Optional[str]]:
+        """
+        Submit tasks from a configuration file (JSON or YAML).
+        
+        Config format:
+            defaults:
+                prefilter_model_type: CTRANSPATH
+                batch_size: 64
+                ...
+            tasks:
+                - task_id: task_1
+                  slide_path: /path/to/slide1.svs
+                  output_h5_path: /path/to/output1.h5
+                  output_pt_path: /path/to/output1.pt
+                - task_id: task_2
+                  ...
+        
+        Args:
+            config_file: Path to configuration file
+            **kwargs: Additional parameters passed to submit_task
+            
+        Returns:
+            List of job IDs
+        """
+        print(f"Loading task configuration from '{config_file}'...")
+        
+        # Use config loader to support both JSON and YAML
+        if load_config:
+            config = load_config(config_file)
+        else:
+            # Fallback to JSON only
+            import json
+            with open(config_file, 'r') as f:
+                config = json.load(f)
+        
+        tasks = config.get("tasks", [])
+        defaults = config.get("defaults", {})
+        
+        print(f"Submitting {len(tasks)} tasks from config file...")
+        
+        job_ids = []
+        for task_config in tasks:
+            # Merge with defaults and kwargs
+            merged_config = {**defaults, **kwargs, **task_config}
+            
+            task_id = merged_config.get("task_id")
+            if not task_id:
+                print("ERROR: task_id is required for each task in config file")
+                continue
+            
+            slide_path = merged_config.get("slide_path")
+            output_h5_path = merged_config.get("output_h5_path")
+            output_pt_path = merged_config.get("output_pt_path")
+            
+            if not slide_path or not output_h5_path or not output_pt_path:
+                print(f"ERROR: slide_path, output_h5_path, and output_pt_path required for task {task_id}")
+                continue
+            
+            # Filter out keys that were extracted or don't belong to submit_task
+            excluded_keys = ['task_id', 'slide_path', 'output_h5_path', 'output_pt_path', 'submit']
+            
+            # Submit task (use job_name instead of task_id for SLURM)
+            job_id = self.submit_task(
+                job_name=task_id,
+                slide_path=slide_path,
+                output_h5_path=output_h5_path,
+                output_pt_path=output_pt_path,
+                **{k: v for k, v in merged_config.items() if k not in excluded_keys}
+            )
+            job_ids.append(job_id)
+        
+        print(f"\nSubmitted {len(job_ids)} tasks from config file")
+        return job_ids
 
     def submit_tasks_from_csv(
         self,
@@ -577,7 +662,13 @@ def main():
     # Input options
     input_group = parser.add_mutually_exclusive_group(required=True)
     input_group.add_argument("--job-name", help="Single job name/task ID")
-    input_group.add_argument("--csv-manifest", help="CSV manifest file with slide_id,slide_path")
+    input_group.add_argument("--csv-manifest", help="CSV manifest file with slide_id,slide_path. "
+                        "Can be used with --config to load parameters from config.")
+    input_group.add_argument("--config-file", help="Configuration file with task definitions or parameters (JSON or YAML format)")
+    
+    # Allow --config as optional parameter when using --csv-manifest
+    parser.add_argument("--config", dest="config_file_for_csv",
+                        help="Configuration file with default parameters (when using --csv-manifest)")
     
     # Slide parameters
     parser.add_argument("--slide-path", help="Path to slide file (required for single task)")
@@ -756,19 +847,16 @@ def main():
             hf_token=args.hf_token,
             submit=args.submit,
         )
-    else:
-        submitter.submit_tasks_from_csv(
-            csv_file=args.csv_manifest,
-            output_dir=args.output_dir,
-            output_s3_prefix=args.output_s3_prefix,
-            use_array=not args.no_array,
-            distributed_slide_batch_size=args.distributed_slide_batch_size,
+    elif args.config_file:
+        # Submit from config file (with task definitions)
+        submitter.submit_tasks_from_config(
+            config_file=args.config_file,
             classifier_pkl=args.classifier_pkl,
             classifier_threshold=args.classifier_threshold,
             prefilter_model_type=args.prefilter_model_type,
             prefilter_model_path=model_paths.get('CTRANSPATH') if model_paths else None,
             postfilter_model_type=args.postfilter_model_type,
-            postfilter_model_path=args.postfilter_model_path,  # Will be expanded in method
+            postfilter_model_path=args.postfilter_model_path,
             postfilter_model_types=args.postfilter_models,
             aggregation_method=args.aggregation_method,
             slide_model_type=args.slide_model_type,
@@ -790,8 +878,66 @@ def main():
             aws_secret_access_key=args.aws_secret_access_key,
             aws_region=args.aws_region,
             hf_token=args.hf_token,
-            model_paths=model_paths,  # Pass all model paths
             submit=args.submit,
+        )
+    else:
+        # CSV manifest (with optional config file for parameters)
+        
+        # Prepare kwargs dict starting with command-line args
+        csv_kwargs = {
+            'classifier_pkl': args.classifier_pkl,
+            'classifier_threshold': args.classifier_threshold,
+            'prefilter_model_type': args.prefilter_model_type,
+            'prefilter_model_path': model_paths.get('CTRANSPATH') if model_paths else None,
+            'postfilter_model_type': args.postfilter_model_type,
+            'postfilter_model_path': args.postfilter_model_path,
+            'postfilter_model_types': args.postfilter_models,
+            'aggregation_method': args.aggregation_method,
+            'slide_model_type': args.slide_model_type,
+            'slide_model_path': model_paths.get(args.slide_model_type) if model_paths and args.slide_model_type else None,
+            'segment_threshold': args.segment_threshold,
+            'patch_size': args.patch_size,
+            'mpp': args.mpp,
+            'num_workers': args.num_workers,
+            'batch_size': args.batch_size,
+            'slide_batch_size': args.slide_batch_size,
+            'use_gpu': args.use_gpu,
+            'partition': args.partition,
+            'cpus_per_task': args.cpus_per_task,
+            'mem': args.mem,
+            'time': args.time,
+            'gres': args.gres,
+            'qos': args.qos,
+            'aws_access_key_id': args.aws_access_key_id,
+            'aws_secret_access_key': args.aws_secret_access_key,
+            'aws_region': args.aws_region,
+            'hf_token': args.hf_token,
+            'submit': args.submit,
+        }
+        
+        # If config file is provided for CSV, load defaults and merge
+        if args.config_file_for_csv:
+            if load_config_defaults:
+                try:
+                    print(f"Loading default parameters from config file: {args.config_file_for_csv}")
+                    config_defaults = load_config_defaults(args.config_file_for_csv, backend='slurm')
+                    # Config file defaults, then override with command-line args
+                    merged_kwargs = {**config_defaults, **csv_kwargs}
+                    csv_kwargs = merged_kwargs
+                    print(f"Loaded {len(config_defaults)} default parameters from config file")
+                except Exception as e:
+                    print(f"WARNING: Failed to load config file: {e}")
+                    print("Continuing with command-line parameters only")
+            else:
+                print("WARNING: config_loader not available, ignoring --config")
+        
+        submitter.submit_tasks_from_csv(
+            csv_file=args.csv_manifest,
+            output_dir=args.output_dir,
+            output_s3_prefix=args.output_s3_prefix,
+            use_array=not args.no_array,
+            distributed_slide_batch_size=args.distributed_slide_batch_size,
+            **csv_kwargs,
         )
 
 
