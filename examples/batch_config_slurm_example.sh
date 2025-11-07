@@ -49,7 +49,7 @@ if [ -z "$AWS_ACCESS_KEY_ID" ] || [ -z "$AWS_SECRET_ACCESS_KEY" ]; then
 fi
 
 python3 scripts/slurm/submit_slurm_jobs.py \
-  --config-file batch_config_example.yaml \
+  --task-config batch_config_example.yaml \
   --partition gpu \
   --gres gpu:1 \
   --cpus-per-task 8 \

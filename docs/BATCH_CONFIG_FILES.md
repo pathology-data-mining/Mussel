@@ -32,11 +32,11 @@ python scripts/azure_batch/submit_batch_jobs.py \
 
 # HTCondor
 python scripts/condor/submit_condor_jobs.py \
-  --config-file batch_config.yaml --submit
+  --task-config batch_config.yaml --submit
 
 # SLURM
 python scripts/slurm/submit_slurm_jobs.py \
-  --config-file batch_config.yaml --submit
+  --task-config batch_config.yaml --submit
 ```
 
 ### Mode 2: CSV Manifest + Config File (for parameters)
@@ -549,7 +549,7 @@ To validate your configuration file:
 ```bash
 # Test with dry-run (doesn't submit)
 python scripts/condor/submit_condor_jobs.py \
-  --config-file my_config.yaml
+  --task-config my_config.yaml
 
 # Or use Python to load and inspect
 python3 -c "

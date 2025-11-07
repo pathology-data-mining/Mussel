@@ -704,7 +704,7 @@ def main():
     input_group.add_argument("--job-name", help="Single job name/task ID")
     input_group.add_argument("--csv-manifest", help="CSV manifest file with slide_id,slide_path. "
                         "Can be used with --config to load parameters from config.")
-    input_group.add_argument("--config-file", help="Configuration file with task definitions or parameters (JSON or YAML format)")
+    input_group.add_argument("--task-config", help="Configuration file with task definitions or parameters (JSON or YAML format)")
     
     # Allow --config as optional parameter when using --csv-manifest
     parser.add_argument("--config", dest="config_file_for_csv",
@@ -852,7 +852,7 @@ def main():
     
     # Validate CTRANSPATH configuration
     # CTRANSPATH requires a model_path to be provided via configuration
-    if args.csv_manifest or args.config_file:
+    if args.csv_manifest or args.task_config:
         # Determine the prefilter model type from config or default
         prefilter_model = args.prefilter_model_type or 'CTRANSPATH'  # Default
         if args.config_file_for_csv and load_config_defaults:
@@ -935,10 +935,10 @@ def main():
             hf_token=args.hf_token,
             submit=args.submit,
         )
-    elif args.config_file:
+    elif args.task_config:
         # Submit from config file (with task definitions)
         submitter.submit_tasks_from_config(
-            config_file=args.config_file,
+            config_file=args.task_config,
             classifier_pkl=args.classifier_pkl,
             classifier_threshold=args.classifier_threshold,
             prefilter_model_type=args.prefilter_model_type,
