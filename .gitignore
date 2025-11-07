@@ -8,8 +8,11 @@ __pycache__/
 /.idea/inspectionProfiles/Project_Default.xml
 /.idea/vcs.xml
 *.sub
+*.sbatch
 condor_logs/
+slurm_logs/
 *.out
+*.err
 test_*sh
 *temp*
 !*templ*
