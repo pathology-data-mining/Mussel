@@ -93,8 +93,6 @@ class SlurmJobSubmitter:
         tissue_area_threshold: Optional[int] = None,
         hole_area_threshold: Optional[int] = None,
         max_num_holes: Optional[int] = None,
-        keep_ids: Optional[str] = None,
-        exclude_ids: Optional[str] = None,
         num_workers: int = 4,
         batch_size: int = 64,
         use_gpu: bool = True,
@@ -201,10 +199,6 @@ class SlurmJobSubmitter:
             env_vars["HOLE_AREA_THRESHOLD"] = str(hole_area_threshold)
         if max_num_holes is not None:
             env_vars["MAX_NUM_HOLES"] = str(max_num_holes)
-        if keep_ids is not None:
-            env_vars["KEEP_IDS"] = keep_ids
-        if exclude_ids is not None:
-            env_vars["EXCLUDE_IDS"] = exclude_ids
         
         if intermediate_h5_path:
             env_vars["INTERMEDIATE_H5_PATH"] = intermediate_h5_path
@@ -748,8 +742,6 @@ def main():
     parser.add_argument("--tissue-area-threshold", type=int, help="Tissue area threshold (default: 100, varies by group)")
     parser.add_argument("--hole-area-threshold", type=int, help="Hole area threshold (default: 16, varies by group)")
     parser.add_argument("--max-num-holes", type=int, help="Maximum number of holes (default: 8, varies by group)")
-    parser.add_argument("--keep-ids", help="Comma-separated list of contour IDs to keep")
-    parser.add_argument("--exclude-ids", help="Comma-separated list of contour IDs to exclude")
     
     parser.add_argument("--num-workers", type=int, default=4)
     parser.add_argument("--batch-size", type=int, default=64)

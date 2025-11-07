@@ -60,8 +60,6 @@ def test_seg_config_parameters_slurm():
         '--tissue-area-threshold',
         '--hole-area-threshold',
         '--max-num-holes',
-        '--keep-ids',
-        '--exclude-ids',
     ]
     
     for param in required_params:
@@ -86,8 +84,6 @@ def test_seg_config_parameters_condor():
         '--tissue-area-threshold',
         '--hole-area-threshold',
         '--max-num-holes',
-        '--keep-ids',
-        '--exclude-ids',
     ]
     
     for param in required_params:
@@ -222,8 +218,6 @@ def test_run_script_seg_config_parameters():
         'TISSUE_AREA_THRESHOLD',
         'HOLE_AREA_THRESHOLD',
         'MAX_NUM_HOLES',
-        'KEEP_IDS',
-        'EXCLUDE_IDS',
     ]
     
     for env_var in env_vars:

@@ -83,6 +83,10 @@ def load_config_defaults(config_file: str, backend: str = None) -> Dict[str, Any
     The 'aws:' section (if present) contains AWS configuration parameters that are
     mapped to aws_* parameter names (e.g., region -> aws_region, endpoint_url -> aws_endpoint_url).
     
+    The 'seg_config:' section (if present) contains segmentation configuration parameters
+    that are flattened to individual seg_config_* parameter names (e.g., patch_size -> 
+    seg_config_patch_size, or group -> seg_config_group).
+    
     Args:
         config_file: Path to configuration file (.json, .yaml, or .yml)
         backend: Backend name ('slurm', 'condor', or 'azure') to map
@@ -97,9 +101,9 @@ def load_config_defaults(config_file: str, backend: str = None) -> Dict[str, Any
     if 'defaults' in config:
         params = config['defaults'].copy()
     else:
-        # Otherwise, return all parameters except 'tasks', 'resources', 'aws', and backend sections
+        # Otherwise, return all parameters except 'tasks', 'resources', 'aws', 'seg_config', and backend sections
         params = {k: v for k, v in config.items() 
-                  if k not in ['tasks', 'resources', 'aws', 'slurm', 'condor', 'azure', 'azure_batch']}
+                  if k not in ['tasks', 'resources', 'aws', 'seg_config', 'slurm', 'condor', 'azure', 'azure_batch']}
     
     # Process AWS configuration section and flatten with proper parameter names
     if 'aws' in config and isinstance(config['aws'], dict):
@@ -113,6 +117,36 @@ def load_config_defaults(config_file: str, backend: str = None) -> Dict[str, Any
             params['aws_access_key_id'] = aws_params['access_key_id']
         if 'secret_access_key' in aws_params:
             params['aws_secret_access_key'] = aws_params['secret_access_key']
+    
+    # Process seg_config section and flatten with proper parameter names
+    if 'seg_config' in config and isinstance(config['seg_config'], dict):
+        seg_config_params = config['seg_config']
+        
+        # If 'group' is specified, it takes precedence
+        if 'group' in seg_config_params:
+            params['seg_config_group'] = seg_config_params['group']
+        
+        # Map individual seg_config parameters (only if no group specified, or always depending on use case)
+        # Since individual params can override group settings, include all of them
+        seg_config_mappings = {
+            'segment_threshold': 'segment_threshold',
+            'patch_size': 'patch_size',
+            'step_size': 'step_size',
+            'mpp': 'mpp',
+            'seg_level': 'seg_level',
+            'segment_max_value': 'segment_max_value',
+            'median_blur_ksize': 'median_blur_ksize',
+            'morphology_ex_kernel': 'morphology_ex_kernel',
+            'ref_patch_size': 'ref_patch_size',
+            'use_otsu': 'use_otsu',
+            'tissue_area_threshold': 'tissue_area_threshold',
+            'hole_area_threshold': 'hole_area_threshold',
+            'max_num_holes': 'max_num_holes',
+        }
+        
+        for config_key, param_key in seg_config_mappings.items():
+            if config_key in seg_config_params:
+                params[param_key] = seg_config_params[config_key]
     
     # Process standardized resources section and map to backend-specific names
     if 'resources' in config and isinstance(config['resources'], dict):

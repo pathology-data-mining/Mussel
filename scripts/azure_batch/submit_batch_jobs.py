@@ -332,8 +332,6 @@ class AzureBatchJobSubmitter:
         tissue_area_threshold: Optional[int] = None,
         hole_area_threshold: Optional[int] = None,
         max_num_holes: Optional[int] = None,
-        keep_ids: Optional[str] = None,
-        exclude_ids: Optional[str] = None,
         num_workers: int = 4,
         batch_size: int = 64,
         use_gpu: bool = True,
@@ -394,10 +392,6 @@ class AzureBatchJobSubmitter:
             env_vars.append(batchmodels.EnvironmentSetting("HOLE_AREA_THRESHOLD", str(hole_area_threshold)))
         if max_num_holes is not None:
             env_vars.append(batchmodels.EnvironmentSetting("MAX_NUM_HOLES", str(max_num_holes)))
-        if keep_ids is not None:
-            env_vars.append(batchmodels.EnvironmentSetting("KEEP_IDS", keep_ids))
-        if exclude_ids is not None:
-            env_vars.append(batchmodels.EnvironmentSetting("EXCLUDE_IDS", exclude_ids))
 
         if intermediate_h5_path:
             env_vars.append(batchmodels.EnvironmentSetting("INTERMEDIATE_H5_PATH", intermediate_h5_path))

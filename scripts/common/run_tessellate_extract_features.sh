@@ -396,12 +396,6 @@ if [ "$BATCH_MODE" = true ]; then
         if [ -n "$MAX_NUM_HOLES" ]; then
             CMD_ARGS+=("seg_config.max_num_holes=${MAX_NUM_HOLES}")
         fi
-        if [ -n "$KEEP_IDS" ]; then
-            CMD_ARGS+=("seg_config.keep_ids=[${KEEP_IDS}]")
-        fi
-        if [ -n "$EXCLUDE_IDS" ]; then
-            CMD_ARGS+=("seg_config.exclude_ids=[${EXCLUDE_IDS}]")
-        fi
     fi
     
     # Add slide IDs if provided
@@ -563,12 +557,6 @@ if [ -n "$POSTFILTER_MODEL_TYPES" ]; then
         fi
         if [ -n "$MAX_NUM_HOLES" ]; then
             FILTER_CMD_ARGS+=("seg_config.max_num_holes=$MAX_NUM_HOLES")
-        fi
-        if [ -n "$KEEP_IDS" ]; then
-            FILTER_CMD_ARGS+=("seg_config.keep_ids=[${KEEP_IDS}]")
-        fi
-        if [ -n "$EXCLUDE_IDS" ]; then
-            FILTER_CMD_ARGS+=("seg_config.exclude_ids=[${EXCLUDE_IDS}]")
         fi
     fi
     
@@ -783,12 +771,6 @@ if [ -z "$POSTFILTER_MODEL_TYPES" ]; then
         fi
         if [ -n "$MAX_NUM_HOLES" ]; then
             CMD_ARGS+=("seg_config.max_num_holes=$MAX_NUM_HOLES")
-        fi
-        if [ -n "$KEEP_IDS" ]; then
-            CMD_ARGS+=("seg_config.keep_ids=[${KEEP_IDS}]")
-        fi
-        if [ -n "$EXCLUDE_IDS" ]; then
-            CMD_ARGS+=("seg_config.exclude_ids=[${EXCLUDE_IDS}]")
         fi
     fi
 
