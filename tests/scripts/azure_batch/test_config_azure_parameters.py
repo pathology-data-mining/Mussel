@@ -73,7 +73,7 @@ azure:
             f"node_count mismatch: {params['node_count']}"
         
         assert 'enable_auto_scale' in params, "enable_auto_scale not found"
-        assert params['enable_auto_scale'] == True, \
+        assert params['enable_auto_scale'] is True, \
             f"enable_auto_scale mismatch: {params['enable_auto_scale']}"
         
         assert 'min_node_count' in params, "min_node_count not found"
