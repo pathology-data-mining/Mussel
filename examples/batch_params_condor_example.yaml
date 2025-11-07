@@ -1,0 +1,27 @@
+# Example: parameters configuration with HTCondor-specific settings
+# Use this file with --config when specifying --csv-manifest
+
+# Processing parameters
+prefilter_model_type: CTRANSPATH
+batch_size: 64
+num_workers: 4
+patch_size: 256
+mpp: 0.5
+use_gpu: true
+segment_threshold: 0
+classifier_threshold: 0.75
+
+# Aggregation settings
+aggregation_method: identity
+
+# Retry configuration
+max_retry_count: 3
+max_retries: 3
+
+# HTCondor-specific parameters
+request_cpus: 8
+request_memory: "32GB"
+request_gpus: 1
+
+# Note: Sensitive fields like AWS credentials should be provided via command-line
+# not in the config file for security

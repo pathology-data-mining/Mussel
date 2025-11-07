@@ -505,11 +505,11 @@ def main():
     input_group = parser.add_mutually_exclusive_group(required=True)
     input_group.add_argument("--task-id", help="Single task ID")
     input_group.add_argument("--csv-manifest", help="CSV manifest file with slide_id,slide_path. "
-                        "Can be used with --config-file to load parameters from config.")
+                        "Can be used with --config to load parameters from config.")
     input_group.add_argument("--config-file", help="Configuration file with task definitions or parameters (JSON or YAML format)")
     
-    # Allow --config-file as optional parameter when using --csv-manifest
-    parser.add_argument("--config-file-params", dest="config_file_for_csv", 
+    # Allow --config as optional parameter when using --csv-manifest
+    parser.add_argument("--config", dest="config_file_for_csv", 
                         help="Configuration file with default parameters (when using --csv-manifest)")
     
     # Slide parameters
@@ -762,7 +762,7 @@ def main():
                     print(f"WARNING: Failed to load config file: {e}")
                     print("Continuing with command-line parameters only")
             else:
-                print("WARNING: config_loader not available, ignoring --config-file-params")
+                print("WARNING: config_loader not available, ignoring --config")
         
         submitter.submit_tasks_from_csv(
             csv_file=args.csv_manifest,

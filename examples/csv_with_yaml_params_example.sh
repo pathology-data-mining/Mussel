@@ -47,17 +47,15 @@ echo
 echo "1. SLURM with CSV + YAML params:"
 echo "   python scripts/slurm/submit_slurm_jobs.py \\"
 echo "     --csv-manifest slides_manifest.csv \\"
-echo "     --config-file-params params.yaml \\"
+echo "     --config params.yaml \\"
 echo "     --output-s3-prefix s3://bucket/results \\"
-echo "     --partition gpu \\"
-echo "     --gres gpu:1 \\"
 echo "     --submit"
 echo
 
 echo "2. HTCondor with CSV + YAML params:"
 echo "   python scripts/condor/submit_condor_jobs.py \\"
 echo "     --csv-manifest slides_manifest.csv \\"
-echo "     --config-file-params params.yaml \\"
+echo "     --config params.yaml \\"
 echo "     --output-s3-prefix s3://bucket/results \\"
 echo "     --submit"
 echo
@@ -65,7 +63,7 @@ echo
 echo "3. Azure Batch with CSV + YAML params:"
 echo "   python scripts/azure_batch/submit_batch_jobs.py \\"
 echo "     --csv-manifest slides_manifest.csv \\"
-echo "     --config-file params.yaml \\"
+echo "     --config params.yaml \\"
 echo "     --output-s3-prefix s3://bucket/results \\"
 echo "     --pool-id my-pool \\"
 echo "     --job-id my-job \\"

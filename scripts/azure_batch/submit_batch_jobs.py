@@ -1120,10 +1120,11 @@ def main():
     parser.add_argument("--create-job", action="store_true", help="Create job")
     
     # Task configuration
-    parser.add_argument("--config-file", help="Configuration file with parameters (JSON or YAML format). "
+    parser.add_argument("--config-file", "--config", dest="config_file", 
+                        help="Configuration file with parameters (JSON or YAML format). "
                         "Can be used alone with task definitions, or with --csv-manifest to provide default parameters.")
     parser.add_argument("--csv-manifest", help="CSV manifest file with slide_id,slide_path columns. "
-                        "Can be used with --config-file to load parameters from config.")
+                        "Can be used with --config-file or --config to load parameters from config.")
     parser.add_argument("--output-dir", default="/mnt/output", help="Output directory for results (when using CSV)")
     parser.add_argument("--output-s3-prefix", help="S3 prefix for outputs (e.g., s3://bucket/results/)")
     parser.add_argument("--postfilter-models", help="Comma-separated list of postfilter model types to run (e.g., CTRANSPATH,CLIP,VIRCHOW)")

@@ -47,24 +47,25 @@ Use a simple CSV for slide IDs and paths, and a config file for all processing p
 - All parameters in one place
 - Easy to update parameters without touching slide list
 - Cleaner separation of concerns
+- Backend-specific parameters (SLURM partition, HTCondor resources, etc.) can be included
 
 ```bash
 # Azure Batch
 python scripts/azure_batch/submit_batch_jobs.py \
   --csv-manifest slides.csv \
-  --config-file params.yaml \
+  --config params.yaml \
   --pool-id my-pool --job-id my-job
 
 # HTCondor
 python scripts/condor/submit_condor_jobs.py \
   --csv-manifest slides.csv \
-  --config-file-params params.yaml \
+  --config params.yaml \
   --submit
 
 # SLURM
 python scripts/slurm/submit_slurm_jobs.py \
   --csv-manifest slides.csv \
-  --config-file-params params.yaml \
+  --config params.yaml \
   --submit
 ```
 
@@ -75,12 +76,24 @@ slide_001,s3://bucket/slides/slide_001.svs
 slide_002,s3://bucket/slides/slide_002.svs
 ```
 
-**Config format** (params.yaml):
+**Config format with backend-specific parameters** (params.yaml):
 ```yaml
+# Processing parameters
 prefilter_model_type: CTRANSPATH
 batch_size: 64
 num_workers: 4
 use_gpu: true
+
+# SLURM-specific parameters (when using SLURM)
+partition: gpu
+cpus_per_task: 8
+mem: 32G
+gres: "gpu:1"
+
+# HTCondor-specific parameters (when using HTCondor)
+# request_cpus: 8
+# request_memory: "32GB"
+# request_gpus: 1
 ```
 
 ## Configuration File Formats
@@ -266,6 +279,47 @@ python scripts/slurm/submit_slurm_jobs.py \
 - `aws_secret_access_key`: AWS secret key (not saved to manifest)
 - `aws_region`: AWS region (default: "us-east-1")
 - `aws_endpoint_url`: Custom S3 endpoint URL
+
+### Backend-Specific Parameters
+
+#### SLURM Parameters
+
+When using SLURM, you can include these parameters in your config file:
+
+- `partition`: SLURM partition (default: "batch")
+- `cpus_per_task`: Number of CPUs per task (default: 4)
+- `mem`: Memory per task (e.g., "16G", "32GB")
+- `time`: Time limit in HH:MM:SS format (default: "02:00:00")
+- `gres`: Generic resources (e.g., "gpu:1")
+- `qos`: Quality of service
+
+**Example SLURM config:**
+```yaml
+prefilter_model_type: CTRANSPATH
+batch_size: 64
+partition: gpu
+cpus_per_task: 8
+mem: 32G
+gres: "gpu:1"
+```
+
+#### HTCondor Parameters
+
+When using HTCondor, you can include these parameters in your config file:
+
+- `request_cpus`: Number of CPUs to request (default: 4)
+- `request_memory`: Memory to request (e.g., "16GB", default: "16GB")
+- `request_gpus`: Number of GPUs to request (default: 1)
+- `max_retries`: Maximum retry attempts (default: 3)
+
+**Example HTCondor config:**
+```yaml
+prefilter_model_type: CTRANSPATH
+batch_size: 64
+request_cpus: 8
+request_memory: "32GB"
+request_gpus: 1
+```
 
 ### Azure-Specific Parameters
 

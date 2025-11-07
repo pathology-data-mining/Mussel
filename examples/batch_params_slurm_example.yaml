@@ -1,0 +1,29 @@
+# Example: parameters configuration with SLURM-specific settings
+# Use this file with --config when specifying --csv-manifest
+
+# Processing parameters
+prefilter_model_type: CTRANSPATH
+batch_size: 64
+num_workers: 4
+patch_size: 256
+mpp: 0.5
+use_gpu: true
+segment_threshold: 0
+classifier_threshold: 0.75
+
+# Aggregation settings
+aggregation_method: identity
+
+# Retry configuration
+max_retry_count: 3
+
+# SLURM-specific parameters
+partition: gpu
+cpus_per_task: 8
+mem: 32G
+time: "04:00:00"
+gres: "gpu:1"
+qos: high
+
+# Note: Sensitive fields like AWS credentials should be provided via command-line
+# not in the config file for security
