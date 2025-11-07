@@ -320,19 +320,47 @@ Control the compute resources:
 - `--vm-size`: VM size (default: `Standard_NC6s_v3` with 1 GPU)
   - GPU VMs: `Standard_NC6s_v3`, `Standard_NC12s_v3`, `Standard_NC24s_v3`
   - CPU VMs: `Standard_D4s_v3`, `Standard_D8s_v3`
-- `--node-count`: Number of nodes in the pool
+- `--node-count`: Number of nodes in the pool (or initial/min count for auto-scaling)
 - `--use-gpu`: Enable GPU support for pool nodes (default: True)
 - `--no-gpu`: Disable GPU support for pool nodes (for CPU-only workloads)
 - `--container-image`: Docker image to use
   - For GPU workloads: `mskmind/mussel:latest-torch-gpu` (default)
   - For CPU workloads: `mskmind/mussel:latest-torch-cpu`
 
-**Example: Create a GPU pool**
+#### Auto-Scaling Configuration
+
+Enable auto-scaling to dynamically adjust pool size based on workload:
+
+- `--enable-auto-scale`: Enable auto-scaling based on pending tasks
+- `--min-node-count`: Minimum number of nodes (defaults to `--node-count`)
+- `--max-node-count`: Maximum number of nodes (required if auto-scaling is enabled)
+- `--auto-scale-evaluation-interval`: Evaluation interval in minutes (default: 15)
+
+**How auto-scaling works:**
+- Pool starts with `--min-node-count` nodes (or `--node-count` if min not specified)
+- Scales up to `--max-node-count` based on pending tasks
+- Evaluates workload every `--auto-scale-evaluation-interval` minutes
+- Automatically scales down when tasks complete
+
+**Example: Create a GPU pool with fixed size**
 ```bash
 --pool-id mussel-gpu-pool \
 --create-pool \
 --vm-size Standard_NC6s_v3 \
 --node-count 2 \
+--use-gpu \
+--container-image mskmind/mussel:latest-torch-gpu
+```
+
+**Example: Create an auto-scaling GPU pool**
+```bash
+--pool-id mussel-autoscale-pool \
+--create-pool \
+--vm-size Standard_NC6s_v3 \
+--node-count 1 \
+--enable-auto-scale \
+--min-node-count 1 \
+--max-node-count 10 \
 --use-gpu \
 --container-image mskmind/mussel:latest-torch-gpu
 ```

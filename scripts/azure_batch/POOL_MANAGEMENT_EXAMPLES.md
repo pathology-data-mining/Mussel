@@ -21,6 +21,34 @@ python scripts/azure_batch/submit_batch_jobs.py \
   --create-job
 ```
 
+## Creating an Auto-Scaling Pool
+
+Enable auto-scaling to dynamically adjust pool size based on workload:
+
+```bash
+python scripts/azure_batch/submit_batch_jobs.py \
+  --batch-account-name mybatchaccount \
+  --batch-account-key <key> \
+  --batch-account-url https://mybatchaccount.batch.azure.com \
+  --pool-id autoscale-pool \
+  --create-pool \
+  --vm-size Standard_NC6s_v3 \
+  --node-count 1 \
+  --enable-auto-scale \
+  --min-node-count 1 \
+  --max-node-count 10 \
+  --use-gpu \
+  --container-image mskmind/mussel:latest-torch-gpu \
+  --job-id myjob \
+  --create-job
+```
+
+**How auto-scaling works:**
+- Pool starts with minimum nodes (1 in this example)
+- Scales up to maximum nodes (10 in this example) based on pending tasks
+- Automatically scales down when tasks complete
+- Evaluates workload every 15 minutes by default
+
 ## Creating a CPU-Only Pool
 
 For CPU workloads, you can explicitly disable GPU support:
@@ -113,6 +141,54 @@ python scripts/azure_batch/submit_batch_jobs.py \
 echo "Processing complete and resources cleaned up!"
 ```
 
+## Complete Workflow with Auto-Scaling
+
+Here's an example using auto-scaling for large batch processing:
+
+```bash
+#!/bin/bash
+
+# Configuration
+BATCH_ACCOUNT_NAME="mybatchaccount"
+BATCH_ACCOUNT_KEY="<your-batch-key>"
+BATCH_ACCOUNT_URL="https://mybatchaccount.eastus.batch.azure.com"
+POOL_ID="mussel-autoscale-pool-$(date +%Y%m%d-%H%M%S)"
+JOB_ID="mussel-job-$(date +%Y%m%d-%H%M%S)"
+
+# Process many slides with auto-scaling pool
+python scripts/azure_batch/submit_batch_jobs.py \
+  --batch-account-name "$BATCH_ACCOUNT_NAME" \
+  --batch-account-key "$BATCH_ACCOUNT_KEY" \
+  --batch-account-url "$BATCH_ACCOUNT_URL" \
+  --pool-id "$POOL_ID" \
+  --create-pool \
+  --vm-size Standard_NC6s_v3 \
+  --node-count 2 \
+  --enable-auto-scale \
+  --min-node-count 2 \
+  --max-node-count 20 \
+  --use-gpu \
+  --container-image mskmind/mussel:latest-torch-gpu \
+  --job-id "$JOB_ID" \
+  --create-job \
+  --csv-manifest large_manifest.csv \
+  --output-s3-prefix s3://my-bucket/results/ \
+  --aws-access-key-id "$AWS_ACCESS_KEY_ID" \
+  --aws-secret-access-key "$AWS_SECRET_ACCESS_KEY" \
+  --aws-region us-east-1 \
+  --monitor \
+  --delete-job \
+  --delete-pool
+
+echo "Processing complete and resources cleaned up!"
+```
+
+**Benefits of auto-scaling:**
+- Start with minimum nodes (2 in this example) to save costs
+- Automatically scale up to 20 nodes when there are many pending tasks
+- Scale down when tasks complete to reduce costs
+- No manual intervention needed
+
 ## Pool Configuration Options
 
 | Parameter | Description | Default |
@@ -120,9 +196,13 @@ echo "Processing complete and resources cleaned up!"
 | `--pool-id` | Unique identifier for the pool | Required |
 | `--create-pool` | Create the pool if it doesn't exist | Flag |
 | `--vm-size` | Azure VM size | Standard_NC6s_v3 |
-| `--node-count` | Number of VMs in the pool | 1 |
+| `--node-count` | Number of VMs in the pool (or initial/min for auto-scale) | 1 |
 | `--use-gpu` | Enable GPU support | True |
 | `--no-gpu` | Disable GPU support | Flag |
+| `--enable-auto-scale` | Enable auto-scaling | Flag |
+| `--min-node-count` | Minimum nodes for auto-scaling | node-count |
+| `--max-node-count` | Maximum nodes for auto-scaling | Required if auto-scale |
+| `--auto-scale-evaluation-interval` | Evaluation interval in minutes | 15 |
 | `--container-image` | Docker image to use | mskmind/mussel:latest-torch-gpu |
 
 ## Recommended VM Sizes

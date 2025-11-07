@@ -106,6 +106,63 @@ def test_gpu_vm_prefixes_constant_exists():
         "GPU_VM_PREFIXES missing expected VM family prefixes"
 
 
+def test_auto_scale_parameters_exist():
+    """Test that auto-scaling parameters are defined in the CLI."""
+    submit_file = SCRIPTS_DIR / 'submit_batch_jobs.py'
+    
+    with open(submit_file, 'r') as f:
+        content = f.read()
+    
+    # Check for auto-scaling arguments
+    assert '--enable-auto-scale' in content, \
+        "Missing --enable-auto-scale CLI parameter"
+    
+    assert '--min-node-count' in content, \
+        "Missing --min-node-count CLI parameter"
+    
+    assert '--max-node-count' in content, \
+        "Missing --max-node-count CLI parameter"
+    
+    assert '--auto-scale-evaluation-interval' in content, \
+        "Missing --auto-scale-evaluation-interval CLI parameter"
+
+
+def test_create_pool_has_auto_scale_parameters():
+    """Test that create_pool method has auto-scaling parameters."""
+    submit_file = SCRIPTS_DIR / 'submit_batch_jobs.py'
+    
+    with open(submit_file, 'r') as f:
+        content = f.read()
+    
+    # Check for auto-scaling parameters in method signature
+    assert 'enable_auto_scale: bool = False' in content, \
+        "enable_auto_scale parameter missing in create_pool method signature"
+    
+    assert 'min_node_count: Optional[int] = None' in content, \
+        "min_node_count parameter missing in create_pool method signature"
+    
+    assert 'max_node_count: Optional[int] = None' in content, \
+        "max_node_count parameter missing in create_pool method signature"
+
+
+def test_auto_scale_passed_to_create_pool():
+    """Test that auto-scaling parameters are passed to create_pool method."""
+    submit_file = SCRIPTS_DIR / 'submit_batch_jobs.py'
+    
+    with open(submit_file, 'r') as f:
+        content = f.read()
+    
+    # Check that auto-scale parameters are passed
+    assert 'enable_auto_scale=args.enable_auto_scale' in content, \
+        "enable_auto_scale not passed to create_pool method"
+    
+    assert 'min_node_count=args.min_node_count' in content, \
+        "min_node_count not passed to create_pool method"
+    
+    assert 'max_node_count=args.max_node_count' in content, \
+        "max_node_count not passed to create_pool method"
+
+
 if __name__ == '__main__':
     # Run tests
     test_use_gpu_parameter_exists()
@@ -125,5 +182,14 @@ if __name__ == '__main__':
     
     test_gpu_vm_prefixes_constant_exists()
     print("✓ test_gpu_vm_prefixes_constant_exists passed")
+    
+    test_auto_scale_parameters_exist()
+    print("✓ test_auto_scale_parameters_exist passed")
+    
+    test_create_pool_has_auto_scale_parameters()
+    print("✓ test_create_pool_has_auto_scale_parameters passed")
+    
+    test_auto_scale_passed_to_create_pool()
+    print("✓ test_auto_scale_passed_to_create_pool passed")
     
     print("\nAll tests passed!")

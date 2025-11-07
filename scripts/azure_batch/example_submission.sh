@@ -283,11 +283,45 @@ example_cpu_pool() {
 }
 
 # ==============================================================================
-# Example 7: Cleanup (delete job and pool)
+# Example 7: Create auto-scaling pool
+# ==============================================================================
+
+example_auto_scale_pool() {
+    log "Example 7: Create an auto-scaling pool that adjusts to workload"
+    
+    AUTOSCALE_POOL_ID="mussel-autoscale-pool-$(date +%Y%m%d)"
+    AUTOSCALE_JOB_ID="mussel-autoscale-job-$(date +%Y%m%d-%H%M%S)"
+    
+    python "$SCRIPT_DIR/submit_batch_jobs.py" \
+        --batch-account-name "$BATCH_ACCOUNT_NAME" \
+        --batch-account-key "$BATCH_ACCOUNT_KEY" \
+        --batch-account-url "$BATCH_ACCOUNT_URL" \
+        --pool-id "$AUTOSCALE_POOL_ID" \
+        --create-pool \
+        --vm-size "$VM_SIZE" \
+        --node-count 1 \
+        --enable-auto-scale \
+        --min-node-count 1 \
+        --max-node-count 10 \
+        --use-gpu \
+        --container-image "$CONTAINER_IMAGE" \
+        --job-id "$AUTOSCALE_JOB_ID" \
+        --create-job \
+        --csv-manifest "/path/to/manifest.csv" \
+        --output-dir /mnt/output \
+        --monitor \
+        --delete-job \
+        --delete-pool
+    
+    log "Auto-scaling pool processing complete"
+}
+
+# ==============================================================================
+# Example 8: Cleanup (delete job and pool)
 # ==============================================================================
 
 example_cleanup() {
-    log "Example 7: Cleaning up resources"
+    log "Example 8: Cleaning up resources"
     
     read -p "Enter Job ID to delete (or press Enter to skip): " DELETE_JOB_ID
     read -p "Enter Pool ID to delete (or press Enter to skip): " DELETE_POOL_ID
@@ -334,7 +368,8 @@ main() {
     echo "  4) Monitor an existing job"
     echo "  5) Process with automatic cleanup after completion"
     echo "  6) Create CPU-only pool (no GPU)"
-    echo "  7) Cleanup (delete job/pool)"
+    echo "  7) Create auto-scaling pool"
+    echo "  8) Cleanup (delete job/pool)"
     echo "  q) Quit"
     echo ""
     read -p "Enter choice: " choice
@@ -346,7 +381,8 @@ main() {
         4) example_monitor_job ;;
         5) example_with_auto_cleanup ;;
         6) example_cpu_pool ;;
-        7) example_cleanup ;;
+        7) example_auto_scale_pool ;;
+        8) example_cleanup ;;
         q|Q) log "Exiting"; exit 0 ;;
         *) log "Invalid choice"; exit 1 ;;
     esac
