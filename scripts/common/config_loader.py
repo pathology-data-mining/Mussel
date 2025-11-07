@@ -67,29 +67,57 @@ def load_config(config_file: str) -> Dict[str, Any]:
     return config
 
 
-def load_config_defaults(config_file: str) -> Dict[str, Any]:
+def load_config_defaults(config_file: str, backend: str = None) -> Dict[str, Any]:
     """
     Load default parameters from a configuration file.
     
     This function is useful when you want to load parameters from a YAML/JSON
     config file but get slide information from a CSV manifest. It returns the
     'defaults' section if present, otherwise returns all top-level parameters
-    (excluding 'tasks' key).
+    (excluding 'tasks' key and backend-specific sections).
+    
+    Backend-specific parameters (under 'slurm:', 'condor:', 'azure:' sections)
+    are merged into the main config if the backend matches. If a 'cluster:' 
+    subsection exists within the backend section, it is flattened into the 
+    main parameters.
     
     Args:
         config_file: Path to configuration file (.json, .yaml, or .yml)
+        backend: Backend name ('slurm', 'condor', or 'azure') to extract
+                 backend-specific parameters. If None, backend sections are ignored.
         
     Returns:
-        Dictionary containing default parameters
+        Dictionary containing default parameters with backend-specific params merged
     """
     config = load_config(config_file)
     
-    # If there's a 'defaults' section, return it
+    # If there's a 'defaults' section, use it as base
     if 'defaults' in config:
-        return config['defaults']
+        params = config['defaults'].copy()
+    else:
+        # Otherwise, return all parameters except 'tasks' and backend sections
+        params = {k: v for k, v in config.items() 
+                  if k not in ['tasks', 'slurm', 'condor', 'azure', 'azure_batch']}
     
-    # Otherwise, return all parameters except 'tasks'
-    return {k: v for k, v in config.items() if k != 'tasks'}
+    # If backend is specified, merge backend-specific parameters
+    if backend:
+        backend_key = backend.lower()
+        # Also check for 'azure_batch' as an alias for 'azure'
+        if backend_key == 'azure' and 'azure_batch' in config:
+            backend_key = 'azure_batch'
+        
+        if backend_key in config and isinstance(config[backend_key], dict):
+            backend_params = config[backend_key].copy()
+            
+            # If there's a 'cluster' subsection, flatten it into the main params
+            if 'cluster' in backend_params and isinstance(backend_params['cluster'], dict):
+                cluster_params = backend_params.pop('cluster')
+                backend_params.update(cluster_params)
+            
+            # Merge backend-specific parameters (backend params override general params)
+            params.update(backend_params)
+    
+    return params
 
 
 def filter_sensitive_fields(config: Dict[str, Any]) -> Dict[str, Any]:

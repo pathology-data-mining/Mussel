@@ -78,22 +78,26 @@ slide_002,s3://bucket/slides/slide_002.svs
 
 **Config format with backend-specific parameters** (params.yaml):
 ```yaml
-# Processing parameters
+# General processing parameters
 prefilter_model_type: CTRANSPATH
 batch_size: 64
 num_workers: 4
 use_gpu: true
 
-# SLURM-specific parameters (when using SLURM)
-partition: gpu
-cpus_per_task: 8
-mem: 32G
-gres: "gpu:1"
+# SLURM-specific parameters (grouped when using SLURM)
+slurm:
+  partition: gpu
+  cluster:
+    cpus_per_task: 8
+    mem: 32G
+  gres: "gpu:1"
 
-# HTCondor-specific parameters (when using HTCondor)
-# request_cpus: 8
-# request_memory: "32GB"
-# request_gpus: 1
+# HTCondor-specific parameters (grouped when using HTCondor)
+condor:
+  cluster:
+    request_cpus: 8
+    request_memory: "32GB"
+  request_gpus: 1
 ```
 
 ## Configuration File Formats
@@ -282,13 +286,16 @@ python scripts/slurm/submit_slurm_jobs.py \
 
 ### Backend-Specific Parameters
 
+Backend-specific parameters should be grouped under their respective backend sections (`slurm:`, `condor:`, or `azure:`). This keeps the configuration organized and allows the same config file to specify parameters for multiple backends.
+
 #### SLURM Parameters
 
-When using SLURM, you can include these parameters in your config file:
+When using SLURM, include these parameters under the `slurm:` section. Group CPU and memory resources under `cluster:`:
 
 - `partition`: SLURM partition (default: "batch")
-- `cpus_per_task`: Number of CPUs per task (default: 4)
-- `mem`: Memory per task (e.g., "16G", "32GB")
+- `cluster`: Resource group containing:
+  - `cpus_per_task`: Number of CPUs per task (default: 4)
+  - `mem`: Memory per task (e.g., "16G", "32GB")
 - `time`: Time limit in HH:MM:SS format (default: "02:00:00")
 - `gres`: Generic resources (e.g., "gpu:1")
 - `qos`: Quality of service
@@ -297,18 +304,22 @@ When using SLURM, you can include these parameters in your config file:
 ```yaml
 prefilter_model_type: CTRANSPATH
 batch_size: 64
-partition: gpu
-cpus_per_task: 8
-mem: 32G
-gres: "gpu:1"
+
+slurm:
+  partition: gpu
+  cluster:
+    cpus_per_task: 8
+    mem: 32G
+  gres: "gpu:1"
 ```
 
 #### HTCondor Parameters
 
-When using HTCondor, you can include these parameters in your config file:
+When using HTCondor, include these parameters under the `condor:` section. Group CPU and memory resources under `cluster:`:
 
-- `request_cpus`: Number of CPUs to request (default: 4)
-- `request_memory`: Memory to request (e.g., "16GB", default: "16GB")
+- `cluster`: Resource group containing:
+  - `request_cpus`: Number of CPUs to request (default: 4)
+  - `request_memory`: Memory to request (e.g., "16GB", default: "16GB")
 - `request_gpus`: Number of GPUs to request (default: 1)
 - `max_retries`: Maximum retry attempts (default: 3)
 
@@ -316,16 +327,30 @@ When using HTCondor, you can include these parameters in your config file:
 ```yaml
 prefilter_model_type: CTRANSPATH
 batch_size: 64
-request_cpus: 8
-request_memory: "32GB"
-request_gpus: 1
+
+condor:
+  cluster:
+    request_cpus: 8
+    request_memory: "32GB"
+  request_gpus: 1
 ```
 
 ### Azure-Specific Parameters
 
+When using Azure Batch, include these parameters under the `azure:` or `azure_batch:` section:
+
 - `storage_account_name`: Azure storage account
 - `storage_account_key`: Azure storage key (not saved to manifest)
 - `container_image`: Docker container image (default: "mskmind/mussel:latest-torch-gpu")
+
+**Example Azure config:**
+```yaml
+prefilter_model_type: CTRANSPATH
+batch_size: 64
+
+azure:
+  container_image: "mskmind/mussel:latest-torch-gpu"
+```
 
 ## Security and Privacy
 

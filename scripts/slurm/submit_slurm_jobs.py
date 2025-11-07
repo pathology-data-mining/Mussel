@@ -920,7 +920,7 @@ def main():
             if load_config_defaults:
                 try:
                     print(f"Loading default parameters from config file: {args.config_file_for_csv}")
-                    config_defaults = load_config_defaults(args.config_file_for_csv)
+                    config_defaults = load_config_defaults(args.config_file_for_csv, backend='slurm')
                     # Config file defaults, then override with command-line args
                     merged_kwargs = {**config_defaults, **csv_kwargs}
                     csv_kwargs = merged_kwargs

@@ -1297,7 +1297,7 @@ def main():
             if load_config_defaults:
                 try:
                     print(f"Loading default parameters from config file: {args.config_file}")
-                    config_defaults = load_config_defaults(args.config_file)
+                    config_defaults = load_config_defaults(args.config_file, backend='azure')
                     default_params.update(config_defaults)
                     print(f"Loaded {len(config_defaults)} default parameters from config file")
                 except Exception as e:
