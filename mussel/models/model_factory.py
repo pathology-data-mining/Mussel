@@ -44,8 +44,10 @@ class ModelType(Enum):
     GOOGLEPATH = 7, "googlepath", "google/path-foundation"
     CONCH1_5 = 8, "conch1_5", "MahmoodLab/TITAN"
     VIRCHOW2 = 9, "virchow2", "hf-hub:paige-ai/Virchow2"
-    GIGAPATH_SLIDE = 10, "gigapath_slide", "hf-hub:prov-gigapath/prov-gigapath"
-    TITAN_SLIDE = 11, "titan_slide", "MahmoodLab/TITAN"
+    UNI2 = 10, "uni2h", "hf-hub:MahmoodLab/UNI2-h"
+    UNI = 11, "uni", "hf-hub:MahmoodLab/UNI"
+    GIGAPATH_SLIDE = 12, "gigapath_slide", "hf-hub:prov-gigapath/prov-gigapath"
+    TITAN_SLIDE = 13, "titan_slide", "MahmoodLab/TITAN"
 
 
 # Mapping of slide encoder models to their compatible patch encoder models
@@ -67,6 +69,8 @@ MODEL_PATCH_SIZES = {
     ModelType.CLIP: 224,  # QuiltNet
     ModelType.GOOGLEPATH: 224,  # Google Path Foundation
     ModelType.CONCH1_5: 512,
+    ModelType.UNI: 256,  # TRIDENT default patch size for UNI
+    ModelType.UNI2: 256,  # TRIDENT default patch size for UNI2
     # Slide encoders inherit from their patch encoders
     ModelType.GIGAPATH_SLIDE: 256,
     ModelType.TITAN_SLIDE: 512,
@@ -635,6 +639,82 @@ class VirchowModel(TorchModel):
         return preprocessing
 
 
+class UniModel(TorchModel):
+    def __init__(
+        self,
+        model_path,
+        use_gpu: bool = True,
+        gpu_device_id: int | List[int] | None = None,
+    ):
+        """Initialize UNI model.
+
+        Args:
+            model_path: Path to model file or HuggingFace repo ID.
+            use_gpu: Whether to use GPU (default: True).
+            gpu_device_id: GPU device ID or list of IDs for multi-GPU (default: None).
+        """
+        if model_path is None:
+            model_path = ModelType.UNI.path
+        model_obj = None
+        if model_path.startswith("hf-hub:"):
+            model_obj = timm.create_model(
+                model_path,
+                pretrained=True,
+                mlp_layer=SwiGLUPacked,
+                act_layer=torch.nn.SiLU,
+            )
+        super().__init__(model_path, model_obj, use_gpu, gpu_device_id)
+
+    def get_preprocessing_fun(self) -> Callable:
+        """Get preprocessing transforms for UNI.
+
+        Returns:
+            Preprocessing transforms resolved from model config.
+        """
+        preprocessing = create_transform(
+            **resolve_data_config(self.obj.pretrained_cfg, model=self.obj)
+        )
+        return preprocessing
+
+
+class Uni2Model(TorchModel):
+    def __init__(
+        self,
+        model_path,
+        use_gpu: bool = True,
+        gpu_device_id: int | List[int] | None = None,
+    ):
+        """Initialize UNI2 model.
+
+        Args:
+            model_path: Path to model file or HuggingFace repo ID.
+            use_gpu: Whether to use GPU (default: True).
+            gpu_device_id: GPU device ID or list of IDs for multi-GPU (default: None).
+        """
+        if model_path is None:
+            model_path = ModelType.UNI2.path
+        model_obj = None
+        if model_path.startswith("hf-hub:"):
+            model_obj = timm.create_model(
+                model_path,
+                pretrained=True,
+                mlp_layer=SwiGLUPacked,
+                act_layer=torch.nn.SiLU,
+            )
+        super().__init__(model_path, model_obj, use_gpu, gpu_device_id)
+
+    def get_preprocessing_fun(self) -> Callable:
+        """Get preprocessing transforms for UNI2.
+
+        Returns:
+            Preprocessing transforms resolved from model config.
+        """
+        preprocessing = create_transform(
+            **resolve_data_config(self.obj.pretrained_cfg, model=self.obj)
+        )
+        return preprocessing
+
+
 class ClipModel(TorchModel):
     def __init__(
         self,
@@ -798,6 +878,20 @@ class Virchow2ModelFactory(ModelFactory):
     def get_model(self, model_path=None, use_gpu=True, gpu_device_id=None):
         """Create Virchow2 model instance."""
         return VirchowModel(model_path, use_gpu, gpu_device_id)
+
+
+@register_model_factory(ModelType.UNI)
+class UniModelFactory(ModelFactory):
+    def get_model(self, model_path=None, use_gpu=True, gpu_device_id=None):
+        """Create UNI model instance."""
+        return UniModel(model_path, use_gpu, gpu_device_id)
+
+
+@register_model_factory(ModelType.UNI2)
+class Uni2ModelFactory(ModelFactory):
+    def get_model(self, model_path=None, use_gpu=True, gpu_device_id=None):
+        """Create UNI2 model instance."""
+        return Uni2Model(model_path, use_gpu, gpu_device_id)
 
 
 @register_model_factory(ModelType.CONCH1_5)

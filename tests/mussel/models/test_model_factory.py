@@ -22,6 +22,8 @@ def test_model_type_enum():
     assert hasattr(ModelType, 'GOOGLEPATH')
     assert hasattr(ModelType, 'CONCH1_5')
     assert hasattr(ModelType, 'VIRCHOW2')
+    assert hasattr(ModelType, 'UNI')
+    assert hasattr(ModelType, 'UNI2')
 
 
 def test_model_type_properties():
@@ -33,6 +35,14 @@ def test_model_type_properties():
     ctranspath_type = ModelType.CTRANSPATH
     assert ctranspath_type.code == "ctranspath"
     assert ctranspath_type.id == 2
+    
+    uni_type = ModelType.UNI
+    assert uni_type.code == "uni"
+    assert uni_type.id == 11
+    
+    uni2_type = ModelType.UNI2
+    assert uni2_type.code == "uni2h"
+    assert uni2_type.id == 10
 
 
 def test_model_factories_registered():
@@ -46,6 +56,8 @@ def test_model_factories_registered():
     assert ModelType.CLIP in MODEL_FACTORIES
     assert ModelType.GOOGLEPATH in MODEL_FACTORIES
     assert ModelType.CONCH1_5 in MODEL_FACTORIES
+    assert ModelType.UNI in MODEL_FACTORIES
+    assert ModelType.UNI2 in MODEL_FACTORIES
 
 
 def test_get_model_factory():
@@ -162,6 +174,8 @@ def test_model_patch_sizes_mapping():
     assert ModelType.CLIP in MODEL_PATCH_SIZES
     assert ModelType.GOOGLEPATH in MODEL_PATCH_SIZES
     assert ModelType.CONCH1_5 in MODEL_PATCH_SIZES
+    assert ModelType.UNI in MODEL_PATCH_SIZES
+    assert ModelType.UNI2 in MODEL_PATCH_SIZES
     assert ModelType.GIGAPATH_SLIDE in MODEL_PATCH_SIZES
     assert ModelType.TITAN_SLIDE in MODEL_PATCH_SIZES
 
@@ -173,6 +187,8 @@ def test_get_default_patch_size():
     assert get_default_patch_size(ModelType.CTRANSPATH) == 256
     assert get_default_patch_size(ModelType.GIGAPATH) == 256
     assert get_default_patch_size(ModelType.GIGAPATH_SLIDE) == 256
+    assert get_default_patch_size(ModelType.UNI) == 256
+    assert get_default_patch_size(ModelType.UNI2) == 256
     
     # Test 224 pixel models
     assert get_default_patch_size(ModelType.VIRCHOW) == 224
