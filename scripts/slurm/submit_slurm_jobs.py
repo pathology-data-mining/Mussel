@@ -1004,6 +1004,7 @@ def main():
         # These override config file values to ensure pre-downloaded models are used
         if model_paths and model_paths.get('CTRANSPATH'):
             csv_kwargs['prefilter_model_path'] = model_paths['CTRANSPATH']
+        # Command-line args also override config values if explicitly provided
         if args.postfilter_model_path:
             csv_kwargs['postfilter_model_path'] = args.postfilter_model_path
         if model_paths and args.slide_model_type and model_paths.get(args.slide_model_type):

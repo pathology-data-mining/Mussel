@@ -3,7 +3,7 @@
 # Use with: --csv-manifest <manifest.csv> --config <this-file>
 
 # Model configuration
-# The prefilter_model_path and postfilter_model_path can now be specified here and will be correctly used
+# Model paths (prefilter, postfilter, slide) can be specified here and will be correctly used
 prefilter_model_type: CTRANSPATH
 prefilter_model_path: /shared/models/ctranspath.pth
 
