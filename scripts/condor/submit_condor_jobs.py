@@ -705,7 +705,6 @@ def main():
             aws_region=args.aws_region,
             hf_token=args.hf_token,
             max_retries=args.max_retries,
-            model_paths=model_paths,
             submit=args.submit,
         )
     else:

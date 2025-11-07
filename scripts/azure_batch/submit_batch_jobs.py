@@ -936,6 +936,7 @@ class AzureBatchJobSubmitter:
                 if 'config' in metadata:
                     config_data = metadata['config']
                     # Flatten configuration into task_info with 'config_' prefix
+                    # Note: Nested dictionaries and lists are skipped for CSV compatibility
                     for key, value in config_data.items():
                         # Skip nested dictionaries and lists for CSV simplicity
                         if not isinstance(value, (dict, list)):

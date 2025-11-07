@@ -870,7 +870,6 @@ def main():
             aws_secret_access_key=args.aws_secret_access_key,
             aws_region=args.aws_region,
             hf_token=args.hf_token,
-            model_paths=model_paths,
             submit=args.submit,
         )
     else:
