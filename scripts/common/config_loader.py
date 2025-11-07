@@ -76,15 +76,14 @@ def load_config_defaults(config_file: str, backend: str = None) -> Dict[str, Any
     'defaults' section if present, otherwise returns all top-level parameters
     (excluding 'tasks' key and backend-specific sections).
     
-    Backend-specific parameters (under 'slurm:', 'condor:', 'azure:' sections)
-    are merged into the main config if the backend matches. If a 'cluster:' 
-    subsection exists within the backend section, it is flattened into the 
-    main parameters.
+    The 'resources:' section (if present) contains standardized resource parameters
+    (cpus, memory, gpus) that are automatically mapped to backend-specific parameter
+    names when a backend is specified.
     
     Args:
         config_file: Path to configuration file (.json, .yaml, or .yml)
-        backend: Backend name ('slurm', 'condor', or 'azure') to extract
-                 backend-specific parameters. If None, backend sections are ignored.
+        backend: Backend name ('slurm', 'condor', or 'azure') to map
+                 standardized resource parameters to backend-specific names.
         
     Returns:
         Dictionary containing default parameters with backend-specific params merged
@@ -95,11 +94,43 @@ def load_config_defaults(config_file: str, backend: str = None) -> Dict[str, Any
     if 'defaults' in config:
         params = config['defaults'].copy()
     else:
-        # Otherwise, return all parameters except 'tasks' and backend sections
+        # Otherwise, return all parameters except 'tasks', 'resources' and backend sections
         params = {k: v for k, v in config.items() 
-                  if k not in ['tasks', 'slurm', 'condor', 'azure', 'azure_batch']}
+                  if k not in ['tasks', 'resources', 'slurm', 'condor', 'azure', 'azure_batch']}
     
-    # If backend is specified, merge backend-specific parameters
+    # Process standardized resources section and map to backend-specific names
+    if 'resources' in config and isinstance(config['resources'], dict):
+        resources = config['resources']
+        
+        if backend:
+            backend_key = backend.lower()
+            
+            # Map standardized resource names to backend-specific parameter names
+            if backend_key == 'slurm':
+                # Map: cpus -> cpus_per_task, memory -> mem, gpus -> gres
+                if 'cpus' in resources:
+                    params['cpus_per_task'] = resources['cpus']
+                if 'memory' in resources:
+                    params['mem'] = resources['memory']
+                if 'gpus' in resources:
+                    # For SLURM, gpus is specified in gres format
+                    params['gres'] = f"gpu:{resources['gpus']}"
+            elif backend_key == 'condor':
+                # Map: cpus -> request_cpus, memory -> request_memory, gpus -> request_gpus
+                if 'cpus' in resources:
+                    params['request_cpus'] = resources['cpus']
+                if 'memory' in resources:
+                    params['request_memory'] = resources['memory']
+                if 'gpus' in resources:
+                    params['request_gpus'] = resources['gpus']
+            else:
+                # For other backends (azure), use as-is or map as needed
+                params.update(resources)
+        else:
+            # No backend specified, include resources as-is
+            params.update(resources)
+    
+    # If backend is specified, also merge backend-specific parameters
     if backend:
         backend_key = backend.lower()
         # Also check for 'azure_batch' as an alias for 'azure'
@@ -107,15 +138,8 @@ def load_config_defaults(config_file: str, backend: str = None) -> Dict[str, Any
             backend_key = 'azure_batch'
         
         if backend_key in config and isinstance(config[backend_key], dict):
-            backend_params = config[backend_key].copy()
-            
-            # If there's a 'cluster' subsection, flatten it into the main params
-            if 'cluster' in backend_params and isinstance(backend_params['cluster'], dict):
-                cluster_params = backend_params.pop('cluster')
-                backend_params.update(cluster_params)
-            
-            # Merge backend-specific parameters (backend params override general params)
-            params.update(backend_params)
+            # Merge backend-specific parameters (backend params override general params and resources)
+            params.update(config[backend_key])
     
     return params
 

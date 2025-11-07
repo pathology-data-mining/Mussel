@@ -17,13 +17,14 @@ aggregation_method: identity
 # Retry configuration
 max_retry_count: 3
 
-# HTCondor-specific parameters (grouped under 'condor:')
+# Standardized resource requirements (works across all backends)
+resources:
+  cpus: 8
+  memory: 32GB
+  gpus: 1
+
+# HTCondor-specific parameters (optional, for HTCondor-only settings)
 condor:
-  # Cluster resources grouped together
-  cluster:
-    request_cpus: 8
-    request_memory: "32GB"
-  request_gpus: 1
   max_retries: 3
 
 # Note: Sensitive fields like AWS credentials should be provided via command-line

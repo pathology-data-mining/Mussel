@@ -76,7 +76,7 @@ slide_001,s3://bucket/slides/slide_001.svs
 slide_002,s3://bucket/slides/slide_002.svs
 ```
 
-**Config format with backend-specific parameters** (params.yaml):
+**Config format with standardized resources** (params.yaml):
 ```yaml
 # General processing parameters
 prefilter_model_type: CTRANSPATH
@@ -84,20 +84,19 @@ batch_size: 64
 num_workers: 4
 use_gpu: true
 
-# SLURM-specific parameters (grouped when using SLURM)
+# Standardized resource requirements (works across all backends)
+resources:
+  cpus: 8
+  memory: 32G
+  gpus: 1
+
+# Backend-specific parameters (optional, for backend-only settings)
 slurm:
   partition: gpu
-  cluster:
-    cpus_per_task: 8
-    mem: 32G
-  gres: "gpu:1"
+  time: "04:00:00"
 
-# HTCondor-specific parameters (grouped when using HTCondor)
 condor:
-  cluster:
-    request_cpus: 8
-    request_memory: "32GB"
-  request_gpus: 1
+  max_retries: 3
 ```
 
 ## Configuration File Formats
@@ -284,20 +283,48 @@ python scripts/slurm/submit_slurm_jobs.py \
 - `aws_region`: AWS region (default: "us-east-1")
 - `aws_endpoint_url`: Custom S3 endpoint URL
 
+### Standardized Resource Parameters
+
+Resource requirements (CPU, memory, GPU) should be specified in the top-level `resources:` section using standardized parameter names. The config loader automatically maps these to backend-specific parameter names:
+
+**Standardized resource parameters:**
+- `cpus`: Number of CPUs (integer)
+- `memory`: Memory amount with unit (e.g., "32G", "64GB")
+- `gpus`: Number of GPUs (integer)
+
+**Backend mapping:**
+- **SLURM**: `cpus` → `cpus_per_task`, `memory` → `mem`, `gpus` → `gres` (as `gpu:N`)
+- **HTCondor**: `cpus` → `request_cpus`, `memory` → `request_memory`, `gpus` → `request_gpus`
+- **Azure**: Uses values as-is
+
+**Example with standardized resources:**
+```yaml
+prefilter_model_type: CTRANSPATH
+batch_size: 64
+
+resources:
+  cpus: 8
+  memory: 32G
+  gpus: 1
+
+slurm:
+  partition: gpu
+  time: "04:00:00"
+
+condor:
+  max_retries: 3
+```
+
 ### Backend-Specific Parameters
 
-Backend-specific parameters should be grouped under their respective backend sections (`slurm:`, `condor:`, or `azure:`). This keeps the configuration organized and allows the same config file to specify parameters for multiple backends.
+Backend-specific parameters (non-resource settings) should be grouped under their respective backend sections (`slurm:`, `condor:`, or `azure:`).
 
 #### SLURM Parameters
 
-When using SLURM, include these parameters under the `slurm:` section. Group CPU and memory resources under `cluster:`:
+SLURM-specific parameters (resources are defined in the top-level `resources:` section):
 
 - `partition`: SLURM partition (default: "batch")
-- `cluster`: Resource group containing:
-  - `cpus_per_task`: Number of CPUs per task (default: 4)
-  - `mem`: Memory per task (e.g., "16G", "32GB")
 - `time`: Time limit in HH:MM:SS format (default: "02:00:00")
-- `gres`: Generic resources (e.g., "gpu:1")
 - `qos`: Quality of service
 
 **Example SLURM config:**
@@ -305,22 +332,21 @@ When using SLURM, include these parameters under the `slurm:` section. Group CPU
 prefilter_model_type: CTRANSPATH
 batch_size: 64
 
+resources:
+  cpus: 8
+  memory: 32G
+  gpus: 1
+
 slurm:
   partition: gpu
-  cluster:
-    cpus_per_task: 8
-    mem: 32G
-  gres: "gpu:1"
+  time: "04:00:00"
+  qos: high
 ```
 
 #### HTCondor Parameters
 
-When using HTCondor, include these parameters under the `condor:` section. Group CPU and memory resources under `cluster:`:
+HTCondor-specific parameters (resources are defined in the top-level `resources:` section):
 
-- `cluster`: Resource group containing:
-  - `request_cpus`: Number of CPUs to request (default: 4)
-  - `request_memory`: Memory to request (e.g., "16GB", default: "16GB")
-- `request_gpus`: Number of GPUs to request (default: 1)
 - `max_retries`: Maximum retry attempts (default: 3)
 
 **Example HTCondor config:**
@@ -328,11 +354,13 @@ When using HTCondor, include these parameters under the `condor:` section. Group
 prefilter_model_type: CTRANSPATH
 batch_size: 64
 
+resources:
+  cpus: 8
+  memory: 32GB
+  gpus: 1
+
 condor:
-  cluster:
-    request_cpus: 8
-    request_memory: "32GB"
-  request_gpus: 1
+  max_retries: 3
 ```
 
 ### Azure-Specific Parameters
@@ -347,6 +375,10 @@ When using Azure Batch, include these parameters under the `azure:` or `azure_ba
 ```yaml
 prefilter_model_type: CTRANSPATH
 batch_size: 64
+
+resources:
+  cpus: 8
+  memory: 32G
 
 azure:
   container_image: "mskmind/mussel:latest-torch-gpu"

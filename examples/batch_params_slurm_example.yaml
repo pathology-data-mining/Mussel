@@ -17,15 +17,16 @@ aggregation_method: identity
 # Retry configuration
 max_retry_count: 3
 
-# SLURM-specific parameters (grouped under 'slurm:')
+# Standardized resource requirements (works across all backends)
+resources:
+  cpus: 8
+  memory: 32G
+  gpus: 1
+
+# SLURM-specific parameters (optional, for SLURM-only settings)
 slurm:
   partition: gpu
-  # Cluster resources grouped together
-  cluster:
-    cpus_per_task: 8
-    mem: 32G
   time: "04:00:00"
-  gres: "gpu:1"
   qos: high
 
 # Note: Sensitive fields like AWS credentials should be provided via command-line
