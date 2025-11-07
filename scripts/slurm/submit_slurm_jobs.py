@@ -704,7 +704,6 @@ def main():
     input_group.add_argument("--job-name", help="Single job name/task ID")
     input_group.add_argument("--csv-manifest", help="CSV manifest file with slide_id,slide_path. "
                         "Can be used with --config to load parameters from config.")
-    input_group.add_argument("--task-config", help="Configuration file with task definitions or parameters (JSON or YAML format)")
     
     # Allow --config as optional parameter when using --csv-manifest
     parser.add_argument("--config", dest="config_file_for_csv",
@@ -852,7 +851,7 @@ def main():
     
     # Validate CTRANSPATH configuration
     # CTRANSPATH requires a model_path to be provided via configuration
-    if args.csv_manifest or args.task_config:
+    if args.csv_manifest:
         # Determine the prefilter model type from config or default
         prefilter_model = args.prefilter_model_type or 'CTRANSPATH'  # Default
         if args.config_file_for_csv and load_config_defaults:
@@ -922,50 +921,6 @@ def main():
             max_num_holes=args.max_num_holes,
             num_workers=args.num_workers,
             batch_size=args.batch_size,
-            use_gpu=args.use_gpu,
-            partition=args.partition,
-            cpus_per_task=args.cpus_per_task,
-            mem=args.mem,
-            time=args.time,
-            gres=args.gres,
-            qos=args.qos,
-            aws_access_key_id=args.aws_access_key_id,
-            aws_secret_access_key=args.aws_secret_access_key,
-            aws_region=args.aws_region,
-            hf_token=args.hf_token,
-            submit=args.submit,
-        )
-    elif args.task_config:
-        # Submit from config file (with task definitions)
-        submitter.submit_tasks_from_config(
-            config_file=args.task_config,
-            classifier_pkl=args.classifier_pkl,
-            classifier_threshold=args.classifier_threshold,
-            prefilter_model_type=args.prefilter_model_type,
-            prefilter_model_path=model_paths.get('CTRANSPATH') if model_paths else None,
-            postfilter_model_type=args.postfilter_model_type,
-            postfilter_model_path=args.postfilter_model_path,
-            postfilter_model_types=args.postfilter_models,
-            aggregation_method=args.aggregation_method,
-            slide_model_type=args.slide_model_type,
-            slide_model_path=model_paths.get(args.slide_model_type) if model_paths and args.slide_model_type else None,
-            seg_config_group=args.seg_config_group,
-            segment_threshold=args.segment_threshold,
-            patch_size=args.patch_size,
-            step_size=args.step_size,
-            mpp=args.mpp,
-            seg_level=args.seg_level,
-            segment_max_value=args.segment_max_value,
-            median_blur_ksize=args.median_blur_ksize,
-            morphology_ex_kernel=args.morphology_ex_kernel,
-            ref_patch_size=args.ref_patch_size,
-            use_otsu=args.use_otsu,
-            tissue_area_threshold=args.tissue_area_threshold,
-            hole_area_threshold=args.hole_area_threshold,
-            max_num_holes=args.max_num_holes,
-            num_workers=args.num_workers,
-            batch_size=args.batch_size,
-            slide_batch_size=args.slide_batch_size,
             use_gpu=args.use_gpu,
             partition=args.partition,
             cpus_per_task=args.cpus_per_task,
