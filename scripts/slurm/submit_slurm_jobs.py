@@ -96,7 +96,7 @@ class SlurmJobSubmitter:
         num_workers: int = 4,
         batch_size: int = 64,
         use_gpu: bool = True,
-        partition: str = "batch",
+        partition: Optional[str] = None,
         cpus_per_task: int = 4,
         mem: str = "16G",
         time: str = "02:00:00",
@@ -124,13 +124,18 @@ class SlurmJobSubmitter:
         # Build SLURM directives
         directives = [
             f"#SBATCH --job-name={job_name}",
-            f"#SBATCH --partition={partition}",
+        ]
+        
+        if partition:
+            directives.append(f"#SBATCH --partition={partition}")
+        
+        directives.extend([
             f"#SBATCH --cpus-per-task={cpus_per_task}",
             f"#SBATCH --mem={mem}",
             f"#SBATCH --time={time}",
             f"#SBATCH --output={log_dir}/{job_name}_%j.out",
             f"#SBATCH --error={log_dir}/{job_name}_%j.err",
-        ]
+        ])
         
         if gres:
             directives.append(f"#SBATCH --gres={gres}")
@@ -574,7 +579,7 @@ bash {self.task_script}
         log_dir = kwargs.get('output_dir', 'slurm_logs')
         os.makedirs(log_dir, exist_ok=True)
         
-        partition = kwargs.get('partition', 'batch')
+        partition = kwargs.get('partition')
         cpus_per_task = kwargs.get('cpus_per_task', 4)
         mem = kwargs.get('mem', '16G')
         time = kwargs.get('time', '02:00:00')
@@ -583,14 +588,19 @@ bash {self.task_script}
         
         directives = [
             f"#SBATCH --job-name=mussel_array",
-            f"#SBATCH --partition={partition}",
+        ]
+        
+        if partition:
+            directives.append(f"#SBATCH --partition={partition}")
+        
+        directives.extend([
             f"#SBATCH --cpus-per-task={cpus_per_task}",
             f"#SBATCH --mem={mem}",
             f"#SBATCH --time={time}",
             f"#SBATCH --array=1-{len(slides)}",
             f"#SBATCH --output={log_dir}/mussel_array_%A_%a.out",
             f"#SBATCH --error={log_dir}/mussel_array_%A_%a.err",
-        ]
+        ])
         
         if gres:
             directives.append(f"#SBATCH --gres={gres}")
@@ -761,7 +771,7 @@ def main():
     parser.add_argument("--no-gpu", action="store_false", dest="use_gpu")
     
     # SLURM resource requirements
-    parser.add_argument("--partition", default="batch", help="SLURM partition")
+    parser.add_argument("--partition", default=None, help="SLURM partition (if not specified, uses SLURM default)")
     parser.add_argument("--cpus-per-task", type=int, default=4)
     parser.add_argument("--mem", default="16G", help="Memory per task (e.g., 16G, 32GB)")
     parser.add_argument("--time", default="02:00:00", help="Time limit (HH:MM:SS)")
@@ -984,13 +994,16 @@ def main():
             'batch_size': args.batch_size,
             'slide_batch_size': args.slide_batch_size,
             'use_gpu': args.use_gpu,
-            'partition': args.partition,
             'cpus_per_task': args.cpus_per_task,
             'mem': args.mem,
             'time': args.time,
             'aws_region': args.aws_region,
             'submit': args.submit,
         }
+        
+        # Only include partition if explicitly provided
+        if args.partition is not None:
+            csv_kwargs['partition'] = args.partition
         
         # If config file is provided for CSV, merge with config defaults (already loaded above)
         if args.config_file_for_csv and config_defaults:
