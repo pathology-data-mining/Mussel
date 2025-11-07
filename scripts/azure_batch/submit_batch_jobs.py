@@ -1313,16 +1313,17 @@ def main():
         if args.auto_scale_evaluation_interval == DEFAULT_AUTO_SCALE_INTERVAL and 'auto_scale_evaluation_interval' in config_defaults:
             args.auto_scale_evaluation_interval = config_defaults['auto_scale_evaluation_interval']
     
-    # Auto-generate pool_id and job_id if not provided
-    if not args.pool_id:
+    # Auto-generate pool_id and job_id if not provided (use same timestamp for consistency)
+    if not args.pool_id or not args.job_id:
         timestamp = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
-        args.pool_id = f"mussel-pool-{timestamp}"
-        print(f"Auto-generated pool ID: {args.pool_id}")
-    
-    if not args.job_id:
-        timestamp = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
-        args.job_id = f"mussel-job-{timestamp}"
-        print(f"Auto-generated job ID: {args.job_id}")
+        
+        if not args.pool_id:
+            args.pool_id = f"mussel-pool-{timestamp}"
+            print(f"Auto-generated pool ID: {args.pool_id}")
+        
+        if not args.job_id:
+            args.job_id = f"mussel-job-{timestamp}"
+            print(f"Auto-generated job ID: {args.job_id}")
 
     # Pre-download models if requested and using batch processing
     model_paths = {}

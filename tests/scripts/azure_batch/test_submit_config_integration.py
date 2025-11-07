@@ -279,7 +279,6 @@ azure:
         os.unlink(config_file)
 
 
-
 if __name__ == '__main__':
     # Run tests
     test_config_parameters_applied_to_pool_creation()
