@@ -30,9 +30,22 @@ aws:
 
 # Azure Batch-specific parameters (optional, for Azure Batch-only settings)
 azure:
+  # Docker container image to use for batch processing
   container_image: "mskmind/mussel:latest-torch-gpu"
+  
+  # Azure Storage account for staging files (optional)
   storage_account_name: "mystorageaccount"
   # Note: storage_account_key should be provided via command-line for security
+  
+  # Pool configuration (optional, can also be specified via command-line)
+  vm_size: "Standard_NC6s_v3"  # VM size for pool nodes
+  node_count: 2  # Number of nodes in the pool
+  
+  # Auto-scaling configuration (optional)
+  # enable_auto_scale: true
+  # min_node_count: 1
+  # max_node_count: 10
+  # auto_scale_evaluation_interval: 15  # minutes
 
 # Note: Sensitive fields like AWS credentials and storage keys should be provided 
 # via command-line, not in the config file for security

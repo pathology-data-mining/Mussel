@@ -384,6 +384,66 @@ Enable auto-scaling to dynamically adjust pool size based on workload:
 --container-image mskmind/mussel:latest-torch-cpu
 ```
 
+### Configuration Files with Azure Parameters
+
+You can specify Azure Batch parameters in your YAML or JSON configuration file under the `azure:` section. This allows you to keep your Azure-specific settings separate from general processing parameters.
+
+**Configuration file example (`batch_params_azure.yaml`):**
+```yaml
+# General processing parameters
+prefilter_model_type: CTRANSPATH
+batch_size: 64
+num_workers: 4
+max_retry_count: 3
+
+# Azure Batch-specific parameters
+azure:
+  # Docker container image
+  container_image: "mskmind/mussel:latest-torch-gpu"
+  
+  # Storage account for staging
+  storage_account_name: "mystorageaccount"
+  
+  # Pool configuration
+  vm_size: "Standard_NC6s_v3"
+  node_count: 2
+  
+  # Auto-scaling (optional)
+  enable_auto_scale: true
+  min_node_count: 1
+  max_node_count: 10
+  auto_scale_evaluation_interval: 15
+```
+
+**Usage with config file:**
+```bash
+python scripts/azure_batch/submit_batch_jobs.py \
+  --batch-account-name mybatchaccount \
+  --batch-account-key <your-batch-key> \
+  --batch-account-url https://mybatchaccount.eastus.batch.azure.com \
+  --pool-id mussel-pool \
+  --create-pool \
+  --job-id mussel-job \
+  --create-job \
+  --config-file batch_params_azure.yaml \
+  --csv-manifest slides.csv \
+  --output-s3-prefix s3://my-bucket/results/
+```
+
+**How it works:**
+- Azure parameters in the `azure:` section are automatically loaded when using `--config-file`
+- Command-line arguments override config file values if both are specified
+- Sensitive parameters like `storage_account_key` should still be provided via command-line
+- The config file can include both general parameters and Azure-specific parameters
+
+**Benefits:**
+- Keep Azure settings in version control without exposing secrets
+- Share configurations across team members
+- Easily switch between different Azure setups
+- Reduce command-line complexity for common configurations
+
+See `examples/batch_params_azure_example.yaml` for a complete example.
+
 ### Task Configuration
 
 Each task can specify:
