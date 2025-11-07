@@ -292,7 +292,7 @@ python scripts/azure_batch/submit_batch_jobs.py \
 
 ```bash
 python scripts/condor/submit_condor_jobs.py \
-  --config-file batch_config.yaml \
+  --task-config batch_config.yaml \
   --aws-access-key-id <key> \
   --aws-secret-access-key <secret> \
   --submit
@@ -302,7 +302,7 @@ python scripts/condor/submit_condor_jobs.py \
 
 ```bash
 python scripts/slurm/submit_slurm_jobs.py \
-  --config-file batch_config.yaml \
+  --task-config batch_config.yaml \
   --partition gpu \
   --gres gpu:1 \
   --aws-access-key-id <key> \
