@@ -950,7 +950,6 @@ def main():
             'classifier_threshold': args.classifier_threshold,
             'prefilter_model_type': args.prefilter_model_type,
             'postfilter_model_type': args.postfilter_model_type,
-            'postfilter_model_path': args.postfilter_model_path,
             'postfilter_model_types': args.postfilter_models,
             'aggregation_method': args.aggregation_method,
             'slide_model_type': args.slide_model_type,
@@ -1005,6 +1004,8 @@ def main():
         # These override config file values to ensure pre-downloaded models are used
         if model_paths and model_paths.get('CTRANSPATH'):
             csv_kwargs['prefilter_model_path'] = model_paths['CTRANSPATH']
+        if args.postfilter_model_path:
+            csv_kwargs['postfilter_model_path'] = args.postfilter_model_path
         if model_paths and args.slide_model_type and model_paths.get(args.slide_model_type):
             csv_kwargs['slide_model_path'] = model_paths[args.slide_model_type]
         

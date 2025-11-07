@@ -1,11 +1,15 @@
-# Example: Configuration file demonstrating prefilter_model_path usage
+# Example: Configuration file demonstrating model path usage
 # This example shows how to specify model paths in the config file
 # Use with: --csv-manifest <manifest.csv> --config <this-file>
 
 # Model configuration
-# The prefilter_model_path can now be specified here and will be correctly used
+# The prefilter_model_path and postfilter_model_path can now be specified here and will be correctly used
 prefilter_model_type: CTRANSPATH
 prefilter_model_path: /shared/models/ctranspath.pth
+
+# Optional: Postfilter model configuration
+# postfilter_model_type: UNI
+# postfilter_model_path: /shared/models/uni.pth
 
 # Optional: Slide model configuration for aggregation
 # slide_model_type: GIGAPATH_SLIDE

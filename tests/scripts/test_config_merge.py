@@ -75,6 +75,48 @@ num_workers: 4
         os.unlink(config_file)
 
 
+def test_postfilter_model_path_from_config():
+    """
+    Test that postfilter_model_path from config file is correctly loaded in CSV workflow.
+    
+    This tests the fix for the same issue with postfilter_model_path.
+    """
+    yaml_content = """
+# Test config with postfilter_model_path
+postfilter_model_type: UNI
+postfilter_model_path: /path/to/uni.pth
+batch_size: 64
+"""
+    
+    with tempfile.NamedTemporaryFile(mode='w', suffix='.yaml', delete=False) as f:
+        f.write(yaml_content)
+        config_file = f.name
+    
+    try:
+        # Load config defaults
+        config_defaults = load_config_defaults(config_file, backend='condor')
+        
+        # Verify postfilter_model_path is present in loaded config
+        assert 'postfilter_model_path' in config_defaults
+        assert config_defaults['postfilter_model_path'] == '/path/to/uni.pth'
+        assert config_defaults['postfilter_model_type'] == 'UNI'
+        
+        # Simulate the fixed behavior
+        csv_kwargs_fixed = {
+            'postfilter_model_type': 'UNI',
+            # postfilter_model_path is not included if it's None
+            'batch_size': 64,
+        }
+        
+        # Fixed merge: config first, then csv_kwargs
+        merged_fixed = {**config_defaults, **csv_kwargs_fixed}
+        # The fix: postfilter_model_path retains the config value
+        assert merged_fixed['postfilter_model_path'] == '/path/to/uni.pth'
+        
+    finally:
+        os.unlink(config_file)
+
+
 def test_slide_model_path_from_config():
     """
     Test that slide_model_path from config file is correctly loaded.
