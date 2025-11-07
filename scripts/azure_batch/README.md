@@ -54,13 +54,19 @@ az batch account create \
 
 ### 2. Python Dependencies
 
-Install the required Python packages:
+Install the required Python packages. If using `uv`:
 
 ```bash
-pip install azure-batch azure-storage-blob azure-storage-file-share azure-identity
+uv sync --extra distributed
 ```
 
-For Azure Files staging support, `azure-storage-file-share` is required.
+Or with `pip`:
+
+```bash
+pip install azure-batch azure-storage-blob azure-storage-file-share azure-identity boto3
+```
+
+The `distributed` extra includes all dependencies needed for Azure Batch submission scripts and S3 integration.
 
 ### 3. Docker Image
 
