@@ -109,7 +109,7 @@ class SlurmJobSubmitter:
         hf_token: Optional[str] = None,
         output_dir: Optional[str] = None,
         slide_batch_size: int = 8,
-        **kwargs  # Accept and ignore extra parameters (e.g., 'submit' flag)
+        **kwargs  # Accept and ignore extra parameters from config merging
     ) -> str:
         """Generate SLURM batch script content.
         

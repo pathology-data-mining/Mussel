@@ -19,10 +19,11 @@ from config_loader import load_config_defaults
 
 def test_prefilter_model_path_from_config():
     """
-    Test that prefilter_model_path from config file is correctly loaded.
+    Test that prefilter_model_path from config file is correctly loaded in CSV workflow.
     
     This tests the fix for the issue where prefilter_model_path from config
-    was being overridden by None values from command-line args.
+    was being overridden by None values during CSV manifest processing with config files.
+    The bug occurred because None was explicitly set in csv_kwargs before config merge.
     """
     yaml_content = """
 # Test config with prefilter_model_path

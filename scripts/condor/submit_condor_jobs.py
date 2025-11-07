@@ -109,7 +109,7 @@ class CondorJobSubmitter:
         max_retries: int = 3,
         output_dir: Optional[str] = None,
         slide_batch_size: int = 8,
-        **kwargs  # Accept and ignore extra parameters (e.g., 'submit' flag)
+        **kwargs  # Accept and ignore extra parameters from config merging
     ) -> str:
         """Generate HTCondor submit file content.
         
