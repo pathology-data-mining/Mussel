@@ -1,13 +1,10 @@
-# Batch Processing for Multi-Slide Feature Extraction
+# Batch Processing for Slide-Level Feature Extraction
 
-This document describes the batch processing features for `tessellate-extract-features` that enable efficient processing of multiple whole-slide images with both tile-level and slide-level batching.
+This document describes the batch processing feature for `tessellate-extract-features` that enables efficient processing of multiple whole-slide images.
 
 ## Overview
 
-The `tessellate-extract-features` command automatically provides optimized batch processing when multiple slides are provided. Batch processing occurs at two levels:
-
-1. **Tile-level batching** (NEW): Patch encoder model loaded once for all slides
-2. **Slide-level batching** (existing): Slide encoder model loaded once for all slides
+The `tessellate-extract-features` command automatically provides optimized batch processing when multiple slides are provided. This is particularly beneficial when using slide-level aggregation models (e.g., GIGAPATH_SLIDE, TITAN_SLIDE).
 
 The command automatically detects whether to operate in single-slide or batch mode:
 - **Single mode**: When `slide_path` is provided
@@ -17,71 +14,40 @@ The command automatically detects whether to operate in single-slide or batch mo
 
 Batch processing provides significant performance improvements through:
 
-1. **Tile-Level Batching Benefits** (NEW):
-   - **Model Loading Overhead Reduction**: The patch encoder model is loaded once for all slides, rather than once per slide
-   - **Better GPU Utilization**: Continuous processing without repeated initialization
-   - **16-18% performance improvement** for slides with ~13,000 tiles
-
-2. **Slide-Level Batching Benefits** (existing):
-   - **Model Loading Overhead Reduction**: The slide encoder model is loaded once for all slides
-   - **Parallel Processing**: Multiple slides processed together on GPU
-   - **6-8x speedup** for slide aggregation step
-
-### Processing Pipeline
-
-**Before (Sequential per-slide)**:
-```
-For each slide:
-  1. Tessellate
-  2. Load patch encoder → Extract patch features
-  3. Filter (if needed)
-  4. Load patch encoder → Extract features again
-  5. Load slide encoder → Aggregate to slide level (if needed)
-```
-
-**After (Multi-level batching)**:
-```
-Phase 1: For all slides - Tessellate and filter
-Phase 2: Load patch encoder ONCE → Extract patch features for ALL slides
-Phase 3: Load slide encoder ONCE → Aggregate for ALL slides (if needed)
-Phase 4: Create visualizations
-```
+1. **Model Loading Overhead Reduction**: The slide encoder model is loaded once for all slides, rather than once per slide
+2. **Better GPU Utilization**: Multiple slides can be processed in parallel on the GPU
+3. **Reduced Memory Transfer Overhead**: Batch tensor operations are more efficient than sequential single-slide operations
 
 ### Performance Comparison
 
-**Tile-Level Batching Impact**:
-For 20 slides with 13,000 tiles each:
-- **Sequential**: 20 × 25.4s = 508s
-- **Batch (tile-level)**: ~418s
-- **Savings**: 90s (17.7% faster)
+**Sequential Processing (per-slide)**:
+```
+For N slides with model aggregation:
+- Load model N times
+- Process each slide individually
+Total time ≈ N × (model_load_time + inference_time)
+```
 
-**Combined Tile + Slide Batching**:
-For 100 slides with model aggregation:
-- **Sequential (no batching)**: ~2,540s (42.3 min)
-- **Tile-level batching only**: ~2,074s (34.6 min)
-- **Full batching (tile + slide)**: ~1,600s (26.7 min)
-- **Total speedup**: ~1.6x (37% faster)
+**Batch Processing**:
+```
+For N slides with batch_size B:
+- Load model once
+- Process slides in batches of B
+Total time ≈ model_load_time + (N/B) × batch_inference_time
+```
+
+Where `batch_inference_time < B × inference_time` due to GPU parallelization.
 
 ### Example Timing Estimates
 
 With 100 slides, batch_size=8, using GIGAPATH_SLIDE:
-
-**Old Sequential Approach**:
-```
-100 slides × (2s patch encoder load + 20s tile extraction + 
-              2s slide encoder load + 0.5s aggregation) = 2,450s
-```
-
-**New Batched Approach**:
-```
-1 × 2s patch encoder load + 100 × 20s tile extraction + 
-1 × 2s slide encoder load + (100/8) × 3s batch aggregation = 2,040s
-Savings: 410s (17% faster)
-```
+- **Sequential**: 100 × (2s model load + 0.5s inference) = 250s
+- **Batch**: 2s model load + (100/8) × 3s batch inference = ~40s
+- **Speedup**: ~6.3x
 
 ## Usage
 
-### Basic Batch Processing (Tile-Level Batching)
+### Basic Batch Processing
 
 Process multiple slides without filtering:
 
@@ -93,14 +59,9 @@ tessellate_extract_features \
   use_gpu=true
 ```
 
-This automatically uses tile-level batching:
-- Patch encoder loaded once
-- Tiles from all slides processed in batches
-- ~17% faster than sequential processing
+### With Slide-Level Aggregation (Optimized)
 
-### With Slide-Level Aggregation (Full Batching)
-
-Process multiple slides with both tile-level and slide-level batching:
+Process multiple slides with slide-level model aggregation:
 
 ```bash
 tessellate_extract_features \
@@ -109,18 +70,10 @@ tessellate_extract_features \
   aggregation_method=model \
   slide_model_type=GIGAPATH_SLIDE \
   slide_batch_size=8 \
-  batch_size=64 \
   use_gpu=true
 ```
 
-Parameters:
-- `slide_batch_size`: Number of slides processed together during slide aggregation (default: 8)
-- `batch_size`: Number of tiles processed together during feature extraction (default: 64)
-
-This uses full multi-level batching:
-- Patch encoder loaded once for all slides (tile-level batching)
-- Slide encoder loaded once for all slides (slide-level batching)
-- Maximum performance benefit (~35-40% faster)
+The `slide_batch_size` parameter controls how many slides are processed together during slide-level aggregation (default: 8).
 
 ### With Filtering
 
@@ -166,10 +119,6 @@ If not specified, slide IDs are auto-generated from filenames.
   - Larger values use more GPU memory but may improve throughput
   - Smaller values reduce memory usage
   - Only affects model-based aggregation
-- `batch_size`: Number of tiles to process together during tile-level feature extraction (default: 64)
-  - Controls tile batching within each slide
-  - Larger values improve GPU utilization but use more memory
-  - Affects both single-slide and batch processing
 
 ### Model Parameters
 
@@ -216,67 +165,42 @@ output_dir/
 ## When to Use Batch Processing
 
 **Use batch processing when**:
-- Processing 2 or more slides
-- Want to minimize model loading overhead
+- Processing multiple slides (obviously)
+- Using slide-level aggregation with `aggregation_method="model"`
 - GPU memory is available
 - Throughput is more important than per-slide latency
-
-**Benefits increase with**:
-- More slides being processed (overhead amortized over more slides)
-- Using slide-level model aggregation (`aggregation_method="model"`)
-- Slides with many tiles (tile-level batching becomes more significant)
 
 **Use single-slide processing when**:
 - Processing only one slide
 - Memory constraints require processing one slide at a time
 - Real-time/streaming processing is needed
-- Working on a system without GPU
+- Not using slide-level model aggregation
 
 ## Implementation Details
 
-The batch processing workflow uses a multi-phase approach:
+The batch processing workflow:
 
-1. **Phase 1: Tessellation and Filtering** (parallel per-slide):
-   - Tessellate all slides to extract tile coordinates
-   - Optional: Extract features for filtering
-   - Optional: Filter tiles based on classifier
-   - Results in coordinate sets for each slide
+1. **Per-Slide Processing**:
+   - Tessellation (parallel)
+   - Tile-level feature extraction (parallel)
+   - Optional filtering (parallel)
 
-2. **Phase 2: Tile-Level Feature Extraction** (NEW - batched across slides):
-   - Load patch encoder model once
-   - Process tiles from all slides sequentially
-   - Each slide's tiles processed in batches
-   - Save patch features per slide
-   - **Key benefit**: Model loaded once instead of N times
+2. **Batch Slide-Level Aggregation**:
+   - Load slide encoder model once
+   - Process slides in batches during aggregation
+   - Save results per slide
 
-3. **Phase 3: Slide-Level Aggregation** (batched if using model):
-   - Load slide encoder model once (if using model aggregation)
-   - Aggregate patch features to slide level
-   - Process slides in batches for better GPU utilization
-   - Save slide-level features per slide
-
-4. **Phase 4: Visualization** (per-slide):
-   - Create optional visualizations (masks, grids, thumbnails)
-
-For non-model aggregation methods (identity, mean, max):
-- Phase 2 still benefits from tile-level batching
-- Phase 3 uses simple numpy operations (no model loading benefit)
+For non-model aggregation methods (identity, mean, max), slides are processed sequentially as batch processing provides no benefit.
 
 ## Memory Considerations
 
 GPU memory usage depends on:
-- `batch_size`: Number of tiles processed together (tile-level batching)
-- `slide_batch_size`: Number of slides processed together (slide-level batching)
+- `slide_batch_size`: Number of slides processed together
 - Number of tiles per slide
 - Patch feature dimension
-- Patch encoder model size
-- Slide encoder model size (if using model aggregation)
+- Slide encoder model size
 
-**If encountering out-of-memory errors**:
-1. Reduce `batch_size` (tile-level batching)
-2. Reduce `slide_batch_size` (slide-level batching)
-3. Process fewer slides at once
-4. Use CPU instead of GPU (slower but no memory limit)
+If encountering out-of-memory errors, reduce `slide_batch_size`.
 
 ## Backward Compatibility
 
@@ -321,28 +245,11 @@ tessellate_extract_features \
 
 To maximize performance:
 
-1. **Tune batch_size (tile-level batching)**: 
-   - Start with 64, increase to 128 or 256 if GPU memory allows
-   - Larger values improve GPU utilization during feature extraction
-   - This benefits both single-slide and batch processing
-
-2. **Tune slide_batch_size (slide-level batching)**: 
-   - Start with 8, increase if GPU memory allows
-   - Only relevant when using `aggregation_method=model`
-   - Affects slide aggregation phase only
-
+1. **Tune slide_batch_size**: Start with 8, increase if GPU memory allows
+2. **Tune tile batch_size**: Larger values (e.g., 128, 256) for better GPU utilization
 3. **Use multi-GPU**: Set `gpu_device_ids=[0,1,2,3]` for multi-GPU processing
-
 4. **Increase num_workers**: More workers for faster data loading (e.g., 8-16)
-
-5. **Optimize I/O**: 
-   - Use local SSD storage for slides and output
-   - Set `keep_intermediate_files=false` to reduce disk I/O
-
-6. **Process in batches**: 
-   - Always use batch mode when processing 2+ slides
-   - Tile-level batching provides ~17% speedup
-   - Combined with slide-level batching: ~35-40% total speedup
+5. **Keep intermediate files**: Set `keep_intermediate_files=false` to save disk I/O
 
 ## Benchmarking
 

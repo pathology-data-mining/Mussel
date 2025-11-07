@@ -420,8 +420,7 @@ class TitanSlideEncoderModel(TorchModel):
         which requires patch features, coordinates, and patch size at level 0.
 
         Returns:
-            Callable that takes patch features, coords, and patch_size, returns slide-level features
-            with shape (768,) matching the GIGAPATH slide encoder output format.
+            Callable that takes patch features, coords, and patch_size, returns slide-level features.
         """
 
         def model_fun(patch_features, coords, patch_size):
@@ -435,7 +434,7 @@ class TitanSlideEncoderModel(TorchModel):
                 coords = coords.to(self.device, non_blocking=True)
                 return self.obj.encode_slide_from_patch_features(
                     patch_features, coords, patch_size
-                ).squeeze().cpu()
+                ).cpu()
 
         return model_fun
 
@@ -522,8 +521,7 @@ class GigapathSlideEncoderModel(TorchModel):
         requires both tile embeddings and coordinates as arguments.
 
         Returns:
-            Callable that takes tile embeddings and coordinates, returns slide-level features
-            with shape (768,).
+            Callable that takes tile embeddings and coordinates, returns slide-level features.
         """
 
         def model_fun(features, coords):
@@ -535,7 +533,7 @@ class GigapathSlideEncoderModel(TorchModel):
             ):
                 features = features.to(self.device, non_blocking=True)
                 coords = coords.to(self.device, non_blocking=True)
-                return self.obj(features, coords)[0].squeeze().cpu()
+                return self.obj(features, coords)[0].cpu()
 
         return model_fun
 

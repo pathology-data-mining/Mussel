@@ -104,9 +104,6 @@ def test_titan_slide_encoder_model_fun():
             assert call_args[0][0] is not None  # patch_features
             assert call_args[0][1] is not None  # coords
             assert call_args[0][2] == patch_size  # patch_size
-            
-            # Verify output shape is (768,) not (1, 768)
-            assert result.shape == torch.Size([768]), f"Expected shape (768,), got {result.shape}"
 
 
 def test_gigapath_slide_encoder_model_fun():
@@ -145,9 +142,6 @@ def test_gigapath_slide_encoder_model_fun():
             # Verify that the inputs were passed (they should be on the device)
             assert call_args[0][0] is not None  # features
             assert call_args[0][1] is not None  # coords
-            
-            # Verify output shape is (768,) not (1, 768)
-            assert result.shape == torch.Size([768]), f"Expected shape (768,), got {result.shape}"
 
 
 def test_model_patch_sizes_mapping():

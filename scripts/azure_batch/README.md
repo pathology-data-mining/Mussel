@@ -203,43 +203,6 @@ python scripts/azure_batch/submit_batch_jobs.py \
   --monitor
 ```
 
-### Slide Batch Processing (Optimized)
-
-**NEW**: Process multiple slides together to optimize slide encoder loading:
-
-```bash
-python scripts/azure_batch/submit_batch_jobs.py \
-  --batch-account-name mybatchaccount \
-  --batch-account-key <your-batch-key> \
-  --batch-account-url https://mybatchaccount.eastus.batch.azure.com \
-  --pool-id mussel-pool \
-  --create-pool \
-  --job-id mussel-job-batch \
-  --create-job \
-  --csv-manifest manifest.csv \
-  --output-s3-prefix s3://my-bucket/results/ \
-  --aggregation-method model \
-  --slide-model-type GIGAPATH_SLIDE \
-  --distributed-slide-batch-size 8 \
-  --aws-access-key-id $AWS_ACCESS_KEY_ID \
-  --aws-secret-access-key $AWS_SECRET_ACCESS_KEY \
-  --monitor
-```
-
-**What this does:**
-- Groups 8 slides per Azure Batch task
-- Loads slide encoder model ONCE per task
-- **7-8x speedup** for slide-level aggregation workloads
-
-**When to use:**
-- Processing 2+ slides with slide-level model aggregation
-- Using GIGAPATH_SLIDE, TITAN_SLIDE, or similar models
-- NOT using --stage-to-azure-files (incompatible with batching)
-
-**Note:** When using `--stage-to-azure-files`, incremental staging creates one task per slide, and `--distributed-slide-batch-size` is not used.
-
-See [examples/distributed_batch_processing.md](../../examples/distributed_batch_processing.md) for detailed guide.
-
 ### Azure Files Staging (Preprocessing)
 
 For optimal performance when processing many slides, you can stage input files to Azure Files before processing. Azure Files can be mounted directly to batch nodes, eliminating download overhead during task execution.

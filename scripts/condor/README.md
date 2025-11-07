@@ -7,7 +7,6 @@ This directory contains scripts for running `tessellate-extract-features` on HTC
 HTCondor support enables distributed processing of whole-slide images on HPC clusters using the HTCondor workload management system.
 
 **Key Features:**
-- **Slide batch feature extraction** for optimized slide encoder loading (7-8x speedup)
 - DAGMan workflows for complex job dependencies
 - CSV manifest processing for batch submissions
 - Automatic retry configuration
@@ -53,30 +52,6 @@ python scripts/condor/submit_condor_jobs.py \
   --postfilter-models CTRANSPATH,CLIP,VIRCHOW \
   --submit
 ```
-
-### Slide Batch Processing (Optimized)
-
-**NEW**: Process multiple slides together to optimize slide encoder loading:
-
-```bash
-python scripts/condor/submit_condor_jobs.py \
-  --csv-manifest slides.csv \
-  --output-dir /output/results/ \
-  --aggregation-method model \
-  --slide-model-type GIGAPATH_SLIDE \
-  --distributed-slide-batch-size 8 \
-  --request-cpus 8 \
-  --request-memory 64GB \
-  --request-gpus 1 \
-  --submit
-```
-
-**Benefits:**
-- **7-8x speedup** for slide-level aggregation
-- Fewer HTCondor tasks to manage
-- Better resource utilization
-
-See [examples/distributed_batch_processing.md](../../examples/distributed_batch_processing.md) for detailed guide.
 
 ## Configuration
 
