@@ -343,6 +343,7 @@ Enable auto-scaling to dynamically adjust pool size based on workload:
 - Scales up to `--max-node-count` based on pending tasks
 - Evaluates workload every `--auto-scale-evaluation-interval` minutes
 - Automatically scales down when tasks complete
+- **Handles unusable nodes**: Automatically accounts for and replaces nodes that become unusable, maintaining pool capacity
 
 **Example: Create a GPU pool with fixed size**
 ```bash

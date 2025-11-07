@@ -222,14 +222,26 @@ class AzureBatchJobSubmitter:
 
         # Pool configuration
         if enable_auto_scale:
-            # Auto-scale formula based on pending tasks
+            # Auto-scale formula based on pending tasks with unusable node handling
+            # Based on: https://learn.microsoft.com/en-us/answers/questions/1699080/azure-batch-better-handle-unusable-nodes
             auto_scale_formula = f"""
-                // Get pending tasks count
+                // Configuration
                 startingNumberOfVMs = {min_node_count};
                 maxNumberofVMs = {max_node_count};
+                
+                // Get pending tasks count
                 pendingTaskSamplePercent = $PendingTasks.GetSamplePercent(180 * TimeInterval_Second);
                 pendingTaskSamples = pendingTaskSamplePercent < 70 ? startingNumberOfVMs : avg($PendingTasks.GetSample(180 * TimeInterval_Second));
-                $TargetDedicatedNodes = min(maxNumberofVMs, pendingTaskSamples);
+                
+                // Calculate target based on pending tasks
+                targetVMs = min(maxNumberofVMs, pendingTaskSamples);
+                
+                // Handle unusable nodes - add them to target to maintain capacity
+                // Unusable nodes are those in unusable state that cannot run tasks
+                unusableNodes = $CurrentDedicatedNodes - $RunningTasks - $ActiveTasks - $IdleNodes;
+                
+                // Ensure we have enough nodes to handle workload even with unusable nodes
+                $TargetDedicatedNodes = min(maxNumberofVMs, max(startingNumberOfVMs, targetVMs + max(0, unusableNodes)));
             """
             
             pool = batchmodels.PoolAddParameter(

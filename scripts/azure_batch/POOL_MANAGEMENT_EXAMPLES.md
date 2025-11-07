@@ -48,6 +48,7 @@ python scripts/azure_batch/submit_batch_jobs.py \
 - Scales up to maximum nodes (10 in this example) based on pending tasks
 - Automatically scales down when tasks complete
 - Evaluates workload every 15 minutes by default
+- **Handles node failures**: Automatically replaces unusable nodes to maintain capacity
 
 ## Creating a CPU-Only Pool
 
@@ -187,6 +188,7 @@ echo "Processing complete and resources cleaned up!"
 - Start with minimum nodes (2 in this example) to save costs
 - Automatically scale up to 20 nodes when there are many pending tasks
 - Scale down when tasks complete to reduce costs
+- Automatically handles and replaces unusable nodes to maintain capacity
 - No manual intervention needed
 
 ## Pool Configuration Options
