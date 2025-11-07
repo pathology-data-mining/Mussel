@@ -1252,6 +1252,39 @@ def main():
         except Exception as e:
             print(f"WARNING: Failed to load config file: {e}")
             config_defaults = {}
+    
+    # Apply Azure-specific parameters from config file if provided
+    # Command-line arguments take precedence over config file values
+    if config_defaults:
+        # Storage account parameters
+        if not args.storage_account_name and 'storage_account_name' in config_defaults:
+            args.storage_account_name = config_defaults['storage_account_name']
+        
+        # Container image
+        # Only override if the default value is still being used
+        if args.container_image == "mskmind/mussel:latest-torch-gpu" and 'container_image' in config_defaults:
+            args.container_image = config_defaults['container_image']
+        
+        # VM size - only override if default is being used
+        if args.vm_size == "Standard_NC6s_v3" and 'vm_size' in config_defaults:
+            args.vm_size = config_defaults['vm_size']
+        
+        # Node count - only override if default is being used
+        if args.node_count == 1 and 'node_count' in config_defaults:
+            args.node_count = config_defaults['node_count']
+        
+        # Auto-scaling parameters
+        if not args.enable_auto_scale and config_defaults.get('enable_auto_scale'):
+            args.enable_auto_scale = config_defaults['enable_auto_scale']
+        
+        if args.min_node_count is None and 'min_node_count' in config_defaults:
+            args.min_node_count = config_defaults['min_node_count']
+        
+        if args.max_node_count is None and 'max_node_count' in config_defaults:
+            args.max_node_count = config_defaults['max_node_count']
+        
+        if args.auto_scale_evaluation_interval == 15 and 'auto_scale_evaluation_interval' in config_defaults:
+            args.auto_scale_evaluation_interval = config_defaults['auto_scale_evaluation_interval']
 
     # Pre-download models if requested and using batch processing
     model_paths = {}
