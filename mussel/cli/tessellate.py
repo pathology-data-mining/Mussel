@@ -2,7 +2,7 @@ import os
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, List, Optional
+from typing import Any, ClassVar, List, Optional
 
 import hydra
 import numpy as np
@@ -38,9 +38,9 @@ class SegConfig:
     """
 
     # Default patch size constant - used to detect when automatic patch size selection should apply
-    DEFAULT_PATCH_SIZE: int = 256
+    DEFAULT_PATCH_SIZE: ClassVar[int] = 256
     
-    patch_size: int = DEFAULT_PATCH_SIZE
+    patch_size: int = 256
     step_size: Optional[int] = None  # if None, defaults to patch_size
     mpp: float = 0.5
     seg_level: int = -1
