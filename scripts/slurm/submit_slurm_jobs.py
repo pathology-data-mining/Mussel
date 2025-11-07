@@ -796,6 +796,15 @@ def main():
     
     args = parser.parse_args()
     
+    # Load config file early if provided, to check for model paths before pre-download
+    config_defaults = {}
+    if args.config_file_for_csv and load_config_defaults:
+        try:
+            config_defaults = load_config_defaults(args.config_file_for_csv, backend='slurm')
+        except Exception as e:
+            print(f"WARNING: Failed to load config file: {e}")
+            config_defaults = {}
+    
     # Pre-download models if requested and using batch processing
     model_paths = {}
     if args.pre_download_models and pre_download_models and args.csv_manifest:
@@ -805,10 +814,11 @@ def main():
         models_to_download = []
         
         # Check if user provided explicit model paths (skip pre-download for those)
+        # Check both command-line args and config file
         user_provided_paths = {
-            'prefilter': args.prefilter_model_path,
-            'postfilter': args.postfilter_model_path,
-            'slide': args.slide_model_path,
+            'prefilter': args.prefilter_model_path or config_defaults.get('prefilter_model_path'),
+            'postfilter': args.postfilter_model_path or config_defaults.get('postfilter_model_path'),
+            'slide': args.slide_model_path or config_defaults.get('slide_model_path'),
         }
         
         # Add prefilter model if not provided by user
@@ -817,8 +827,10 @@ def main():
             models_to_download.append('CTRANSPATH')
         
         # Add postfilter models if not provided by user
-        if not user_provided_paths['postfilter'] and args.postfilter_models:
-            postfilter_list = [m.strip() for m in args.postfilter_models.split(',')]
+        # Check both command-line args and config file for postfilter_models
+        postfilter_models_arg = args.postfilter_models or config_defaults.get('postfilter_model_types')
+        if not user_provided_paths['postfilter'] and postfilter_models_arg:
+            postfilter_list = [m.strip() for m in postfilter_models_arg.split(',')]
             models_to_download.extend(postfilter_list)
         
         # Remove duplicates
@@ -860,17 +872,18 @@ def main():
     # CTRANSPATH requires a model_path to be provided via configuration
     if args.csv_manifest:
         # Determine the prefilter model type from config or default
-        prefilter_model = args.prefilter_model_type or 'CTRANSPATH'  # Default
-        if args.config_file_for_csv and load_config_defaults:
-            try:
-                config_defaults = load_config_defaults(args.config_file_for_csv, backend='slurm')
-                prefilter_model = config_defaults.get('prefilter_model_type', prefilter_model)
-            except (FileNotFoundError, ValueError, KeyError, IOError):
-                # If config loading fails, use default - validation warning will still show
-                pass
+        # config_defaults is already loaded above
+        prefilter_model = args.prefilter_model_type or config_defaults.get('prefilter_model_type', 'CTRANSPATH')
         
         # Check if CTRANSPATH is being used without a model_path
-        if prefilter_model.upper() == 'CTRANSPATH' and not model_paths.get('CTRANSPATH'):
+        # Check command-line, config file, and pre-downloaded paths
+        has_prefilter_path = (
+            args.prefilter_model_path or 
+            config_defaults.get('prefilter_model_path') or 
+            model_paths.get('CTRANSPATH')
+        )
+        
+        if prefilter_model.upper() == 'CTRANSPATH' and not has_prefilter_path:
             print("\n⚠️  WARNING: CTRANSPATH model requires a model_path to be provided via configuration")
             print("   CTRANSPATH does not have a default HuggingFace path and cannot be automatically downloaded.")
             print("   Please provide the model path using one of the following methods:")
@@ -964,21 +977,13 @@ def main():
             'submit': args.submit,
         }
         
-        # If config file is provided for CSV, load defaults and merge
-        if args.config_file_for_csv:
-            if load_config_defaults:
-                try:
-                    print(f"Loading default parameters from config file: {args.config_file_for_csv}")
-                    config_defaults = load_config_defaults(args.config_file_for_csv, backend='slurm')
-                    # Config file defaults, then override with command-line args
-                    merged_kwargs = {**config_defaults, **csv_kwargs}
-                    csv_kwargs = merged_kwargs
-                    print(f"Loaded {len(config_defaults)} default parameters from config file")
-                except Exception as e:
-                    print(f"WARNING: Failed to load config file: {e}")
-                    print("Continuing with command-line parameters only")
-            else:
-                print("WARNING: config_loader not available, ignoring --config")
+        # If config file is provided for CSV, merge with config defaults (already loaded above)
+        if args.config_file_for_csv and config_defaults:
+            print(f"Loading default parameters from config file: {args.config_file_for_csv}")
+            # Config file defaults, then override with command-line args
+            merged_kwargs = {**config_defaults, **csv_kwargs}
+            csv_kwargs = merged_kwargs
+            print(f"Loaded {len(config_defaults)} default parameters from config file")
         
         # Add optional arguments from command line only if explicitly provided
         # This ensures they don't override config file values with None
@@ -1036,6 +1041,8 @@ def main():
         if model_paths and model_paths.get('CTRANSPATH'):
             csv_kwargs['prefilter_model_path'] = model_paths['CTRANSPATH']
         # Command-line args also override config values if explicitly provided
+        if args.prefilter_model_path:
+            csv_kwargs['prefilter_model_path'] = args.prefilter_model_path
         if args.postfilter_model_path:
             csv_kwargs['postfilter_model_path'] = args.postfilter_model_path
         if model_paths and args.slide_model_type and model_paths.get(args.slide_model_type):

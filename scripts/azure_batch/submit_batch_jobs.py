@@ -1244,6 +1244,15 @@ def main():
     
     args = parser.parse_args()
 
+    # Load config file early if provided, to check for model paths before pre-download
+    config_defaults = {}
+    if args.config_file and load_config_defaults:
+        try:
+            config_defaults = load_config_defaults(args.config_file, backend='azure')
+        except Exception as e:
+            print(f"WARNING: Failed to load config file: {e}")
+            config_defaults = {}
+
     # Pre-download models if requested and using batch processing
     model_paths = {}
     if args.pre_download_models and pre_download_models and (args.csv_manifest or args.config_file):
@@ -1253,10 +1262,11 @@ def main():
         models_to_download = []
         
         # Check if user provided explicit model paths (skip pre-download for those)
+        # Check both command-line args and config file
         user_provided_paths = {
-            'prefilter': args.prefilter_model_path,
-            'postfilter': args.postfilter_model_path,
-            'slide': args.slide_model_path,
+            'prefilter': args.prefilter_model_path or config_defaults.get('prefilter_model_path'),
+            'postfilter': args.postfilter_model_path or config_defaults.get('postfilter_model_path'),
+            'slide': args.slide_model_path or config_defaults.get('slide_model_path'),
         }
         
         # Add prefilter model if not provided by user
@@ -1265,8 +1275,10 @@ def main():
             models_to_download.append('CTRANSPATH')
         
         # Add postfilter models if not provided by user
-        if not user_provided_paths['postfilter'] and args.postfilter_models:
-            postfilter_list = [m.strip() for m in args.postfilter_models.split(',')]
+        # Check both command-line args and config file for postfilter_models
+        postfilter_models_arg = args.postfilter_models or config_defaults.get('postfilter_model_types')
+        if not user_provided_paths['postfilter'] and postfilter_models_arg:
+            postfilter_list = [m.strip() for m in postfilter_models_arg.split(',')]
             models_to_download.extend(postfilter_list)
         
         # Remove duplicates
@@ -1321,17 +1333,18 @@ def main():
     # CTRANSPATH requires a model_path to be provided via configuration
     if args.csv_manifest or args.config_file:
         # Determine the prefilter model type from config or default
-        prefilter_model = 'CTRANSPATH'  # Default
-        if args.config_file and load_config_defaults:
-            try:
-                config_defaults = load_config_defaults(args.config_file, backend='azure')
-                prefilter_model = config_defaults.get('prefilter_model_type', 'CTRANSPATH')
-            except (FileNotFoundError, ValueError, KeyError, IOError):
-                # If config loading fails, use default - validation warning will still show
-                pass
+        # config_defaults is already loaded above
+        prefilter_model = config_defaults.get('prefilter_model_type', 'CTRANSPATH')
         
         # Check if CTRANSPATH is being used without a model_path
-        if prefilter_model.upper() == 'CTRANSPATH' and not model_paths.get('CTRANSPATH'):
+        # Check command-line, config file, and pre-downloaded paths
+        has_prefilter_path = (
+            args.prefilter_model_path or 
+            config_defaults.get('prefilter_model_path') or 
+            model_paths.get('CTRANSPATH')
+        )
+        
+        if prefilter_model.upper() == 'CTRANSPATH' and not has_prefilter_path:
             print("\n⚠️  WARNING: CTRANSPATH model requires a model_path to be provided via configuration")
             print("   CTRANSPATH does not have a default HuggingFace path and cannot be automatically downloaded.")
             print("   Please provide the model path using one of the following methods:")
@@ -1385,21 +1398,14 @@ def main():
         # Case 2 & 3: CSV manifest (with or without config file for parameters)
         
         # Prepare default parameters for CSV tasks
+        # config_defaults is already loaded above
         default_params = {}
         
-        # If config file is provided, load defaults from it
-        if args.config_file:
-            if load_config_defaults:
-                try:
-                    print(f"Loading default parameters from config file: {args.config_file}")
-                    config_defaults = load_config_defaults(args.config_file, backend='azure')
-                    default_params.update(config_defaults)
-                    print(f"Loaded {len(config_defaults)} default parameters from config file")
-                except Exception as e:
-                    print(f"WARNING: Failed to load config file: {e}")
-                    print("Continuing with command-line parameters only")
-            else:
-                print("WARNING: config_loader not available, ignoring --config-file")
+        # If config file is provided, use the already-loaded defaults
+        if args.config_file and config_defaults:
+            print(f"Loading default parameters from config file: {args.config_file}")
+            default_params.update(config_defaults)
+            print(f"Loaded {len(config_defaults)} default parameters from config file")
         
         # Command-line arguments override config file defaults
         if args.aws_access_key_id:
@@ -1412,8 +1418,11 @@ def main():
             default_params['max_retry_count'] = args.max_retry_count
         
         # Add model paths from pre-download or user-provided
+        # Command-line args override config and pre-download
         if model_paths.get('CTRANSPATH'):
             default_params['prefilter_model_path'] = model_paths['CTRANSPATH']
+        if args.prefilter_model_path:
+            default_params['prefilter_model_path'] = args.prefilter_model_path
         # For postfilter, we'll pass the path that applies to all models
         # The postfilter_model_path will be used for all models in the list
         if args.postfilter_models and model_paths:
@@ -1421,8 +1430,12 @@ def main():
             first_model = args.postfilter_models.split(',')[0].strip()
             if first_model in model_paths:
                 default_params['postfilter_model_path'] = model_paths[first_model]
+        if args.postfilter_model_path:
+            default_params['postfilter_model_path'] = args.postfilter_model_path
         if model_paths.get('slide'):
             default_params['slide_model_path'] = model_paths['slide']
+        if args.slide_model_path:
+            default_params['slide_model_path'] = args.slide_model_path
         
         # Parse postfilter models if provided
         postfilter_models_list = None
