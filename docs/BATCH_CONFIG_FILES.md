@@ -91,8 +91,9 @@ resources:
   gpus: 1
 
 # AWS S3 configuration (optional)
-aws_region: us-east-1
-aws_endpoint_url: https://s3.example.com  # Optional: for S3-compatible storage
+aws:
+  region: us-east-1
+  endpoint_url: https://s3.example.com  # Optional: for S3-compatible storage
 
 # Backend-specific parameters (optional, for backend-only settings)
 slurm:
@@ -280,12 +281,25 @@ python scripts/slurm/submit_slurm_jobs.py \
 - `classifier_threshold`: Classifier threshold (default: 0.75)
 - `max_retry_count`: Maximum retry attempts (default: 3)
 
-### S3 Parameters
+### AWS S3 Parameters
 
-- `aws_access_key_id`: AWS access key (not saved to manifest)
-- `aws_secret_access_key`: AWS secret key (not saved to manifest)
-- `aws_region`: AWS region (default: "us-east-1")
-- `aws_endpoint_url`: Custom S3 endpoint URL
+AWS parameters should be grouped under the `aws:` section in your configuration file. The config loader automatically maps these to the expected `aws_*` parameter names.
+
+**AWS configuration structure:**
+```yaml
+aws:
+  region: us-east-1
+  endpoint_url: https://s3.example.com  # Optional: for S3-compatible storage
+  # access_key_id and secret_access_key should be provided via command-line for security
+```
+
+**Parameters:**
+- `region`: AWS region (default: "us-east-1") - mapped to `aws_region`
+- `endpoint_url`: Custom S3 endpoint URL for S3-compatible storage like MinIO, Wasabi - mapped to `aws_endpoint_url`
+- `access_key_id`: AWS access key (not saved to manifest) - mapped to `aws_access_key_id`
+- `secret_access_key`: AWS secret key (not saved to manifest) - mapped to `aws_secret_access_key`
+
+**Note:** For security, AWS credentials (`access_key_id`, `secret_access_key`) should typically be provided via command-line arguments or environment variables rather than in the config file.
 
 ### Standardized Resource Parameters
 
@@ -312,8 +326,9 @@ resources:
   gpus: 1
 
 # AWS S3 configuration (optional, for S3-compatible storage)
-aws_region: us-east-1
-aws_endpoint_url: https://s3.example.com
+aws:
+  region: us-east-1
+  endpoint_url: https://s3.example.com
 
 # SLURM-specific parameters
 slurm:

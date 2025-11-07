@@ -80,6 +80,9 @@ def load_config_defaults(config_file: str, backend: str = None) -> Dict[str, Any
     (cpus, memory, gpus) that are automatically mapped to backend-specific parameter
     names when a backend is specified.
     
+    The 'aws:' section (if present) contains AWS configuration parameters that are
+    mapped to aws_* parameter names (e.g., region -> aws_region, endpoint_url -> aws_endpoint_url).
+    
     Args:
         config_file: Path to configuration file (.json, .yaml, or .yml)
         backend: Backend name ('slurm', 'condor', or 'azure') to map
@@ -94,9 +97,22 @@ def load_config_defaults(config_file: str, backend: str = None) -> Dict[str, Any
     if 'defaults' in config:
         params = config['defaults'].copy()
     else:
-        # Otherwise, return all parameters except 'tasks', 'resources' and backend sections
+        # Otherwise, return all parameters except 'tasks', 'resources', 'aws', and backend sections
         params = {k: v for k, v in config.items() 
-                  if k not in ['tasks', 'resources', 'slurm', 'condor', 'azure', 'azure_batch']}
+                  if k not in ['tasks', 'resources', 'aws', 'slurm', 'condor', 'azure', 'azure_batch']}
+    
+    # Process AWS configuration section and flatten with proper parameter names
+    if 'aws' in config and isinstance(config['aws'], dict):
+        aws_params = config['aws']
+        # Map aws section parameters to top-level aws_* names
+        if 'region' in aws_params:
+            params['aws_region'] = aws_params['region']
+        if 'endpoint_url' in aws_params:
+            params['aws_endpoint_url'] = aws_params['endpoint_url']
+        if 'access_key_id' in aws_params:
+            params['aws_access_key_id'] = aws_params['access_key_id']
+        if 'secret_access_key' in aws_params:
+            params['aws_secret_access_key'] = aws_params['secret_access_key']
     
     # Process standardized resources section and map to backend-specific names
     if 'resources' in config and isinstance(config['resources'], dict):
