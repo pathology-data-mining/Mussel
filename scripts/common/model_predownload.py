@@ -56,28 +56,56 @@ def run_save_model(model_type: str, output_path: str, model_path: Optional[str] 
     Returns:
         True if successful, False otherwise
     """
-    # Detect uv environment
-    cmd_prefix = []
-    if shutil.which('uv'):
-        if os.path.isdir('.venv') or os.getenv('VIRTUAL_ENV'):
-            cmd_prefix = ['uv', 'run']
-            print(f"  [Using uv environment]")
-    
-    cmd = cmd_prefix + ["save_model", f"model_type={model_type}", f"output_path={output_path}"]
+    # Build command arguments
+    cmd_args = [f"model_type={model_type}", f"output_path={output_path}"]
     if model_path:
-        cmd.append(f"model_path={model_path}")
+        cmd_args.append(f"model_path={model_path}")
     
-    print(f"  Running: {' '.join(cmd)}")
-    try:
-        result = subprocess.run(cmd, capture_output=True, text=True, check=True)
-        print(f"  ✓ {model_type} saved to {output_path}")
-        return True
-    except subprocess.CalledProcessError as e:
-        print(f"  ✗ Failed to download {model_type}: {e.stderr}", file=sys.stderr)
-        return False
-    except FileNotFoundError:
-        print(f"  ✗ save_model command not found. Please ensure Mussel is installed.", file=sys.stderr)
-        return False
+    # Try to determine the best way to run save_model
+    # Priority:
+    # 1. Direct save_model if available in PATH
+    # 2. uv run save_model if uv is available and works
+    # 3. python -m mussel.cli.save_model as fallback
+    
+    commands_to_try = []
+    
+    # First, check if save_model is directly available
+    if shutil.which('save_model'):
+        commands_to_try.append(['save_model'] + cmd_args)
+    
+    # If uv is available, try uv run (but only if we're in a virtual environment)
+    if shutil.which('uv') and os.getenv('VIRTUAL_ENV'):
+        commands_to_try.append(['uv', 'run', 'save_model'] + cmd_args)
+    
+    # Fallback: try python -m
+    commands_to_try.append([sys.executable, '-m', 'mussel.cli.save_model'] + cmd_args)
+    
+    # Try each command in order
+    last_error = None
+    for cmd in commands_to_try:
+        print(f"  Running: {' '.join(cmd)}")
+        try:
+            result = subprocess.run(cmd, capture_output=True, text=True, check=True)
+            print(f"  ✓ {model_type} saved to {output_path}")
+            return True
+        except subprocess.CalledProcessError as e:
+            last_error = e
+            print(f"  ✗ Command failed: {e.stderr}", file=sys.stderr)
+            # Try next command
+            continue
+        except FileNotFoundError as e:
+            last_error = e
+            # Try next command
+            continue
+    
+    # All commands failed
+    print(f"  ✗ Failed to download {model_type} after trying all methods", file=sys.stderr)
+    if last_error:
+        if isinstance(last_error, subprocess.CalledProcessError):
+            print(f"  Last error: {last_error.stderr}", file=sys.stderr)
+        else:
+            print(f"  Last error: {last_error}", file=sys.stderr)
+    return False
 
 
 def pre_download_models(

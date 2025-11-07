@@ -122,3 +122,109 @@ def test_pre_download_models_skips_unsavable():
                 # run_save_model should be called once (for VIRCHOW, not CTRANSPATH)
                 # Note: it won't be called if the file already exists
                 assert mock_can_save.call_count == 2
+
+
+def test_run_save_model_with_direct_command():
+    """Test run_save_model uses direct command when save_model is in PATH."""
+    from model_predownload import run_save_model
+    
+    with patch('shutil.which') as mock_which:
+        with patch('subprocess.run') as mock_run:
+            # Mock that save_model is available directly
+            def which_side_effect(cmd):
+                if cmd == 'save_model':
+                    return '/usr/bin/save_model'
+                return None
+            
+            mock_which.side_effect = which_side_effect
+            mock_run.return_value = MagicMock(returncode=0)
+            
+            result = run_save_model('VIRCHOW', '/tmp/test.pth')
+            
+            # Should call save_model directly
+            assert result is True
+            assert mock_run.called
+            first_call = mock_run.call_args_list[0]
+            cmd = first_call[0][0]
+            assert cmd[0] == 'save_model'
+            assert 'model_type=VIRCHOW' in cmd
+
+
+def test_run_save_model_with_uv_and_virtual_env():
+    """Test run_save_model uses uv run when VIRTUAL_ENV is set."""
+    import os
+    from model_predownload import run_save_model
+    
+    with patch('shutil.which') as mock_which:
+        with patch('subprocess.run') as mock_run:
+            with patch.dict(os.environ, {'VIRTUAL_ENV': '/path/to/venv'}):
+                # Mock that only uv is available, not save_model
+                def which_side_effect(cmd):
+                    if cmd == 'uv':
+                        return '/usr/bin/uv'
+                    return None
+                
+                mock_which.side_effect = which_side_effect
+                mock_run.return_value = MagicMock(returncode=0)
+                
+                result = run_save_model('VIRCHOW', '/tmp/test.pth')
+                
+                # Should try uv run
+                assert result is True
+                assert mock_run.called
+                first_call = mock_run.call_args_list[0]
+                cmd = first_call[0][0]
+                assert cmd[0:2] == ['uv', 'run']
+
+
+def test_run_save_model_without_virtual_env_skips_uv():
+    """Test run_save_model doesn't use uv run without VIRTUAL_ENV (SLURM scenario)."""
+    import os
+    from model_predownload import run_save_model
+    
+    with patch('shutil.which') as mock_which:
+        with patch('subprocess.run') as mock_run:
+            with patch.dict(os.environ, {}, clear=True):
+                # Mock that only uv is available, not save_model
+                # But no VIRTUAL_ENV set (typical SLURM submission node)
+                def which_side_effect(cmd):
+                    if cmd == 'uv':
+                        return '/usr/bin/uv'
+                    return None
+                
+                mock_which.side_effect = which_side_effect
+                mock_run.return_value = MagicMock(returncode=0)
+                
+                result = run_save_model('VIRCHOW', '/tmp/test.pth')
+                
+                # Should NOT use uv run, should use python -m fallback
+                assert result is True
+                assert mock_run.called
+                first_call = mock_run.call_args_list[0]
+                cmd = first_call[0][0]
+                # Should be python -m mussel.cli.save_model
+                assert '-m' in cmd
+                assert 'mussel.cli.save_model' in cmd
+
+
+def test_run_save_model_fallback_chain():
+    """Test run_save_model tries multiple commands on failure."""
+    import subprocess
+    from model_predownload import run_save_model
+    
+    with patch('shutil.which') as mock_which:
+        with patch('subprocess.run') as mock_run:
+            # Mock that save_model is available
+            mock_which.return_value = '/usr/bin/save_model'
+            
+            # First call fails, second succeeds
+            mock_run.side_effect = [
+                subprocess.CalledProcessError(1, 'save_model', stderr='error'),
+                MagicMock(returncode=0)
+            ]
+            
+            result = run_save_model('VIRCHOW', '/tmp/test.pth')
+            
+            # Should have tried at least twice
+            assert result is True
+            assert mock_run.call_count >= 2
