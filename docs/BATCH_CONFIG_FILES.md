@@ -2,17 +2,12 @@
 
 ## Overview
 
-All distributed batch submission scripts (Azure Batch, HTCondor, SLURM) now support configuration files in both **JSON** and **YAML** formats. Configuration files provide a structured way to define tasks with default parameters, making it easier to manage large-scale batch processing jobs.
-
-You can use configuration files in two ways:
-1. **Standalone**: Config file with both task definitions and parameters
-2. **With CSV**: CSV manifest for slide paths + config file for parameters only
+All distributed batch submission scripts (Azure Batch, HTCondor, SLURM) support configuration files in both **JSON** and **YAML** formats. Configuration files provide a structured way to define default parameters, making it easier to manage large-scale batch processing jobs.
 
 ## Features
 
 - **Dual Format Support**: Use either JSON or YAML format (detected automatically by file extension)
-- **Default Parameters**: Define common parameters once in a `defaults` section
-- **Task-Specific Overrides**: Override defaults for individual tasks as needed
+- **Default Parameters**: Define common parameters once
 - **CSV + Config Combination**: Use CSV for slide manifest and YAML/JSON for parameters
 - **Command-Line Overrides**: All command-line arguments override config file parameters for maximum flexibility
 - **Security**: Sensitive fields (credentials, tokens) are automatically filtered from output manifests
@@ -20,7 +15,29 @@ You can use configuration files in two ways:
 
 ## Usage Modes
 
-### Mode 1: Standalone Config File (with tasks)
+### For HTCondor and SLURM
+
+HTCondor and SLURM scripts use CSV manifests with optional configuration files for parameters:
+
+```bash
+# HTCondor
+python scripts/condor/submit_condor_jobs.py \
+  --csv-manifest slides.csv \
+  --config params.yaml \
+  --submit
+
+# SLURM
+python scripts/slurm/submit_slurm_jobs.py \
+  --csv-manifest slides.csv \
+  --config params.yaml \
+  --submit
+```
+
+### For Azure Batch
+
+Azure Batch supports two modes:
+
+**Mode 1: Standalone Config File (with tasks)**
 
 Use a single config file that contains both task definitions and parameters.
 
@@ -29,17 +46,9 @@ Use a single config file that contains both task definitions and parameters.
 python scripts/azure_batch/submit_batch_jobs.py \
   --config-file batch_config.yaml \
   --pool-id my-pool --job-id my-job
-
-# HTCondor
-python scripts/condor/submit_condor_jobs.py \
-  --config-file batch_config.yaml --submit
-
-# SLURM
-python scripts/slurm/submit_slurm_jobs.py \
-  --config-file batch_config.yaml --submit
 ```
 
-### Mode 2: CSV Manifest + Config File (for parameters)
+**Mode 2: CSV Manifest + Config File (for parameters)**
 
 Use a simple CSV for slide IDs and paths, and a config file for all processing parameters.
 
@@ -48,7 +57,7 @@ Use a simple CSV for slide IDs and paths, and a config file for all processing p
 - All parameters in one place
 - Easy to update parameters without touching slide list
 - Cleaner separation of concerns
-- Backend-specific parameters (SLURM partition, HTCondor resources, etc.) can be included
+- Backend-specific parameters can be included
 
 ```bash
 # Azure Batch
@@ -292,7 +301,9 @@ python scripts/azure_batch/submit_batch_jobs.py \
 
 ```bash
 python scripts/condor/submit_condor_jobs.py \
-  --config-file batch_config.yaml \
+  --csv-manifest slides.csv \
+  --config batch_config.yaml \
+  --output-dir /output \
   --aws-access-key-id <key> \
   --aws-secret-access-key <secret> \
   --submit
@@ -302,7 +313,9 @@ python scripts/condor/submit_condor_jobs.py \
 
 ```bash
 python scripts/slurm/submit_slurm_jobs.py \
-  --config-file batch_config.yaml \
+  --csv-manifest slides.csv \
+  --config batch_config.yaml \
+  --output-dir /output \
   --partition gpu \
   --gres gpu:1 \
   --aws-access-key-id <key> \
@@ -544,19 +557,30 @@ See the `examples/` directory for complete examples:
 
 ## Testing
 
-To validate your configuration file:
+To validate your configuration file with HTCondor or SLURM:
 
 ```bash
-# Test with dry-run (doesn't submit)
+# Test with dry-run (doesn't submit) - requires CSV manifest
 python scripts/condor/submit_condor_jobs.py \
-  --config-file my_config.yaml
+  --csv-manifest test_slides.csv \
+  --config my_config.yaml \
+  --output-dir /tmp/test
+
+# For Azure Batch with standalone config
+python scripts/azure_batch/submit_batch_jobs.py \
+  --config-file my_config.yaml \
+  --pool-id test-pool --job-id test-job
 
 # Or use Python to load and inspect
 python3 -c "
 from scripts.common.config_loader import load_config
 config = load_config('my_config.yaml')
-print('Tasks:', len(config['tasks']))
-print('Defaults:', config['defaults'])
+if 'tasks' in config:
+    print('Tasks:', len(config['tasks']))
+if 'defaults' in config:
+    print('Defaults:', config['defaults'])
+else:
+    print('Parameters:', list(config.keys()))
 "
 ```
 
