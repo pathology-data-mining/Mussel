@@ -208,9 +208,20 @@ echo "Processing complete and resources cleaned up!"
 ## Recommended VM Sizes
 
 ### GPU VMs (for faster processing)
+
+#### V100 GPUs (NCv3-series)
 - `Standard_NC6s_v3`: 6 vCPUs, 112 GB RAM, 1x NVIDIA V100 GPU
 - `Standard_NC12s_v3`: 12 vCPUs, 224 GB RAM, 2x NVIDIA V100 GPU
 - `Standard_NC24s_v3`: 24 vCPUs, 448 GB RAM, 4x NVIDIA V100 GPU
+
+#### A100 GPUs (NC_A100_v4-series) - Recommended for high performance
+- `Standard_NC24ads_A100_v4`: 24 vCPUs, 220 GB RAM, 1x NVIDIA A100 GPU (80 GB)
+- `Standard_NC48ads_A100_v4`: 48 vCPUs, 440 GB RAM, 2x NVIDIA A100 GPU (80 GB each)
+- `Standard_NC96ads_A100_v4`: 96 vCPUs, 880 GB RAM, 4x NVIDIA A100 GPU (80 GB each)
+
+#### H100 GPUs (NCads_H100_v5-series) - Highest performance
+- `Standard_NC40ads_H100_v5`: 40 vCPUs, 320 GB RAM, 1x NVIDIA H100 GPU (80 GB)
+- `Standard_NC80ads_H100_v5`: 80 vCPUs, 640 GB RAM, 2x NVIDIA H100 GPU (80 GB each)
 
 ### CPU VMs (for cost-effective processing)
 - `Standard_D4s_v3`: 4 vCPUs, 16 GB RAM

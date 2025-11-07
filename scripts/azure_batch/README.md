@@ -318,7 +318,9 @@ When `--stage-to-azure-files` is enabled, slides are staged and tasks are submit
 Control the compute resources:
 
 - `--vm-size`: VM size (default: `Standard_NC6s_v3` with 1 GPU)
-  - GPU VMs: `Standard_NC6s_v3`, `Standard_NC12s_v3`, `Standard_NC24s_v3`
+  - GPU VMs (V100): `Standard_NC6s_v3`, `Standard_NC12s_v3`, `Standard_NC24s_v3`
+  - GPU VMs (A100): `Standard_NC24ads_A100_v4`, `Standard_NC48ads_A100_v4`, `Standard_NC96ads_A100_v4`
+  - GPU VMs (H100): `Standard_NC40ads_H100_v5`, `Standard_NC80ads_H100_v5`
   - CPU VMs: `Standard_D4s_v3`, `Standard_D8s_v3`
 - `--node-count`: Number of nodes in the pool (or initial/min count for auto-scaling)
 - `--use-gpu`: Enable GPU support for pool nodes (default: True)
