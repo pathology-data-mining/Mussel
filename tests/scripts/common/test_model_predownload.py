@@ -1,4 +1,6 @@
 """Tests for model_predownload module."""
+import os
+import subprocess
 import sys
 from pathlib import Path
 from unittest.mock import MagicMock, patch
@@ -152,7 +154,6 @@ def test_run_save_model_with_direct_command():
 
 def test_run_save_model_with_uv_and_virtual_env():
     """Test run_save_model uses uv run when VIRTUAL_ENV is set."""
-    import os
     from model_predownload import run_save_model
     
     with patch('shutil.which') as mock_which:
@@ -179,7 +180,6 @@ def test_run_save_model_with_uv_and_virtual_env():
 
 def test_run_save_model_without_virtual_env_skips_uv():
     """Test run_save_model doesn't use uv run without VIRTUAL_ENV (SLURM scenario)."""
-    import os
     from model_predownload import run_save_model
     
     with patch('shutil.which') as mock_which:
@@ -209,7 +209,6 @@ def test_run_save_model_without_virtual_env_skips_uv():
 
 def test_run_save_model_fallback_chain():
     """Test run_save_model tries multiple commands on failure."""
-    import subprocess
     from model_predownload import run_save_model
     
     with patch('shutil.which') as mock_which:
