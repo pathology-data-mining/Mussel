@@ -828,11 +828,18 @@ def main():
             models_to_download.append(prefilter_model_type)
         
         # Add postfilter models if not provided by user
-        # Check both command-line args and config file for postfilter_models
-        postfilter_models_arg = args.postfilter_models or config_defaults.get('postfilter_model_types')
-        if not user_provided_paths['postfilter'] and postfilter_models_arg:
-            postfilter_list = [m.strip() for m in postfilter_models_arg.split(',')]
-            models_to_download.extend(postfilter_list)
+        if not user_provided_paths['postfilter']:
+            # Check for both single postfilter_model_type and multiple postfilter_models
+            postfilter_model_type = args.postfilter_model_type or config_defaults.get('postfilter_model_type')
+            postfilter_models_arg = args.postfilter_models or config_defaults.get('postfilter_model_types')
+            
+            if postfilter_model_type:
+                # Single postfilter model specified
+                models_to_download.append(postfilter_model_type)
+            elif postfilter_models_arg:
+                # Multiple postfilter models specified (comma-separated)
+                postfilter_list = [m.strip() for m in postfilter_models_arg.split(',')]
+                models_to_download.extend(postfilter_list)
         
         # Add slide model if not provided by user and slide model type is specified
         slide_model_type = args.slide_model_type or config_defaults.get('slide_model_type')
