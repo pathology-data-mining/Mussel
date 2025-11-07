@@ -67,6 +67,31 @@ def load_config(config_file: str) -> Dict[str, Any]:
     return config
 
 
+def load_config_defaults(config_file: str) -> Dict[str, Any]:
+    """
+    Load default parameters from a configuration file.
+    
+    This function is useful when you want to load parameters from a YAML/JSON
+    config file but get slide information from a CSV manifest. It returns the
+    'defaults' section if present, otherwise returns all top-level parameters
+    (excluding 'tasks' key).
+    
+    Args:
+        config_file: Path to configuration file (.json, .yaml, or .yml)
+        
+    Returns:
+        Dictionary containing default parameters
+    """
+    config = load_config(config_file)
+    
+    # If there's a 'defaults' section, return it
+    if 'defaults' in config:
+        return config['defaults']
+    
+    # Otherwise, return all parameters except 'tasks'
+    return {k: v for k, v in config.items() if k != 'tasks'}
+
+
 def filter_sensitive_fields(config: Dict[str, Any]) -> Dict[str, Any]:
     """
     Remove sensitive fields from configuration dictionary.

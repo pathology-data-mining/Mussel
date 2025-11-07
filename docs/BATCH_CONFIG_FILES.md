@@ -4,17 +4,88 @@
 
 All distributed batch submission scripts (Azure Batch, HTCondor, SLURM) now support configuration files in both **JSON** and **YAML** formats. Configuration files provide a structured way to define tasks with default parameters, making it easier to manage large-scale batch processing jobs.
 
+You can use configuration files in two ways:
+1. **Standalone**: Config file with both task definitions and parameters
+2. **With CSV**: CSV manifest for slide paths + config file for parameters only
+
 ## Features
 
 - **Dual Format Support**: Use either JSON or YAML format (detected automatically by file extension)
 - **Default Parameters**: Define common parameters once in a `defaults` section
 - **Task-Specific Overrides**: Override defaults for individual tasks as needed
+- **CSV + Config Combination**: Use CSV for slide manifest and YAML/JSON for parameters
 - **Security**: Sensitive fields (credentials, tokens) are automatically filtered from output manifests
 - **Configuration Tracking**: Non-sensitive configuration is saved to result manifests for reproducibility
 
-## Configuration File Format
+## Usage Modes
 
-### Structure
+### Mode 1: Standalone Config File (with tasks)
+
+Use a single config file that contains both task definitions and parameters.
+
+```bash
+# Azure Batch
+python scripts/azure_batch/submit_batch_jobs.py \
+  --config-file batch_config.yaml \
+  --pool-id my-pool --job-id my-job
+
+# HTCondor
+python scripts/condor/submit_condor_jobs.py \
+  --config-file batch_config.yaml --submit
+
+# SLURM
+python scripts/slurm/submit_slurm_jobs.py \
+  --config-file batch_config.yaml --submit
+```
+
+### Mode 2: CSV Manifest + Config File (for parameters)
+
+Use a simple CSV for slide IDs and paths, and a config file for all processing parameters.
+
+**Benefits**:
+- Simple slide manifest (just ID and path)
+- All parameters in one place
+- Easy to update parameters without touching slide list
+- Cleaner separation of concerns
+
+```bash
+# Azure Batch
+python scripts/azure_batch/submit_batch_jobs.py \
+  --csv-manifest slides.csv \
+  --config-file params.yaml \
+  --pool-id my-pool --job-id my-job
+
+# HTCondor
+python scripts/condor/submit_condor_jobs.py \
+  --csv-manifest slides.csv \
+  --config-file-params params.yaml \
+  --submit
+
+# SLURM
+python scripts/slurm/submit_slurm_jobs.py \
+  --csv-manifest slides.csv \
+  --config-file-params params.yaml \
+  --submit
+```
+
+**CSV format** (slides.csv):
+```csv
+slide_id,slide_path
+slide_001,s3://bucket/slides/slide_001.svs
+slide_002,s3://bucket/slides/slide_002.svs
+```
+
+**Config format** (params.yaml):
+```yaml
+prefilter_model_type: CTRANSPATH
+batch_size: 64
+num_workers: 4
+use_gpu: true
+```
+
+## Configuration File Formats
+
+### Mode 1: Standalone Config (with tasks)
 
 A configuration file has two main sections:
 
@@ -53,6 +124,51 @@ tasks:
     output_h5_path: /output/slide_003_features.h5
     output_pt_path: /output/slide_003_features.pt
     postfilter_model_type: VIRCHOW  # Use different model
+```
+
+### Mode 2: Parameters-Only Config (for use with CSV)
+
+When using CSV manifest mode, the config file only needs parameters (no `tasks` section).
+
+**YAML Example** (params.yaml):
+```yaml
+# Processing parameters only (no tasks)
+prefilter_model_type: CTRANSPATH
+batch_size: 64
+num_workers: 4
+patch_size: 256
+mpp: 0.5
+use_gpu: true
+segment_threshold: 0
+classifier_threshold: 0.75
+max_retry_count: 3
+
+# Optional: aggregation settings
+aggregation_method: identity
+
+# Optional: slide-level aggregation
+# aggregation_method: model
+# slide_model_type: GIGAPATH_SLIDE
+# slide_batch_size: 8
+```
+
+**JSON Example** (params.json):
+```json
+{
+  "prefilter_model_type": "CTRANSPATH",
+  "batch_size": 64,
+  "num_workers": 4,
+  "use_gpu": true,
+  "segment_threshold": 0
+}
+```
+
+**CSV Example** (slides.csv):
+```csv
+slide_id,slide_path
+slide_001,s3://my-bucket/slides/slide_001.svs
+slide_002,s3://my-bucket/slides/slide_002.svs
+slide_003,/local/path/slide_003.svs
 ```
 
 ### JSON Example

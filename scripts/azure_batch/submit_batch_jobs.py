@@ -39,10 +39,11 @@ except ImportError:
     AzureFilesStaging = None
 
 try:
-    from config_loader import load_config, add_config_to_metadata
+    from config_loader import load_config, load_config_defaults, add_config_to_metadata
 except ImportError:
     print("WARNING: Could not import config_loader module. YAML config support will be unavailable.")
     load_config = None
+    load_config_defaults = None
     add_config_to_metadata = None
 
 try:
@@ -1119,8 +1120,10 @@ def main():
     parser.add_argument("--create-job", action="store_true", help="Create job")
     
     # Task configuration
-    parser.add_argument("--config-file", help="Configuration file with task definitions (JSON or YAML format)")
-    parser.add_argument("--csv-manifest", help="CSV manifest file with slide_id,slide_path columns")
+    parser.add_argument("--config-file", help="Configuration file with parameters (JSON or YAML format). "
+                        "Can be used alone with task definitions, or with --csv-manifest to provide default parameters.")
+    parser.add_argument("--csv-manifest", help="CSV manifest file with slide_id,slide_path columns. "
+                        "Can be used with --config-file to load parameters from config.")
     parser.add_argument("--output-dir", default="/mnt/output", help="Output directory for results (when using CSV)")
     parser.add_argument("--output-s3-prefix", help="S3 prefix for outputs (e.g., s3://bucket/results/)")
     parser.add_argument("--postfilter-models", help="Comma-separated list of postfilter model types to run (e.g., CTRANSPATH,CLIP,VIRCHOW)")
@@ -1270,15 +1273,39 @@ def main():
         submitter.create_job(job_id=args.job_id, pool_id=args.pool_id)
 
     # Submit tasks
-    if args.config_file:
+    # Handle three cases:
+    # 1. Config file only (with tasks defined in config)
+    # 2. CSV manifest only (parameters from command line)
+    # 3. Both CSV manifest and config file (slides from CSV, parameters from config)
+    
+    if args.config_file and not args.csv_manifest:
+        # Case 1: Config file with task definitions
         submitter.submit_tasks_from_config(
             job_id=args.job_id,
             config_file=args.config_file,
             container_image=args.container_image,
         )
     elif args.csv_manifest:
+        # Case 2 & 3: CSV manifest (with or without config file for parameters)
+        
         # Prepare default parameters for CSV tasks
         default_params = {}
+        
+        # If config file is provided, load defaults from it
+        if args.config_file:
+            if load_config_defaults:
+                try:
+                    print(f"Loading default parameters from config file: {args.config_file}")
+                    config_defaults = load_config_defaults(args.config_file)
+                    default_params.update(config_defaults)
+                    print(f"Loaded {len(config_defaults)} default parameters from config file")
+                except Exception as e:
+                    print(f"WARNING: Failed to load config file: {e}")
+                    print("Continuing with command-line parameters only")
+            else:
+                print("WARNING: config_loader not available, ignoring --config-file")
+        
+        # Command-line arguments override config file defaults
         if args.aws_access_key_id:
             default_params['aws_access_key_id'] = args.aws_access_key_id
         if args.aws_secret_access_key:
@@ -1336,6 +1363,7 @@ def main():
                 **default_params,
             )
     elif args.task_id and args.slide_path:
+        # Single task submission
         # Prepare model paths for single task
         task_model_paths = {}
         if model_paths.get('CTRANSPATH'):
@@ -1362,6 +1390,9 @@ def main():
             container_image=args.container_image,
             **task_model_paths,
         )
+    else:
+        print("ERROR: Must specify either --config-file (with tasks), --csv-manifest, or --task-id with --slide-path")
+        sys.exit(1)
 
     # Monitor if requested
     if args.monitor:
