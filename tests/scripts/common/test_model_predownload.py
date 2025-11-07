@@ -58,6 +58,22 @@ def test_can_model_be_saved_with_whitespace_path():
         assert result is False
 
 
+def test_can_model_be_saved_with_none_path():
+    """Test can_model_be_saved returns False for models with None paths."""
+    from model_predownload import can_model_be_saved
+    
+    # Create a mock ModelType enum with a model that has None path
+    mock_model_enum = MagicMock()
+    mock_model_enum.path = None
+    
+    mock_ModelType = MagicMock()
+    mock_ModelType.__getitem__ = MagicMock(return_value=mock_model_enum)
+    
+    with patch.dict('sys.modules', {'mussel.models.model_factory': MagicMock(ModelType=mock_ModelType)}):
+        result = can_model_be_saved("SOMEMODEL")
+        assert result is False
+
+
 def test_can_model_be_saved_unknown_model():
     """Test can_model_be_saved returns False for unknown model types."""
     from model_predownload import can_model_be_saved

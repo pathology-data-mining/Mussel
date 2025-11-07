@@ -34,8 +34,10 @@ def can_model_be_saved(model_type: str) -> bool:
         # Try to get the ModelType enum value
         try:
             model_enum = ModelType[model_type.upper()]
-            # Check if path is empty or None
-            return model_enum.path and model_enum.path.strip() != ""
+            # Check if path is None, empty, or whitespace
+            if model_enum.path is None:
+                return False
+            return model_enum.path.strip() != ""
         except KeyError:
             # Unknown model type, assume it can't be saved
             return False
