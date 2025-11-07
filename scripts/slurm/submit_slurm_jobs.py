@@ -109,6 +109,7 @@ class SlurmJobSubmitter:
         hf_token: Optional[str] = None,
         output_dir: Optional[str] = None,
         slide_batch_size: int = 8,
+        **kwargs  # Accept and ignore extra parameters (e.g., 'submit' flag)
     ) -> str:
         """Generate SLURM batch script content.
         
@@ -612,14 +613,20 @@ bash {self.task_script}
         
         if kwargs.get('classifier_pkl'):
             static_env["CLASSIFIER_PKL"] = kwargs['classifier_pkl']
+        if kwargs.get('prefilter_model_path'):
+            static_env["PREFILTER_MODEL_PATH"] = kwargs['prefilter_model_path']
         if kwargs.get('postfilter_model_type'):
             static_env["POSTFILTER_MODEL_TYPE"] = kwargs['postfilter_model_type']
+        if kwargs.get('postfilter_model_path'):
+            static_env["POSTFILTER_MODEL_PATH"] = kwargs['postfilter_model_path']
         if kwargs.get('postfilter_model_types'):
             static_env["POSTFILTER_MODEL_TYPES"] = kwargs['postfilter_model_types']
         if kwargs.get('aggregation_method'):
             static_env["AGGREGATION_METHOD"] = kwargs['aggregation_method']
         if kwargs.get('slide_model_type'):
             static_env["SLIDE_MODEL_TYPE"] = kwargs['slide_model_type']
+        if kwargs.get('slide_model_path'):
+            static_env["SLIDE_MODEL_PATH"] = kwargs['slide_model_path']
         if kwargs.get('aws_access_key_id'):
             static_env["AWS_ACCESS_KEY_ID"] = kwargs['aws_access_key_id']
         if kwargs.get('aws_secret_access_key'):
@@ -942,13 +949,11 @@ def main():
             'classifier_pkl': args.classifier_pkl,
             'classifier_threshold': args.classifier_threshold,
             'prefilter_model_type': args.prefilter_model_type,
-            'prefilter_model_path': model_paths.get('CTRANSPATH') if model_paths else None,
             'postfilter_model_type': args.postfilter_model_type,
             'postfilter_model_path': args.postfilter_model_path,
             'postfilter_model_types': args.postfilter_models,
             'aggregation_method': args.aggregation_method,
             'slide_model_type': args.slide_model_type,
-            'slide_model_path': model_paths.get(args.slide_model_type) if model_paths and args.slide_model_type else None,
             'seg_config_group': args.seg_config_group,
             'segment_threshold': args.segment_threshold,
             'patch_size': args.patch_size,
@@ -995,6 +1000,13 @@ def main():
                     print("Continuing with command-line parameters only")
             else:
                 print("WARNING: config_loader not available, ignoring --config")
+        
+        # Add model paths from pre-download or user-provided (only if they have values)
+        # These override config file values to ensure pre-downloaded models are used
+        if model_paths and model_paths.get('CTRANSPATH'):
+            csv_kwargs['prefilter_model_path'] = model_paths['CTRANSPATH']
+        if model_paths and args.slide_model_type and model_paths.get(args.slide_model_type):
+            csv_kwargs['slide_model_path'] = model_paths[args.slide_model_type]
         
         submitter.submit_tasks_from_csv(
             csv_file=args.csv_manifest,
