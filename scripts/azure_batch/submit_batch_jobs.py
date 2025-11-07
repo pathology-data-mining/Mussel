@@ -321,6 +321,7 @@ class AzureBatchJobSubmitter:
         aws_access_key_id: Optional[str] = None,
         aws_secret_access_key: Optional[str] = None,
         aws_region: Optional[str] = None,
+        aws_endpoint_url: Optional[str] = None,
         max_retry_count: int = 3,
         container_image: str = "mskmind/mussel:latest-torch-gpu",
         cleanup_staged_file: bool = False,
@@ -380,6 +381,8 @@ class AzureBatchJobSubmitter:
             env_vars.append(batchmodels.EnvironmentSetting("AWS_SECRET_ACCESS_KEY", aws_secret_access_key))
         if aws_region:
             env_vars.append(batchmodels.EnvironmentSetting("AWS_DEFAULT_REGION", aws_region))
+        if aws_endpoint_url:
+            env_vars.append(batchmodels.EnvironmentSetting("AWS_ENDPOINT_URL", aws_endpoint_url))
         
         # Add Azure Files cleanup settings if enabled
         if cleanup_staged_file:
@@ -1105,6 +1108,7 @@ def main():
     parser.add_argument("--aws-access-key-id", help="AWS access key ID for S3")
     parser.add_argument("--aws-secret-access-key", help="AWS secret access key for S3")
     parser.add_argument("--aws-region", default="us-east-1", help="AWS region")
+    parser.add_argument("--aws-endpoint-url", help="Custom S3 endpoint URL (e.g., for MinIO or Ceph)")
     
     # Model pre-download configuration
     parser.add_argument("--pre-download-models", action="store_true", default=True,
