@@ -14,6 +14,7 @@ You can use configuration files in two ways:
 - **Default Parameters**: Define common parameters once in a `defaults` section
 - **Task-Specific Overrides**: Override defaults for individual tasks as needed
 - **CSV + Config Combination**: Use CSV for slide manifest and YAML/JSON for parameters
+- **Command-Line Overrides**: All command-line arguments override config file parameters for maximum flexibility
 - **Security**: Sensitive fields (credentials, tokens) are automatically filtered from output manifests
 - **Configuration Tracking**: Non-sensitive configuration is saved to result manifests for reproducibility
 
@@ -103,6 +104,59 @@ slurm:
 condor:
   max_retries: 3
 ```
+
+### Command-Line Parameter Overrides
+
+**All command-line arguments override configuration file parameters.** This allows you to:
+- Define baseline parameters in a config file
+- Override specific parameters for different runs without modifying the config file
+- Test different parameter combinations quickly
+
+**Priority order** (lowest to highest):
+1. Config file defaults
+2. Command-line arguments (override config)
+3. Task-specific config (in standalone mode only)
+
+**Example**: Override batch size and partition:
+```bash
+# Config file has batch_size: 64 and partition: gpu
+# Command-line overrides both
+python scripts/slurm/submit_slurm_jobs.py \
+  --csv-manifest slides.csv \
+  --config params.yaml \
+  --batch-size 128 \
+  --partition cpu \
+  --submit
+
+# Result: batch_size=128 (not 64), partition=cpu (not gpu)
+```
+
+**Common override use cases**:
+```bash
+# Override resource requirements for a larger job
+python scripts/slurm/submit_slurm_jobs.py \
+  --csv-manifest slides.csv \
+  --config params.yaml \
+  --cpus-per-task 16 \
+  --mem 64G \
+  --submit
+
+# Override model type for testing
+python scripts/slurm/submit_slurm_jobs.py \
+  --csv-manifest slides.csv \
+  --config params.yaml \
+  --prefilter-model-type UNI \
+  --submit
+
+# Override AWS region
+python scripts/slurm/submit_slurm_jobs.py \
+  --csv-manifest slides.csv \
+  --config params.yaml \
+  --aws-region us-west-2 \
+  --submit
+```
+
+**Note**: Sensitive parameters (credentials, tokens) should always be passed via command-line or environment variables for security, not stored in config files.
 
 ## Configuration File Formats
 
