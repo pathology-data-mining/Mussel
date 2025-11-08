@@ -28,7 +28,7 @@ from mussel.cli.tessellate_extract_features_common import (
 )
 
 from mussel.models import ModelType, get_required_patch_encoder, get_default_patch_size
-from mussel.utils import aggregate_slide_features_batch, aggregate_slide_features, extract_patch_features_batch
+from mussel.utils import aggregate_slide_features_batch, extract_patch_features_batch
 
 ssl._create_default_https_context = ssl._create_unverified_context
 
@@ -441,40 +441,23 @@ def _main_batch(cfg: TessellateExtractFeaturesConfig):
             r['intermediate_h5_path'] = intermediate_h5_path
         
         # Phase 3: Batch aggregate to slide level
-        if cfg.aggregation_method == "model":
-            logger.info(f"\n=== Phase 3: Batch aggregating {len(slide_results)} slides ===")
-            
-            output_h5_paths = [r['output_h5_path'] for r in slide_results]
-            output_pt_paths = [r['output_pt_path'] for r in slide_results]
-            
-            aggregate_slide_features_batch(
-                patch_features_h5_paths=intermediate_h5_paths,
-                output_h5_paths=output_h5_paths,
-                output_pt_paths=output_pt_paths,
-                aggregation_method=cfg.aggregation_method,
-                model_type=cfg.slide_model_type,
-                model_path=cfg.slide_model_path,
-                use_gpu=cfg.use_gpu,
-                gpu_device_id=cfg.gpu_device_id,
-                gpu_device_ids=cfg.gpu_device_ids,
-                slide_batch_size=cfg.slide_batch_size,
-            )
-        else:
-            # For mean/max aggregation, aggregate each slide individually
-            logger.info(f"\n=== Phase 3: Aggregating {len(slide_results)} slides (non-model) ===")
-            
-            for r in slide_results:
-                aggregate_slide_features(
-                    patch_features_h5_path=r['intermediate_h5_path'],
-                    output_h5_path=r['output_h5_path'],
-                    output_pt_path=r['output_pt_path'],
-                    aggregation_method=cfg.aggregation_method,
-                    model_type=None,
-                    model_path=None,
-                    use_gpu=cfg.use_gpu,
-                    gpu_device_id=cfg.gpu_device_id,
-                    gpu_device_ids=cfg.gpu_device_ids,
-                )
+        logger.info(f"\n=== Phase 3: Batch aggregating {len(slide_results)} slides (aggregation_method={cfg.aggregation_method}) ===")
+        
+        output_h5_paths = [r['output_h5_path'] for r in slide_results]
+        output_pt_paths = [r['output_pt_path'] for r in slide_results]
+        
+        aggregate_slide_features_batch(
+            patch_features_h5_paths=intermediate_h5_paths,
+            output_h5_paths=output_h5_paths,
+            output_pt_paths=output_pt_paths,
+            aggregation_method=cfg.aggregation_method,
+            model_type=cfg.slide_model_type,
+            model_path=cfg.slide_model_path,
+            use_gpu=cfg.use_gpu,
+            gpu_device_id=cfg.gpu_device_id,
+            gpu_device_ids=cfg.gpu_device_ids,
+            slide_batch_size=cfg.slide_batch_size,
+        )
     else:
         # Single-step: extract directly to final output (no aggregation)
         output_h5_paths = [r['output_h5_path'] for r in slide_results]
