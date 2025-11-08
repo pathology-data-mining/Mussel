@@ -794,6 +794,53 @@ class AzureBatchJobSubmitter:
             print(f"  Slide encoder: {default_params.get('slide_model_type')}")
             print(f"  This reduces model loading overhead from {len(slides)}x to {(len(slides) + distributed_slide_batch_size - 1) // distributed_slide_batch_size}x")
             
+            # Stage model files to Azure Files if enabled
+            if self.azure_files_staging:
+                # Stage classifier model
+                classifier_pkl = default_params.get('classifier_pkl')
+                if classifier_pkl and not classifier_pkl.startswith(('s3://', 'azfiles://', 'http://', 'https://')):
+                    if os.path.exists(classifier_pkl):
+                        self.log(f"Staging classifier model: {os.path.basename(classifier_pkl)}")
+                        remote_path = f"models/{os.path.basename(classifier_pkl)}"
+                        self.azure_files_staging.upload_file(
+                            local_path=classifier_pkl,
+                            remote_path=remote_path,
+                            show_progress=False
+                        )
+                        azfiles_url = f"azfiles://{self.storage_account_name}/{self.azure_files_share_name}/{remote_path}"
+                        default_params['classifier_pkl'] = azfiles_url
+                        self.log(f"  Staged to: {remote_path}")
+                
+                # Stage prefilter model
+                prefilter_model_path = default_params.get('prefilter_model_path')
+                if prefilter_model_path and not prefilter_model_path.startswith(('s3://', 'azfiles://', 'http://', 'https://')):
+                    if os.path.exists(prefilter_model_path):
+                        self.log(f"Staging prefilter model: {os.path.basename(prefilter_model_path)}")
+                        remote_path = f"models/{os.path.basename(prefilter_model_path)}"
+                        self.azure_files_staging.upload_file(
+                            local_path=prefilter_model_path,
+                            remote_path=remote_path,
+                            show_progress=False
+                        )
+                        azfiles_url = f"azfiles://{self.storage_account_name}/{self.azure_files_share_name}/{remote_path}"
+                        default_params['prefilter_model_path'] = azfiles_url
+                        self.log(f"  Staged to: {remote_path}")
+                
+                # Stage postfilter model
+                postfilter_model_path = default_params.get('postfilter_model_path')
+                if postfilter_model_path and not postfilter_model_path.startswith(('s3://', 'azfiles://', 'http://', 'https://')):
+                    if os.path.exists(postfilter_model_path):
+                        self.log(f"Staging postfilter model: {os.path.basename(postfilter_model_path)}")
+                        remote_path = f"models/{os.path.basename(postfilter_model_path)}"
+                        self.azure_files_staging.upload_file(
+                            local_path=postfilter_model_path,
+                            remote_path=remote_path,
+                            show_progress=False
+                        )
+                        azfiles_url = f"azfiles://{self.storage_account_name}/{self.azure_files_share_name}/{remote_path}"
+                        default_params['postfilter_model_path'] = azfiles_url
+                        self.log(f"  Staged to: {remote_path}")
+            
             # Group slides into batches
             for batch_idx in range(0, len(slides), distributed_slide_batch_size):
                 batch_slides = slides[batch_idx:batch_idx + distributed_slide_batch_size]
