@@ -125,14 +125,9 @@ if [ -n "$SLIDE_PATHS" ]; then
         OUTPUT_H5_PATH_ARRAY=()
         OUTPUT_PT_PATH_ARRAY=()
         for slide_id in "${SLIDE_ID_ARRAY[@]}"; do
-            # Check if OUTPUT_DIR is an azfiles:// URL
-            if is_azfiles_path "$OUTPUT_DIR"; then
-                OUTPUT_H5_PATH_ARRAY+=("${OUTPUT_DIR}/${slide_id}_features.h5")
-                OUTPUT_PT_PATH_ARRAY+=("${OUTPUT_DIR}/${slide_id}_features.pt")
-            else
-                OUTPUT_H5_PATH_ARRAY+=("${OUTPUT_DIR}/${slide_id}_features.h5")
-                OUTPUT_PT_PATH_ARRAY+=("${OUTPUT_DIR}/${slide_id}_features.pt")
-            fi
+            # Generate output paths based on OUTPUT_DIR
+            OUTPUT_H5_PATH_ARRAY+=("${OUTPUT_DIR}/${slide_id}_features.h5")
+            OUTPUT_PT_PATH_ARRAY+=("${OUTPUT_DIR}/${slide_id}_features.pt")
         done
         
         log "Generated output paths from OUTPUT_DIR: $OUTPUT_DIR"
@@ -184,6 +179,10 @@ is_s3_path() {
 
 is_azfiles_path() {
     [[ "$1" =~ ^azfiles:// ]]
+}
+
+is_azblob_path() {
+    [[ "$1" =~ ^https://.*\.blob\.core\.windows\.net/ ]] || [[ "$1" =~ ^azblob:// ]]
 }
 
 download_from_s3() {
@@ -243,6 +242,59 @@ upload_to_azfiles() {
             --share-name "$AZURE_FILES_SHARE" \
             --source "$local_path" \
             --path "$remote_path" \
+            --no-progress
+    else
+        log "ERROR: az CLI not found. Install with: pip install azure-cli"
+        exit 1
+    fi
+}
+
+download_from_azblob() {
+    local blob_url="$1"
+    local local_path="$2"
+    log "Downloading from Azure Blob: $blob_url -> $local_path"
+    
+    if command -v az &> /dev/null; then
+        az storage blob download \
+            --blob-url "$blob_url" \
+            --file "$local_path" \
+            --auth-mode key \
+            --account-key "$AZURE_STORAGE_KEY" \
+            --no-progress
+    else
+        log "ERROR: az CLI not found. Install with: pip install azure-cli"
+        exit 1
+    fi
+}
+
+upload_to_azblob() {
+    local local_path="$1"
+    local blob_url="$2"
+    log "Uploading to Azure Blob: $local_path -> $blob_url"
+    
+    if command -v az &> /dev/null; then
+        # Extract container and blob name from URL
+        # Format: https://account.blob.core.windows.net/container/path or azblob://account/container/path
+        if [[ "$blob_url" =~ ^https:// ]]; then
+            # Extract from https://account.blob.core.windows.net/container/blob/path
+            local account_name=$(echo "$blob_url" | sed -E 's|https://([^.]+)\.blob\.core\.windows\.net/.*|\1|')
+            local container_and_blob=$(echo "$blob_url" | sed -E 's|https://[^/]+/(.*)|\1|')
+            local container_name=$(echo "$container_and_blob" | cut -d'/' -f1)
+            local blob_name=$(echo "$container_and_blob" | cut -d'/' -f2-)
+        else
+            # Extract from azblob://account/container/path
+            local account_name=$(echo "$blob_url" | sed 's|^azblob://||' | cut -d'/' -f1)
+            local container_name=$(echo "$blob_url" | sed 's|^azblob://||' | cut -d'/' -f2)
+            local blob_name=$(echo "$blob_url" | sed 's|^azblob://||' | cut -d'/' -f3-)
+        fi
+        
+        az storage blob upload \
+            --account-name "$account_name" \
+            --account-key "$AZURE_STORAGE_KEY" \
+            --container-name "$container_name" \
+            --name "$blob_name" \
+            --file "$local_path" \
+            --overwrite \
             --no-progress
     else
         log "ERROR: az CLI not found. Install with: pip install azure-cli"
@@ -318,7 +370,7 @@ process_slide() {
     log "  Output PT: $OUTPUT_PT_PATH"
     log ""
 
-# Stage input slide - handle S3, Azure Files, or local paths
+# Stage input slide - handle S3, Azure Files, Azure Blob, or local paths
 ORIGINAL_SLIDE_PATH="$SLIDE_PATH"
 if is_azfiles_path "$SLIDE_PATH"; then
     # Resolve Azure Files path to local mount point
@@ -334,6 +386,14 @@ if is_azfiles_path "$SLIDE_PATH"; then
     if [ "$CLEANUP_STAGED_FILE" = "true" ]; then
         log "Staged file will be cleaned up after task completion: $STAGED_FILE_PATH"
     fi
+elif is_azblob_path "$SLIDE_PATH"; then
+    log "Slide is in Azure Blob, staging locally..."
+    WORK_DIR="/tmp/mussel_work_$$"
+    mkdir -p "$WORK_DIR"
+    LOCAL_SLIDE_PATH="$WORK_DIR/$(basename "$SLIDE_PATH")"
+    download_from_azblob "$SLIDE_PATH" "$LOCAL_SLIDE_PATH"
+    SLIDE_PATH="$LOCAL_SLIDE_PATH"
+    log "Slide staged to: $SLIDE_PATH"
 elif is_s3_path "$SLIDE_PATH"; then
     log "Slide is in S3, staging locally..."
     WORK_DIR="/tmp/mussel_work_$$"
@@ -368,30 +428,44 @@ if [ "$USE_GPU" = "true" ]; then
     fi
 fi
 
-# Prepare output paths (use local temp paths if outputs are S3)
+# Prepare output paths (use local temp paths if outputs are remote storage)
 ORIGINAL_OUTPUT_H5_PATH="$OUTPUT_H5_PATH"
 ORIGINAL_OUTPUT_PT_PATH="$OUTPUT_PT_PATH"
 ORIGINAL_INTERMEDIATE_H5_PATH="$INTERMEDIATE_H5_PATH"
 
-if is_s3_path "$OUTPUT_H5_PATH" || is_s3_path "$OUTPUT_PT_PATH" || is_s3_path "$INTERMEDIATE_H5_PATH"; then
+if is_s3_path "$OUTPUT_H5_PATH" || is_s3_path "$OUTPUT_PT_PATH" || is_s3_path "$INTERMEDIATE_H5_PATH" || \
+   is_azfiles_path "$OUTPUT_H5_PATH" || is_azfiles_path "$OUTPUT_PT_PATH" || is_azfiles_path "$INTERMEDIATE_H5_PATH" || \
+   is_azblob_path "$OUTPUT_H5_PATH" || is_azblob_path "$OUTPUT_PT_PATH" || is_azblob_path "$INTERMEDIATE_H5_PATH"; then
     WORK_DIR="${WORK_DIR:-/tmp/mussel_work_$$}"
     mkdir -p "$WORK_DIR"
     
-    if is_s3_path "$OUTPUT_H5_PATH"; then
+    if is_s3_path "$OUTPUT_H5_PATH" || is_azfiles_path "$OUTPUT_H5_PATH" || is_azblob_path "$OUTPUT_H5_PATH"; then
         LOCAL_OUTPUT_H5_PATH="$WORK_DIR/$(basename "$OUTPUT_H5_PATH")"
-        log "Will upload H5 output to S3: $OUTPUT_H5_PATH"
+        if is_s3_path "$OUTPUT_H5_PATH"; then
+            log "Will upload H5 output to S3: $OUTPUT_H5_PATH"
+        elif is_azblob_path "$OUTPUT_H5_PATH"; then
+            log "Will upload H5 output to Azure Blob: $OUTPUT_H5_PATH"
+        else
+            log "Will upload H5 output to Azure Files: $OUTPUT_H5_PATH"
+        fi
     else
         LOCAL_OUTPUT_H5_PATH="$OUTPUT_H5_PATH"
     fi
     
-    if is_s3_path "$OUTPUT_PT_PATH"; then
+    if is_s3_path "$OUTPUT_PT_PATH" || is_azfiles_path "$OUTPUT_PT_PATH" || is_azblob_path "$OUTPUT_PT_PATH"; then
         LOCAL_OUTPUT_PT_PATH="$WORK_DIR/$(basename "$OUTPUT_PT_PATH")"
-        log "Will upload PT output to S3: $OUTPUT_PT_PATH"
+        if is_s3_path "$OUTPUT_PT_PATH"; then
+            log "Will upload PT output to S3: $OUTPUT_PT_PATH"
+        elif is_azblob_path "$OUTPUT_PT_PATH"; then
+            log "Will upload PT output to Azure Blob: $OUTPUT_PT_PATH"
+        else
+            log "Will upload PT output to Azure Files: $OUTPUT_PT_PATH"
+        fi
     else
         LOCAL_OUTPUT_PT_PATH="$OUTPUT_PT_PATH"
     fi
     
-    if [ -n "$INTERMEDIATE_H5_PATH" ] && is_s3_path "$INTERMEDIATE_H5_PATH"; then
+    if [ -n "$INTERMEDIATE_H5_PATH" ] && (is_s3_path "$INTERMEDIATE_H5_PATH" || is_azfiles_path "$INTERMEDIATE_H5_PATH" || is_azblob_path "$INTERMEDIATE_H5_PATH"); then
         LOCAL_INTERMEDIATE_H5_PATH="$WORK_DIR/$(basename "$INTERMEDIATE_H5_PATH")"
         log "Will upload intermediate H5 (tile-level features) to S3: $INTERMEDIATE_H5_PATH"
     elif [ -n "$INTERMEDIATE_H5_PATH" ]; then
@@ -673,13 +747,16 @@ if [ -z "$POSTFILTER_MODEL_TYPES" ]; then
     
     log "SUCCESS: Processing completed in $DURATION seconds"
     
-    # Upload results to S3 or Azure Files if needed
-    if is_s3_path "$ORIGINAL_OUTPUT_H5_PATH" || is_azfiles_path "$ORIGINAL_OUTPUT_H5_PATH"; then
+    # Upload results to S3, Azure Files, or Azure Blob if needed
+    if is_s3_path "$ORIGINAL_OUTPUT_H5_PATH" || is_azfiles_path "$ORIGINAL_OUTPUT_H5_PATH" || is_azblob_path "$ORIGINAL_OUTPUT_H5_PATH"; then
         if [ -f "$MODEL_H5_PATH" ]; then
             log "Local H5 file: $MODEL_H5_PATH (size: $(du -h "$MODEL_H5_PATH" | cut -f1))"
             if is_s3_path "$ORIGINAL_OUTPUT_H5_PATH"; then
                 upload_to_s3 "$MODEL_H5_PATH" "$ORIGINAL_OUTPUT_H5_PATH"
                 log "Uploaded H5 file to S3: $ORIGINAL_OUTPUT_H5_PATH"
+            elif is_azblob_path "$ORIGINAL_OUTPUT_H5_PATH"; then
+                upload_to_azblob "$MODEL_H5_PATH" "$ORIGINAL_OUTPUT_H5_PATH"
+                log "Uploaded H5 file to Azure Blob: $ORIGINAL_OUTPUT_H5_PATH"
             else
                 upload_to_azfiles "$MODEL_H5_PATH" "$ORIGINAL_OUTPUT_H5_PATH"
                 log "Uploaded H5 file to Azure Files: $ORIGINAL_OUTPUT_H5_PATH"
@@ -691,6 +768,9 @@ if [ -z "$POSTFILTER_MODEL_TYPES" ]; then
             if is_s3_path "$ORIGINAL_OUTPUT_PT_PATH"; then
                 upload_to_s3 "$MODEL_PT_PATH" "$ORIGINAL_OUTPUT_PT_PATH"
                 log "Uploaded PT file to S3: $ORIGINAL_OUTPUT_PT_PATH"
+            elif is_azblob_path "$ORIGINAL_OUTPUT_PT_PATH"; then
+                upload_to_azblob "$MODEL_PT_PATH" "$ORIGINAL_OUTPUT_PT_PATH"
+                log "Uploaded PT file to Azure Blob: $ORIGINAL_OUTPUT_PT_PATH"
             else
                 upload_to_azfiles "$MODEL_PT_PATH" "$ORIGINAL_OUTPUT_PT_PATH"
                 log "Uploaded PT file to Azure Files: $ORIGINAL_OUTPUT_PT_PATH"
@@ -702,6 +782,9 @@ if [ -z "$POSTFILTER_MODEL_TYPES" ]; then
             if is_s3_path "$ORIGINAL_INTERMEDIATE_H5_PATH"; then
                 upload_to_s3 "$MODEL_INTERMEDIATE_H5_PATH" "$ORIGINAL_INTERMEDIATE_H5_PATH"
                 log "Uploaded intermediate H5 file to S3: $ORIGINAL_INTERMEDIATE_H5_PATH"
+            elif is_azblob_path "$ORIGINAL_INTERMEDIATE_H5_PATH"; then
+                upload_to_azblob "$MODEL_INTERMEDIATE_H5_PATH" "$ORIGINAL_INTERMEDIATE_H5_PATH"
+                log "Uploaded intermediate H5 file to Azure Blob: $ORIGINAL_INTERMEDIATE_H5_PATH"
             else
                 upload_to_azfiles "$MODEL_INTERMEDIATE_H5_PATH" "$ORIGINAL_INTERMEDIATE_H5_PATH"
                 log "Uploaded intermediate H5 file to Azure Files: $ORIGINAL_INTERMEDIATE_H5_PATH"
