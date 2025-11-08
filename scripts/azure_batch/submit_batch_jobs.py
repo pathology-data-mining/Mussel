@@ -502,9 +502,11 @@ class AzureBatchJobSubmitter:
                 env_vars.append(batchmodels.EnvironmentSetting(name="AZURE_FILES_SHARE", value=self.azure_files_share_name))
 
         # Container settings
+        # Note: Azure Batch automatically passes through GPUs to containers on GPU VMs
+        # The --gpus flag is not supported in Azure Batch container run options
         container_settings = batchmodels.TaskContainerSettings(
             image_name=container_image,
-            container_run_options="--rm --gpus all" if use_gpu else "--rm",
+            container_run_options="--rm",
         )
 
         # Task command - run the task script
