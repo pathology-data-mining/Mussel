@@ -110,6 +110,16 @@ class AzureBatchJobSubmitter:
             )
         else:
             self.blob_client = None
+        
+        # Initialize Azure Files staging client if configured
+        if storage_account_name and storage_account_key and azure_files_share_name and AzureFilesStaging:
+            self.azure_files_staging = AzureFilesStaging(
+                account_name=storage_account_name,
+                account_key=storage_account_key,
+                share_name=azure_files_share_name,
+            )
+        else:
+            self.azure_files_staging = None
     
     def _should_set_intermediate_h5_path(self, aggregation_method: Optional[str]) -> bool:
         """
@@ -144,16 +154,6 @@ class AzureBatchJobSubmitter:
             kwargs.get('aggregation_method') == 'model' and
             kwargs.get('slide_model_type') is not None
         )
-        
-        # Initialize Azure Files staging client if configured
-        if storage_account_name and storage_account_key and azure_files_share_name and AzureFilesStaging:
-            self.azure_files_staging = AzureFilesStaging(
-                account_name=storage_account_name,
-                account_key=storage_account_key,
-                share_name=azure_files_share_name,
-            )
-        else:
-            self.azure_files_staging = None
 
     def create_pool(
         self,
@@ -169,7 +169,8 @@ class AzureBatchJobSubmitter:
         auto_scale_evaluation_interval: int = 15,
         publisher: str = "microsoft-dsvm",
         offer: str = "ubuntu-hpc",
-        sku: str = "batch.node.ubuntu 22.04",
+        sku: str = "2204",
+        node_agent_sku_id: str = "batch.node.ubuntu 22.04",
     ) -> None:
         """Create a pool of compute nodes with optional Azure Files mount and auto-scaling.
         
@@ -184,9 +185,10 @@ class AzureBatchJobSubmitter:
             min_node_count: Minimum number of nodes for auto-scaling (defaults to node_count)
             max_node_count: Maximum number of nodes for auto-scaling (required if enable_auto_scale=True)
             auto_scale_evaluation_interval: Auto-scale evaluation interval in minutes (default: 15)
-            publisher: Azure VM image publisher (default: microsoft-dsvm)
-            offer: Azure VM image offer (default: ubuntu-hpc)
-            sku: Azure VM image SKU (default: batch.node.ubuntu 22.04)
+            publisher: Azure VM image publisher (default: microsoft-azure-batch)
+            offer: Azure VM image offer (default: ubuntu-server-container)
+            sku: Azure VM image SKU (default: 20-04-lts)
+            node_agent_sku_id: Node agent SKU ID (default: batch.node.ubuntu 20.04)
         """
         print(f"Creating pool '{pool_id}'...")
         
@@ -218,6 +220,7 @@ class AzureBatchJobSubmitter:
 
         # Container configuration
         container_conf = batchmodels.ContainerConfiguration(
+            type=batchmodels.ContainerType.docker_compatible,
             container_image_names=[container_image]
         )
 
@@ -232,7 +235,7 @@ class AzureBatchJobSubmitter:
         vm_config = batchmodels.VirtualMachineConfiguration(
             image_reference=image_ref,
             container_configuration=container_conf,
-            node_agent_sku_id=sku,
+            node_agent_sku_id=node_agent_sku_id,
         )
 
         # Add Azure Files mount configuration if requested
@@ -267,12 +270,10 @@ class AzureBatchJobSubmitter:
                 // Calculate target based on pending tasks
                 targetVMs = min(maxNumberofVMs, pendingTaskSamples);
                 
-                // Handle unusable nodes - add them to target to maintain capacity
-                // Unusable nodes are those in unusable state that cannot run tasks
-                unusableNodes = $CurrentDedicatedNodes - $RunningTasks - $ActiveTasks - $IdleNodes;
-                
-                // Ensure we have enough nodes to handle workload even with unusable nodes
-                $TargetDedicatedNodes = min(maxNumberofVMs, max(startingNumberOfVMs, targetVMs + max(0, unusableNodes)));
+                // Ensure we have at least the minimum number of nodes
+                $TargetDedicatedNodes = min(maxNumberofVMs, max(startingNumberOfVMs, targetVMs));
+                $TargetLowPriorityNodes = 0;
+                $NodeDeallocationOption = requeue;
             """
             
             pool = batchmodels.PoolAddParameter(
@@ -373,97 +374,97 @@ class AzureBatchJobSubmitter:
 
         # Build environment variables
         env_vars = [
-            batchmodels.EnvironmentSetting("SLIDE_PATH", slide_path),
-            batchmodels.EnvironmentSetting("OUTPUT_H5_PATH", output_h5_path),
-            batchmodels.EnvironmentSetting("OUTPUT_PT_PATH", output_pt_path),
-            batchmodels.EnvironmentSetting("PREFILTER_MODEL_TYPE", prefilter_model_type),
-            batchmodels.EnvironmentSetting("NUM_WORKERS", str(num_workers)),
-            batchmodels.EnvironmentSetting("BATCH_SIZE", str(batch_size)),
-            batchmodels.EnvironmentSetting("USE_GPU", str(use_gpu).lower()),
-            batchmodels.EnvironmentSetting("KEEP_INTERMEDIATE_FILES", str(keep_intermediate_files).lower()),
-            batchmodels.EnvironmentSetting("AGGREGATION_METHOD", aggregation_method),
+            batchmodels.EnvironmentSetting(name="SLIDE_PATH", value=slide_path),
+            batchmodels.EnvironmentSetting(name="OUTPUT_H5_PATH", value=output_h5_path),
+            batchmodels.EnvironmentSetting(name="OUTPUT_PT_PATH", value=output_pt_path),
+            batchmodels.EnvironmentSetting(name="PREFILTER_MODEL_TYPE", value=prefilter_model_type),
+            batchmodels.EnvironmentSetting(name="NUM_WORKERS", value=str(num_workers)),
+            batchmodels.EnvironmentSetting(name="BATCH_SIZE", value=str(batch_size)),
+            batchmodels.EnvironmentSetting(name="USE_GPU", value=str(use_gpu).lower()),
+            batchmodels.EnvironmentSetting(name="KEEP_INTERMEDIATE_FILES", value=str(keep_intermediate_files).lower()),
+            batchmodels.EnvironmentSetting(name="AGGREGATION_METHOD", value=aggregation_method),
         ]
         
         # SegConfig group or individual parameters
         if seg_config_group:
-            env_vars.append(batchmodels.EnvironmentSetting("SEG_CONFIG_GROUP", seg_config_group))
+            env_vars.append(batchmodels.EnvironmentSetting(name="SEG_CONFIG_GROUP", value=seg_config_group))
         
         # Individual SegConfig parameters (only set if provided)
         if segment_threshold is not None:
-            env_vars.append(batchmodels.EnvironmentSetting("SEGMENT_THRESHOLD", str(segment_threshold)))
+            env_vars.append(batchmodels.EnvironmentSetting(name="SEGMENT_THRESHOLD", value=str(segment_threshold)))
         if patch_size is not None:
-            env_vars.append(batchmodels.EnvironmentSetting("PATCH_SIZE", str(patch_size)))
+            env_vars.append(batchmodels.EnvironmentSetting(name="PATCH_SIZE", value=str(patch_size)))
         if step_size is not None:
-            env_vars.append(batchmodels.EnvironmentSetting("STEP_SIZE", str(step_size)))
+            env_vars.append(batchmodels.EnvironmentSetting(name="STEP_SIZE", value=str(step_size)))
         if mpp is not None:
-            env_vars.append(batchmodels.EnvironmentSetting("MPP", str(mpp)))
+            env_vars.append(batchmodels.EnvironmentSetting(name="MPP", value=str(mpp)))
         if seg_level is not None:
-            env_vars.append(batchmodels.EnvironmentSetting("SEG_LEVEL", str(seg_level)))
+            env_vars.append(batchmodels.EnvironmentSetting(name="SEG_LEVEL", value=str(seg_level)))
         if segment_max_value is not None:
-            env_vars.append(batchmodels.EnvironmentSetting("SEGMENT_MAX_VALUE", str(segment_max_value)))
+            env_vars.append(batchmodels.EnvironmentSetting(name="SEGMENT_MAX_VALUE", value=str(segment_max_value)))
         if median_blur_ksize is not None:
-            env_vars.append(batchmodels.EnvironmentSetting("MEDIAN_BLUR_KSIZE", str(median_blur_ksize)))
+            env_vars.append(batchmodels.EnvironmentSetting(name="MEDIAN_BLUR_KSIZE", value=str(median_blur_ksize)))
         if morphology_ex_kernel is not None:
-            env_vars.append(batchmodels.EnvironmentSetting("MORPHOLOGY_EX_KERNEL", str(morphology_ex_kernel)))
+            env_vars.append(batchmodels.EnvironmentSetting(name="MORPHOLOGY_EX_KERNEL", value=str(morphology_ex_kernel)))
         if ref_patch_size is not None:
-            env_vars.append(batchmodels.EnvironmentSetting("REF_PATCH_SIZE", str(ref_patch_size)))
+            env_vars.append(batchmodels.EnvironmentSetting(name="REF_PATCH_SIZE", value=str(ref_patch_size)))
         if use_otsu is not None:
-            env_vars.append(batchmodels.EnvironmentSetting("USE_OTSU", str(use_otsu).lower()))
+            env_vars.append(batchmodels.EnvironmentSetting(name="USE_OTSU", value=str(use_otsu).lower()))
         if tissue_area_threshold is not None:
-            env_vars.append(batchmodels.EnvironmentSetting("TISSUE_AREA_THRESHOLD", str(tissue_area_threshold)))
+            env_vars.append(batchmodels.EnvironmentSetting(name="TISSUE_AREA_THRESHOLD", value=str(tissue_area_threshold)))
         if hole_area_threshold is not None:
-            env_vars.append(batchmodels.EnvironmentSetting("HOLE_AREA_THRESHOLD", str(hole_area_threshold)))
+            env_vars.append(batchmodels.EnvironmentSetting(name="HOLE_AREA_THRESHOLD", value=str(hole_area_threshold)))
         if max_num_holes is not None:
-            env_vars.append(batchmodels.EnvironmentSetting("MAX_NUM_HOLES", str(max_num_holes)))
+            env_vars.append(batchmodels.EnvironmentSetting(name="MAX_NUM_HOLES", value=str(max_num_holes)))
 
         if intermediate_h5_path:
-            env_vars.append(batchmodels.EnvironmentSetting("INTERMEDIATE_H5_PATH", intermediate_h5_path))
+            env_vars.append(batchmodels.EnvironmentSetting(name="INTERMEDIATE_H5_PATH", value=intermediate_h5_path))
 
         if slide_model_type:
-            env_vars.append(batchmodels.EnvironmentSetting("SLIDE_MODEL_TYPE", slide_model_type))
+            env_vars.append(batchmodels.EnvironmentSetting(name="SLIDE_MODEL_TYPE", value=slide_model_type))
 
         if classifier_pkl:
-            env_vars.append(batchmodels.EnvironmentSetting("CLASSIFIER_PKL", classifier_pkl))
-            env_vars.append(batchmodels.EnvironmentSetting("CLASSIFIER_THRESHOLD", str(classifier_threshold)))
+            env_vars.append(batchmodels.EnvironmentSetting(name="CLASSIFIER_PKL", value=classifier_pkl))
+            env_vars.append(batchmodels.EnvironmentSetting(name="CLASSIFIER_THRESHOLD", value=str(classifier_threshold)))
 
         # Handle postfilter models - either single or multiple
         if postfilter_model_types:
             # Multiple models - comma-separated list
-            env_vars.append(batchmodels.EnvironmentSetting("POSTFILTER_MODEL_TYPES", postfilter_model_types))
+            env_vars.append(batchmodels.EnvironmentSetting(name="POSTFILTER_MODEL_TYPES", value=postfilter_model_types))
         elif postfilter_model_type:
             # Single model
-            env_vars.append(batchmodels.EnvironmentSetting("POSTFILTER_MODEL_TYPE", postfilter_model_type))
+            env_vars.append(batchmodels.EnvironmentSetting(name="POSTFILTER_MODEL_TYPE", value=postfilter_model_type))
         
         # Add model paths if provided
         if prefilter_model_path:
-            env_vars.append(batchmodels.EnvironmentSetting("PREFILTER_MODEL_PATH", prefilter_model_path))
+            env_vars.append(batchmodels.EnvironmentSetting(name="PREFILTER_MODEL_PATH", value=prefilter_model_path))
         if postfilter_model_path:
-            env_vars.append(batchmodels.EnvironmentSetting("POSTFILTER_MODEL_PATH", postfilter_model_path))
+            env_vars.append(batchmodels.EnvironmentSetting(name="POSTFILTER_MODEL_PATH", value=postfilter_model_path))
         if slide_model_path:
-            env_vars.append(batchmodels.EnvironmentSetting("SLIDE_MODEL_PATH", slide_model_path))
+            env_vars.append(batchmodels.EnvironmentSetting(name="SLIDE_MODEL_PATH", value=slide_model_path))
 
         if hf_token:
-            env_vars.append(batchmodels.EnvironmentSetting("HF_TOKEN", hf_token))
+            env_vars.append(batchmodels.EnvironmentSetting(name="HF_TOKEN", value=hf_token))
 
         # Add AWS credentials if provided (for S3 access)
         if aws_access_key_id:
-            env_vars.append(batchmodels.EnvironmentSetting("AWS_ACCESS_KEY_ID", aws_access_key_id))
+            env_vars.append(batchmodels.EnvironmentSetting(name="AWS_ACCESS_KEY_ID", value=aws_access_key_id))
         if aws_secret_access_key:
-            env_vars.append(batchmodels.EnvironmentSetting("AWS_SECRET_ACCESS_KEY", aws_secret_access_key))
+            env_vars.append(batchmodels.EnvironmentSetting(name="AWS_SECRET_ACCESS_KEY", value=aws_secret_access_key))
         if aws_region:
-            env_vars.append(batchmodels.EnvironmentSetting("AWS_DEFAULT_REGION", aws_region))
+            env_vars.append(batchmodels.EnvironmentSetting(name="AWS_DEFAULT_REGION", value=aws_region))
         if aws_endpoint_url:
-            env_vars.append(batchmodels.EnvironmentSetting("AWS_ENDPOINT_URL", aws_endpoint_url))
+            env_vars.append(batchmodels.EnvironmentSetting(name="AWS_ENDPOINT_URL", value=aws_endpoint_url))
         
         # Add Azure Files cleanup settings if enabled
         if cleanup_staged_file:
-            env_vars.append(batchmodels.EnvironmentSetting("CLEANUP_STAGED_FILE", "true"))
+            env_vars.append(batchmodels.EnvironmentSetting(name="CLEANUP_STAGED_FILE", value="true"))
             if self.storage_account_name:
-                env_vars.append(batchmodels.EnvironmentSetting("AZURE_STORAGE_ACCOUNT", self.storage_account_name))
+                env_vars.append(batchmodels.EnvironmentSetting(name="AZURE_STORAGE_ACCOUNT", value=self.storage_account_name))
             if self.storage_account_key:
-                env_vars.append(batchmodels.EnvironmentSetting("AZURE_STORAGE_KEY", self.storage_account_key))
+                env_vars.append(batchmodels.EnvironmentSetting(name="AZURE_STORAGE_KEY", value=self.storage_account_key))
             if self.azure_files_share_name:
-                env_vars.append(batchmodels.EnvironmentSetting("AZURE_FILES_SHARE", self.azure_files_share_name))
+                env_vars.append(batchmodels.EnvironmentSetting(name="AZURE_FILES_SHARE", value=self.azure_files_share_name))
 
         # Container settings
         container_settings = batchmodels.TaskContainerSettings(
@@ -1175,8 +1176,10 @@ def main():
                         help="Azure VM image publisher (default: microsoft-dsvm)")
     parser.add_argument("--offer", default="ubuntu-hpc",
                         help="Azure VM image offer (default: ubuntu-hpc)")
-    parser.add_argument("--sku", default="batch.node.ubuntu 22.04",
-                        help="Azure VM image SKU and node agent SKU ID (default: batch.node.ubuntu 22.04)")
+    parser.add_argument("--sku", default="2204",
+                        help="Azure VM image SKU (default: 2204)")
+    parser.add_argument("--node-agent-sku-id", default="batch.node.ubuntu 22.04",
+                        help="Node agent SKU ID (default: batch.node.ubuntu 22.04)")
     
     # Job configuration
     parser.add_argument("--job-id", help="Job ID (can be specified in config file)")
@@ -1515,6 +1518,7 @@ def main():
             publisher=args.publisher,
             offer=args.offer,
             sku=args.sku,
+            node_agent_sku_id=args.node_agent_sku_id,
         )
 
     # Create job if requested
@@ -1576,6 +1580,11 @@ def main():
         if args.postfilter_models:
             postfilter_models_list = [m.strip() for m in args.postfilter_models.split(',')]
         
+        # Remove parameters that are passed as explicit arguments to avoid conflicts
+        task_default_params = default_params.copy()
+        for key in ['container_image', 'job_id', 'pool_id', 'output_dir', 'output_s3_prefix']:
+            task_default_params.pop(key, None)
+        
         # Use incremental staging and submission if Azure Files staging is enabled
         if args.stage_to_azure_files:
             if not args.azure_files_share_name:
@@ -1591,7 +1600,7 @@ def main():
                 container_image=args.container_image,
                 postfilter_models=postfilter_models_list,
                 remote_dir="slides",
-                **default_params,
+                **task_default_params,
             )
         else:
             # Standard workflow without staging
@@ -1603,7 +1612,7 @@ def main():
                 container_image=args.container_image,
                 postfilter_models=postfilter_models_list,
                 distributed_slide_batch_size=args.distributed_slide_batch_size,
-                **default_params,
+                **task_default_params,
             )
     elif args.task_id and args.slide_path:
         # Single task submission
