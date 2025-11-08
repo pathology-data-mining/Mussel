@@ -139,8 +139,8 @@ This command processes the tiles identified by `tessellate` and generates featur
 | Model Type | Default Patch Size | Note |
 |------------|-------------------|------|
 | CONCH1_5, TITAN_SLIDE | 512 | Higher resolution capture |
-| RESNET50, CTRANSPATH, GIGAPATH, GIGAPATH_SLIDE | 256 | Standard resolution |
-| VIRCHOW, VIRCHOW2, OPTIMUS, CLIP, GOOGLEPATH | 224 | Optimized for ViT models |
+| RESNET50, GIGAPATH, GIGAPATH_SLIDE, UNI, UNI2 | 256 | Standard resolution |
+| CTRANSPATH, VIRCHOW, VIRCHOW2, OPTIMUS, CLIP, GOOGLEPATH | 224 | Optimized for ViT models |
 
 You can override these defaults by explicitly setting `seg_config.patch_size` to a different value. The model will automatically resize patches to its expected input size during inference.
 

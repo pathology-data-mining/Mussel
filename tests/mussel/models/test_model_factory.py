@@ -184,13 +184,13 @@ def test_get_default_patch_size():
     """Test get_default_patch_size function returns correct values."""
     # Test 256 pixel models
     assert get_default_patch_size(ModelType.RESNET50) == 256
-    assert get_default_patch_size(ModelType.CTRANSPATH) == 256
     assert get_default_patch_size(ModelType.GIGAPATH) == 256
     assert get_default_patch_size(ModelType.GIGAPATH_SLIDE) == 256
     assert get_default_patch_size(ModelType.UNI) == 256
     assert get_default_patch_size(ModelType.UNI2) == 256
     
     # Test 224 pixel models
+    assert get_default_patch_size(ModelType.CTRANSPATH) == 224
     assert get_default_patch_size(ModelType.VIRCHOW) == 224
     assert get_default_patch_size(ModelType.VIRCHOW2) == 224
     assert get_default_patch_size(ModelType.OPTIMUS) == 224
