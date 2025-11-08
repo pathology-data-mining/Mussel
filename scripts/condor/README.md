@@ -57,14 +57,12 @@ python scripts/condor/submit_condor_jobs.py \
 
 ### Slide Batch Processing (Optimized)
 
-**NEW**: Process multiple slides together to optimize slide encoder loading:
+**NEW**: Process multiple slides together to optimize model loading and GPU utilization:
 
 ```bash
 python scripts/condor/submit_condor_jobs.py \
   --csv-manifest slides.csv \
   --output-dir /output/results/ \
-  --aggregation-method model \
-  --slide-model-type GIGAPATH_SLIDE \
   --distributed-slide-batch-size 8 \
   --request-cpus 8 \
   --request-memory 64GB \
@@ -73,9 +71,12 @@ python scripts/condor/submit_condor_jobs.py \
 ```
 
 **Benefits:**
-- **7-8x speedup** for slide-level aggregation
+- **Tile/patch extraction**: 2-3x speedup (patch encoder loaded once)
+- **With slide-level aggregation**: 6-8x speedup (both encoders loaded once)
 - Fewer HTCondor tasks to manage
 - Better resource utilization
+
+**Auto-enabled by default** when processing multiple slides. Use `--distributed-slide-batch-size 1` to disable.
 
 See [examples/distributed_batch_processing.md](../../examples/distributed_batch_processing.md) for detailed guide.
 

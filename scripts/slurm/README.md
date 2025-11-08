@@ -64,14 +64,12 @@ python scripts/slurm/submit_slurm_jobs.py \
 
 ### Slide Batch Processing (Optimized)
 
-**NEW**: Process multiple slides together to optimize slide encoder loading:
+**NEW**: Process multiple slides together to optimize model loading and GPU utilization:
 
 ```bash
 python scripts/slurm/submit_slurm_jobs.py \
   --csv-manifest slides.csv \
   --output-dir /output/results/ \
-  --aggregation-method model \
-  --slide-model-type GIGAPATH_SLIDE \
   --distributed-slide-batch-size 8 \
   --partition gpu \
   --gres gpu:1 \
@@ -81,14 +79,21 @@ python scripts/slurm/submit_slurm_jobs.py \
 
 **What this does:**
 - Groups 8 slides per SLURM task
-- Loads slide encoder model ONCE per task (not per slide)
-- **7-8x speedup** for slide-level aggregation workloads
-- Reduces from N model loads to N/8 model loads
+- Loads patch encoder model ONCE per task (not per slide)
+- If using slide-level aggregation, also loads slide encoder model ONCE per task
+- **Significant speedup** for all multi-slide processing (not just slide-level aggregation)
+- Reduces model loading overhead from N times to N/8 times
+
+**Performance benefits:**
+- **Tile/patch extraction**: 2-3x speedup (patch encoder loaded once)
+- **With slide-level aggregation**: 6-8x speedup (both encoders loaded once)
 
 **When to use:**
-- Processing 2+ slides with slide-level model aggregation
-- Using GIGAPATH_SLIDE, TITAN_SLIDE, or other slide encoder models
-- Have adequate GPU memory (recommend 32-64GB)
+- Processing 2+ slides (always beneficial for batch processing)
+- Both with and without slide-level model aggregation
+- Have adequate GPU memory (recommend 32-64GB for larger batches)
+
+**Auto-enabled by default** when processing multiple slides. Use `--distributed-slide-batch-size 1` to disable.
 
 See [examples/distributed_batch_processing.md](../../examples/distributed_batch_processing.md) for detailed guide.
 
