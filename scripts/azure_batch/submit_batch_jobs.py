@@ -499,12 +499,14 @@ class AzureBatchJobSubmitter:
         # Add Azure Files cleanup settings if enabled
         if cleanup_staged_file:
             env_vars.append(batchmodels.EnvironmentSetting(name="CLEANUP_STAGED_FILE", value="true"))
-            if self.storage_account_name:
-                env_vars.append(batchmodels.EnvironmentSetting(name="AZURE_STORAGE_ACCOUNT", value=self.storage_account_name))
-            if self.storage_account_key:
-                env_vars.append(batchmodels.EnvironmentSetting(name="AZURE_STORAGE_KEY", value=self.storage_account_key))
-            if self.azure_files_share_name:
-                env_vars.append(batchmodels.EnvironmentSetting(name="AZURE_FILES_SHARE", value=self.azure_files_share_name))
+        
+        # Always add Azure Storage credentials if available (needed for output staging)
+        if self.storage_account_name:
+            env_vars.append(batchmodels.EnvironmentSetting(name="AZURE_STORAGE_ACCOUNT", value=self.storage_account_name))
+        if self.storage_account_key:
+            env_vars.append(batchmodels.EnvironmentSetting(name="AZURE_STORAGE_KEY", value=self.storage_account_key))
+        if self.azure_files_share_name:
+            env_vars.append(batchmodels.EnvironmentSetting(name="AZURE_FILES_SHARE", value=self.azure_files_share_name))
 
         # Container settings
         # Note: Azure Batch automatically passes through GPUs to containers on GPU VMs

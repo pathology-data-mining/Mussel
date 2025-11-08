@@ -43,6 +43,7 @@ azure:
   stage_to_azure_files: true
   mount_azure_files: true
   cleanup_staged_files: true
+  output_dir_azfiles: "azfiles://mskpdmgen2/mussel-staging/outputs"
   pool_id: "mussel-pool"
   job_id: "mussel-test-job-$(date +%Y%m%d-%H%M%S)"
   create_pool: true

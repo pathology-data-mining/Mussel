@@ -96,8 +96,47 @@ if [ -n "$SLIDE_PATHS" ]; then
     
     # Convert comma-separated paths to arrays
     IFS=',' read -ra SLIDE_PATH_ARRAY <<< "$SLIDE_PATHS"
-    IFS=',' read -ra OUTPUT_H5_PATH_ARRAY <<< "$OUTPUT_H5_PATHS"
-    IFS=',' read -ra OUTPUT_PT_PATH_ARRAY <<< "$OUTPUT_PT_PATHS"
+    
+    # Check if OUTPUT_H5_PATHS/OUTPUT_PT_PATHS are provided, otherwise generate from OUTPUT_DIR
+    if [ -n "$OUTPUT_H5_PATHS" ] && [ -n "$OUTPUT_PT_PATHS" ]; then
+        IFS=',' read -ra OUTPUT_H5_PATH_ARRAY <<< "$OUTPUT_H5_PATHS"
+        IFS=',' read -ra OUTPUT_PT_PATH_ARRAY <<< "$OUTPUT_PT_PATHS"
+    else
+        # Generate output paths from OUTPUT_DIR and slide IDs
+        if [ -z "$OUTPUT_DIR" ]; then
+            log "ERROR: Either OUTPUT_H5_PATHS/OUTPUT_PT_PATHS or OUTPUT_DIR must be set in batch mode"
+            exit 1
+        fi
+        
+        # Parse SLIDE_IDS if provided
+        if [ -n "$SLIDE_IDS" ]; then
+            IFS=',' read -ra SLIDE_ID_ARRAY <<< "$SLIDE_IDS"
+        else
+            # Extract slide IDs from slide paths (basename without extension)
+            SLIDE_ID_ARRAY=()
+            for slide_path in "${SLIDE_PATH_ARRAY[@]}"; do
+                slide_basename=$(basename "$slide_path")
+                slide_id="${slide_basename%.*}"
+                SLIDE_ID_ARRAY+=("$slide_id")
+            done
+        fi
+        
+        # Generate output paths
+        OUTPUT_H5_PATH_ARRAY=()
+        OUTPUT_PT_PATH_ARRAY=()
+        for slide_id in "${SLIDE_ID_ARRAY[@]}"; do
+            # Check if OUTPUT_DIR is an azfiles:// URL
+            if is_azfiles_path "$OUTPUT_DIR"; then
+                OUTPUT_H5_PATH_ARRAY+=("${OUTPUT_DIR}/${slide_id}_features.h5")
+                OUTPUT_PT_PATH_ARRAY+=("${OUTPUT_DIR}/${slide_id}_features.pt")
+            else
+                OUTPUT_H5_PATH_ARRAY+=("${OUTPUT_DIR}/${slide_id}_features.h5")
+                OUTPUT_PT_PATH_ARRAY+=("${OUTPUT_DIR}/${slide_id}_features.pt")
+            fi
+        done
+        
+        log "Generated output paths from OUTPUT_DIR: $OUTPUT_DIR"
+    fi
     
     NUM_SLIDES=${#SLIDE_PATH_ARRAY[@]}
     log "Processing $NUM_SLIDES slides in batch mode"
@@ -179,6 +218,34 @@ upload_to_s3() {
         fi
     else
         log "ERROR: aws CLI not found. Install with: pip install awscli"
+        exit 1
+    fi
+}
+
+upload_to_azfiles() {
+    local local_path="$1"
+    local azfiles_url="$2"
+    log "Uploading to Azure Files: $local_path -> $azfiles_url"
+    
+    # Extract path from azfiles:// URL: azfiles://account/share/path -> path
+    local remote_path=$(echo "$azfiles_url" | sed 's|^azfiles://[^/]*/[^/]*/||')
+    
+    if [ -z "$AZURE_STORAGE_ACCOUNT" ] || [ -z "$AZURE_STORAGE_KEY" ] || [ -z "$AZURE_FILES_SHARE" ]; then
+        log "ERROR: Azure Storage credentials not set (AZURE_STORAGE_ACCOUNT, AZURE_STORAGE_KEY, AZURE_FILES_SHARE)"
+        exit 1
+    fi
+    
+    # Use Azure CLI if available
+    if command -v az &> /dev/null; then
+        az storage file upload \
+            --account-name "$AZURE_STORAGE_ACCOUNT" \
+            --account-key "$AZURE_STORAGE_KEY" \
+            --share-name "$AZURE_FILES_SHARE" \
+            --source "$local_path" \
+            --path "$remote_path" \
+            --no-progress
+    else
+        log "ERROR: az CLI not found. Install with: pip install azure-cli"
         exit 1
     fi
 }
@@ -606,24 +673,39 @@ if [ -z "$POSTFILTER_MODEL_TYPES" ]; then
     
     log "SUCCESS: Processing completed in $DURATION seconds"
     
-    # Upload results to S3 if needed
-    if is_s3_path "$ORIGINAL_OUTPUT_H5_PATH"; then
+    # Upload results to S3 or Azure Files if needed
+    if is_s3_path "$ORIGINAL_OUTPUT_H5_PATH" || is_azfiles_path "$ORIGINAL_OUTPUT_H5_PATH"; then
         if [ -f "$MODEL_H5_PATH" ]; then
             log "Local H5 file: $MODEL_H5_PATH (size: $(du -h "$MODEL_H5_PATH" | cut -f1))"
-            upload_to_s3 "$MODEL_H5_PATH" "$ORIGINAL_OUTPUT_H5_PATH"
-            log "Uploaded H5 file to S3: $ORIGINAL_OUTPUT_H5_PATH"
+            if is_s3_path "$ORIGINAL_OUTPUT_H5_PATH"; then
+                upload_to_s3 "$MODEL_H5_PATH" "$ORIGINAL_OUTPUT_H5_PATH"
+                log "Uploaded H5 file to S3: $ORIGINAL_OUTPUT_H5_PATH"
+            else
+                upload_to_azfiles "$MODEL_H5_PATH" "$ORIGINAL_OUTPUT_H5_PATH"
+                log "Uploaded H5 file to Azure Files: $ORIGINAL_OUTPUT_H5_PATH"
+            fi
         fi
         
         if [ -f "$MODEL_PT_PATH" ]; then
             log "Local PT file: $MODEL_PT_PATH (size: $(du -h "$MODEL_PT_PATH" | cut -f1))"
-            upload_to_s3 "$MODEL_PT_PATH" "$ORIGINAL_OUTPUT_PT_PATH"
-            log "Uploaded PT file to S3: $ORIGINAL_OUTPUT_PT_PATH"
+            if is_s3_path "$ORIGINAL_OUTPUT_PT_PATH"; then
+                upload_to_s3 "$MODEL_PT_PATH" "$ORIGINAL_OUTPUT_PT_PATH"
+                log "Uploaded PT file to S3: $ORIGINAL_OUTPUT_PT_PATH"
+            else
+                upload_to_azfiles "$MODEL_PT_PATH" "$ORIGINAL_OUTPUT_PT_PATH"
+                log "Uploaded PT file to Azure Files: $ORIGINAL_OUTPUT_PT_PATH"
+            fi
         fi
         
         if [ -n "$MODEL_INTERMEDIATE_H5_PATH" ] && [ -f "$MODEL_INTERMEDIATE_H5_PATH" ]; then
             log "Local intermediate H5 file: $MODEL_INTERMEDIATE_H5_PATH (size: $(du -h "$MODEL_INTERMEDIATE_H5_PATH" | cut -f1))"
-            upload_to_s3 "$MODEL_INTERMEDIATE_H5_PATH" "$ORIGINAL_INTERMEDIATE_H5_PATH"
-            log "Uploaded intermediate H5 file to S3: $ORIGINAL_INTERMEDIATE_H5_PATH"
+            if is_s3_path "$ORIGINAL_INTERMEDIATE_H5_PATH"; then
+                upload_to_s3 "$MODEL_INTERMEDIATE_H5_PATH" "$ORIGINAL_INTERMEDIATE_H5_PATH"
+                log "Uploaded intermediate H5 file to S3: $ORIGINAL_INTERMEDIATE_H5_PATH"
+            else
+                upload_to_azfiles "$MODEL_INTERMEDIATE_H5_PATH" "$ORIGINAL_INTERMEDIATE_H5_PATH"
+                log "Uploaded intermediate H5 file to Azure Files: $ORIGINAL_INTERMEDIATE_H5_PATH"
+            fi
         fi
     else
         # Local output
