@@ -77,6 +77,11 @@ class AzureBatchJobSubmitter:
         submitter.monitor_tasks(job_id="my-job")
     """
     
+    @staticmethod
+    def log(message):
+        """Simple logging helper."""
+        print(f"  {message}")
+    
     # Azure GPU VM family prefixes
     GPU_VM_PREFIXES = ['Standard_NC', 'Standard_ND', 'Standard_NV']
 
@@ -799,6 +804,30 @@ class AzureBatchJobSubmitter:
                 # Extract slide IDs and paths for this batch
                 slide_ids = [s['slide_id'] for s in batch_slides]
                 slide_paths_batch = [s['slide_path'] for s in batch_slides]
+                
+                # Stage local files to Azure Files if enabled
+                if self.azure_files_staging:
+                    staged_paths = []
+                    for slide_path in slide_paths_batch:
+                        # Check if it's a local file path (not s3:// or azfiles://)
+                        if not slide_path.startswith(('s3://', 'azfiles://', 'http://', 'https://')):
+                            if os.path.exists(slide_path):
+                                log(f"Staging to Azure Files: {slide_path}")
+                                remote_path = self.azure_files_staging.stage_file(
+                                    local_path=slide_path,
+                                    remote_dir="slides"
+                                )
+                                # Convert to azfiles:// URL
+                                azfiles_url = f"azfiles://{self.storage_account_name}/{self.azure_files_share_name}/{remote_path}"
+                                staged_paths.append(azfiles_url)
+                                log(f"  Staged to: {azfiles_url}")
+                            else:
+                                log(f"WARNING: Local file not found, using original path: {slide_path}")
+                                staged_paths.append(slide_path)
+                        else:
+                            # Already a remote path
+                            staged_paths.append(slide_path)
+                    slide_paths_batch = staged_paths
                 
                 print(f"\nSubmitting batch task: {batch_id}")
                 print(f"  Slides: {', '.join(slide_ids)}")

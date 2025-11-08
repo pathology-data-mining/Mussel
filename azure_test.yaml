@@ -39,6 +39,7 @@ azure:
   batch_account_url: "https://ocra.eastus2.batch.azure.com"
   container_image: "mskmind/mussel:latest"
   storage_account_name: "mskpdmgen2"
+  azure_files_share_name: "mussel-staging"
   stage_to_azure_files: true
   mount_azure_files: true
   cleanup_staged_files: true
