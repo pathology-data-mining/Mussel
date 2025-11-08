@@ -325,7 +325,6 @@ queue 1
         # Batch encoding is beneficial whenever processing multiple slides
         # The CLI will handle both patch extraction and slide aggregation efficiently
         return True
-        )
 
     def submit_tasks_from_config(
         self,
