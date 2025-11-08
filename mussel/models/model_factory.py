@@ -61,7 +61,7 @@ SLIDE_ENCODER_COMPATIBILITY = {
 # Recommended patch sizes for each model type
 MODEL_PATCH_SIZES = {
     ModelType.RESNET50: 256,
-    ModelType.CTRANSPATH: 256,
+    ModelType.CTRANSPATH: 224,
     ModelType.GIGAPATH: 256,
     ModelType.VIRCHOW: 224,
     ModelType.VIRCHOW2: 224,
