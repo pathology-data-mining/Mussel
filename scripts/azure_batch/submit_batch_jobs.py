@@ -1177,7 +1177,7 @@ def main():
     parser.add_argument("--offer", default="ubuntu-hpc",
                         help="Azure VM image offer (default: ubuntu-hpc)")
     parser.add_argument("--sku", default="2204",
-                        help="Azure VM image SKU (default: 2204)")
+                        help="Azure VM image reference SKU (default: 2204)")
     parser.add_argument("--node-agent-sku-id", default="batch.node.ubuntu 22.04",
                         help="Node agent SKU ID (default: batch.node.ubuntu 22.04)")
     
@@ -1363,7 +1363,7 @@ def main():
         if args.offer == "ubuntu-hpc" and 'offer' in config_defaults:
             args.offer = config_defaults['offer']
         
-        if args.sku == "batch.node.ubuntu 22.04" and 'sku' in config_defaults:
+        if args.sku == "2204" and 'sku' in config_defaults:
             args.sku = config_defaults['sku']
     
     # Auto-generate pool_id and job_id if not provided (use same timestamp for consistency)

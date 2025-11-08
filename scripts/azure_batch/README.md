@@ -429,9 +429,10 @@ For advanced use cases, you can customize the VM image used for the pool:
 
 - `--publisher`: Azure VM image publisher (default: `microsoft-dsvm`)
 - `--offer`: Azure VM image offer (default: `ubuntu-hpc`)
-- `--sku`: Azure VM image SKU and node agent SKU ID (default: `batch.node.ubuntu 22.04`)
+- `--sku`: Azure VM image SKU (default: `2204`)
+- `--node-agent-sku-id`: Node agent SKU ID for the pool (e.g., `batch.node.ubuntu 22.04`)
 
-These parameters allow you to use different base images for your compute nodes. The defaults are set to use Azure's Data Science VM Ubuntu HPC image with optimized performance for high-performance computing workloads. The `--sku` parameter serves dual purpose: it specifies both the VM image SKU and the node agent SKU ID.
+These parameters allow you to use different base images and node agent SKUs for your compute nodes. The defaults are set to use Azure's Data Science VM Ubuntu HPC image with optimized performance for high-performance computing workloads. The `--sku` parameter now only specifies the VM image SKU, while the `--node-agent-sku-id` parameter is used to specify the node agent SKU ID.
 
 **Example: Use the older Ubuntu container image**
 ```bash
@@ -489,7 +490,8 @@ azure:
   # VM image configuration (optional, defaults shown below)
   publisher: "microsoft-dsvm"
   offer: "ubuntu-hpc"
-  sku: "batch.node.ubuntu 22.04"
+  sku: "2204"
+  node_agent_sku_id: "batch.node.ubuntu 22.04"
   
   # Auto-scaling (optional)
   enable_auto_scale: true
