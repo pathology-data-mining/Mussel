@@ -4,9 +4,12 @@
 # This script runs on Azure Batch compute nodes to process whole-slide images
 #
 # Environment variables expected:
-#   SLIDE_PATH - Path to the input slide file (can be s3:// or azfiles:// URL)
+#   SLIDE_PATH - Path to a single input slide file (can be s3:// or azfiles:// URL)
+#   SLIDE_PATHS - Comma-separated paths for batch processing multiple slides
 #   OUTPUT_H5_PATH - Path for output HDF5 file (can be s3:// URL or local path)
 #   OUTPUT_PT_PATH - Path for output PyTorch file (can be s3:// URL or local path)
+#   OUTPUT_H5_PATHS - Comma-separated output H5 paths for batch processing
+#   OUTPUT_PT_PATHS - Comma-separated output PT paths for batch processing
 #   INTERMEDIATE_H5_PATH - (Optional) Path for intermediate tile-level features (two-step aggregation)
 #   AGGREGATION_METHOD - (Optional) Aggregation method: identity, mean, max, model (default: identity)
 #   SLIDE_MODEL_TYPE - (Optional) Slide model type for aggregation_method=model
@@ -85,20 +88,37 @@ cleanup() {
 # Set trap to ensure cleanup runs on exit (success, failure, or interruption)
 trap cleanup EXIT INT TERM
 
-# Check required environment variables
-if [ -z "$SLIDE_PATH" ]; then
-    log "ERROR: SLIDE_PATH environment variable is required"
-    exit 1
-fi
-
-if [ -z "$OUTPUT_H5_PATH" ]; then
-    log "ERROR: OUTPUT_H5_PATH environment variable is required"
-    exit 1
-fi
-
-if [ -z "$OUTPUT_PT_PATH" ]; then
-    log "ERROR: OUTPUT_PT_PATH environment variable is required"
-    exit 1
+# Detect batch processing mode
+BATCH_MODE=false
+if [ -n "$SLIDE_PATHS" ]; then
+    BATCH_MODE=true
+    log "Batch processing mode detected (SLIDE_PATHS is set)"
+    
+    # Convert comma-separated paths to arrays
+    IFS=',' read -ra SLIDE_PATH_ARRAY <<< "$SLIDE_PATHS"
+    IFS=',' read -ra OUTPUT_H5_PATH_ARRAY <<< "$OUTPUT_H5_PATHS"
+    IFS=',' read -ra OUTPUT_PT_PATH_ARRAY <<< "$OUTPUT_PT_PATHS"
+    
+    NUM_SLIDES=${#SLIDE_PATH_ARRAY[@]}
+    log "Processing $NUM_SLIDES slides in batch mode"
+else
+    log "Single slide mode (SLIDE_PATH is set)"
+    
+    # Check required environment variables for single slide mode
+    if [ -z "$SLIDE_PATH" ]; then
+        log "ERROR: Either SLIDE_PATH or SLIDE_PATHS environment variable is required"
+        exit 1
+    fi
+    
+    if [ -z "$OUTPUT_H5_PATH" ]; then
+        log "ERROR: OUTPUT_H5_PATH environment variable is required"
+        exit 1
+    fi
+    
+    if [ -z "$OUTPUT_PT_PATH" ]; then
+        log "ERROR: OUTPUT_PT_PATH environment variable is required"
+        exit 1
+    fi
 fi
 
 # Set defaults for optional parameters
@@ -191,9 +211,17 @@ resolve_azfiles_path() {
 }
 
 log "Configuration:"
-log "  SLIDE_PATH: $SLIDE_PATH"
-log "  OUTPUT_H5_PATH: $OUTPUT_H5_PATH"
-log "  OUTPUT_PT_PATH: $OUTPUT_PT_PATH"
+if [ "$BATCH_MODE" = "true" ]; then
+    log "  Mode: BATCH ($NUM_SLIDES slides)"
+    for i in "${!SLIDE_PATH_ARRAY[@]}"; do
+        log "    Slide $((i+1)): ${SLIDE_PATH_ARRAY[$i]}"
+    done
+else
+    log "  Mode: SINGLE SLIDE"
+    log "  SLIDE_PATH: $SLIDE_PATH"
+    log "  OUTPUT_H5_PATH: $OUTPUT_H5_PATH"
+    log "  OUTPUT_PT_PATH: $OUTPUT_PT_PATH"
+fi
 log "  CLASSIFIER_PKL: ${CLASSIFIER_PKL:-<not set>}"
 log "  CLASSIFIER_THRESHOLD: $CLASSIFIER_THRESHOLD"
 log "  PREFILTER_MODEL_TYPE: $PREFILTER_MODEL_TYPE"
@@ -206,6 +234,22 @@ log "  BATCH_SIZE: $BATCH_SIZE"
 log "  USE_GPU: $USE_GPU"
 log "  KEEP_INTERMEDIATE_FILES: $KEEP_INTERMEDIATE_FILES"
 echo ""
+
+# Function to process a single slide
+process_slide() {
+    local SLIDE_PATH="$1"
+    local OUTPUT_H5_PATH="$2"
+    local OUTPUT_PT_PATH="$3"
+    local SLIDE_NUM="${4:-1}"
+    
+    log ""
+    log "=========================================="
+    log "Processing slide $SLIDE_NUM"
+    log "=========================================="
+    log "  Input: $SLIDE_PATH"
+    log "  Output H5: $OUTPUT_H5_PATH"
+    log "  Output PT: $OUTPUT_PT_PATH"
+    log ""
 
 # Stage input slide - handle S3, Azure Files, or local paths
 ORIGINAL_SLIDE_PATH="$SLIDE_PATH"
@@ -571,6 +615,35 @@ log ""
 log "=========================================="
 log "Processing completed successfully"
 log "=========================================="
+}  # End of process_slide function
+
+# Main execution logic
+if [ "$BATCH_MODE" = "true" ]; then
+    log "Starting batch processing of $NUM_SLIDES slides..."
+    
+    # Process each slide
+    for i in "${!SLIDE_PATH_ARRAY[@]}"; do
+        SLIDE_PATH="${SLIDE_PATH_ARRAY[$i]}"
+        OUTPUT_H5_PATH="${OUTPUT_H5_PATH_ARRAY[$i]}"
+        OUTPUT_PT_PATH="${OUTPUT_PT_PATH_ARRAY[$i]}"
+        
+        # Process this slide
+        process_slide "$SLIDE_PATH" "$OUTPUT_H5_PATH" "$OUTPUT_PT_PATH" "$((i+1))"
+        
+        if [ $? -ne 0 ]; then
+            log "ERROR: Failed to process slide $((i+1)): $SLIDE_PATH"
+            exit 1
+        fi
+    done
+    
+    log ""
+    log "=========================================="
+    log "Batch processing completed: $NUM_SLIDES/$NUM_SLIDES slides successful"
+    log "=========================================="
+else
+    # Single slide mode - call process_slide function
+    process_slide "$SLIDE_PATH" "$OUTPUT_H5_PATH" "$OUTPUT_PT_PATH" "1"
+fi
 
 echo "============================================"
 echo "End time: $(date)"
