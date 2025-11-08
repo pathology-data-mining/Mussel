@@ -383,6 +383,9 @@ bash {self.task_script}
                 print(f"ERROR: slide_path, output_h5_path, and output_pt_path required for task {task_id}")
                 continue
             
+            # Normalize empty string to None for intermediate_h5_path
+            intermediate_h5_path = merged_config.get('intermediate_h5_path') or None
+            
             # Filter out keys that were extracted or don't belong to submit_task
             excluded_keys = ['task_id', 'slide_path', 'output_h5_path', 'output_pt_path', 'submit']
             
@@ -392,7 +395,8 @@ bash {self.task_script}
                 slide_path=slide_path,
                 output_h5_path=output_h5_path,
                 output_pt_path=output_pt_path,
-                **{k: v for k, v in merged_config.items() if k not in excluded_keys}
+                intermediate_h5_path=intermediate_h5_path,
+                **{k: v for k, v in merged_config.items() if k not in excluded_keys and k != 'intermediate_h5_path'}
             )
             job_ids.append(job_id)
         
@@ -662,6 +666,13 @@ LINE=$((SLURM_ARRAY_TASK_ID + 1))  # +1 to skip header
 
 # Extract values from CSV
 IFS=',' read -r SLIDE_ID SLIDE_PATH OUTPUT_H5_PATH OUTPUT_PT_PATH INTERMEDIATE_H5_PATH < <(sed -n "${{LINE}}p" "$MANIFEST")
+
+# Strip whitespace and control characters (e.g., \\r from Windows line endings)
+SLIDE_ID=$(echo "$SLIDE_ID" | tr -d '\\r\\n' | xargs)
+SLIDE_PATH=$(echo "$SLIDE_PATH" | tr -d '\\r\\n' | xargs)
+OUTPUT_H5_PATH=$(echo "$OUTPUT_H5_PATH" | tr -d '\\r\\n' | xargs)
+OUTPUT_PT_PATH=$(echo "$OUTPUT_PT_PATH" | tr -d '\\r\\n' | xargs)
+INTERMEDIATE_H5_PATH=$(echo "$INTERMEDIATE_H5_PATH" | tr -d '\\r\\n' | xargs)
 
 # Export task-specific variables
 export SLIDE_PATH

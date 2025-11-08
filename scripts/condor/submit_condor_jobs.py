@@ -383,6 +383,9 @@ queue 1
                 print(f"ERROR: slide_path, output_h5_path, and output_pt_path required for task {task_id}")
                 continue
             
+            # Normalize empty string to None for intermediate_h5_path
+            intermediate_h5_path = merged_config.get('intermediate_h5_path') or None
+            
             # Filter out keys that were extracted or don't belong to submit_task
             excluded_keys = ['task_id', 'slide_path', 'output_h5_path', 'output_pt_path', 'submit']
             
@@ -392,7 +395,8 @@ queue 1
                 slide_path=slide_path,
                 output_h5_path=output_h5_path,
                 output_pt_path=output_pt_path,
-                **{k: v for k, v in merged_config.items() if k not in excluded_keys}
+                intermediate_h5_path=intermediate_h5_path,
+                **{k: v for k, v in merged_config.items() if k not in excluded_keys and k != 'intermediate_h5_path'}
             )
             job_ids.append(job_id)
         
