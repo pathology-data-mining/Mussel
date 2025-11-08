@@ -232,36 +232,20 @@ def _main_batch(cfg: ExtractFeaturesConfig):
             is_test_run=cfg.is_test_run,
         )
         
-        # Aggregate to slide level
-        if cfg.aggregation_method == "model":
-            logger.info(f"Batch aggregating {len(cfg.slide_paths)} slides with slide encoder")
-            aggregate_slide_features_batch(
-                patch_features_h5_paths=intermediate_h5_paths,
-                output_h5_paths=output_h5_paths,
-                output_pt_paths=output_pt_paths,
-                aggregation_method=cfg.aggregation_method,
-                model_type=cfg.slide_model_type,
-                model_path=cfg.slide_model_path,
-                use_gpu=cfg.use_gpu,
-                gpu_device_id=cfg.gpu_device_id,
-                gpu_device_ids=cfg.gpu_device_ids,
-                slide_batch_size=cfg.slide_batch_size,
-            )
-        else:
-            # For mean/max aggregation, aggregate each slide individually
-            logger.info(f"Aggregating {len(cfg.slide_paths)} slides with {cfg.aggregation_method}")
-            for intermediate_h5, output_h5, output_pt in zip(intermediate_h5_paths, output_h5_paths, output_pt_paths):
-                aggregate_slide_features(
-                    patch_features_h5_path=intermediate_h5,
-                    output_h5_path=output_h5,
-                    output_pt_path=output_pt,
-                    aggregation_method=cfg.aggregation_method,
-                    model_type=None,
-                    model_path=None,
-                    use_gpu=cfg.use_gpu,
-                    gpu_device_id=cfg.gpu_device_id,
-                    gpu_device_ids=cfg.gpu_device_ids,
-                )
+        # Aggregate to slide level using batch processing
+        logger.info(f"Batch aggregating {len(cfg.slide_paths)} slides with aggregation_method={cfg.aggregation_method}")
+        aggregate_slide_features_batch(
+            patch_features_h5_paths=intermediate_h5_paths,
+            output_h5_paths=output_h5_paths,
+            output_pt_paths=output_pt_paths,
+            aggregation_method=cfg.aggregation_method,
+            model_type=cfg.slide_model_type,
+            model_path=cfg.slide_model_path,
+            use_gpu=cfg.use_gpu,
+            gpu_device_id=cfg.gpu_device_id,
+            gpu_device_ids=cfg.gpu_device_ids,
+            slide_batch_size=cfg.slide_batch_size,
+        )
     else:
         # Single-step: extract directly to final output (no aggregation)
         extract_patch_features_batch(
