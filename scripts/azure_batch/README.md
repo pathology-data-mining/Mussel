@@ -423,6 +423,35 @@ Enable auto-scaling to dynamically adjust pool size based on workload:
 --container-image mskmind/mussel:latest-torch-cpu
 ```
 
+#### VM Image Configuration
+
+For advanced use cases, you can customize the VM image used for the pool:
+
+- `--publisher`: Azure VM image publisher (default: `microsoft-azure-batch`)
+- `--offer`: Azure VM image offer (default: `ubuntu-server-container`)
+- `--sku`: Azure VM image SKU (default: `20-04-lts`)
+- `--vm-type`: Node agent SKU ID (default: `batch.node.ubuntu 20.04`)
+
+These parameters allow you to use different base images for your compute nodes. The defaults are set to use Azure Batch's official Ubuntu container image with Docker support.
+
+**Example: Use a custom Ubuntu version**
+```bash
+--pool-id mussel-custom-pool \
+--create-pool \
+--vm-size Standard_NC6s_v3 \
+--node-count 2 \
+--publisher microsoft-azure-batch \
+--offer ubuntu-server-container \
+--sku 22-04-lts \
+--vm-type "batch.node.ubuntu 22.04" \
+--use-gpu
+```
+
+**Note:** When customizing VM images, ensure:
+1. The image supports Docker containers (required for Mussel)
+2. The node agent SKU ID (`--vm-type`) matches your chosen image
+3. GPU drivers are available if using GPU workloads
+
 ### Configuration Files with Azure Parameters
 
 You can specify Azure Batch parameters in your YAML or JSON configuration file under the `azure:` section. This allows you to keep your Azure-specific settings separate from general processing parameters.
@@ -458,6 +487,12 @@ azure:
   # Pool configuration
   vm_size: "Standard_NC6s_v3"
   node_count: 2
+  
+  # VM image configuration (optional)
+  publisher: "microsoft-azure-batch"
+  offer: "ubuntu-server-container"
+  sku: "20-04-lts"
+  vm_type: "batch.node.ubuntu 20.04"
   
   # Auto-scaling (optional)
   enable_auto_scale: true
@@ -509,6 +544,7 @@ python scripts/azure_batch/submit_batch_jobs.py \
 - **Container**: `container_image`
 - **Storage**: `storage_account_name`, `azure_files_share_name`
 - **Pool config**: `vm_size`, `node_count`
+- **VM image**: `publisher`, `offer`, `sku`, `vm_type`
 - **Auto-scaling**: `enable_auto_scale`, `min_node_count`, `max_node_count`, `auto_scale_evaluation_interval`
 
 **Benefits:**
