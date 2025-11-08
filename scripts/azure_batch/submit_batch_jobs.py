@@ -167,10 +167,10 @@ class AzureBatchJobSubmitter:
         min_node_count: Optional[int] = None,
         max_node_count: Optional[int] = None,
         auto_scale_evaluation_interval: int = 15,
-        publisher: str = "microsoft-azure-batch",
-        offer: str = "ubuntu-server-container",
-        sku: str = "20-04-lts",
-        vm_type: str = "batch.node.ubuntu 20.04",
+        publisher: str = "microsoft-dsvm",
+        offer: str = "ubuntu-hpc",
+        sku: str = "batch.node.ubuntu 22.04",
+        vm_type: str = "batch.node.ubuntu 22.04",
     ) -> None:
         """Create a pool of compute nodes with optional Azure Files mount and auto-scaling.
         
@@ -185,10 +185,10 @@ class AzureBatchJobSubmitter:
             min_node_count: Minimum number of nodes for auto-scaling (defaults to node_count)
             max_node_count: Maximum number of nodes for auto-scaling (required if enable_auto_scale=True)
             auto_scale_evaluation_interval: Auto-scale evaluation interval in minutes (default: 15)
-            publisher: Azure VM image publisher (default: microsoft-azure-batch)
-            offer: Azure VM image offer (default: ubuntu-server-container)
-            sku: Azure VM image SKU (default: 20-04-lts)
-            vm_type: Node agent SKU ID (default: batch.node.ubuntu 20.04)
+            publisher: Azure VM image publisher (default: microsoft-dsvm)
+            offer: Azure VM image offer (default: ubuntu-hpc)
+            sku: Azure VM image SKU (default: batch.node.ubuntu 22.04)
+            vm_type: Node agent SKU ID (default: batch.node.ubuntu 22.04)
         """
         print(f"Creating pool '{pool_id}'...")
         
@@ -1173,14 +1173,14 @@ def main():
                         help="Auto-scale evaluation interval in minutes (default: 15)")
     
     # VM image configuration
-    parser.add_argument("--publisher", default="microsoft-azure-batch",
-                        help="Azure VM image publisher (default: microsoft-azure-batch)")
-    parser.add_argument("--offer", default="ubuntu-server-container",
-                        help="Azure VM image offer (default: ubuntu-server-container)")
-    parser.add_argument("--sku", default="20-04-lts",
-                        help="Azure VM image SKU (default: 20-04-lts)")
-    parser.add_argument("--vm-type", default="batch.node.ubuntu 20.04",
-                        help="Node agent SKU ID (default: batch.node.ubuntu 20.04)")
+    parser.add_argument("--publisher", default="microsoft-dsvm",
+                        help="Azure VM image publisher (default: microsoft-dsvm)")
+    parser.add_argument("--offer", default="ubuntu-hpc",
+                        help="Azure VM image offer (default: ubuntu-hpc)")
+    parser.add_argument("--sku", default="batch.node.ubuntu 22.04",
+                        help="Azure VM image SKU (default: batch.node.ubuntu 22.04)")
+    parser.add_argument("--vm-type", default="batch.node.ubuntu 22.04",
+                        help="Node agent SKU ID (default: batch.node.ubuntu 22.04)")
     
     # Job configuration
     parser.add_argument("--job-id", help="Job ID (can be specified in config file)")
@@ -1358,16 +1358,16 @@ def main():
             args.auto_scale_evaluation_interval = config_defaults['auto_scale_evaluation_interval']
         
         # VM image configuration parameters
-        if args.publisher == "microsoft-azure-batch" and 'publisher' in config_defaults:
+        if args.publisher == "microsoft-dsvm" and 'publisher' in config_defaults:
             args.publisher = config_defaults['publisher']
         
-        if args.offer == "ubuntu-server-container" and 'offer' in config_defaults:
+        if args.offer == "ubuntu-hpc" and 'offer' in config_defaults:
             args.offer = config_defaults['offer']
         
-        if args.sku == "20-04-lts" and 'sku' in config_defaults:
+        if args.sku == "batch.node.ubuntu 22.04" and 'sku' in config_defaults:
             args.sku = config_defaults['sku']
         
-        if args.vm_type == "batch.node.ubuntu 20.04" and 'vm_type' in config_defaults:
+        if args.vm_type == "batch.node.ubuntu 22.04" and 'vm_type' in config_defaults:
             args.vm_type = config_defaults['vm_type']
     
     # Auto-generate pool_id and job_id if not provided (use same timestamp for consistency)

@@ -60,12 +60,12 @@ azure:
   vm_size: "Standard_NC6s_v3"  # VM size for pool nodes
   node_count: 2  # Number of nodes in the pool
   
-  # VM image configuration (optional, uses defaults for Azure Batch container support)
+  # VM image configuration (optional, uses defaults for Azure HPC Ubuntu image)
   # These advanced options allow customization of the VM image used for the pool
-  # publisher: "microsoft-azure-batch"  # Azure VM image publisher
-  # offer: "ubuntu-server-container"    # Azure VM image offer
-  # sku: "20-04-lts"                    # Azure VM image SKU
-  # vm_type: "batch.node.ubuntu 20.04"  # Node agent SKU ID
+  # publisher: "microsoft-dsvm"            # Azure VM image publisher
+  # offer: "ubuntu-hpc"                    # Azure VM image offer
+  # sku: "batch.node.ubuntu 22.04"        # Azure VM image SKU
+  # vm_type: "batch.node.ubuntu 22.04"    # Node agent SKU ID
   
   # Auto-scaling configuration (optional)
   # enable_auto_scale: true

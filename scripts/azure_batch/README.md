@@ -427,14 +427,14 @@ Enable auto-scaling to dynamically adjust pool size based on workload:
 
 For advanced use cases, you can customize the VM image used for the pool:
 
-- `--publisher`: Azure VM image publisher (default: `microsoft-azure-batch`)
-- `--offer`: Azure VM image offer (default: `ubuntu-server-container`)
-- `--sku`: Azure VM image SKU (default: `20-04-lts`)
-- `--vm-type`: Node agent SKU ID (default: `batch.node.ubuntu 20.04`)
+- `--publisher`: Azure VM image publisher (default: `microsoft-dsvm`)
+- `--offer`: Azure VM image offer (default: `ubuntu-hpc`)
+- `--sku`: Azure VM image SKU (default: `batch.node.ubuntu 22.04`)
+- `--vm-type`: Node agent SKU ID (default: `batch.node.ubuntu 22.04`)
 
-These parameters allow you to use different base images for your compute nodes. The defaults are set to use Azure Batch's official Ubuntu container image with Docker support.
+These parameters allow you to use different base images for your compute nodes. The defaults are set to use Azure's Data Science VM Ubuntu HPC image with optimized performance for high-performance computing workloads.
 
-**Example: Use a custom Ubuntu version**
+**Example: Use the older Ubuntu container image**
 ```bash
 --pool-id mussel-custom-pool \
 --create-pool \
@@ -442,8 +442,8 @@ These parameters allow you to use different base images for your compute nodes. 
 --node-count 2 \
 --publisher microsoft-azure-batch \
 --offer ubuntu-server-container \
---sku 22-04-lts \
---vm-type "batch.node.ubuntu 22.04" \
+--sku 20-04-lts \
+--vm-type "batch.node.ubuntu 20.04" \
 --use-gpu
 ```
 
@@ -488,11 +488,11 @@ azure:
   vm_size: "Standard_NC6s_v3"
   node_count: 2
   
-  # VM image configuration (optional)
-  publisher: "microsoft-azure-batch"
-  offer: "ubuntu-server-container"
-  sku: "20-04-lts"
-  vm_type: "batch.node.ubuntu 20.04"
+  # VM image configuration (optional, defaults shown below)
+  publisher: "microsoft-dsvm"
+  offer: "ubuntu-hpc"
+  sku: "batch.node.ubuntu 22.04"
+  vm_type: "batch.node.ubuntu 22.04"
   
   # Auto-scaling (optional)
   enable_auto_scale: true

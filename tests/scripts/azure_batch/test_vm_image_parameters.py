@@ -25,7 +25,7 @@ def test_publisher_parameter_exists():
         "Missing --publisher CLI parameter"
     
     # Check for publisher with default configuration
-    assert 'microsoft-azure-batch' in content, \
+    assert 'microsoft-dsvm' in content, \
         "Missing default publisher value"
 
 
@@ -41,7 +41,7 @@ def test_offer_parameter_exists():
         "Missing --offer CLI parameter"
     
     # Check for offer with default configuration
-    assert 'ubuntu-server-container' in content, \
+    assert 'ubuntu-hpc' in content, \
         "Missing default offer value"
 
 
@@ -57,7 +57,7 @@ def test_sku_parameter_exists():
         "Missing --sku CLI parameter"
     
     # Check for sku with default configuration
-    assert '20-04-lts' in content, \
+    assert 'batch.node.ubuntu 22.04' in content, \
         "Missing default sku value"
 
 
@@ -73,7 +73,7 @@ def test_vm_type_parameter_exists():
         "Missing --vm-type CLI parameter"
     
     # Check for vm-type with default configuration
-    assert 'batch.node.ubuntu 20.04' in content, \
+    assert 'batch.node.ubuntu 22.04' in content, \
         "Missing default vm_type value"
 
 
@@ -110,16 +110,16 @@ def test_create_pool_has_vm_image_parameters():
         "create_pool method not found"
     
     # Check for parameters in method signature
-    assert 'publisher: str = "microsoft-azure-batch"' in content, \
+    assert 'publisher: str = "microsoft-dsvm"' in content, \
         "publisher parameter missing in create_pool method signature"
     
-    assert 'offer: str = "ubuntu-server-container"' in content, \
+    assert 'offer: str = "ubuntu-hpc"' in content, \
         "offer parameter missing in create_pool method signature"
     
-    assert 'sku: str = "20-04-lts"' in content, \
+    assert 'sku: str = "batch.node.ubuntu 22.04"' in content, \
         "sku parameter missing in create_pool method signature"
     
-    assert 'vm_type: str = "batch.node.ubuntu 20.04"' in content, \
+    assert 'vm_type: str = "batch.node.ubuntu 22.04"' in content, \
         "vm_type parameter missing in create_pool method signature"
 
 
