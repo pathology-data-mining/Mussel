@@ -362,7 +362,7 @@ When `--stage-to-azure-files` is enabled, slides are staged and tasks are submit
 
 Control the compute resources:
 
-- `--vm-size`: VM size (default: `Standard_NC6s_v3` with 1 GPU)
+- `--vm-size`: VM size (default: `Standard_NC24ads_A100_v4` with A100 GPU)
   - GPU VMs (V100): `Standard_NC6s_v3`, `Standard_NC12s_v3`, `Standard_NC24s_v3`
   - GPU VMs (A100): `Standard_NC24ads_A100_v4`, `Standard_NC48ads_A100_v4`, `Standard_NC96ads_A100_v4`
   - GPU VMs (H100): `Standard_NC40ads_H100_v5`, `Standard_NC80ads_H100_v5`
@@ -423,6 +423,33 @@ Enable auto-scaling to dynamically adjust pool size based on workload:
 --container-image mskmind/mussel:latest-torch-cpu
 ```
 
+#### VM Image Configuration
+
+For advanced use cases, you can customize the VM image used for the pool:
+
+- `--publisher`: Azure VM image publisher (default: `microsoft-dsvm`)
+- `--offer`: Azure VM image offer (default: `ubuntu-hpc`)
+- `--sku`: Azure VM image SKU and node agent SKU ID (default: `batch.node.ubuntu 22.04`)
+
+These parameters allow you to use different base images for your compute nodes. The defaults are set to use Azure's Data Science VM Ubuntu HPC image with optimized performance for high-performance computing workloads. The `--sku` parameter serves dual purpose: it specifies both the VM image SKU and the node agent SKU ID.
+
+**Example: Use the older Ubuntu container image**
+```bash
+--pool-id mussel-custom-pool \
+--create-pool \
+--vm-size Standard_NC24ads_A100_v4 \
+--node-count 2 \
+--publisher microsoft-azure-batch \
+--offer ubuntu-server-container \
+--sku 20-04-lts \
+--use-gpu
+```
+
+**Note:** When customizing VM images, ensure:
+1. The image supports Docker containers (required for Mussel)
+2. The SKU matches a valid node agent SKU ID for Azure Batch
+3. GPU drivers are available if using GPU workloads
+
 ### Configuration Files with Azure Parameters
 
 You can specify Azure Batch parameters in your YAML or JSON configuration file under the `azure:` section. This allows you to keep your Azure-specific settings separate from general processing parameters.
@@ -456,8 +483,13 @@ azure:
   mount_azure_files: true
   
   # Pool configuration
-  vm_size: "Standard_NC6s_v3"
+  vm_size: "Standard_NC24ads_A100_v4"
   node_count: 2
+  
+  # VM image configuration (optional, defaults shown below)
+  publisher: "microsoft-dsvm"
+  offer: "ubuntu-hpc"
+  sku: "batch.node.ubuntu 22.04"
   
   # Auto-scaling (optional)
   enable_auto_scale: true
@@ -509,6 +541,7 @@ python scripts/azure_batch/submit_batch_jobs.py \
 - **Container**: `container_image`
 - **Storage**: `storage_account_name`, `azure_files_share_name`
 - **Pool config**: `vm_size`, `node_count`
+- **VM image**: `publisher`, `offer`, `sku`
 - **Auto-scaling**: `enable_auto_scale`, `min_node_count`, `max_node_count`, `auto_scale_evaluation_interval`
 
 **Benefits:**

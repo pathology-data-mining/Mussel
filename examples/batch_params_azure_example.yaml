@@ -57,8 +57,14 @@ azure:
   mount_azure_files: true  # Mount Azure Files to pool nodes
   
   # Pool configuration (optional, can also be specified via command-line)
-  vm_size: "Standard_NC6s_v3"  # VM size for pool nodes
+  vm_size: "Standard_NC24ads_A100_v4"  # VM size for pool nodes (default A100 GPU)
   node_count: 2  # Number of nodes in the pool
+  
+  # VM image configuration (optional, uses defaults for Azure HPC Ubuntu image)
+  # These advanced options allow customization of the VM image used for the pool
+  # publisher: "microsoft-dsvm"            # Azure VM image publisher
+  # offer: "ubuntu-hpc"                    # Azure VM image offer
+  # sku: "batch.node.ubuntu 22.04"        # Azure VM image SKU (also used as node agent SKU ID)
   
   # Auto-scaling configuration (optional)
   # enable_auto_scale: true
