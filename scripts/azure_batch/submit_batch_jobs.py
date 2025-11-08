@@ -812,10 +812,13 @@ class AzureBatchJobSubmitter:
                         # Check if it's a local file path (not s3:// or azfiles://)
                         if not slide_path.startswith(('s3://', 'azfiles://', 'http://', 'https://')):
                             if os.path.exists(slide_path):
-                                self.log(f"Staging to Azure Files: {os.path.basename(slide_path)}")
-                                remote_path = self.azure_files_staging.upload_file(
+                                slide_filename = os.path.basename(slide_path)
+                                self.log(f"Staging to Azure Files: {slide_filename}")
+                                remote_path = f"slides/{slide_filename}"
+                                self.azure_files_staging.upload_file(
                                     local_path=slide_path,
-                                    remote_directory="slides"
+                                    remote_path=remote_path,
+                                    show_progress=False
                                 )
                                 # Convert to azfiles:// URL
                                 azfiles_url = f"azfiles://{self.storage_account_name}/{self.azure_files_share_name}/{remote_path}"
