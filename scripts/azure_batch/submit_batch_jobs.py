@@ -141,19 +141,24 @@ class AzureBatchJobSubmitter:
     def _should_use_batch_encoding(self, **kwargs) -> bool:
         """Determine if we should use batch slide encoding optimization.
         
-        Batch encoding is beneficial when:
-        1. Using model-based aggregation (aggregation_method="model")
-        2. Using a slide encoder (slide_model_type is specified)
-        3. Processing multiple slides
+        Batch encoding is beneficial when processing multiple slides because:
+        1. Patch encoder model is loaded once instead of N times
+        2. Better GPU utilization through batched processing
+        3. If using slide-level aggregation, slide encoder is also loaded once
+        
+        Batching provides benefits for:
+        - Tile/patch-level feature extraction (always beneficial)
+        - Slide-level aggregation with model (additional benefit)
         
         Note: For Azure Batch, batch encoding optimization is implemented at the
         task script level (run_tessellate_extract_features.sh) by passing multiple
         slides to a single task when beneficial.
+        
+        Returns True for any multi-slide processing scenario.
         """
-        return (
-            kwargs.get('aggregation_method') == 'model' and
-            kwargs.get('slide_model_type') is not None
-        )
+        # Batch encoding is beneficial whenever processing multiple slides
+        # The CLI will handle both patch extraction and slide aggregation efficiently
+        return True
 
     def create_pool(
         self,
@@ -328,12 +333,16 @@ class AzureBatchJobSubmitter:
         self,
         job_id: str,
         task_id: str,
-        slide_path: str,
-        output_h5_path: str,
-        output_pt_path: str,
+        slide_path: str = None,
+        slide_paths: Optional[List[str]] = None,
+        slide_ids: Optional[List[str]] = None,
+        output_h5_path: str = None,
+        output_pt_path: str = None,
+        output_dir_for_batch: Optional[str] = None,
         intermediate_h5_path: Optional[str] = None,
         aggregation_method: str = "identity",
         slide_model_type: Optional[str] = None,
+        slide_batch_size: int = 8,
         classifier_pkl: Optional[str] = None,
         classifier_threshold: float = 0.75,
         prefilter_model_type: str = "CTRANSPATH",
@@ -369,21 +378,47 @@ class AzureBatchJobSubmitter:
         container_image: str = "mskmind/mussel:latest-torch-gpu",
         cleanup_staged_file: bool = False,
     ) -> None:
-        """Submit a tessellate-extract-features task to Azure Batch."""
+        """
+        Submit a tessellate-extract-features task to Azure Batch.
+        
+        Supports both single-slide and multi-slide batch processing.
+        For batch processing, provide slide_paths and slide_ids instead of slide_path.
+        """
         print(f"Submitting task '{task_id}' to job '{job_id}'...")
 
         # Build environment variables
-        env_vars = [
-            batchmodels.EnvironmentSetting(name="SLIDE_PATH", value=slide_path),
-            batchmodels.EnvironmentSetting(name="OUTPUT_H5_PATH", value=output_h5_path),
-            batchmodels.EnvironmentSetting(name="OUTPUT_PT_PATH", value=output_pt_path),
+        env_vars = []
+        
+        # Handle batch vs single slide processing
+        if slide_paths and len(slide_paths) > 1:
+            # Batch processing mode
+            env_vars.extend([
+                batchmodels.EnvironmentSetting(name="SLIDE_PATHS", value=",".join(slide_paths)),
+                batchmodels.EnvironmentSetting(name="OUTPUT_DIR", value=output_dir_for_batch),
+                batchmodels.EnvironmentSetting(name="SLIDE_BATCH_SIZE", value=str(slide_batch_size)),
+            ])
+            if slide_ids:
+                env_vars.append(batchmodels.EnvironmentSetting(name="SLIDE_IDS", value=",".join(slide_ids)))
+        else:
+            # Single slide mode (backward compatible)
+            # If slide_paths has one element, use it; otherwise use slide_path parameter
+            if slide_paths and not slide_path:
+                slide_path = slide_paths[0]
+            env_vars.extend([
+                batchmodels.EnvironmentSetting(name="SLIDE_PATH", value=slide_path),
+                batchmodels.EnvironmentSetting(name="OUTPUT_H5_PATH", value=output_h5_path),
+                batchmodels.EnvironmentSetting(name="OUTPUT_PT_PATH", value=output_pt_path),
+            ])
+        
+        # Common environment variables
+        env_vars.extend([
             batchmodels.EnvironmentSetting(name="PREFILTER_MODEL_TYPE", value=prefilter_model_type),
             batchmodels.EnvironmentSetting(name="NUM_WORKERS", value=str(num_workers)),
             batchmodels.EnvironmentSetting(name="BATCH_SIZE", value=str(batch_size)),
             batchmodels.EnvironmentSetting(name="USE_GPU", value=str(use_gpu).lower()),
             batchmodels.EnvironmentSetting(name="KEEP_INTERMEDIATE_FILES", value=str(keep_intermediate_files).lower()),
             batchmodels.EnvironmentSetting(name="AGGREGATION_METHOD", value=aggregation_method),
-        ]
+        ])
         
         # SegConfig group or individual parameters
         if seg_config_group:
@@ -717,7 +752,8 @@ class AzureBatchJobSubmitter:
             # Single model from default_params or prefilter
             model_type = default_params.get('postfilter_model_type', prefilter_model)
         
-        tasks = []
+        # Read all slides from CSV
+        slides = []
         with open(csv_file, 'r') as f:
             reader = csv.DictReader(f)
             for row in reader:
@@ -729,48 +765,150 @@ class AzureBatchJobSubmitter:
                     slide_path = staged_slide_paths[slide_id]
                     print(f"  Using staged path for {slide_id}: {slide_path}")
                 
-                # Create ONE task per slide (models run sequentially within the task)
-                task_id = slide_id
+                slides.append({'slide_id': slide_id, 'slide_path': slide_path})
+        
+        # Auto-adjust distributed_slide_batch_size if using default value (1)
+        # and slide-level model aggregation is enabled
+        if distributed_slide_batch_size == 1 and self._should_use_batch_encoding(**default_params):
+            distributed_slide_batch_size = 8  # Recommended default for batch encoding
+            print(f"\n[Auto-Batching] Detected slide-level model aggregation")
+            print(f"  Automatically enabling batch processing with batch_size={distributed_slide_batch_size}")
+            print(f"  (Use --distributed-slide-batch-size to override)")
+        
+        # Determine if we should use batch encoding
+        use_batch_encoding = (
+            distributed_slide_batch_size > 1 and 
+            self._should_use_batch_encoding(**default_params)
+        )
+        
+        if use_batch_encoding:
+            print(f"\n[Batch Encoding Optimization] Enabled")
+            print(f"  Grouping slides into batches of {distributed_slide_batch_size}")
+            print(f"  Slide encoder: {default_params.get('slide_model_type')}")
+            print(f"  This reduces model loading overhead from {len(slides)}x to {(len(slides) + distributed_slide_batch_size - 1) // distributed_slide_batch_size}x")
+            
+            # Group slides into batches
+            for batch_idx in range(0, len(slides), distributed_slide_batch_size):
+                batch_slides = slides[batch_idx:batch_idx + distributed_slide_batch_size]
                 
-                # For multi-model, base output paths use the first model's directory
-                # The bash script will handle creating model-specific subdirectories
+                # Create batch task ID
+                batch_id = f"batch_{batch_idx // distributed_slide_batch_size + 1}_of_{(len(slides) + distributed_slide_batch_size - 1) // distributed_slide_batch_size}"
+                
+                # Extract slide IDs and paths for this batch
+                slide_ids = [s['slide_id'] for s in batch_slides]
+                slide_paths_batch = [s['slide_path'] for s in batch_slides]
+                
+                print(f"\nSubmitting batch task: {batch_id}")
+                print(f"  Slides: {', '.join(slide_ids)}")
+                
+                # Determine output directory for batch
                 if output_s3_prefix:
-                    base_prefix = output_s3_prefix.rstrip('/')
-                    output_h5_path = f"{base_prefix}/{model_type}/h5/{slide_id}_features.h5"
-                    output_pt_path = f"{base_prefix}/{model_type}/pt/{slide_id}_features.pt"
-                    # Only set intermediate_h5_path if aggregation method requires it
-                    if self._should_set_intermediate_h5_path(default_params.get('aggregation_method')):
-                        intermediate_h5_path = f"{base_prefix}/{model_type}/tile_h5/{slide_id}_tile_features.h5"
-                    else:
-                        intermediate_h5_path = None
+                    output_dir_for_batch = f"{output_s3_prefix.rstrip('/')}/{model_type}"
                 else:
-                    output_h5_path = f"{output_dir}/{model_type}/h5/{slide_id}_features.h5"
-                    output_pt_path = f"{output_dir}/{model_type}/pt/{slide_id}_features.pt"
-                    # Only set intermediate_h5_path if aggregation method requires it
-                    if self._should_set_intermediate_h5_path(default_params.get('aggregation_method')):
-                        intermediate_h5_path = f"{output_dir}/{model_type}/tile_h5/{slide_id}_tile_features.h5"
-                    else:
-                        intermediate_h5_path = None
+                    output_dir_for_batch = f"{output_dir}/{model_type}"
                 
-                # Create task config
-                task_config = {
-                    'task_id': task_id,
-                    'slide_path': slide_path,
-                    'output_h5_path': output_h5_path,
-                    'output_pt_path': output_pt_path,
-                }
+                # Merge with default parameters
+                merged_config = dict(default_params)
                 
-                # Only add intermediate_h5_path if it's set
-                if intermediate_h5_path:
-                    task_config['intermediate_h5_path'] = intermediate_h5_path
+                # Submit batch task
+                self.submit_task(
+                    job_id=job_id,
+                    task_id=batch_id,
+                    slide_paths=slide_paths_batch,
+                    slide_ids=slide_ids,
+                    output_dir_for_batch=output_dir_for_batch,
+                    slide_batch_size=default_params.get('slide_batch_size', 8),
+                    aggregation_method=merged_config.get("aggregation_method", "identity"),
+                    slide_model_type=merged_config.get("slide_model_type"),
+                    classifier_pkl=merged_config.get("classifier_pkl"),
+                    classifier_threshold=merged_config.get("classifier_threshold", 0.75),
+                    prefilter_model_type=merged_config.get("prefilter_model_type", "CTRANSPATH"),
+                    prefilter_model_path=merged_config.get("prefilter_model_path"),
+                    postfilter_model_type=merged_config.get("postfilter_model_type"),
+                    postfilter_model_path=merged_config.get("postfilter_model_path"),
+                    slide_model_path=merged_config.get("slide_model_path"),
+                    seg_config_group=merged_config.get("seg_config_group"),
+                    segment_threshold=merged_config.get("segment_threshold"),
+                    patch_size=merged_config.get("patch_size"),
+                    step_size=merged_config.get("step_size"),
+                    mpp=merged_config.get("mpp"),
+                    seg_level=merged_config.get("seg_level"),
+                    segment_max_value=merged_config.get("segment_max_value"),
+                    median_blur_ksize=merged_config.get("median_blur_ksize"),
+                    morphology_ex_kernel=merged_config.get("morphology_ex_kernel"),
+                    ref_patch_size=merged_config.get("ref_patch_size"),
+                    use_otsu=merged_config.get("use_otsu"),
+                    tissue_area_threshold=merged_config.get("tissue_area_threshold"),
+                    hole_area_threshold=merged_config.get("hole_area_threshold"),
+                    max_num_holes=merged_config.get("max_num_holes"),
+                    num_workers=merged_config.get("num_workers", 4),
+                    batch_size=merged_config.get("batch_size", 64),
+                    use_gpu=merged_config.get("use_gpu", True),
+                    keep_intermediate_files=merged_config.get("keep_intermediate_files", False),
+                    hf_token=merged_config.get("hf_token"),
+                    aws_access_key_id=merged_config.get("aws_access_key_id"),
+                    aws_secret_access_key=merged_config.get("aws_secret_access_key"),
+                    aws_region=merged_config.get("aws_region"),
+                    aws_endpoint_url=merged_config.get("aws_endpoint_url"),
+                    max_retry_count=merged_config.get("max_retry_count", 3),
+                    container_image=container_image,
+                )
                 
-                # Add postfilter models as comma-separated list if multiple
-                if postfilter_models and len(postfilter_models) > 1:
-                    task_config['postfilter_model_types'] = ','.join(postfilter_models)
-                elif postfilter_models and len(postfilter_models) == 1:
-                    task_config['postfilter_model_type'] = postfilter_models[0]
-                
-                tasks.append(task_config)
+                # Store task configuration in metadata (excluding secrets)
+                if add_config_to_metadata:
+                    add_config_to_metadata(self.task_metadata, merged_config, batch_id)
+            
+            print(f"\nSubmitted {(len(slides) + distributed_slide_batch_size - 1) // distributed_slide_batch_size} batch tasks")
+            return
+        
+        # Original behavior: one task per slide (when not using batch encoding)
+        tasks = []
+        for slide in slides:
+            slide_id = slide['slide_id']
+            slide_path = slide['slide_path']
+            
+            # Create ONE task per slide (models run sequentially within the task)
+            task_id = slide_id
+            
+            # For multi-model, base output paths use the first model's directory
+            # The bash script will handle creating model-specific subdirectories
+            if output_s3_prefix:
+                base_prefix = output_s3_prefix.rstrip('/')
+                output_h5_path = f"{base_prefix}/{model_type}/h5/{slide_id}_features.h5"
+                output_pt_path = f"{base_prefix}/{model_type}/pt/{slide_id}_features.pt"
+                # Only set intermediate_h5_path if aggregation method requires it
+                if self._should_set_intermediate_h5_path(default_params.get('aggregation_method')):
+                    intermediate_h5_path = f"{base_prefix}/{model_type}/tile_h5/{slide_id}_tile_features.h5"
+                else:
+                    intermediate_h5_path = None
+            else:
+                output_h5_path = f"{output_dir}/{model_type}/h5/{slide_id}_features.h5"
+                output_pt_path = f"{output_dir}/{model_type}/pt/{slide_id}_features.pt"
+                # Only set intermediate_h5_path if aggregation method requires it
+                if self._should_set_intermediate_h5_path(default_params.get('aggregation_method')):
+                    intermediate_h5_path = f"{output_dir}/{model_type}/tile_h5/{slide_id}_tile_features.h5"
+                else:
+                    intermediate_h5_path = None
+            
+            # Create task config
+            task_config = {
+                'task_id': task_id,
+                'slide_path': slide_path,
+                'output_h5_path': output_h5_path,
+                'output_pt_path': output_pt_path,
+            }
+            
+            # Only add intermediate_h5_path if it's set
+            if intermediate_h5_path:
+                task_config['intermediate_h5_path'] = intermediate_h5_path
+            
+            # Add postfilter models as comma-separated list if multiple
+            if postfilter_models and len(postfilter_models) > 1:
+                task_config['postfilter_model_types'] = ','.join(postfilter_models)
+            elif postfilter_models and len(postfilter_models) == 1:
+                task_config['postfilter_model_type'] = postfilter_models[0]
+            
+            tasks.append(task_config)
 
         print(f"Submitting {len(tasks)} tasks from CSV manifest...")
 
@@ -1195,9 +1333,10 @@ def main():
     parser.add_argument("--output-s3-prefix", help="S3 prefix for outputs (e.g., s3://bucket/results/)")
     parser.add_argument("--postfilter-models", help="Comma-separated list of postfilter model types to run (e.g., CTRANSPATH,CLIP,VIRCHOW)")
     parser.add_argument("--distributed-slide-batch-size", type=int, default=1,
-                        help="Number of slides to group per distributed task for batch encoding optimization (default: 1). "
-                             "When > 1 and using slide-level model aggregation (e.g., GIGAPATH_SLIDE), slides are grouped "
-                             "into batches to optimize slide encoder loading. Recommended: 8-16 for better efficiency. "
+                        help="Number of slides to group per distributed task for batch processing optimization (default: 1, auto-adjusted to 8). "
+                             "Groups slides together to load models once instead of N times. Beneficial for all multi-slide processing, "
+                             "especially with slide-level model aggregation. Recommended: 8-16 for better efficiency. "
+                             "Auto-enabled (batch_size=8) when processing multiple slides; use 1 to disable. "
                              "Note: Not applicable when using --stage-to-azure-files (incremental staging).")
     parser.add_argument("--task-id", help="Single task ID")
     parser.add_argument("--slide-path", help="Path to slide file (for single task, can be s3://)")

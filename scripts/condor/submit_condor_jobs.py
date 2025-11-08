@@ -311,15 +311,20 @@ queue 1
     def _should_use_batch_encoding(self, **kwargs) -> bool:
         """Determine if we should use batch slide encoding optimization.
         
-        Batch encoding is beneficial when:
-        1. Using model-based aggregation (aggregation_method="model")
-        2. Using a slide encoder (slide_model_type is specified)
-        3. Processing multiple slides
+        Batch encoding is beneficial when processing multiple slides because:
+        1. Patch encoder model is loaded once instead of N times
+        2. Better GPU utilization through batched processing
+        3. If using slide-level aggregation, slide encoder is also loaded once
+        
+        Batching provides benefits for:
+        - Tile/patch-level feature extraction (always beneficial)
+        - Slide-level aggregation with model (additional benefit)
+        
+        Returns True for any multi-slide processing scenario.
         """
-        return (
-            kwargs.get('aggregation_method') == 'model' and
-            kwargs.get('slide_model_type') is not None
-        )
+        # Batch encoding is beneficial whenever processing multiple slides
+        # The CLI will handle both patch extraction and slide aggregation efficiently
+        return True
 
     def submit_tasks_from_config(
         self,
@@ -439,6 +444,14 @@ queue 1
                     'slide_id': row['slide_id'],
                     'slide_path': row['slide_path']
                 })
+        
+        # Auto-adjust distributed_slide_batch_size if using default value (1)
+        # and slide-level model aggregation is enabled
+        if distributed_slide_batch_size == 1 and self._should_use_batch_encoding(**kwargs):
+            distributed_slide_batch_size = 8  # Recommended default for batch encoding
+            print(f"\n[Auto-Batching] Detected slide-level model aggregation")
+            print(f"  Automatically enabling batch processing with batch_size={distributed_slide_batch_size}")
+            print(f"  (Use --distributed-slide-batch-size to override)")
         
         # Determine if we should use batch encoding
         use_batch_encoding = (
@@ -594,9 +607,10 @@ def main():
     parser.add_argument("--slide-batch-size", type=int, default=8, 
                         help="Slides per batch during slide-level aggregation (default: 8)")
     parser.add_argument("--distributed-slide-batch-size", type=int, default=1,
-                        help="Number of slides to group per distributed task for batch encoding optimization (default: 1). "
-                             "When > 1 and using slide-level model aggregation (e.g., GIGAPATH_SLIDE), slides are grouped "
-                             "into batches to optimize slide encoder loading. Recommended: 8-16 for better efficiency.")
+                        help="Number of slides to group per distributed task for batch processing optimization (default: 1, auto-adjusted to 8). "
+                             "Groups slides together to load models once instead of N times. Beneficial for all multi-slide processing, "
+                             "especially with slide-level model aggregation. Recommended: 8-16 for better efficiency. "
+                             "Auto-enabled (batch_size=8) when processing multiple slides; use 1 to disable.")
     parser.add_argument("--use-gpu", action="store_true", default=True)
     parser.add_argument("--no-gpu", action="store_false", dest="use_gpu")
     

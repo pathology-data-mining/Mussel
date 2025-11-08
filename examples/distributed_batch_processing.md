@@ -4,42 +4,55 @@ This guide explains how to use the slide batch feature extraction optimization i
 
 ## What is Slide Batch Feature Extraction?
 
-When processing multiple slides with slide-level model aggregation (e.g., GIGAPATH_SLIDE, TITAN_SLIDE), the traditional approach processes slides one at a time:
+When processing multiple slides, the traditional approach processes slides one at a time:
 
 ```
 For each slide:
-  1. Load slide encoder model (expensive!)
-  2. Process slide
-  3. Unload model
+  1. Load patch encoder model (expensive!)
+  2. Extract tile/patch features
+  3. If using slide aggregation: Load slide encoder model (expensive!)
+  4. Aggregate to slide level
+  5. Unload models
 ```
 
 With **slide batch feature extraction**, multiple slides are processed together in a single task:
 
 ```
-1. Load slide encoder model ONCE
-2. Process batch of slides together
-3. Unload model
+1. Load patch encoder model ONCE
+2. Extract tile/patch features for all slides in batch
+3. If using slide aggregation:
+   - Load slide encoder model ONCE
+   - Aggregate all slides in batch to slide level
+4. Unload models
 ```
 
 ### Performance Benefits
 
-Processing 100 slides with GIGAPATH_SLIDE:
-- **Sequential**: 250s (100 model loads × 2s + 100 × 0.5s processing) = 2.5s per slide
-- **Batch (size=8)**: 32s (1 model load × 2s + optimized processing) = 0.32s per slide
-- **Speedup**: **7.8x faster** ⚡
+**Tile/Patch Extraction (No Aggregation):**
+- **Sequential**: 100 slides × (2s model load + 5s extraction) = 700s
+- **Batch (size=8)**: 2s model load + 500s extraction = 502s
+- **Speedup**: 1.4x faster (28% time savings from model loading)
+
+**With Slide-Level Aggregation:**
+- **Sequential**: 100 slides × (2s patch model + 5s extraction + 2s slide model + 0.5s aggregation) = 950s  
+- **Batch (size=8)**: 2s patch model + 500s extraction + 2s slide model + 50s aggregation = 554s
+- **Speedup**: 1.7x faster (42% time savings)
 
 ## When to Use
 
 **Use slide batch extraction when:**
-- ✅ Using slide-level model aggregation (`aggregation_method=model`)
-- ✅ Using a slide encoder model (GIGAPATH_SLIDE, TITAN_SLIDE)
-- ✅ Processing multiple slides (2+)
+- ✅ Processing multiple slides (2+) - **Always beneficial!**
 - ✅ Have adequate GPU memory for batch processing
+- ✅ Especially beneficial with slide-level model aggregation
+
+**Benefits apply to:**
+- ✅ Tile/patch-level feature extraction (patch encoder loaded once)
+- ✅ Slide-level aggregation (slide encoder loaded once, if used)
+- ✅ Both with and without slide-level aggregation
 
 **Don't use when:**
-- ❌ Not using slide-level aggregation
-- ❌ Processing single slides
-- ❌ Memory constraints exist
+- ❌ Processing single slides only
+- ❌ Severe memory constraints exist
 
 ## How to Use
 
