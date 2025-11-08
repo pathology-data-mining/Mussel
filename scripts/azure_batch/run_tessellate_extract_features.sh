@@ -539,8 +539,36 @@ if [ -z "$POSTFILTER_MODEL_TYPES" ]; then
 
     # Add optional parameters
     if [ -n "$CLASSIFIER_PKL" ]; then
-        CMD_ARGS+=("classifier_pkl=$CLASSIFIER_PKL")
+        # Resolve azfiles:// path if needed
+        if is_azfiles_path "$CLASSIFIER_PKL"; then
+            RESOLVED_CLASSIFIER_PKL=$(resolve_azfiles_path "$CLASSIFIER_PKL")
+            CMD_ARGS+=("classifier_pkl=$RESOLVED_CLASSIFIER_PKL")
+        else
+            CMD_ARGS+=("classifier_pkl=$CLASSIFIER_PKL")
+        fi
         CMD_ARGS+=("classifier_threshold=$CLASSIFIER_THRESHOLD")
+    fi
+    
+    # Add prefilter model path if provided
+    if [ -n "$PREFILTER_MODEL_PATH" ]; then
+        # Resolve azfiles:// path if needed
+        if is_azfiles_path "$PREFILTER_MODEL_PATH"; then
+            RESOLVED_PREFILTER_PATH=$(resolve_azfiles_path "$PREFILTER_MODEL_PATH")
+            CMD_ARGS+=("prefilter_model_path=$RESOLVED_PREFILTER_PATH")
+        else
+            CMD_ARGS+=("prefilter_model_path=$PREFILTER_MODEL_PATH")
+        fi
+    fi
+    
+    # Add postfilter model path if provided
+    if [ -n "$POSTFILTER_MODEL_PATH" ]; then
+        # Resolve azfiles:// path if needed
+        if is_azfiles_path "$POSTFILTER_MODEL_PATH"; then
+            RESOLVED_POSTFILTER_PATH=$(resolve_azfiles_path "$POSTFILTER_MODEL_PATH")
+            CMD_ARGS+=("postfilter_model_path=$RESOLVED_POSTFILTER_PATH")
+        else
+            CMD_ARGS+=("postfilter_model_path=$POSTFILTER_MODEL_PATH")
+        fi
     fi
 
     # Add the specific postfilter model
