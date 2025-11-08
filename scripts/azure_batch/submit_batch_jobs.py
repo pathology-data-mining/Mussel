@@ -158,7 +158,7 @@ class AzureBatchJobSubmitter:
     def create_pool(
         self,
         pool_id: str,
-        vm_size: str = "Standard_NC6s_v3",
+        vm_size: str = "Standard_NC24ads_A100_v4",
         node_count: int = 1,
         container_image: str = "mskmind/mussel:latest-torch-gpu",
         use_gpu: bool = True,
@@ -170,13 +170,12 @@ class AzureBatchJobSubmitter:
         publisher: str = "microsoft-dsvm",
         offer: str = "ubuntu-hpc",
         sku: str = "batch.node.ubuntu 22.04",
-        vm_type: str = "batch.node.ubuntu 22.04",
     ) -> None:
         """Create a pool of compute nodes with optional Azure Files mount and auto-scaling.
         
         Args:
             pool_id: Unique identifier for the pool
-            vm_size: Azure VM size (e.g., Standard_NC6s_v3 for GPU)
+            vm_size: Azure VM size (e.g., Standard_NC24ads_A100_v4 for A100 GPU)
             node_count: Number of VMs in the pool (used as initial target for auto-scale or fixed count)
             container_image: Docker image to use
             use_gpu: Whether GPU support is intended (used for validation and logging)
@@ -188,7 +187,6 @@ class AzureBatchJobSubmitter:
             publisher: Azure VM image publisher (default: microsoft-dsvm)
             offer: Azure VM image offer (default: ubuntu-hpc)
             sku: Azure VM image SKU (default: batch.node.ubuntu 22.04)
-            vm_type: Node agent SKU ID (default: batch.node.ubuntu 22.04)
         """
         print(f"Creating pool '{pool_id}'...")
         
@@ -234,7 +232,7 @@ class AzureBatchJobSubmitter:
         vm_config = batchmodels.VirtualMachineConfiguration(
             image_reference=image_ref,
             container_configuration=container_conf,
-            node_agent_sku_id=vm_type,
+            node_agent_sku_id=sku,
         )
 
         # Add Azure Files mount configuration if requested
@@ -1149,7 +1147,7 @@ def main():
     parser.add_argument("--create-pool", action="store_true", help="Create pool if it doesn't exist")
     
     # Default values for pool parameters (used for detecting if config should override)
-    DEFAULT_VM_SIZE = "Standard_NC6s_v3"
+    DEFAULT_VM_SIZE = "Standard_NC24ads_A100_v4"
     DEFAULT_NODE_COUNT = 1
     DEFAULT_CONTAINER_IMAGE = "mskmind/mussel:latest-torch-gpu"
     DEFAULT_AUTO_SCALE_INTERVAL = 15
@@ -1178,9 +1176,7 @@ def main():
     parser.add_argument("--offer", default="ubuntu-hpc",
                         help="Azure VM image offer (default: ubuntu-hpc)")
     parser.add_argument("--sku", default="batch.node.ubuntu 22.04",
-                        help="Azure VM image SKU (default: batch.node.ubuntu 22.04)")
-    parser.add_argument("--vm-type", default="batch.node.ubuntu 22.04",
-                        help="Node agent SKU ID (default: batch.node.ubuntu 22.04)")
+                        help="Azure VM image SKU and node agent SKU ID (default: batch.node.ubuntu 22.04)")
     
     # Job configuration
     parser.add_argument("--job-id", help="Job ID (can be specified in config file)")
@@ -1366,9 +1362,6 @@ def main():
         
         if args.sku == "batch.node.ubuntu 22.04" and 'sku' in config_defaults:
             args.sku = config_defaults['sku']
-        
-        if args.vm_type == "batch.node.ubuntu 22.04" and 'vm_type' in config_defaults:
-            args.vm_type = config_defaults['vm_type']
     
     # Auto-generate pool_id and job_id if not provided (use same timestamp for consistency)
     if not args.pool_id or not args.job_id:
@@ -1522,7 +1515,6 @@ def main():
             publisher=args.publisher,
             offer=args.offer,
             sku=args.sku,
-            vm_type=args.vm_type,
         )
 
     # Create job if requested

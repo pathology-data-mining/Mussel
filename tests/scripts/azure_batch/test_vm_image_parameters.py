@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Tests for Azure Batch VM image configuration parameters.
-This test validates that the --publisher, --offer, --sku, and --vm-type parameters are properly configured.
+This test validates that the --publisher, --offer, and --sku parameters are properly configured.
 """
 
 import sys
@@ -61,22 +61,6 @@ def test_sku_parameter_exists():
         "Missing default sku value"
 
 
-def test_vm_type_parameter_exists():
-    """Test that --vm-type parameter is defined in the CLI."""
-    submit_file = SCRIPTS_DIR / 'submit_batch_jobs.py'
-    
-    with open(submit_file, 'r') as f:
-        content = f.read()
-    
-    # Check for --vm-type argument
-    assert '--vm-type' in content, \
-        "Missing --vm-type CLI parameter"
-    
-    # Check for vm-type with default configuration
-    assert 'batch.node.ubuntu 22.04' in content, \
-        "Missing default vm_type value"
-
-
 def test_parameters_passed_to_create_pool():
     """Test that VM image parameters are passed to create_pool method."""
     submit_file = SCRIPTS_DIR / 'submit_batch_jobs.py'
@@ -93,9 +77,6 @@ def test_parameters_passed_to_create_pool():
     
     assert 'sku=args.sku' in content, \
         "sku parameter not passed to create_pool method"
-    
-    assert 'vm_type=args.vm_type' in content, \
-        "vm_type parameter not passed to create_pool method"
 
 
 def test_create_pool_has_vm_image_parameters():
@@ -118,9 +99,6 @@ def test_create_pool_has_vm_image_parameters():
     
     assert 'sku: str = "batch.node.ubuntu 22.04"' in content, \
         "sku parameter missing in create_pool method signature"
-    
-    assert 'vm_type: str = "batch.node.ubuntu 22.04"' in content, \
-        "vm_type parameter missing in create_pool method signature"
 
 
 def test_parameters_used_in_image_reference():
@@ -142,16 +120,16 @@ def test_parameters_used_in_image_reference():
         "sku parameter not used in ImageReference"
 
 
-def test_vm_type_used_in_vm_config():
-    """Test that vm_type is used in VirtualMachineConfiguration."""
+def test_sku_used_as_node_agent():
+    """Test that sku is used as node_agent_sku_id in VirtualMachineConfiguration."""
     submit_file = SCRIPTS_DIR / 'submit_batch_jobs.py'
     
     with open(submit_file, 'r') as f:
         content = f.read()
     
-    # Check that vm_type is used (not hardcoded)
-    assert 'node_agent_sku_id=vm_type' in content, \
-        "vm_type parameter not used in VirtualMachineConfiguration"
+    # Check that sku is used as node agent SKU ID
+    assert 'node_agent_sku_id=sku' in content, \
+        "sku parameter not used as node_agent_sku_id in VirtualMachineConfiguration"
 
 
 def test_config_loading_supports_vm_image_parameters():
@@ -170,9 +148,39 @@ def test_config_loading_supports_vm_image_parameters():
     
     assert "'sku' in config_defaults" in content, \
         "Config loading doesn't support sku parameter"
+
+
+def test_vm_type_parameter_removed():
+    """Test that vm_type parameter has been removed."""
+    submit_file = SCRIPTS_DIR / 'submit_batch_jobs.py'
     
-    assert "'vm_type' in config_defaults" in content, \
-        "Config loading doesn't support vm_type parameter"
+    with open(submit_file, 'r') as f:
+        content = f.read()
+    
+    # Check that vm_type is not in CLI arguments
+    # Should not find --vm-type as a CLI parameter
+    assert '--vm-type' not in content or 'Azure VM image SKU and node agent SKU ID' in content, \
+        "vm_type parameter should be removed from CLI"
+    
+    # Check that vm_type is not in create_pool signature
+    # Look for the pattern we're expecting
+    lines_with_create_pool = [line for line in content.split('\n') if 'def create_pool' in line or 'vm_type:' in line]
+    for line in lines_with_create_pool:
+        if 'vm_type:' in line and 'def create_pool' not in line:
+            # Found vm_type parameter in wrong place
+            assert False, "vm_type parameter should not be in create_pool method signature"
+
+
+def test_default_vm_size_updated():
+    """Test that default VM size has been updated to A100."""
+    submit_file = SCRIPTS_DIR / 'submit_batch_jobs.py'
+    
+    with open(submit_file, 'r') as f:
+        content = f.read()
+    
+    # Check that DEFAULT_VM_SIZE is set to A100
+    assert 'DEFAULT_VM_SIZE = "Standard_NC24ads_A100_v4"' in content, \
+        "DEFAULT_VM_SIZE should be set to Standard_NC24ads_A100_v4"
 
 
 if __name__ == '__main__':
@@ -186,9 +194,6 @@ if __name__ == '__main__':
     test_sku_parameter_exists()
     print("✓ test_sku_parameter_exists passed")
     
-    test_vm_type_parameter_exists()
-    print("✓ test_vm_type_parameter_exists passed")
-    
     test_parameters_passed_to_create_pool()
     print("✓ test_parameters_passed_to_create_pool passed")
     
@@ -198,10 +203,16 @@ if __name__ == '__main__':
     test_parameters_used_in_image_reference()
     print("✓ test_parameters_used_in_image_reference passed")
     
-    test_vm_type_used_in_vm_config()
-    print("✓ test_vm_type_used_in_vm_config passed")
+    test_sku_used_as_node_agent()
+    print("✓ test_sku_used_as_node_agent passed")
     
     test_config_loading_supports_vm_image_parameters()
     print("✓ test_config_loading_supports_vm_image_parameters passed")
+    
+    test_vm_type_parameter_removed()
+    print("✓ test_vm_type_parameter_removed passed")
+    
+    test_default_vm_size_updated()
+    print("✓ test_default_vm_size_updated passed")
     
     print("\nAll tests passed!")
