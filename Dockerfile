@@ -1,5 +1,4 @@
-#FROM nvidia/cuda:12.1.1-cudnn8-devel-ubuntu22.04
-FROM python:3.11-slim
+FROM nvidia/cuda:12.1.1-cudnn8-devel-ubuntu22.04
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
 
 ARG BACKEND=torch-gpu
@@ -9,8 +8,15 @@ ENV UV_SYSTEM_PYTHON=1
 
 ENV DEBIAN_FRONTEND=noninteractive
 
-# Install system dependencies in a single layer and clean up to reduce size
+# Install Python 3.11 and system dependencies in a single layer
 RUN apt-get update && apt-get install -y \
+  software-properties-common \
+  && add-apt-repository ppa:deadsnakes/ppa \
+  && apt-get update && apt-get install -y \
+  python3.11 \
+  python3.11-dev \
+  python3.11-distutils \
+  python3-pip \
   build-essential \
   libgdal-dev \
   liblapack-dev \
@@ -27,6 +33,8 @@ RUN apt-get update && apt-get install -y \
   ca-certificates \
   sudo \
   vim-tiny \
+  && update-alternatives --install /usr/bin/python3 python3 /usr/bin/python3.11 1 \
+  && update-alternatives --install /usr/bin/python python /usr/bin/python3.11 1 \
   && rm -rf /var/lib/apt/lists/*
 
 
