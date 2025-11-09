@@ -1,5 +1,11 @@
 FROM nvidia/cuda:12.1.1-cudnn8-devel-ubuntu22.04
-COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
+
+# Install uv directly
+RUN apt-get update && apt-get install -y curl && \
+  curl -LsSf https://astral.sh/uv/install.sh | sh && \
+  mv /root/.local/bin/uv /usr/local/bin/ && \
+  mv /root/.local/bin/uvx /usr/local/bin/ && \
+  rm -rf /var/lib/apt/lists/*
 
 ARG BACKEND=torch-gpu
 ENV BACKEND=$BACKEND
@@ -8,14 +14,12 @@ ENV UV_SYSTEM_PYTHON=1
 
 ENV DEBIAN_FRONTEND=noninteractive
 
-# Install Python 3.11 and system dependencies in a single layer
-RUN apt-get update && apt-get install -y \
-  software-properties-common \
-  && add-apt-repository ppa:deadsnakes/ppa \
-  && apt-get update && apt-get install -y \
-  python3.11 \
-  python3.11-dev \
-  python3.11-distutils \
+# Install Python 3.10 (default for Ubuntu 22.04) and system dependencies
+# Skip openssh-client post-install errors (known issue on network file systems)
+RUN apt-get update && \
+  (apt-get install -y --no-install-recommends \
+  python3 \
+  python3-dev \
   python3-pip \
   build-essential \
   libgdal-dev \
@@ -32,21 +36,20 @@ RUN apt-get update && apt-get install -y \
   git \
   ca-certificates \
   sudo \
-  vim-tiny \
-  && update-alternatives --install /usr/bin/python3 python3 /usr/bin/python3.11 1 \
-  && update-alternatives --install /usr/bin/python python /usr/bin/python3.11 1 \
-  && rm -rf /var/lib/apt/lists/*
+  vim-tiny || true) && \
+  dpkg --configure -a && \
+  rm -rf /var/lib/apt/lists/*
 
 
-# Install AWS CLI
-RUN curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip" && \
+# Install AWS CLI (need unzip first, may have been skipped)
+RUN apt-get update && apt-get install -y unzip && rm -rf /var/lib/apt/lists/* && \
+  curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip" && \
   unzip awscliv2.zip && \
   ./aws/install && \
   rm -rf awscliv2.zip aws
 
 RUN curl -fsSL "https://github.com/tianon/gosu/releases/download/1.17/gosu-$(dpkg --print-architecture)" -o /usr/local/bin/gosu && \
-  chmod +x /usr/local/bin/gosu && \
-  gosu nobody true
+  chmod +x /usr/local/bin/gosu || true
 
 # Set working directory
 WORKDIR /app
