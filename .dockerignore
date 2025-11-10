@@ -1,41 +1,113 @@
-**/.DS_Store
+# Git and version control
+.git/
+.github/
+.gitignore
+.gitattributes
+
+# Python cache and build
 __pycache__/
-*.log
-.idea/
-*.sub
-condor_logs/
-*.out
-test_*sh
-*temp*
-!*templ*
-scratch/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+build/
+dist/
+
+# Virtual environments
 .venv*/
 venv*/
 venv-*/
 reef*/
 .snakemake/
-config/
-*.pyc
-outputs/
-*.env
-*.parquet
-*.svs
-*.h5
-*.bmp
-*.npy
-*.pkl
-*.pt
-*.egg-info/
-docker-example-output/
-*-output/
-.git/
-.github/
-.gitignore
-.pytest_cache/
-build/
+
+# IDE and editor
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Logs and temporary files
+*.log
+*.out
+*temp*
+!*templ*
+scratch/
+slurm_logs/
+condor_logs/
+
+# Test files and scripts
+tests/
+test_*
+*_test.py
+test-*.sh
+*.sub
 test_paladin
+
+# Documentation (keep only README.md)
+docs/
 *.md
 !README.md
-docs/
+!LICENSE.md
+
+# Data files (not needed in image)
+*.csv
+*.parquet
+*.svs
+*.ndpi
+*.tiff
+*.tif
+*.h5
+*.hdf5
+*.bmp
+*.npy
+*.npz
+*.pkl
+*.pickle
+*.pt
+*.pth
+*.ckpt
+
+# Output and cache directories
+outputs/
+output/
+*-output/
+docker-example-output/
+model_cache/
+.cache/
+
+# Configuration (secrets should not be in image)
+*.env
+secrets.env
+config/
+
+# Wrappers and helper scripts (not needed in image)
 mussel-docker
+mussel-podman
 test-docker-wrapper.sh
+docker-example.sh
+
+# Build artifacts
+*.zip
+*.tar.gz
+*.whl
+
+# Azure and cloud specific
+azure_*.log
+slurm_*.log
+*.sbatch
+slurm_array_manifest.csv
+
+# Python debugging
+.coverage
+htmlcov/
+.tox/
+
+# Jupyter notebooks
+*.ipynb
+.ipynb_checkpoints/
