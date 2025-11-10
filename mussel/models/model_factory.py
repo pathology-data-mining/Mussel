@@ -515,8 +515,8 @@ class GigapathSlideEncoderModel(TorchModel):
         model_obj = None
         if model_path.startswith("hf-hub:"):
             # Load the full GigaPath model which includes the slide encoder
-            repo_id = model_path.replace("hf-hub:", "")
-            model_obj = timm.create_model(repo_id, pretrained=True)
+            # Note: timm.create_model expects the hf-hub: or hf_hub: prefix
+            model_obj = timm.create_model(model_path, pretrained=True)
         super().__init__(model_path, model_obj, use_gpu, gpu_device_id)
 
     def get_model_fun(self) -> Callable:
