@@ -72,23 +72,48 @@ class AzureFilesStaging:
             print(f"[Azure Files] Creating share: {self.share_name}")
             self.service_client.create_share(self.share_name)
     
+    def file_exists(self, remote_path: str) -> bool:
+        """
+        Check if a file exists in Azure Files.
+        
+        Args:
+            remote_path: Remote path within share
+            
+        Returns:
+            True if file exists, False otherwise
+        """
+        try:
+            share_client = self.service_client.get_share_client(self.share_name)
+            file_client = share_client.get_file_client(remote_path)
+            file_client.get_file_properties()
+            return True
+        except:
+            return False
+    
     def upload_file(
         self,
         local_path: str,
         remote_path: str,
         show_progress: bool = True,
+        skip_if_exists: bool = True,
     ) -> str:
         """
         Upload a single file to Azure Files.
         
         Args:
-            local_path: Local file path
+            local_path: Local file path or S3 path
             remote_path: Remote path within share (e.g., "slides/slide_001.svs")
             show_progress: Show upload progress
+            skip_if_exists: Skip upload if file already exists in Azure Files
             
         Returns:
             Remote path in Azure Files
         """
+        # Check if file already exists
+        if skip_if_exists and self.file_exists(remote_path):
+            print(f"[Azure Files] Already staged: {remote_path}")
+            return remote_path
+        
         # Download from S3 if needed
         if local_path.startswith("s3://"):
             print(f"[Azure Files] Staging from S3: {local_path}")
