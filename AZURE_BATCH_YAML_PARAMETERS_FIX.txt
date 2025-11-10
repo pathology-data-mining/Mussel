@@ -1,0 +1,105 @@
+Azure Batch YAML Parameters Fix
+================================
+Date: November 9, 2025
+
+Problem:
+--------
+Some Azure-specific parameters from the YAML config file were not being
+applied to the Azure Batch script, specifically:
+- node_agent_sku_id
+- output_dir_azfiles
+
+Root Cause:
+-----------
+The script was loading config_defaults correctly via load_config_defaults(),
+but two parameters were missing from the parameter application logic:
+
+1. node_agent_sku_id - Has a default value but wasn't checked against config
+2. output_dir_azfiles - Not handled at all in the config application section
+
+Solution:
+---------
+Added missing parameter handling in submit_batch_jobs.py:
+
+# Node agent SKU ID
+if args.node_agent_sku_id == "batch.node.ubuntu 20.04" and 'node_agent_sku_id' in config_defaults:
+    args.node_agent_sku_id = config_defaults['node_agent_sku_id']
+
+# Output directory for Azure Files
+if 'output_dir_azfiles' in config_defaults:
+    if not hasattr(args, 'output_dir_azfiles') or args.output_dir_azfiles is None:
+        args.output_dir_azfiles = config_defaults['output_dir_azfiles']
+
+Config Loader Already Working:
+------------------------------
+The load_config_defaults() function was already correctly:
+bœ… Loading azure: section from YAML
+bœ… Merging azure-specific parameters
+bœ… Flattening nested structures
+bœ… Processing all parameters
+
+Verified Parameters Now Loaded:
+-------------------------------
+bœ… batch_account_name
+bœ… batch_account_url
+bœ… container_image
+bœ… storage_account_name
+bœ… azure_files_share_name
+bœ… pool_id
+bœ… job_id
+bœ… vm_size
+bœ… node_count / min_node_count / max_node_count
+bœ… enable_auto_scale
+bœ… create_pool
+bœ… create_job
+bœ… mount_azure_files
+bœ… stage_to_azure_files
+bœ… cleanup_staged_files
+bœ… publisher / offer / sku
+bœ… node_agent_sku_id (NEW)
+bœ… output_dir_azfiles (NEW)
+
+Example azure_test.yaml:
+------------------------
+azure:
+  batch_account_name: "ocra"
+  batch_account_url: "https://ocra.eastus2.batch.azure.com"
+  container_image: "mskmind/mussel:patch-fix"
+  storage_account_name: "mskpdmgen2"
+  azure_files_share_name: "mussel-staging"
+  stage_to_azure_files: true
+  mount_azure_files: true
+  cleanup_staged_files: true
+  output_dir_azfiles: "azfiles://mskpdmgen2/mussel-staging/outputs"
+  pool_id: "mussel-pool"
+  job_id: "mussel-test-job-$(date +%Y%m%d-%H%M%S)"
+  create_pool: true
+  create_job: true
+  vm_size: "Standard_NC24ads_A100_v4"
+  max_node_count: 100
+  min_node_count: 5
+  enable_auto_scale: true
+  sku: "2204"
+  node_agent_sku_id: "batch.node.ubuntu 22.04"
+
+Files Modified:
+--------------
+1. scripts/azure_batch/submit_batch_jobs.py
+   - Added node_agent_sku_id config loading
+   - Added output_dir_azfiles config loading
+
+Benefits:
+---------
+1. All Azure parameters can be specified in YAML
+2. No need to pass long command-line arguments
+3. Config files can be version controlled
+4. Consistent with SLURM and Condor parameter handling
+
+Conclusion:
+----------
+bœ… Azure YAML parameters now fully working
+bœ… node_agent_sku_id loaded from config
+bœ… output_dir_azfiles loaded from config
+bœ… All azure: section parameters properly applied
+bœ… Ready for production use
+

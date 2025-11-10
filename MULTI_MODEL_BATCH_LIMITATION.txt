@@ -1,0 +1,141 @@
+Multi-Postfilter Models with Batch Processing
+==============================================
+Date: November 10, 2025
+
+Status: PARTIAL SUPPORT
+-----------------------
+
+Context:
+--------
+We implemented model-specific patch sizes for multi-postfilter workflows.
+The fix works for single-slide processing mode, but batch processing has
+a limitation.
+
+How Multi-Postfilter Works:
+----------------------------
+When POSTFILTER_MODEL_TYPES="VIRCHOW,GIGAPATH,UNI" is set:
+
+1. Single-slide mode (SLIDE_PATH set):
+   ✅ Runs filter-tessellate ONCE
+   ✅ Then loops through each model:
+      - VIRCHOW with patch_size=224
+      - GIGAPATH with patch_size=256  
+      - UNI with patch_size=256
+   ✅ Each model gets correct patch size via get_model_patch_size()
+
+2. Batch mode (SLIDE_PATHS set):
+   ❌ Calls Python CLI tessellate_extract_features with slide_paths=[...]
+   ❌ Python CLI only supports single postfilter_model_type
+   ❌ Multi-model loop never executes
+
+Current Behavior:
+----------------
+When submitting with:
+  --csv-manifest slides.csv
+  --config run_virchow_gigapath_uni.yaml (has postfilter_model_types)
+
+The script:
+1. ✅ Loads postfilter_model_types from config
+2. ✅ Sets POSTFILTER_MODEL_TYPES env var
+3. ✅ Enables batch processing (slide_batch_size=8)
+4. ❌ Bash script runs in batch mode (SLIDE_PATHS set)
+5. ❌ Calls Python CLI once (no model loop)
+6. b�� Only first model processes (or defaults to prefilter model)
+
+Workaround Options:
+-------------------
+
+Option 1: Disable Batching for Multi-Model (RECOMMENDED)
+---------------------------------------------------------
+When postfilter_model_types has multiple models, disable slide batching:
+
+  python scripts/slurm/submit_slurm_jobs.py \
+    --config run_virchow_gigapath_uni.yaml \
+    --csv-manifest slides.csv \
+    --distributed-slide-batch-size 1  # Force single-slide mode
+
+This will:
+  ✅ Submit one job per slide
+  ✅ Each job runs multi-model loop in bash script
+  ✅ Each model gets correct patch size
+  ❌ More jobs (less efficient for many slides)
+
+Option 2: Process Models Sequentially (ALTERNATIVE)
+----------------------------------------------------
+Run separate batches for each model:
+
+  for MODEL in VIRCHOW GIGAPATH UNI; do
+    python scripts/slurm/submit_slurm_jobs.py \
+      --config config.yaml \
+      --csv-manifest slides.csv \
+      --postfilter-model-type $MODEL \
+      --output-dir outputs/$MODEL
+  done
+
+This will:
+  ✅ Batch processing works normally
+  ✅ Efficient parallel processing
+  ✅ Each model gets correct patch size automatically
+  ❌ Need to manage multiple job submissions
+
+Option 3: Implement Multi-Model in Python CLI (FUTURE)
+-------------------------------------------------------
+Add support for multiple postfilter models in Python CLI batch mode.
+This would require significant changes to:
+  - TessellateExtractFeaturesConfig (accept list of postfilter models)
+  - main() function (loop through models)
+  - Output path generation (per-model directories)
+
+Fix Applied:
+-----------
+b�� Added get_model_patch_size() function in bash script
+b�� Multi-model loop uses model-specific patch sizes
+b�� Config loading for postfilter_model_types
+b�� Works perfectly for single-slide mode
+
+Limitation:
+-----------
+b�� Batch mode doesn't support multiple postfilter models
+b�� Need --distributed-slide-batch-size 1 to use multi-model feature
+
+Testing:
+--------
+Test command for multi-model (single-slide mode):
+  python scripts/slurm/submit_slurm_jobs.py \
+    --config run_virchow_gigapath_uni.yaml \
+    --csv-manifest slides.csv \
+    --distributed-slide-batch-size 1 \
+    --submit
+
+Expected output structure:
+  outputs/
+    ├── VIRCHOW/
+    │   ├── h5/
+    │   └── pt/
+    ├── GIGAPATH/
+    │   ├── h5/
+    │   └── pt/
+    └── UNI/
+        ├── h5/
+        └── pt/
+
+Recommendation:
+---------------
+For production multi-model workflows:
+1. Use --distributed-slide-batch-size 1 to ensure multi-model loop executes
+2. Or run separate batch jobs per model for better throughput
+3. Document that batch mode + multi-model is not currently supported
+
+Future Enhancement:
+------------------
+Consider adding automatic detection: if postfilter_model_types has multiple
+models AND batch mode is enabled, either:
+  - Warn user and disable batching automatically, OR
+  - Implement multi-model support in Python CLI batch mode
+
+Conclusion:
+----------
+b�� Model-specific patch sizes working for single-slide mode
+b�� Batch mode limitation documented
+b��️  Use --distributed-slide-batch-size 1 for multi-model workflows
+

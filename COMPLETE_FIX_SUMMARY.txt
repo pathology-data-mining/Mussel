@@ -1,0 +1,109 @@
+AZURE BATCH A100 - COMPLETE FIX SUMMARY
+========================================
+
+ISSUE RESOLUTION
+----------------
+búÖ Docker image reduced: 26.1GB ‚Üí 17.1GB (35% smaller)
+búÖ Temp storage moved to Azure Files (task-isolated)
+búÖ OS disk usage: 41-46GB ‚Üí ~27GB (now fits on 30GB)
+búÖ Cache collision prevention implemented
+
+CHANGES MADE
+------------
+
+1. Dockerfile
+   - Reverted from nvidia/cuda:12.1.1-cudnn8-devel-ubuntu22.04
+   - Back to python:3.11-slim
+   - GPU support via PyTorch + host drivers
+   - Size: 17.1GB (9GB savings)
+
+2. entrypoint.sh
+   - Auto-detects Azure Files mount
+   - Sets task-specific temp directories
+   - Isolated PyTorch/CUDA kernel caches per task
+   - Shared HuggingFace cache (safe for concurrent reads)
+   
+   Task-specific:
+   - TMPDIR=/mnt/batch/.../tmp/${TASK_ID}
+   - TORCH_HOME=/mnt/batch/.../cache/torch/${TASK_ID}
+   - PYTORCH_KERNEL_CACHE_PATH=/mnt/batch/.../cache/pytorch_kernels/${TASK_ID}
+   
+   Shared:
+   - HF_HOME=/mnt/batch/.../cache/huggingface
+   - TRANSFORMERS_CACHE=/mnt/batch/.../cache/transformers
+
+3. azure_test.yaml
+   - Updated image: mskmind/mussel:latest
+   - Publisher: microsoft-dsvm
+   - Offer: ubuntu-hpc
+   - SKU: 2204
+   - VM: Standard_NC24ads_A100_v4
+
+DISK USAGE BREAKDOWN
+--------------------
+
+OS Disk (30GB available):
+  Docker image:           17.1 GB
+  System + A100 drivers:  10.0 GB
+  Temp/cache:              0.0 GB (on Azure Files)
+  --------------------------------
+  Total:                  27.1 GB ‚úÖ FITS!
+
+Azure Files (per task):
+  Task temp:              2-5 GB
+  PyTorch cache:          0.5-1 GB
+  Shared HF cache:        2-5 GB (total, all tasks)
+
+CACHE ISOLATION STRATEGY
+-------------------------
+
+Problem: Multiple concurrent tasks writing to same cache ‚Üí corruption
+
+Solution: Task-specific directories using AZ_BATCH_TASK_ID
+
+Why PyTorch cache is isolated:
+  - CUDA kernel compilation writes temp files
+  - Race conditions during model init
+  - Not safe for concurrent writes
+
+Why HuggingFace cache is shared:
+  - Downloaded once, read by all
+  - Built-in download locking
+  - Read-only after download
+
+TESTING STATUS
+--------------
+búÖ Docker image rebuilt (17.1GB)
+búÖ Image pushed to Docker Hub
+búÖ Configuration updated
+bè≥ Awaiting deployment test on A100 nodes
+
+NEXT STEPS
+----------
+1. Deploy to Azure Batch pool with A100 nodes
+2. Run test job
+3. Verify:
+   - Nodes don't hit DiskFull error
+   - Tasks complete successfully
+   - GPU is detected and working
+   - Temp storage is on Azure Files
+
+ROLLBACK OPTIONS
+----------------
+If issues occur:
+  - V100 nodes (Standard_NC6s_v3) - proven working
+  - Old CUDA image: mskmind/mussel:cuda-12.1.1 (26.1GB)
+
+FILES MODIFIED
+--------------
+- Dockerfile (reverted to python:3.11-slim)
+- entrypoint.sh (task-isolated Azure Files temp storage)
+- azure_test.yaml (updated image tag, A100 config)
+- scripts/azure_batch/submit_batch_jobs.py (previous GPU fixes)
+
+IMAGE TAGS
+----------
+- mskmind/mussel:latest (17.1GB, task-isolated temp)
+- mskmind/mussel:python311 (same as latest)
+- mskmind/mussel:cuda-12.1.1 (26.1GB, old CUDA base)
+- mskmind/mussel:patch-fix (26.1GB, old CUDA base)

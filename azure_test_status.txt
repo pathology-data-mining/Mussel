@@ -1,0 +1,33 @@
+Azure Batch Test - Current Status
+==================================
+Time: 2025-11-08 08:07 UTC
+Job ID: mussel-test-final
+
+STATUS: Tasks failing - model path resolution issue
+
+PROGRESS MADE:
+bœ… Gen2 VM image support (A100 GPUs)
+bœ… Container GPU passthrough (no --gpus flag)
+bœ… Batch processing script (handles multiple slides)
+bœ… Azure Files staging for slides (all 9 slides uploaded)
+bœ… Azure Files staging for models (classifier + prefilter uploaded)
+bœ… Azure Files mounted on pool nodes
+bœ… Slides accessible via Azure Files mount
+bœ… Tasks start and find slide files
+
+CURRENT ISSUE:
+bŒ Model path resolution incomplete
+- Classifier model staged: azfiles://mskpdmgen2/mussel-staging/models/model-1727990346535.pkl
+- Prefilter model staged: azfiles://mskpdmgen2/mussel-staging/models/ctranspath.pth
+- BUT: prefilter_model_path parameter not being passed to task
+- Error: "model_path must be provided for TransPath model"
+
+ROOT CAUSE:
+The submit_task() method needs to pass prefilter_model_path from the staged
+default_params. Currently it's only passing prefilter_model_type=CTRANSPATH
+without the corresponding path.
+
+FIX NEEDED:
+Update submit_task call to include prefilter_model_path from merged_config.
+
+All code is in PR #94 on branch cdsieng-532.

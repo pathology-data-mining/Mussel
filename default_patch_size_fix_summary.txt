@@ -1,0 +1,83 @@
+Default Patch Size Fix Summary
+================================
+Date: November 9, 2025
+
+Problem Identified:
+------------------
+When using CTRANSPATH without explicitly setting patch_size, the system would use
+the default patch_size of 256, causing an assertion error:
+  AssertionError: Input image size (256*256) doesn't match model (224*224)
+
+The Python automatic patch size selection in __post_init__() was not being triggered
+reliably when using Hydra config groups like seg_config=biopsy.
+
+Root Cause:
+-----------
+1. SegConfig.DEFAULT_PATCH_SIZE = 256
+2. When using seg_config=biopsy, BiopsySegConfig is created with patch_size=256
+3. The __post_init__() method should detect this and auto-select 224 for CTRANSPATH
+4. However, the automatic selection was not working reliably in all scenarios
+
+Solution:
+---------
+Added model-specific default patch size selection in the bash script:
+scripts/common/run_tessellate_extract_features.sh
+
+if [ -z "$PATCH_SIZE" ]; then
+    case "$PREFILTER_MODEL_TYPE" in
+        CTRANSPATH|VIRCHOW|VIRCHOW2|OPTIMUS|CLIP|GOOGLEPATH)
+            PATCH_SIZE=224
+            ;;
+        CONCH1_5|TITAN_SLIDE)
+            PATCH_SIZE=512
+            ;;
+        *)
+            # Default for RESNET50, GIGAPATH, UNI, UNI2, GIGAPATH_SLIDE
+            PATCH_SIZE=256
+            ;;
+    esac
+fi
+
+Model-to-Patch-Size Mapping:
+----------------------------
+224px models:
+  - CTRANSPATH
+  - VIRCHOW
+  - VIRCHOW2
+  - OPTIMUS
+  - CLIP (QuiltNet)
+  - GOOGLEPATH
+
+512px models:
+  - CONCH1_5
+  - TITAN_SLIDE
+
+256px models:
+  - RESNET50
+  - GIGAPATH
+  - UNI
+  - UNI2
+  - GIGAPATH_SLIDE
+
+Test Results:
+------------
+bœ… CTRANSPATH now defaults to patch_size=224 when PATCH_SIZE env var is not set
+bœ… explicit override (PATCH_SIZE=224) still works
+bœ… No assertion errors
+bœ… Test file created successfully (test_output/test_with_fix.h5)
+
+Benefits:
+---------
+1. No need to explicitly set patch_size in every command/config
+2. Correct default for each model type
+3. User can still override if needed
+4. Prevents common configuration errors
+5. Works with both seg_config groups and explicit parameters
+
+Conclusion:
+----------
+bœ… DEFAULT PATCH SIZE FIX COMPLETE
+bœ… TESTED LOCALLY with CTRANSPATH
+bœ… Model-specific defaults implemented
+bœ… Ready for production use
+

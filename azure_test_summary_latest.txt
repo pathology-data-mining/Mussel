@@ -1,0 +1,47 @@
+Azure Batch Test Submission - 2025-11-09 00:39:30 UTC
+================================================================
+
+Job ID: mussel-test-final
+Pool: mussel-pool (created fresh)
+Output: azfiles://mskpdmgen2/mussel-staging/outputs
+
+SUBMISSION STATUS: ✅ SUCCESS
+
+Staging Completed:
+- Models staged (2 files):
+  ✓ classifier: model-1727990346535.pkl
+  ✓ prefilter: ctranspath.pth
+  
+- Slides staged (9 files):
+  ✓ 1079807.svs
+  ✓ 1147432.svs
+  ✓ 1155882.svs
+  b�� 1173900.svs
+  ✓ 1712612.svs
+  ✓ 2120169.svs
+  ✓ 2217149.svs
+  ✓ 2466259.svs
+  ✓ 2509438.svs
+
+Tasks Submitted:
+- batch_1_of_2: 8 slides (1079807, 1147432, 1155882, 1173900, 1712612, 2120169, 2217149, 2466259)
+- batch_2_of_2: 1 slide (2509438)
+
+Expected Results:
+- Location: azfiles://mskpdmgen2/mussel-staging/outputs/
+- Files: 
+  - 1079807_features.h5, 1079807_features.pt
+  - 1147432_features.h5, 1147432_features.pt
+  - 1155882_features.h5, 1155882_features.pt
+  - 1173900_features.h5, 1173900_features.pt
+  - 1712612_features.h5, 1712612_features.pt
+  - 2120169_features.h5, 2120169_features.pt
+  - 2217149_features.h5, 2217149_features.pt
+  - 2466259_features.h5, 2466259_features.pt
+  - 2509438_features.h5, 2509438_features.pt
+
+Status: Pool allocating nodes, tasks will start once nodes are ready (~5-10 min)
+
+NOTE: Docker image must be rebuilt with latest changes for this test to succeed!
+      The bash script updates (model paths, output staging) are in the repo
+      but not yet in the Docker image.

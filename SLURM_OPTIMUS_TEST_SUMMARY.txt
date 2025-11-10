@@ -1,0 +1,101 @@
+SLURM Test Run - OPTIMUS with 10 Slides
+========================================
+Date: November 10, 2025
+Time: 00:57 EST
+
+Test Configuration:
+------------------
+Config: azure_run_no_filter_optimus.yaml
+CSV: test_10_slides.csv (10 TCGA slides)
+Output: outputs/slurm_optimus_test_10
+
+Parameters Used:
+---------------
+- postfilter_model_type: OPTIMUS
+- prefilter_model_type: CTRANSPATH (not used, no filtering)
+- patch_size: 224
+- batch_size: 64
+- num_workers: 4
+- use_gpu: true
+- aggregation_method: identity
+- slide_batch_size: 8
+
+Job Submission:
+--------------
+bœ… CSV correctly formatted (slide_id, slide_path)
+bœ… 10 slides split into 2 batches:
+   - Batch 1: 8 slides (Job 2657042)
+   - Batch 2: 2 slides (Job 2657043)
+bœ… Batch scripts generated correctly
+bœ… Jobs submitted successfully
+
+Job Execution:
+-------------
+bœ… Batch mode detected
+bœ… Configuration parsed correctly
+bœ… GPU detected (NVIDIA A100 80GB)
+bœ… S3 slides detected, staging attempted
+
+bŒ S3 Access Error:
+   fatal error: An error occurred (403) when calling the HeadObject operation: Forbidden
+   
+Root Cause:
+----------
+The test slides are in S3 buckets (s3://pathology/TCGA/...) that require:
+1. AWS credentials (AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY)
+2. Proper S3 endpoint configuration
+3. Access permissions to the pathology bucket
+
+The config specifies:
+  aws:
+    endpoint_url: http://pmindecs.mskcc.org:9020
+
+But no credentials were provided, causing the 403 Forbidden error.
+
+What Worked:
+-----------
+bœ… SLURM submission script
+bœ… Batch processing logic
+bœ… Config parameter loading
+bœ… Default patch size (224 for OPTIMUS)
+bœ… Batch script generation
+bœ… Job scheduling
+bœ… S3 detection and staging logic
+bœ… GPU allocation
+
+What Failed:
+-----------
+bŒ S3 download (403 Forbidden - missing credentials)
+
+Recommendations:
+---------------
+1. Use local slides for testing:
+   - Use slides from /gpfs/mskmind_emc/data_large/pathology/
+   - Or provide AWS credentials for S3 access
+
+2. Provide S3 credentials:
+   export AWS_ACCESS_KEY_ID=...
+   export AWS_SECRET_ACCESS_KEY=...
+   export AWS_ENDPOINT_URL=http://pmindecs.mskcc.org:9020
+
+3. Or use the test_slides.csv that has local paths:
+   python scripts/slurm/submit_slurm_jobs.py \
+     --config azure_run_no_filter_optimus.yaml \
+     --csv-manifest test_slides.csv \
+     --output-dir outputs/slurm_optimus_test \
+     --submit
+
+Conclusion:
+----------
+bœ… SLURM batch submission system working correctly
+bœ… All parameter handling correct
+bœ… Batch optimization working
+bœ… Default patch sizes correct
+bŒ S3 access needs credentials for TCGA data
+
+Next Steps:
+----------
+1. Test with local slides or provide S3 credentials
+2. Re-run with accessible data
+3. Monitor complete processing workflow
+

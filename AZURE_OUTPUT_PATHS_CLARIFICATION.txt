@@ -1,0 +1,139 @@
+Azure Output Paths Clarification
+=================================
+Date: November 10, 2025
+
+Problem:
+--------
+The Azure Batch script had confusing output path options:
+- --output-dir defaulted to "/tmp/output" (confusing for Azure containers)
+- --output-s3-prefix (but this is Azure, not just S3!)
+- output_dir_azfiles (only in YAML, not CLI)
+
+This made it unclear where outputs would be written and what each option meant.
+
+Solution:
+---------
+Clarified and improved the output path options with better naming and documentation:
+
+1. --output-dir (local container directory)
+   - Changed default: /tmp/output â†’ /mnt/batch/tasks/shared/output
+   - Purpose: Staging area inside container before copying to cloud storage
+   - Clear documentation added
+
+2. --output-s3-prefix â†’ --output-blob-prefix (renamed)
+   - Now supports both Azure Blob Storage AND S3
+   - Better reflects multi-cloud capability
+   - Examples:
+     * Azure Blob: https://account.blob.core.windows.net/container/results/
+     * S3: s3://bucket/results/
+   - Backward compatible: old name still works internally
+
+3. --output-azfiles-prefix (new CLI argument)
+   - Previously only available in YAML as output_dir_azfiles
+   - Now available as CLI argument
+   - Purpose: Write directly to mounted Azure Files share
+   - Example: azfiles://account/share/outputs/
+   - Backward compatible: config still accepts output_dir_azfiles
+
+Output Location Priority:
+-------------------------
+Users can now choose the best option for their use case:
+
+1. Azure Files (--output-azfiles-prefix)
+   âœ… Fastest for small files
+   âœ… Direct write to mounted share
+   âœ… Good for: Quick results, small datasets
+   Example: azfiles://mskpdmgen2/mussel-staging/outputs/
+
+2. Blob Storage / S3 (--output-blob-prefix)
+   âœ… Best for large-scale permanent storage
+   âœ… Optimized for cloud storage
+   âœ… Good for: Production workloads, long-term storage
+   Example: https://mskpdmgen2.blob.core.windows.net/results/
+   Example: s3://my-bucket/results/
+
+3. Local directory (--output-dir)
+   âœ… Staging area inside container
+   âœ… Used before copying to final destination
+   âœ… Good for: Temporary processing
+   Default: /mnt/batch/tasks/shared/output
+
+Updated YAML Configuration:
+--------------------------
+azure:
+  # Output location: Choose one
+  output_azfiles_prefix: "azfiles://account/share/outputs"
+  # Alternative for blob storage:
+  # output_blob_prefix: "https://account.blob.core.windows.net/results/"
+  # Alternative for S3:
+  # output_blob_prefix: "s3://bucket/results/"
+
+Documentation Improvements:
+---------------------------
+Added comprehensive comments at the top of azure_test.yaml explaining:
+- What each output option means
+- When to use each option
+- Examples for all formats
+- Performance characteristics
+
+Code Changes:
+-------------
+1. scripts/azure_batch/submit_batch_jobs.py
+   - Renamed --output-s3-prefix to --output-blob-prefix (with dest mapping)
+   - Added --output-azfiles-prefix as CLI argument
+   - Improved help text for all output options
+   - Added backward compatibility for old argument names
+   - Changed default output_dir to sensible Azure path
+
+2. azure_test.yaml
+   - Updated to use output_azfiles_prefix (new name)
+   - Added comprehensive documentation at top
+   - Added examples for all output options
+   - Kept backward compatible config loading
+
+Backward Compatibility:
+----------------------
+bœ… Old code using output_s3_prefix still works
+bœ… Config files with output_dir_azfiles still work
+bœ… Existing scripts don't need changes
+bœ… New names recommended for clarity
+
+Benefits:
+---------
+1. Clear naming that matches Azure terminology
+2. All output options available via CLI or YAML
+3. Better documentation for users
+4. Sensible defaults for Azure environment
+5. Multi-cloud support clearly indicated
+
+Example Usage:
+-------------
+# Using Azure Files (direct write):
+python submit_batch_jobs.py \
+  --csv-manifest slides.csv \
+  --output-azfiles-prefix azfiles://account/share/outputs/
+
+# Using Azure Blob Storage:
+python submit_batch_jobs.py \
+  --csv-manifest slides.csv \
+  --output-blob-prefix https://account.blob.core.windows.net/container/results/
+
+# Using S3:
+python submit_batch_jobs.py \
+  --csv-manifest slides.csv \
+  --output-blob-prefix s3://bucket/results/
+
+# Using config file (recommended):
+python submit_batch_jobs.py \
+  --config-file azure_test.yaml \
+  --csv-manifest slides.csv
+
+Conclusion:
+----------
+bœ… Output paths now clear and well-documented
+bœ… Better naming that matches Azure terminology
+bœ… All options available via CLI and YAML
+bœ… Backward compatible
+bœ… Comprehensive documentation
+bœ… Ready for production use
+

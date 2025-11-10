@@ -1,0 +1,56 @@
+Azure Batch Test Rerun - 2025-11-08 21:10:53 UTC
+================================================================
+
+DOCKER IMAGE BUILD: ‚úÖ SUCCESS
+- Built: mskmind/mussel:latest
+- Tagged: mskmind/mussel:cuda-12.1.1
+- Pushed to Docker Hub: ‚úÖ
+- CUDA 12.1.1 + cuDNN 8 support: ‚úÖ
+
+AZURE BATCH SUBMISSION: ‚úÖ SUCCESS
+Job ID: mussel-test-20251108-211053
+Pool: mussel-pool (existing, auto-scaling)
+Docker Image: mskmind/mussel:latest (freshly pushed)
+
+Batch Configuration:
+- Auto-batching enabled: 8 slides per batch
+- Total tasks: 2
+  * batch_1_of_2: 8 slides
+  * batch_2_of_2: 1 slide
+
+EXECUTION RESULTS: ‚ùå BOTH TASKS FAILED
+================================================================================
+
+Task: batch_1_of_2
+  State: completed
+  Exit code: 1 (FAILURE)
+  Error: Slide file not found: /gpfs/mskmind_emc/data_large/pathology/BR_16-512/slides/1079807.svs
+  
+  ROOT CAUSE: Local GPFS paths are not accessible from Azure Batch containers.
+  The slide paths in test_slides.csv point to local filesystem paths that don't
+  exist inside the Docker container running in Azure.
+
+Task: batch_2_of_2
+  State: completed  
+  Exit code: 1 (FAILURE)
+  Error: OUTPUT_H5_PATH environment variable is required
+  
+  ROOT CAUSE: Configuration error in batch processing script.
+
+================================================================================
+
+ISSUES IDENTIFIED:
+bùå 1. Slide files need to be staged to Azure Files or use Azure-accessible storage
+bùå 2. Slide paths in manifest need to point to mounted Azure Files location
+bùå 3. Output path configuration issue for single-slide batches
+
+The Docker image itself is working correctly, but the test data is not accessible.
+
+NEXT STEPS TO FIX:
+1. Stage slides to Azure Files first, OR
+2. Update test_slides.csv to use Azure Files paths like:
+   /mnt/azfiles/slides/1079807.svs
+3. Fix OUTPUT_H5_PATH configuration for batch_2_of_2
+
+The docker image build was successful, but the batch processing needs
+the data to be in Azure-accessible storage.

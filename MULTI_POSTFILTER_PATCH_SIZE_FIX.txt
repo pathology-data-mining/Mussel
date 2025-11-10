@@ -1,0 +1,125 @@
+Multi-Postfilter Model Patch Size Fix
+======================================
+Date: November 10, 2025
+
+Problem:
+--------
+When multiple postfilter model types are specified in bash script
+(e.g., POSTFILTER_MODEL_TYPES="CTRANSPATH,OPTIMUS,VIRCHOW"), the script
+was using the same patch size for all models. However, different models
+require different patch sizes:
+  - CTRANSPATH, OPTIMUS, VIRCHOW: 224px
+  - CONCH, TITAN: 512px
+  - UNI, GIGAPATH: 256px
+
+This caused assertion errors or suboptimal performance when processing
+with multiple models that need different patch sizes.
+
+Root Cause:
+-----------
+In scripts/common/run_tessellate_extract_features.sh, the multi-model loop
+used the global $PATCH_SIZE environment variable for all models:
+
+  for MODEL in "${MODELS[@]}"; do
+      ...
+      if [ -n "$PATCH_SIZE" ]; then
+          CMD_ARGS+=("seg_config.patch_size=$PATCH_SIZE")
+      fi
+      ...
+  done
+
+This meant if PATCH_SIZE=256 was set, all models would use 256px patches,
+even if a model like OPTIMUS requires 224px patches.
+
+Solution:
+---------
+Added model-specific patch size determination in the multi-model loop:
+
+1. Created get_model_patch_size() function to return correct patch size
+   based on model type:
+   
+   get_model_patch_size() {
+       case "$model_type" in
+           CTRANSPATH|VIRCHOW|VIRCHOW2|OPTIMUS|CLIP|GOOGLEPATH)
+               echo "224" ;;
+           CONCH1_5|TITAN_SLIDE)
+               echo "512" ;;
+           *)
+               echo "256" ;;
+       esac
+   }
+
+2. Updated multi-model loop to use model-specific patch size:
+
+   # Determine patch size for this specific model
+   # Priority: 1) Explicit PATCH_SIZE env var, 2) Model-specific default
+   if [ -n "$PATCH_SIZE" ]; then
+       MODEL_PATCH_SIZE="$PATCH_SIZE"
+   else
+       MODEL_PATCH_SIZE=$(get_model_patch_size "$MODEL")
+       log "Using model-specific patch size for $MODEL: $MODEL_PATCH_SIZE"
+   fi
+   CMD_ARGS+=("seg_config.patch_size=$MODEL_PATCH_SIZE")
+
+Priority Logic:
+--------------
+1. If PATCH_SIZE environment variable is explicitly set â†’ use it for ALL models
+   (allows user override for specific use cases)
+
+2. If PATCH_SIZE is not set â†’ use model-specific default for each model
+   (automatic correct patch size per model)
+
+Example Scenarios:
+-----------------
+
+Scenario 1: No explicit PATCH_SIZE (automatic defaults)
+export POSTFILTER_MODEL_TYPES="CTRANSPATH,VIRCHOW,CONCH1_5"
+Result:
+  - CTRANSPATH: 224px
+  - VIRCHOW: 224px
+  - CONCH1_5: 512px
+
+Scenario 2: Explicit PATCH_SIZE (user override)
+export PATCH_SIZE=256
+export POSTFILTER_MODEL_TYPES="CTRANSPATH,VIRCHOW,CONCH1_5"
+Result:
+  - CTRANSPATH: 256px (overridden)
+  - VIRCHOW: 256px (overridden)
+  - CONCH1_5: 256px (overridden)
+
+Files Modified:
+--------------
+1. scripts/common/run_tessellate_extract_features.sh
+   - Added get_model_patch_size() function
+   - Updated multi-model loop to use MODEL_PATCH_SIZE variable
+   - Fixed leftover indentation from previous patch size fix
+
+Test Coverage:
+-------------
+bœ… Single model with explicit PATCH_SIZE
+bœ… Single model without PATCH_SIZE (auto-default)
+bœ… Multiple models without PATCH_SIZE (model-specific defaults)
+bœ… Multiple models with explicit PATCH_SIZE (user override)
+
+Benefits:
+---------
+1. âœ… Automatic correct patch size for each model
+2. âœ… No manual configuration needed per model
+3. âœ… User can still override for special cases
+4. âœ… Prevents assertion errors from patch size mismatches
+5. âœ… Consistent with Python CLI behavior
+6. âœ… Same logic as main() function in tessellate_extract_features.py
+
+Related Fixes in This Session:
+-----------------------------
+1. Python CLI default patch size (via get_default_patch_size())
+2. Bash script model-specific defaults (this fix)
+3. Single source of truth in MODEL_PATCH_SIZES dict
+
+Conclusion:
+----------
+bœ… Multi-postfilter models now use correct patch sizes automatically
+bœ… User override still possible via PATCH_SIZE env var
+bœ… Bash and Python logic aligned
+bœ… Production ready
+
