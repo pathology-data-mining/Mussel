@@ -1,0 +1,62 @@
+# Example: parameters configuration with SLURM-specific settings
+# Use this file with --config when specifying --csv-manifest
+
+# General processing parameters
+#prefilter_model_type: CTRANSPATH
+postfilter_model_type: OPTIMUS
+#prefilter_model_path: /gpfs/mskmind_ess/limr/repos/TransPath/ctranspath.pth
+#classifier_pkl: /gpfs/mskmind_ess/limr/repos/Mussel/model-1727990346535.pkl
+#classifier_threshold: 0.75
+batch_size: 128
+num_workers: 8
+use_gpu: true
+seg_config:
+  group: biopsy
+
+# Aggregation settings
+aggregation_method: identity
+
+# Retry configuration
+max_retry_count: 3
+
+# Standardized resource requirements (works across all backends)
+resources:
+  cpus: 8
+  memory: 32G
+  gpus: 1
+
+# AWS S3 configuration (optional, for S3-compatible storage)
+aws:
+  endpoint_url: http://pmindecs.mskcc.org:9020
+
+# SLURM-specific parameters (optional, for SLURM-only settings)
+slurm:
+  time: "04:00:00"
+
+azure:
+  batch_account_name: "ocra"
+  batch_account_url: "https://ocra.eastus2.batch.azure.com"
+  container_image: "mskmind/mussel:latest"
+  storage_account_name: "mskpdmgen2"
+  azure_files_share_name: "mussel-staging"
+  stage_to_azure_files: true
+  mount_azure_files: true
+  cleanup_staged_files: false
+  #output_az_files_prefix: "azfiles://mskpdmgen2/mussel-staging/outputs"
+  output_blob_prefix: "https://mskpdmgen2.blob.core.windows.net/no-filter-optimus/"
+  pool_id: "mussel-pool"
+  job_id: "mussel-no-filter-optimus-job"
+  create_pool: true
+  create_job: true
+  vm_size: "Standard_NC24ads_A100_v4"
+  max_node_count: 100
+  min_node_count: 5
+  enable_auto_scale: true
+  publisher: "microsoft-dsvm"
+  offer: "ubuntu-hpc"
+  sku: "2204"
+  node_agent_sku_id: "batch.node.ubuntu 22.04"
+
+
+# Note: Sensitive fields like AWS credentials should be provided via command-line
+# not in the config file for security

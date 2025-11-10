@@ -1,11 +1,6 @@
-FROM nvidia/cuda:12.1.1-cudnn8-devel-ubuntu22.04
-
-# Install uv directly
-RUN apt-get update && apt-get install -y curl && \
-  curl -LsSf https://astral.sh/uv/install.sh | sh && \
-  mv /root/.local/bin/uv /usr/local/bin/ && \
-  mv /root/.local/bin/uvx /usr/local/bin/ && \
-  rm -rf /var/lib/apt/lists/*
+#FROM nvidia/cuda:12.1.1-cudnn8-devel-ubuntu22.04
+FROM python:3.11-slim
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
 
 ARG BACKEND=torch-gpu
 ENV BACKEND=$BACKEND
@@ -14,13 +9,8 @@ ENV UV_SYSTEM_PYTHON=1
 
 ENV DEBIAN_FRONTEND=noninteractive
 
-# Install Python 3.10 (default for Ubuntu 22.04) and system dependencies
-# Skip openssh-client post-install errors (known issue on network file systems)
-RUN apt-get update && \
-  (apt-get install -y --no-install-recommends \
-  python3 \
-  python3-dev \
-  python3-pip \
+# Install system dependencies in a single layer and clean up to reduce size
+RUN apt-get update && apt-get install -y \
   build-essential \
   libgdal-dev \
   liblapack-dev \
@@ -36,20 +26,19 @@ RUN apt-get update && \
   git \
   ca-certificates \
   sudo \
-  vim-tiny || true) && \
-  dpkg --configure -a && \
-  rm -rf /var/lib/apt/lists/*
+  vim-tiny \
+  && rm -rf /var/lib/apt/lists/*
 
 
-# Install AWS CLI (need unzip first, may have been skipped)
-RUN apt-get update && apt-get install -y unzip && rm -rf /var/lib/apt/lists/* && \
-  curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip" && \
+# Install AWS CLI
+RUN curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip" && \
   unzip awscliv2.zip && \
   ./aws/install && \
   rm -rf awscliv2.zip aws
 
 RUN curl -fsSL "https://github.com/tianon/gosu/releases/download/1.17/gosu-$(dpkg --print-architecture)" -o /usr/local/bin/gosu && \
-  chmod +x /usr/local/bin/gosu || true
+  chmod +x /usr/local/bin/gosu && \
+  gosu nobody true
 
 # Set working directory
 WORKDIR /app

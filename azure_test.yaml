@@ -1,16 +1,31 @@
-# Example: parameters configuration with SLURM-specific settings
-# Use this file with --config when specifying --csv-manifest
+# Azure Batch Configuration Example
+# ==================================
+# Use this file with: --config-file azure_test.yaml --csv-manifest slides.csv
+#
+# Output Location Options (choose one):
+# 1. output_azfiles_prefix: Write directly to mounted Azure Files share
+#    - Fastest for small files
+#    - Example: azfiles://account/share/outputs/
+#
+# 2. output_blob_prefix: Write to Azure Blob Storage or S3
+#    - Best for large-scale permanent storage
+#    - Azure Blob: https://account.blob.core.windows.net/container/results/
+#    - S3: s3://bucket/results/
+#
+# 3. output_dir: Local container directory (default: /mnt/batch/tasks/shared/output)
+#    - Used as staging area, then copied to cloud storage
 
 # General processing parameters
 prefilter_model_type: CTRANSPATH
-prefilter_model_path: /gpfs/mskmind_ess/limr/repos/TransPath/ctranspath.pth
 postfilter_model_type: OPTIMUS
-classifier_pkl: /gpfs/mskmind_ess/limr/repos/Mussel/model-1727990346535.pkl
+prefilter_model_path: azfiles://mskpdmgen2/mussel-staging/models/ctranspath.pth
+postfilter_model_path: azfiles://mskpdmgen2/mussel-staging/models/optimus.pth
+classifier_pkl: azfiles://mskpdmgen2/mussel-staging/models/model-1727990346535.pkl
 classifier_threshold: 0.75
-batch_size: 64
+batch_size: 128
 num_workers: 8
 use_gpu: true
-classifier_threshold: 0.75
+# seg_config group removed to avoid preset defaults
 seg_config:
   group: biopsy
 
@@ -42,16 +57,24 @@ azure:
   azure_files_share_name: "mussel-staging"
   stage_to_azure_files: true
   mount_azure_files: true
-  cleanup_staged_files: true
-  output_dir_azfiles: "azfiles://mskpdmgen2/mussel-staging/outputs"
+  cleanup_staged_files: false
+  # Output location: Use output_azfiles_prefix when writing to mounted Azure Files
+  output_azfiles_prefix: "azfiles://mskpdmgen2/mussel-staging/outputs"
+  # Alternative: Use output_blob_prefix for Azure Blob Storage or S3
+  # output_blob_prefix: "https://mskpdmgen2.blob.core.windows.net/results/"
+  # output_blob_prefix: "s3://my-bucket/results/"
   pool_id: "mussel-pool"
-  job_id: "mussel-test-job-$(date +%Y%m%d-%H%M%S)"
+  job_id: "mussel-local-copy-test"
   create_pool: true
   create_job: true
   vm_size: "Standard_NC24ads_A100_v4"
-  max_node_count: 100
-  min_node_count: 5
+  max_node_count: 5
+  min_node_count: 1
   enable_auto_scale: true
+  publisher: "microsoft-dsvm"
+  offer: "ubuntu-hpc"
+  sku: "2204"
+  node_agent_sku_id: "batch.node.ubuntu 22.04"
 
 
 # Note: Sensitive fields like AWS credentials should be provided via command-line

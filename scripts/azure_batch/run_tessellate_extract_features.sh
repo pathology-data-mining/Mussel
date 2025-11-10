@@ -373,22 +373,37 @@ process_slide() {
 # Stage input slide - handle S3, Azure Files, Azure Blob, or local paths
 ORIGINAL_SLIDE_PATH="$SLIDE_PATH"
 if is_azfiles_path "$SLIDE_PATH"; then
-    # Resolve Azure Files path to local mount point
-    log "Slide is in Azure Files, resolving to mount point..."
+    # Copy slide from Azure Files to local temporary storage for better performance
+    log "Slide is in Azure Files, copying to local temporary storage..."
     
     # Extract the file path from azfiles:// URL for cleanup
     # Format: azfiles://account/share/path -> path
     STAGED_FILE_PATH=$(echo "$SLIDE_PATH" | sed 's|^azfiles://[^/]*/[^/]*/||')
     
-    SLIDE_PATH=$(resolve_azfiles_path "$SLIDE_PATH")
-    log "Resolved to: $SLIDE_PATH"
+    AZFILES_MOUNT_PATH=$(resolve_azfiles_path "$SLIDE_PATH")
+    log "Azure Files mount path: $AZFILES_MOUNT_PATH"
+    
+    # Use /hosttmp for fast local SSD storage (mapped from host /tmp)
+    WORK_DIR="${TMPDIR:-/hosttmp}/mussel_work_$$"
+    mkdir -p "$WORK_DIR"
+    LOCAL_SLIDE_PATH="$WORK_DIR/$(basename "$SLIDE_PATH")"
+    
+    log "Copying slide to local storage: $LOCAL_SLIDE_PATH"
+    START_COPY=$(date +%s)
+    cp "$AZFILES_MOUNT_PATH" "$LOCAL_SLIDE_PATH"
+    END_COPY=$(date +%s)
+    COPY_DURATION=$((END_COPY - START_COPY))
+    log "Slide copied to local storage in $COPY_DURATION seconds (size: $(du -h "$LOCAL_SLIDE_PATH" | cut -f1))"
+    
+    SLIDE_PATH="$LOCAL_SLIDE_PATH"
     
     if [ "$CLEANUP_STAGED_FILE" = "true" ]; then
         log "Staged file will be cleaned up after task completion: $STAGED_FILE_PATH"
     fi
 elif is_azblob_path "$SLIDE_PATH"; then
     log "Slide is in Azure Blob, staging locally..."
-    WORK_DIR="/tmp/mussel_work_$$"
+    # Use /hosttmp for fast local SSD storage (mapped from host /tmp)
+    WORK_DIR="${TMPDIR:-/hosttmp}/mussel_work_$$"
     mkdir -p "$WORK_DIR"
     LOCAL_SLIDE_PATH="$WORK_DIR/$(basename "$SLIDE_PATH")"
     download_from_azblob "$SLIDE_PATH" "$LOCAL_SLIDE_PATH"
@@ -396,7 +411,8 @@ elif is_azblob_path "$SLIDE_PATH"; then
     log "Slide staged to: $SLIDE_PATH"
 elif is_s3_path "$SLIDE_PATH"; then
     log "Slide is in S3, staging locally..."
-    WORK_DIR="/tmp/mussel_work_$$"
+    # Use /hosttmp for fast local SSD storage (mapped from host /tmp)
+    WORK_DIR="${TMPDIR:-/hosttmp}/mussel_work_$$"
     mkdir -p "$WORK_DIR"
     LOCAL_SLIDE_PATH="$WORK_DIR/$(basename "$SLIDE_PATH")"
     download_from_s3 "$SLIDE_PATH" "$LOCAL_SLIDE_PATH"
@@ -436,40 +452,52 @@ ORIGINAL_INTERMEDIATE_H5_PATH="$INTERMEDIATE_H5_PATH"
 if is_s3_path "$OUTPUT_H5_PATH" || is_s3_path "$OUTPUT_PT_PATH" || is_s3_path "$INTERMEDIATE_H5_PATH" || \
    is_azfiles_path "$OUTPUT_H5_PATH" || is_azfiles_path "$OUTPUT_PT_PATH" || is_azfiles_path "$INTERMEDIATE_H5_PATH" || \
    is_azblob_path "$OUTPUT_H5_PATH" || is_azblob_path "$OUTPUT_PT_PATH" || is_azblob_path "$INTERMEDIATE_H5_PATH"; then
-    WORK_DIR="${WORK_DIR:-/tmp/mussel_work_$$}"
+    # Use /hosttmp for fast local SSD storage (mapped from host /tmp)
+    WORK_DIR="${WORK_DIR:-${TMPDIR:-/hosttmp}/mussel_work_$$}"
     mkdir -p "$WORK_DIR"
     
-    if is_s3_path "$OUTPUT_H5_PATH" || is_azfiles_path "$OUTPUT_H5_PATH" || is_azblob_path "$OUTPUT_H5_PATH"; then
+    if is_s3_path "$OUTPUT_H5_PATH" || is_azblob_path "$OUTPUT_H5_PATH"; then
+        # S3 and Azure Blob: write locally then upload
         LOCAL_OUTPUT_H5_PATH="$WORK_DIR/$(basename "$OUTPUT_H5_PATH")"
         if is_s3_path "$OUTPUT_H5_PATH"; then
             log "Will upload H5 output to S3: $OUTPUT_H5_PATH"
-        elif is_azblob_path "$OUTPUT_H5_PATH"; then
-            log "Will upload H5 output to Azure Blob: $OUTPUT_H5_PATH"
         else
-            log "Will upload H5 output to Azure Files: $OUTPUT_H5_PATH"
+            log "Will upload H5 output to Azure Blob: $OUTPUT_H5_PATH"
         fi
+    elif is_azfiles_path "$OUTPUT_H5_PATH"; then
+        # Azure Files: write directly to mount point if mounted
+        LOCAL_OUTPUT_H5_PATH=$(resolve_azfiles_path "$OUTPUT_H5_PATH")
+        log "Will write H5 output directly to Azure Files mount: $LOCAL_OUTPUT_H5_PATH"
     else
         LOCAL_OUTPUT_H5_PATH="$OUTPUT_H5_PATH"
     fi
     
-    if is_s3_path "$OUTPUT_PT_PATH" || is_azfiles_path "$OUTPUT_PT_PATH" || is_azblob_path "$OUTPUT_PT_PATH"; then
+    if is_s3_path "$OUTPUT_PT_PATH" || is_azblob_path "$OUTPUT_PT_PATH"; then
+        # S3 and Azure Blob: write locally then upload
         LOCAL_OUTPUT_PT_PATH="$WORK_DIR/$(basename "$OUTPUT_PT_PATH")"
         if is_s3_path "$OUTPUT_PT_PATH"; then
             log "Will upload PT output to S3: $OUTPUT_PT_PATH"
-        elif is_azblob_path "$OUTPUT_PT_PATH"; then
-            log "Will upload PT output to Azure Blob: $OUTPUT_PT_PATH"
         else
-            log "Will upload PT output to Azure Files: $OUTPUT_PT_PATH"
+            log "Will upload PT output to Azure Blob: $OUTPUT_PT_PATH"
         fi
+    elif is_azfiles_path "$OUTPUT_PT_PATH"; then
+        # Azure Files: write directly to mount point if mounted
+        LOCAL_OUTPUT_PT_PATH=$(resolve_azfiles_path "$OUTPUT_PT_PATH")
+        log "Will write PT output directly to Azure Files mount: $LOCAL_OUTPUT_PT_PATH"
     else
         LOCAL_OUTPUT_PT_PATH="$OUTPUT_PT_PATH"
     fi
     
-    if [ -n "$INTERMEDIATE_H5_PATH" ] && (is_s3_path "$INTERMEDIATE_H5_PATH" || is_azfiles_path "$INTERMEDIATE_H5_PATH" || is_azblob_path "$INTERMEDIATE_H5_PATH"); then
-        LOCAL_INTERMEDIATE_H5_PATH="$WORK_DIR/$(basename "$INTERMEDIATE_H5_PATH")"
-        log "Will upload intermediate H5 (tile-level features) to S3: $INTERMEDIATE_H5_PATH"
-    elif [ -n "$INTERMEDIATE_H5_PATH" ]; then
-        LOCAL_INTERMEDIATE_H5_PATH="$INTERMEDIATE_H5_PATH"
+    if [ -n "$INTERMEDIATE_H5_PATH" ]; then
+        if is_s3_path "$INTERMEDIATE_H5_PATH" || is_azblob_path "$INTERMEDIATE_H5_PATH"; then
+            LOCAL_INTERMEDIATE_H5_PATH="$WORK_DIR/$(basename "$INTERMEDIATE_H5_PATH")"
+            log "Will upload intermediate H5 (tile-level features) to cloud storage: $INTERMEDIATE_H5_PATH"
+        elif is_azfiles_path "$INTERMEDIATE_H5_PATH"; then
+            LOCAL_INTERMEDIATE_H5_PATH=$(resolve_azfiles_path "$INTERMEDIATE_H5_PATH")
+            log "Will write intermediate H5 directly to Azure Files mount: $LOCAL_INTERMEDIATE_H5_PATH"
+        else
+            LOCAL_INTERMEDIATE_H5_PATH="$INTERMEDIATE_H5_PATH"
+        fi
     fi
 else
     LOCAL_OUTPUT_H5_PATH="$OUTPUT_H5_PATH"
@@ -665,6 +693,7 @@ if [ -z "$POSTFILTER_MODEL_TYPES" ]; then
     # Build the command as an array for safe execution
     CMD_ARGS=(
         "tessellate_extract_features"
+        "hydra.run.dir=/tmp/hydra_outputs"
         "slide_path=$SLIDE_PATH"
         "output_h5_path=$MODEL_H5_PATH"
         "output_pt_path=$MODEL_PT_PATH"
@@ -749,45 +778,60 @@ if [ -z "$POSTFILTER_MODEL_TYPES" ]; then
     
     # Upload results to S3, Azure Files, or Azure Blob if needed
     if is_s3_path "$ORIGINAL_OUTPUT_H5_PATH" || is_azfiles_path "$ORIGINAL_OUTPUT_H5_PATH" || is_azblob_path "$ORIGINAL_OUTPUT_H5_PATH"; then
-        if [ -f "$MODEL_H5_PATH" ]; then
-            log "Local H5 file: $MODEL_H5_PATH (size: $(du -h "$MODEL_H5_PATH" | cut -f1))"
-            if is_s3_path "$ORIGINAL_OUTPUT_H5_PATH"; then
-                upload_to_s3 "$MODEL_H5_PATH" "$ORIGINAL_OUTPUT_H5_PATH"
-                log "Uploaded H5 file to S3: $ORIGINAL_OUTPUT_H5_PATH"
-            elif is_azblob_path "$ORIGINAL_OUTPUT_H5_PATH"; then
-                upload_to_azblob "$MODEL_H5_PATH" "$ORIGINAL_OUTPUT_H5_PATH"
-                log "Uploaded H5 file to Azure Blob: $ORIGINAL_OUTPUT_H5_PATH"
-            else
-                upload_to_azfiles "$MODEL_H5_PATH" "$ORIGINAL_OUTPUT_H5_PATH"
-                log "Uploaded H5 file to Azure Files: $ORIGINAL_OUTPUT_H5_PATH"
+        # Check if output was written directly to Azure Files mount (no upload needed)
+        if is_azfiles_path "$ORIGINAL_OUTPUT_H5_PATH" && [[ "$MODEL_H5_PATH" == /mnt/batch/tasks/fsmounts/azfiles/* ]]; then
+            log "Output was written directly to Azure Files mount, no upload needed"
+            if [ -f "$MODEL_H5_PATH" ]; then
+                log "H5 file: $MODEL_H5_PATH (size: $(du -h "$MODEL_H5_PATH" | cut -f1))"
             fi
-        fi
-        
-        if [ -f "$MODEL_PT_PATH" ]; then
-            log "Local PT file: $MODEL_PT_PATH (size: $(du -h "$MODEL_PT_PATH" | cut -f1))"
-            if is_s3_path "$ORIGINAL_OUTPUT_PT_PATH"; then
-                upload_to_s3 "$MODEL_PT_PATH" "$ORIGINAL_OUTPUT_PT_PATH"
-                log "Uploaded PT file to S3: $ORIGINAL_OUTPUT_PT_PATH"
-            elif is_azblob_path "$ORIGINAL_OUTPUT_PT_PATH"; then
-                upload_to_azblob "$MODEL_PT_PATH" "$ORIGINAL_OUTPUT_PT_PATH"
-                log "Uploaded PT file to Azure Blob: $ORIGINAL_OUTPUT_PT_PATH"
-            else
-                upload_to_azfiles "$MODEL_PT_PATH" "$ORIGINAL_OUTPUT_PT_PATH"
-                log "Uploaded PT file to Azure Files: $ORIGINAL_OUTPUT_PT_PATH"
+            if [ -f "$MODEL_PT_PATH" ]; then
+                log "PT file: $MODEL_PT_PATH (size: $(du -h "$MODEL_PT_PATH" | cut -f1))"
             fi
-        fi
-        
-        if [ -n "$MODEL_INTERMEDIATE_H5_PATH" ] && [ -f "$MODEL_INTERMEDIATE_H5_PATH" ]; then
-            log "Local intermediate H5 file: $MODEL_INTERMEDIATE_H5_PATH (size: $(du -h "$MODEL_INTERMEDIATE_H5_PATH" | cut -f1))"
-            if is_s3_path "$ORIGINAL_INTERMEDIATE_H5_PATH"; then
-                upload_to_s3 "$MODEL_INTERMEDIATE_H5_PATH" "$ORIGINAL_INTERMEDIATE_H5_PATH"
-                log "Uploaded intermediate H5 file to S3: $ORIGINAL_INTERMEDIATE_H5_PATH"
-            elif is_azblob_path "$ORIGINAL_INTERMEDIATE_H5_PATH"; then
-                upload_to_azblob "$MODEL_INTERMEDIATE_H5_PATH" "$ORIGINAL_INTERMEDIATE_H5_PATH"
-                log "Uploaded intermediate H5 file to Azure Blob: $ORIGINAL_INTERMEDIATE_H5_PATH"
-            else
-                upload_to_azfiles "$MODEL_INTERMEDIATE_H5_PATH" "$ORIGINAL_INTERMEDIATE_H5_PATH"
-                log "Uploaded intermediate H5 file to Azure Files: $ORIGINAL_INTERMEDIATE_H5_PATH"
+            if [ -n "$MODEL_INTERMEDIATE_H5_PATH" ] && [ -f "$MODEL_INTERMEDIATE_H5_PATH" ]; then
+                log "Intermediate H5 file: $MODEL_INTERMEDIATE_H5_PATH (size: $(du -h "$MODEL_INTERMEDIATE_H5_PATH" | cut -f1))"
+            fi
+        else
+            # Upload from local storage to cloud storage
+            if [ -f "$MODEL_H5_PATH" ]; then
+                log "Local H5 file: $MODEL_H5_PATH (size: $(du -h "$MODEL_H5_PATH" | cut -f1))"
+                if is_s3_path "$ORIGINAL_OUTPUT_H5_PATH"; then
+                    upload_to_s3 "$MODEL_H5_PATH" "$ORIGINAL_OUTPUT_H5_PATH"
+                    log "Uploaded H5 file to S3: $ORIGINAL_OUTPUT_H5_PATH"
+                elif is_azblob_path "$ORIGINAL_OUTPUT_H5_PATH"; then
+                    upload_to_azblob "$MODEL_H5_PATH" "$ORIGINAL_OUTPUT_H5_PATH"
+                    log "Uploaded H5 file to Azure Blob: $ORIGINAL_OUTPUT_H5_PATH"
+                else
+                    upload_to_azfiles "$MODEL_H5_PATH" "$ORIGINAL_OUTPUT_H5_PATH"
+                    log "Uploaded H5 file to Azure Files: $ORIGINAL_OUTPUT_H5_PATH"
+                fi
+            fi
+            
+            if [ -f "$MODEL_PT_PATH" ]; then
+                log "Local PT file: $MODEL_PT_PATH (size: $(du -h "$MODEL_PT_PATH" | cut -f1))"
+                if is_s3_path "$ORIGINAL_OUTPUT_PT_PATH"; then
+                    upload_to_s3 "$MODEL_PT_PATH" "$ORIGINAL_OUTPUT_PT_PATH"
+                    log "Uploaded PT file to S3: $ORIGINAL_OUTPUT_PT_PATH"
+                elif is_azblob_path "$ORIGINAL_OUTPUT_PT_PATH"; then
+                    upload_to_azblob "$MODEL_PT_PATH" "$ORIGINAL_OUTPUT_PT_PATH"
+                    log "Uploaded PT file to Azure Blob: $ORIGINAL_OUTPUT_PT_PATH"
+                else
+                    upload_to_azfiles "$MODEL_PT_PATH" "$ORIGINAL_OUTPUT_PT_PATH"
+                    log "Uploaded PT file to Azure Files: $ORIGINAL_OUTPUT_PT_PATH"
+                fi
+            fi
+            
+            if [ -n "$MODEL_INTERMEDIATE_H5_PATH" ] && [ -f "$MODEL_INTERMEDIATE_H5_PATH" ]; then
+                log "Local intermediate H5 file: $MODEL_INTERMEDIATE_H5_PATH (size: $(du -h "$MODEL_INTERMEDIATE_H5_PATH" | cut -f1))"
+                if is_s3_path "$ORIGINAL_INTERMEDIATE_H5_PATH"; then
+                    upload_to_s3 "$MODEL_INTERMEDIATE_H5_PATH" "$ORIGINAL_INTERMEDIATE_H5_PATH"
+                    log "Uploaded intermediate H5 file to S3: $ORIGINAL_INTERMEDIATE_H5_PATH"
+                elif is_azblob_path "$ORIGINAL_INTERMEDIATE_H5_PATH"; then
+                    upload_to_azblob "$MODEL_INTERMEDIATE_H5_PATH" "$ORIGINAL_INTERMEDIATE_H5_PATH"
+                    log "Uploaded intermediate H5 file to Azure Blob: $ORIGINAL_INTERMEDIATE_H5_PATH"
+                else
+                    upload_to_azfiles "$MODEL_INTERMEDIATE_H5_PATH" "$ORIGINAL_INTERMEDIATE_H5_PATH"
+                    log "Uploaded intermediate H5 file to Azure Files: $ORIGINAL_INTERMEDIATE_H5_PATH"
+                fi
             fi
         fi
     else

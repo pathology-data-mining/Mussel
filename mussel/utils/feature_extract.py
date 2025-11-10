@@ -365,7 +365,7 @@ def get_features(
         collate_fn=collate_features,
         shuffle=False,
         persistent_workers=num_workers > 0,
-        prefetch_factor=2 if num_workers > 0 else None,
+        prefetch_factor=4 if num_workers > 0 else None,  # Increased from 2 to 4 for better GPU utilization
     )
 
     features, labels = process_dataset(
@@ -468,7 +468,7 @@ def extract_patch_features(
             worker_init_fn=None,
             shuffle=False,
             persistent_workers=num_workers > 0,
-            prefetch_factor=2 if num_workers > 0 else None,
+            prefetch_factor=4 if num_workers > 0 else None,
         )
     elif patch_h5_path:
         dataset = WholeSlideImageH5Dataset(
@@ -488,7 +488,7 @@ def extract_patch_features(
             worker_init_fn=dataset.worker_init if num_workers > 0 else None,
             shuffle=False,
             persistent_workers=num_workers > 0,
-            prefetch_factor=2 if num_workers > 0 else None,
+            prefetch_factor=4 if num_workers > 0 else None,
         )
     else:
         raise ValueError("Either patch_path or patch_h5_path must be provided")
@@ -597,7 +597,7 @@ def extract_patch_features_batch(
             worker_init_fn=dataset.worker_init if num_workers > 0 else None,
             shuffle=False,
             persistent_workers=num_workers > 0,
-            prefetch_factor=2 if num_workers > 0 else None,
+            prefetch_factor=4 if num_workers > 0 else None,
         )
 
         # Process this slide's tiles
@@ -1047,7 +1047,7 @@ def save_features(
                 worker_init_fn=None,
                 shuffle=False,
                 persistent_workers=num_workers > 0,
-                prefetch_factor=2 if num_workers > 0 else None,
+                prefetch_factor=4 if num_workers > 0 else None,
             )
         elif patch_h5_path:
             dataset = WholeSlideImageH5Dataset(
@@ -1067,7 +1067,7 @@ def save_features(
                 worker_init_fn=dataset.worker_init if num_workers > 0 else None,
                 shuffle=False,
                 persistent_workers=num_workers > 0,
-                prefetch_factor=2 if num_workers > 0 else None,
+                prefetch_factor=4 if num_workers > 0 else None,
             )
         else:
             raise ValueError("Either patch_path or patch_h5_path must be provided")

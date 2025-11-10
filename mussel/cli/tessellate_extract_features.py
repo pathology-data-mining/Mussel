@@ -152,6 +152,12 @@ class TessellateExtractFeaturesConfig:
         """Set default patch size based on model type if not explicitly set."""
         # Only set patch size if seg_config.patch_size is at the default value
         # This allows users to override if they explicitly set a different value
+        logger.debug(
+            f"__post_init__: seg_config.patch_size={self.seg_config.patch_size}, "
+            f"DEFAULT_PATCH_SIZE={SegConfig.DEFAULT_PATCH_SIZE}, "
+            f"model_type={self.prefilter_model_type}"
+        )
+        
         if self.seg_config.patch_size == SegConfig.DEFAULT_PATCH_SIZE:
             # Get the model type to use for determining patch size
             model_type = self.prefilter_model_type
@@ -168,6 +174,11 @@ class TessellateExtractFeaturesConfig:
             except ValueError:
                 # Model not in mapping, keep default
                 pass
+        else:
+            logger.debug(
+                f"__post_init__: patch_size ({self.seg_config.patch_size}) already set, "
+                f"not applying model-specific default"
+            )
 
 
 desc_doc = """== ${hydra.help.app_name} ==
@@ -222,6 +233,28 @@ def main(
     cfg: TessellateExtractFeaturesConfig,
 ):
     """Tessellate and extract features from one or more slides, optionally with filtering."""
+    # Set multiprocessing start method to avoid permission issues in containers
+    import multiprocessing as mp
+    try:
+        mp.set_start_method('spawn', force=True)
+    except RuntimeError:
+        pass  # Already set
+    
+    # Apply model-specific defaults if not explicitly set
+    # Hydra doesn't call __post_init__ on structured configs, so we do it here
+    if cfg.seg_config.patch_size == SegConfig.DEFAULT_PATCH_SIZE:
+        try:
+            recommended_patch_size = get_default_patch_size(cfg.prefilter_model_type)
+            if recommended_patch_size != SegConfig.DEFAULT_PATCH_SIZE:
+                logger.info(
+                    f"Setting seg_config.patch_size={recommended_patch_size} based on "
+                    f"model_type={cfg.prefilter_model_type.name} (recommended default for this model)"
+                )
+                cfg.seg_config.patch_size = recommended_patch_size
+        except (ValueError, AttributeError):
+            # Model not in mapping or other issue, keep default
+            pass
+    
     # Detect mode based on configuration
     batch_mode = cfg.slide_paths is not None
     

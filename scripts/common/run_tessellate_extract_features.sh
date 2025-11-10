@@ -47,6 +47,22 @@ log() {
     echo "[$(date +'%Y-%m-%d %H:%M:%S')] $1"
 }
 
+# Function to get model-specific default patch size
+get_model_patch_size() {
+    local model_type="$1"
+    case "$model_type" in
+        CTRANSPATH|VIRCHOW|VIRCHOW2|OPTIMUS|CLIP|GOOGLEPATH)
+            echo "224"
+            ;;
+        CONCH1_5|TITAN_SLIDE)
+            echo "512"
+            ;;
+        *)
+            echo "256"
+            ;;
+    esac
+}
+
 # Detect uv virtual environment
 UV_PREFIX=""
 if command -v uv >/dev/null 2>&1; then
@@ -103,7 +119,8 @@ fi
 CLASSIFIER_THRESHOLD=${CLASSIFIER_THRESHOLD:-0.75}
 PREFILTER_MODEL_TYPE=${PREFILTER_MODEL_TYPE:-CTRANSPATH}
 SEGMENT_THRESHOLD=${SEGMENT_THRESHOLD:-0}
-PATCH_SIZE=${PATCH_SIZE:-256}
+# PATCH_SIZE - Let Python code apply model-specific defaults (no default here)
+PATCH_SIZE=${PATCH_SIZE:-}
 MPP=${MPP:-0.5}
 NUM_WORKERS=${NUM_WORKERS:-4}
 BATCH_SIZE=${BATCH_SIZE:-64}
@@ -190,7 +207,7 @@ if [ "$BATCH_MODE" = false ]; then
     ORIGINAL_SLIDE_PATH="$SLIDE_PATH"
     if is_s3_path "$SLIDE_PATH"; then
         log "Slide is in S3, staging locally..."
-        WORK_DIR="/tmp/mussel_work_$$"
+        WORK_DIR="${TMPDIR:-/tmp}/mussel_work_$$"
         mkdir -p "$WORK_DIR"
         LOCAL_SLIDE_PATH="$WORK_DIR/$(basename "$SLIDE_PATH")"
         download_from_s3 "$SLIDE_PATH" "$LOCAL_SLIDE_PATH"
@@ -210,7 +227,7 @@ fi
 # Stage model files from S3 if needed
 if [ -n "$PREFILTER_MODEL_PATH" ] && is_s3_path "$PREFILTER_MODEL_PATH"; then
     log "Prefilter model is in S3, staging locally..."
-    WORK_DIR="${WORK_DIR:-/tmp/mussel_work_$$}"
+    WORK_DIR="${WORK_DIR:-${TMPDIR:-/tmp}/mussel_work_$$}"
     mkdir -p "$WORK_DIR"
     LOCAL_PREFILTER_MODEL_PATH="$WORK_DIR/$(basename "$PREFILTER_MODEL_PATH")"
     download_from_s3 "$PREFILTER_MODEL_PATH" "$LOCAL_PREFILTER_MODEL_PATH"
@@ -220,7 +237,7 @@ fi
 
 if [ -n "$POSTFILTER_MODEL_PATH" ] && is_s3_path "$POSTFILTER_MODEL_PATH"; then
     log "Postfilter model is in S3, staging locally..."
-    WORK_DIR="${WORK_DIR:-/tmp/mussel_work_$$}"
+    WORK_DIR="${WORK_DIR:-${TMPDIR:-/tmp}/mussel_work_$$}"
     mkdir -p "$WORK_DIR"
     LOCAL_POSTFILTER_MODEL_PATH="$WORK_DIR/$(basename "$POSTFILTER_MODEL_PATH")"
     download_from_s3 "$POSTFILTER_MODEL_PATH" "$LOCAL_POSTFILTER_MODEL_PATH"
@@ -230,7 +247,7 @@ fi
 
 if [ -n "$SLIDE_MODEL_PATH" ] && is_s3_path "$SLIDE_MODEL_PATH"; then
     log "Slide model is in S3, staging locally..."
-    WORK_DIR="${WORK_DIR:-/tmp/mussel_work_$$}"
+    WORK_DIR="${WORK_DIR:-${TMPDIR:-/tmp}/mussel_work_$$}"
     mkdir -p "$WORK_DIR"
     LOCAL_SLIDE_MODEL_PATH="$WORK_DIR/$(basename "$SLIDE_MODEL_PATH")"
     download_from_s3 "$SLIDE_MODEL_PATH" "$LOCAL_SLIDE_MODEL_PATH"
@@ -260,7 +277,7 @@ ORIGINAL_OUTPUT_PT_PATH="$OUTPUT_PT_PATH"
 ORIGINAL_INTERMEDIATE_H5_PATH="$INTERMEDIATE_H5_PATH"
 
 if is_s3_path "$OUTPUT_H5_PATH" || is_s3_path "$OUTPUT_PT_PATH" || is_s3_path "$INTERMEDIATE_H5_PATH"; then
-    WORK_DIR="${WORK_DIR:-/tmp/mussel_work_$$}"
+    WORK_DIR="${WORK_DIR:-${TMPDIR:-/tmp}/mussel_work_$$}"
     mkdir -p "$WORK_DIR"
     
     if is_s3_path "$OUTPUT_H5_PATH"; then
@@ -318,7 +335,7 @@ if [ "$BATCH_MODE" = true ]; then
     
     if [ "$NEEDS_STAGING" = true ]; then
         log "One or more slides are in S3, staging locally..."
-        WORK_DIR="/tmp/mussel_work_$$"
+        WORK_DIR="${TMPDIR:-/tmp}/mussel_work_$$"
         mkdir -p "$WORK_DIR"
         
         for slide_path in "${SLIDE_PATH_ARRAY[@]}"; do
@@ -337,6 +354,158 @@ if [ "$BATCH_MODE" = true ]; then
         log "Updated slide paths after staging: $SLIDE_PATHS"
     fi
     
+    # Check if multi-model mode is enabled
+    if [ -n "$POSTFILTER_MODEL_TYPES" ]; then
+        # Multi-model batch mode: Run full pipeline for each postfilter model
+        IFS=',' read -ra MODELS <<< "$POSTFILTER_MODEL_TYPES"
+        log "Multi-model batch mode: Will process ${#MODELS[@]} models: ${POSTFILTER_MODEL_TYPES}"
+        log ""
+        
+        MODEL_INDEX=0
+        for MODEL in "${MODELS[@]}"; do
+            MODEL_INDEX=$((MODEL_INDEX + 1))
+            MODEL=$(echo "$MODEL" | xargs)  # Trim whitespace
+            
+            log ""
+            log "=========================================="
+            log "Processing model $MODEL_INDEX/${#MODELS[@]}: $MODEL"
+            log "=========================================="
+            log ""
+            
+            # Determine patch size for this specific model
+            # Priority: 1) Explicit PATCH_SIZE env var, 2) Model-specific default
+            if [ -n "$PATCH_SIZE" ]; then
+                MODEL_PATCH_SIZE="$PATCH_SIZE"
+            else
+                # Get model-specific default patch size
+                MODEL_PATCH_SIZE=$(get_model_patch_size "$MODEL")
+                log "Using model-specific patch size for $MODEL: $MODEL_PATCH_SIZE"
+            fi
+            
+            MODEL_CMD_ARGS=(
+                "tessellate_extract_features"
+                "slide_paths=[${SLIDE_PATHS}]"
+                "output_dir=${OUTPUT_DIR}/${MODEL}"
+                "prefilter_model_type=${PREFILTER_MODEL_TYPE}"
+                "postfilter_model_type=${MODEL}"
+                "num_workers=${NUM_WORKERS}"
+                "batch_size=${BATCH_SIZE}"
+                "slide_batch_size=${SLIDE_BATCH_SIZE}"
+                "use_gpu=${USE_GPU}"
+            )
+            
+            # Add seg_config group if specified
+            if [ -n "$SEG_CONFIG_GROUP" ]; then
+                MODEL_CMD_ARGS+=("seg_config=${SEG_CONFIG_GROUP}")
+            fi
+            
+            # Add seg_config with model-specific patch size
+            MODEL_CMD_ARGS+=("seg_config.patch_size=${MODEL_PATCH_SIZE}")
+            
+            # Add other seg_config parameters
+            if [ -n "$SEGMENT_THRESHOLD" ]; then
+                MODEL_CMD_ARGS+=("seg_config.segment_threshold=${SEGMENT_THRESHOLD}")
+            fi
+            if [ -n "$STEP_SIZE" ]; then
+                MODEL_CMD_ARGS+=("seg_config.step_size=${STEP_SIZE}")
+            fi
+            if [ -n "$MPP" ]; then
+                MODEL_CMD_ARGS+=("seg_config.mpp=${MPP}")
+            fi
+            if [ -n "$SEG_LEVEL" ]; then
+                MODEL_CMD_ARGS+=("seg_config.seg_level=${SEG_LEVEL}")
+            fi
+            if [ -n "$SEGMENT_MAX_VALUE" ]; then
+                MODEL_CMD_ARGS+=("seg_config.segment_max_value=${SEGMENT_MAX_VALUE}")
+            fi
+            if [ -n "$MEDIAN_BLUR_KSIZE" ]; then
+                MODEL_CMD_ARGS+=("seg_config.median_blur_ksize=${MEDIAN_BLUR_KSIZE}")
+            fi
+            if [ -n "$MORPHOLOGY_EX_KERNEL" ]; then
+                MODEL_CMD_ARGS+=("seg_config.morphology_ex_kernel=${MORPHOLOGY_EX_KERNEL}")
+            fi
+            if [ -n "$REF_PATCH_SIZE" ]; then
+                MODEL_CMD_ARGS+=("seg_config.ref_patch_size=${REF_PATCH_SIZE}")
+            fi
+            if [ -n "$USE_OTSU" ]; then
+                MODEL_CMD_ARGS+=("seg_config.use_otsu=${USE_OTSU}")
+            fi
+            if [ -n "$TISSUE_AREA_THRESHOLD" ]; then
+                MODEL_CMD_ARGS+=("seg_config.tissue_area_threshold=${TISSUE_AREA_THRESHOLD}")
+            fi
+            if [ -n "$HOLE_AREA_THRESHOLD" ]; then
+                MODEL_CMD_ARGS+=("seg_config.hole_area_threshold=${HOLE_AREA_THRESHOLD}")
+            fi
+            if [ -n "$MAX_NUM_HOLES" ]; then
+                MODEL_CMD_ARGS+=("seg_config.max_num_holes=${MAX_NUM_HOLES}")
+            fi
+            
+            # Add slide IDs if provided
+            if [ -n "$SLIDE_IDS" ]; then
+                MODEL_CMD_ARGS+=("slide_ids=[${SLIDE_IDS}]")
+            fi
+            
+            # Add prefilter model path if specified
+            if [ -n "$PREFILTER_MODEL_PATH" ]; then
+                MODEL_CMD_ARGS+=("prefilter_model_path=$PREFILTER_MODEL_PATH")
+            fi
+            
+            # Add postfilter model path if specified
+            if [ -n "$POSTFILTER_MODEL_PATH" ]; then
+                MODEL_CMD_ARGS+=("postfilter_model_path=$POSTFILTER_MODEL_PATH")
+            fi
+            
+            # Add classifier if specified
+            if [ -n "$CLASSIFIER_PKL" ]; then
+                MODEL_CMD_ARGS+=("classifier_pkl=$CLASSIFIER_PKL")
+                MODEL_CMD_ARGS+=("classifier_threshold=$CLASSIFIER_THRESHOLD")
+            fi
+            
+            # Add aggregation parameters if specified
+            if [ "$AGGREGATION_METHOD" != "identity" ]; then
+                MODEL_CMD_ARGS+=("aggregation_method=$AGGREGATION_METHOD")
+            fi
+            
+            if [ -n "$SLIDE_MODEL_TYPE" ]; then
+                MODEL_CMD_ARGS+=("slide_model_type=$SLIDE_MODEL_TYPE")
+            fi
+            
+            if [ -n "$SLIDE_MODEL_PATH" ]; then
+                MODEL_CMD_ARGS+=("slide_model_path=$SLIDE_MODEL_PATH")
+            fi
+            
+            log "Executing command for $MODEL:"
+            log "${MODEL_CMD_ARGS[*]}"
+            echo ""
+            
+            START_TIME=$(date +%s)
+            ${UV_PREFIX} "${MODEL_CMD_ARGS[@]}"
+            EXIT_CODE=$?
+            END_TIME=$(date +%s)
+            DURATION=$((END_TIME - START_TIME))
+            
+            if [ $EXIT_CODE -ne 0 ]; then
+                log "ERROR: Model $MODEL processing failed with exit code $EXIT_CODE (duration: $DURATION seconds)"
+                exit $EXIT_CODE
+            fi
+            
+            log "SUCCESS: Model $MODEL processing completed in $DURATION seconds"
+        done
+        
+        log ""
+        log "=========================================="
+        log "Multi-model batch processing completed successfully"
+        log "All ${#MODELS[@]} models processed"
+        log "=========================================="
+        
+        echo "============================================"
+        echo "End time: $(date)"
+        echo "============================================"
+        
+        exit 0
+    fi
+    
+    # Single postfilter model batch processing (original behavior)
     # Build command for batch processing
     # Note: slide_paths parameter uses Hydra list syntax: slide_paths=[item1,item2,...]
     CMD_ARGS=(
@@ -350,52 +519,50 @@ if [ "$BATCH_MODE" = true ]; then
         "use_gpu=${USE_GPU}"
     )
     
-    # Add seg_config group if specified (overrides individual parameters)
+    # Add seg_config group if specified
     if [ -n "$SEG_CONFIG_GROUP" ]; then
         CMD_ARGS+=("seg_config=${SEG_CONFIG_GROUP}")
     fi
     
-    # Add individual SegConfig parameters if specified (and no group specified)
-    if [ -z "$SEG_CONFIG_GROUP" ]; then
-        if [ -n "$SEGMENT_THRESHOLD" ]; then
-            CMD_ARGS+=("seg_config.segment_threshold=${SEGMENT_THRESHOLD}")
-        fi
-        if [ -n "$PATCH_SIZE" ]; then
-            CMD_ARGS+=("seg_config.patch_size=${PATCH_SIZE}")
-        fi
-        if [ -n "$STEP_SIZE" ]; then
-            CMD_ARGS+=("seg_config.step_size=${STEP_SIZE}")
-        fi
-        if [ -n "$MPP" ]; then
-            CMD_ARGS+=("seg_config.mpp=${MPP}")
-        fi
-        if [ -n "$SEG_LEVEL" ]; then
-            CMD_ARGS+=("seg_config.seg_level=${SEG_LEVEL}")
-        fi
-        if [ -n "$SEGMENT_MAX_VALUE" ]; then
-            CMD_ARGS+=("seg_config.segment_max_value=${SEGMENT_MAX_VALUE}")
-        fi
-        if [ -n "$MEDIAN_BLUR_KSIZE" ]; then
-            CMD_ARGS+=("seg_config.median_blur_ksize=${MEDIAN_BLUR_KSIZE}")
-        fi
-        if [ -n "$MORPHOLOGY_EX_KERNEL" ]; then
-            CMD_ARGS+=("seg_config.morphology_ex_kernel=${MORPHOLOGY_EX_KERNEL}")
-        fi
-        if [ -n "$REF_PATCH_SIZE" ]; then
-            CMD_ARGS+=("seg_config.ref_patch_size=${REF_PATCH_SIZE}")
-        fi
-        if [ -n "$USE_OTSU" ]; then
-            CMD_ARGS+=("seg_config.use_otsu=${USE_OTSU}")
-        fi
-        if [ -n "$TISSUE_AREA_THRESHOLD" ]; then
-            CMD_ARGS+=("seg_config.tissue_area_threshold=${TISSUE_AREA_THRESHOLD}")
-        fi
-        if [ -n "$HOLE_AREA_THRESHOLD" ]; then
-            CMD_ARGS+=("seg_config.hole_area_threshold=${HOLE_AREA_THRESHOLD}")
-        fi
-        if [ -n "$MAX_NUM_HOLES" ]; then
-            CMD_ARGS+=("seg_config.max_num_holes=${MAX_NUM_HOLES}")
-        fi
+    # Add individual SegConfig parameters if specified (these override group defaults)
+    if [ -n "$SEGMENT_THRESHOLD" ]; then
+        CMD_ARGS+=("seg_config.segment_threshold=${SEGMENT_THRESHOLD}")
+    fi
+    if [ -n "$PATCH_SIZE" ]; then
+        CMD_ARGS+=("seg_config.patch_size=${PATCH_SIZE}")
+    fi
+    if [ -n "$STEP_SIZE" ]; then
+        CMD_ARGS+=("seg_config.step_size=${STEP_SIZE}")
+    fi
+    if [ -n "$MPP" ]; then
+        CMD_ARGS+=("seg_config.mpp=${MPP}")
+    fi
+    if [ -n "$SEG_LEVEL" ]; then
+        CMD_ARGS+=("seg_config.seg_level=${SEG_LEVEL}")
+    fi
+    if [ -n "$SEGMENT_MAX_VALUE" ]; then
+        CMD_ARGS+=("seg_config.segment_max_value=${SEGMENT_MAX_VALUE}")
+    fi
+    if [ -n "$MEDIAN_BLUR_KSIZE" ]; then
+        CMD_ARGS+=("seg_config.median_blur_ksize=${MEDIAN_BLUR_KSIZE}")
+    fi
+    if [ -n "$MORPHOLOGY_EX_KERNEL" ]; then
+        CMD_ARGS+=("seg_config.morphology_ex_kernel=${MORPHOLOGY_EX_KERNEL}")
+    fi
+    if [ -n "$REF_PATCH_SIZE" ]; then
+        CMD_ARGS+=("seg_config.ref_patch_size=${REF_PATCH_SIZE}")
+    fi
+    if [ -n "$USE_OTSU" ]; then
+        CMD_ARGS+=("seg_config.use_otsu=${USE_OTSU}")
+    fi
+    if [ -n "$TISSUE_AREA_THRESHOLD" ]; then
+        CMD_ARGS+=("seg_config.tissue_area_threshold=${TISSUE_AREA_THRESHOLD}")
+    fi
+    if [ -n "$HOLE_AREA_THRESHOLD" ]; then
+        CMD_ARGS+=("seg_config.hole_area_threshold=${HOLE_AREA_THRESHOLD}")
+    fi
+    if [ -n "$MAX_NUM_HOLES" ]; then
+        CMD_ARGS+=("seg_config.max_num_holes=${MAX_NUM_HOLES}")
     fi
     
     # Add slide IDs if provided
@@ -512,52 +679,50 @@ if [ -n "$POSTFILTER_MODEL_TYPES" ]; then
         "keep_intermediate_files=false"
     )
     
-    # Add seg_config group if specified (overrides individual parameters)
+    # Add seg_config group if specified
     if [ -n "$SEG_CONFIG_GROUP" ]; then
         FILTER_CMD_ARGS+=("seg_config=${SEG_CONFIG_GROUP}")
     fi
     
-    # Add individual SegConfig parameters if specified (and no group specified)
-    if [ -z "$SEG_CONFIG_GROUP" ]; then
-        if [ -n "$SEGMENT_THRESHOLD" ]; then
-            FILTER_CMD_ARGS+=("seg_config.segment_threshold=$SEGMENT_THRESHOLD")
-        fi
-        if [ -n "$PATCH_SIZE" ]; then
-            FILTER_CMD_ARGS+=("seg_config.patch_size=$PATCH_SIZE")
-        fi
-        if [ -n "$STEP_SIZE" ]; then
-            FILTER_CMD_ARGS+=("seg_config.step_size=$STEP_SIZE")
-        fi
-        if [ -n "$MPP" ]; then
-            FILTER_CMD_ARGS+=("seg_config.mpp=$MPP")
-        fi
-        if [ -n "$SEG_LEVEL" ]; then
-            FILTER_CMD_ARGS+=("seg_config.seg_level=$SEG_LEVEL")
-        fi
-        if [ -n "$SEGMENT_MAX_VALUE" ]; then
-            FILTER_CMD_ARGS+=("seg_config.segment_max_value=$SEGMENT_MAX_VALUE")
-        fi
-        if [ -n "$MEDIAN_BLUR_KSIZE" ]; then
-            FILTER_CMD_ARGS+=("seg_config.median_blur_ksize=$MEDIAN_BLUR_KSIZE")
-        fi
-        if [ -n "$MORPHOLOGY_EX_KERNEL" ]; then
-            FILTER_CMD_ARGS+=("seg_config.morphology_ex_kernel=$MORPHOLOGY_EX_KERNEL")
-        fi
-        if [ -n "$REF_PATCH_SIZE" ]; then
-            FILTER_CMD_ARGS+=("seg_config.ref_patch_size=$REF_PATCH_SIZE")
-        fi
-        if [ -n "$USE_OTSU" ]; then
-            FILTER_CMD_ARGS+=("seg_config.use_otsu=$USE_OTSU")
-        fi
-        if [ -n "$TISSUE_AREA_THRESHOLD" ]; then
-            FILTER_CMD_ARGS+=("seg_config.tissue_area_threshold=$TISSUE_AREA_THRESHOLD")
-        fi
-        if [ -n "$HOLE_AREA_THRESHOLD" ]; then
-            FILTER_CMD_ARGS+=("seg_config.hole_area_threshold=$HOLE_AREA_THRESHOLD")
-        fi
-        if [ -n "$MAX_NUM_HOLES" ]; then
-            FILTER_CMD_ARGS+=("seg_config.max_num_holes=$MAX_NUM_HOLES")
-        fi
+    # Add individual SegConfig parameters if specified (these override group defaults)
+    if [ -n "$SEGMENT_THRESHOLD" ]; then
+        FILTER_CMD_ARGS+=("seg_config.segment_threshold=$SEGMENT_THRESHOLD")
+    fi
+    if [ -n "$PATCH_SIZE" ]; then
+        FILTER_CMD_ARGS+=("seg_config.patch_size=$PATCH_SIZE")
+    fi
+    if [ -n "$STEP_SIZE" ]; then
+        FILTER_CMD_ARGS+=("seg_config.step_size=$STEP_SIZE")
+    fi
+    if [ -n "$MPP" ]; then
+        FILTER_CMD_ARGS+=("seg_config.mpp=$MPP")
+    fi
+    if [ -n "$SEG_LEVEL" ]; then
+        FILTER_CMD_ARGS+=("seg_config.seg_level=$SEG_LEVEL")
+    fi
+    if [ -n "$SEGMENT_MAX_VALUE" ]; then
+        FILTER_CMD_ARGS+=("seg_config.segment_max_value=$SEGMENT_MAX_VALUE")
+    fi
+    if [ -n "$MEDIAN_BLUR_KSIZE" ]; then
+        FILTER_CMD_ARGS+=("seg_config.median_blur_ksize=$MEDIAN_BLUR_KSIZE")
+    fi
+    if [ -n "$MORPHOLOGY_EX_KERNEL" ]; then
+        FILTER_CMD_ARGS+=("seg_config.morphology_ex_kernel=$MORPHOLOGY_EX_KERNEL")
+    fi
+    if [ -n "$REF_PATCH_SIZE" ]; then
+        FILTER_CMD_ARGS+=("seg_config.ref_patch_size=$REF_PATCH_SIZE")
+    fi
+    if [ -n "$USE_OTSU" ]; then
+        FILTER_CMD_ARGS+=("seg_config.use_otsu=$USE_OTSU")
+    fi
+    if [ -n "$TISSUE_AREA_THRESHOLD" ]; then
+        FILTER_CMD_ARGS+=("seg_config.tissue_area_threshold=$TISSUE_AREA_THRESHOLD")
+    fi
+    if [ -n "$HOLE_AREA_THRESHOLD" ]; then
+        FILTER_CMD_ARGS+=("seg_config.hole_area_threshold=$HOLE_AREA_THRESHOLD")
+    fi
+    if [ -n "$MAX_NUM_HOLES" ]; then
+        FILTER_CMD_ARGS+=("seg_config.max_num_holes=$MAX_NUM_HOLES")
     fi
     
     # Add model_path if specified
@@ -726,52 +891,59 @@ if [ -z "$POSTFILTER_MODEL_TYPES" ]; then
         "keep_intermediate_files=$KEEP_INTERMEDIATE_FILES"
     )
     
-    # Add seg_config group if specified (overrides individual parameters)
+    # Add seg_config group if specified
     if [ -n "$SEG_CONFIG_GROUP" ]; then
         CMD_ARGS+=("seg_config=${SEG_CONFIG_GROUP}")
     fi
     
-    # Add individual SegConfig parameters if specified (and no group specified)
-    if [ -z "$SEG_CONFIG_GROUP" ]; then
-        if [ -n "$SEGMENT_THRESHOLD" ]; then
-            CMD_ARGS+=("seg_config.segment_threshold=$SEGMENT_THRESHOLD")
-        fi
-        if [ -n "$PATCH_SIZE" ]; then
-            CMD_ARGS+=("seg_config.patch_size=$PATCH_SIZE")
-        fi
-        if [ -n "$STEP_SIZE" ]; then
-            CMD_ARGS+=("seg_config.step_size=$STEP_SIZE")
-        fi
-        if [ -n "$MPP" ]; then
-            CMD_ARGS+=("seg_config.mpp=$MPP")
-        fi
-        if [ -n "$SEG_LEVEL" ]; then
-            CMD_ARGS+=("seg_config.seg_level=$SEG_LEVEL")
-        fi
-        if [ -n "$SEGMENT_MAX_VALUE" ]; then
-            CMD_ARGS+=("seg_config.segment_max_value=$SEGMENT_MAX_VALUE")
-        fi
-        if [ -n "$MEDIAN_BLUR_KSIZE" ]; then
-            CMD_ARGS+=("seg_config.median_blur_ksize=$MEDIAN_BLUR_KSIZE")
-        fi
-        if [ -n "$MORPHOLOGY_EX_KERNEL" ]; then
-            CMD_ARGS+=("seg_config.morphology_ex_kernel=$MORPHOLOGY_EX_KERNEL")
-        fi
-        if [ -n "$REF_PATCH_SIZE" ]; then
-            CMD_ARGS+=("seg_config.ref_patch_size=$REF_PATCH_SIZE")
-        fi
-        if [ -n "$USE_OTSU" ]; then
-            CMD_ARGS+=("seg_config.use_otsu=$USE_OTSU")
-        fi
-        if [ -n "$TISSUE_AREA_THRESHOLD" ]; then
-            CMD_ARGS+=("seg_config.tissue_area_threshold=$TISSUE_AREA_THRESHOLD")
-        fi
-        if [ -n "$HOLE_AREA_THRESHOLD" ]; then
-            CMD_ARGS+=("seg_config.hole_area_threshold=$HOLE_AREA_THRESHOLD")
-        fi
-        if [ -n "$MAX_NUM_HOLES" ]; then
-            CMD_ARGS+=("seg_config.max_num_holes=$MAX_NUM_HOLES")
-        fi
+    # Add individual SegConfig parameters if specified (these override group defaults)
+    if [ -n "$SEGMENT_THRESHOLD" ]; then
+        CMD_ARGS+=("seg_config.segment_threshold=$SEGMENT_THRESHOLD")
+    fi
+    
+    # Determine patch size for this specific model
+    # Priority: 1) Explicit PATCH_SIZE env var, 2) Model-specific default
+    if [ -n "$PATCH_SIZE" ]; then
+        MODEL_PATCH_SIZE="$PATCH_SIZE"
+    else
+        # Get model-specific default patch size
+        MODEL_PATCH_SIZE=$(get_model_patch_size "$MODEL")
+        log "Using model-specific patch size for $MODEL: $MODEL_PATCH_SIZE"
+    fi
+    CMD_ARGS+=("seg_config.patch_size=$MODEL_PATCH_SIZE")
+    
+    if [ -n "$STEP_SIZE" ]; then
+        CMD_ARGS+=("seg_config.step_size=$STEP_SIZE")
+    fi
+    if [ -n "$MPP" ]; then
+        CMD_ARGS+=("seg_config.mpp=$MPP")
+    fi
+    if [ -n "$SEG_LEVEL" ]; then
+        CMD_ARGS+=("seg_config.seg_level=$SEG_LEVEL")
+    fi
+    if [ -n "$SEGMENT_MAX_VALUE" ]; then
+        CMD_ARGS+=("seg_config.segment_max_value=$SEGMENT_MAX_VALUE")
+    fi
+    if [ -n "$MEDIAN_BLUR_KSIZE" ]; then
+        CMD_ARGS+=("seg_config.median_blur_ksize=$MEDIAN_BLUR_KSIZE")
+    fi
+    if [ -n "$MORPHOLOGY_EX_KERNEL" ]; then
+        CMD_ARGS+=("seg_config.morphology_ex_kernel=$MORPHOLOGY_EX_KERNEL")
+    fi
+    if [ -n "$REF_PATCH_SIZE" ]; then
+        CMD_ARGS+=("seg_config.ref_patch_size=$REF_PATCH_SIZE")
+    fi
+    if [ -n "$USE_OTSU" ]; then
+        CMD_ARGS+=("seg_config.use_otsu=$USE_OTSU")
+    fi
+    if [ -n "$TISSUE_AREA_THRESHOLD" ]; then
+        CMD_ARGS+=("seg_config.tissue_area_threshold=$TISSUE_AREA_THRESHOLD")
+    fi
+    if [ -n "$HOLE_AREA_THRESHOLD" ]; then
+        CMD_ARGS+=("seg_config.hole_area_threshold=$HOLE_AREA_THRESHOLD")
+    fi
+    if [ -n "$MAX_NUM_HOLES" ]; then
+        CMD_ARGS+=("seg_config.max_num_holes=$MAX_NUM_HOLES")
     fi
 
     # Add optional parameters

@@ -147,8 +147,8 @@ class SlurmJobSubmitter:
         env_vars = {}
         
         # Handle batch vs single slide processing
-        if slide_paths and len(slide_paths) > 1:
-            # Batch processing mode
+        if slide_paths and len(slide_paths) >= 1:
+            # Batch processing mode (including single-slide batches)
             env_vars["SLIDE_PATHS"] = ",".join(slide_paths)
             if slide_ids:
                 env_vars["SLIDE_IDS"] = ",".join(slide_ids)
@@ -156,10 +156,7 @@ class SlurmJobSubmitter:
                 env_vars["OUTPUT_DIR"] = output_dir_for_batch
             env_vars["SLIDE_BATCH_SIZE"] = str(slide_batch_size)
         else:
-            # Single slide mode (backward compatible)
-            # If slide_paths has one element, use it; otherwise use slide_path parameter
-            if slide_paths and not slide_path:
-                slide_path = slide_paths[0]
+            # Single slide mode (backward compatible - non-batch)
             env_vars["SLIDE_PATH"] = slide_path
             env_vars["OUTPUT_H5_PATH"] = output_h5_path
             env_vars["OUTPUT_PT_PATH"] = output_pt_path
@@ -253,13 +250,17 @@ bash {self.task_script}
     def submit_task(
         self,
         job_name: str,
-        slide_path: str,
-        output_h5_path: str,
-        output_pt_path: str,
+        slide_path: str = None,
+        output_h5_path: str = None,
+        output_pt_path: str = None,
         **kwargs
     ) -> Optional[str]:
         """
         Submit a single task to SLURM.
+        
+        Supports both single-slide and multi-slide batch processing:
+        - Single slide: Provide slide_path, output_h5_path, output_pt_path
+        - Batch mode: Provide slide_paths, slide_ids, output_dir_for_batch in kwargs
         
         Returns:
             Job ID if successful, None otherwise
@@ -315,10 +316,6 @@ bash {self.task_script}
         1. Patch encoder model is loaded once instead of N times
         2. Better GPU utilization through batched processing
         3. If using slide-level aggregation, slide encoder is also loaded once
-        
-        Batching provides benefits for:
-        - Tile/patch-level feature extraction (always beneficial)
-        - Slide-level aggregation with model (additional benefit)
         
         Returns True for any multi-slide processing scenario.
         """
@@ -496,14 +493,18 @@ bash {self.task_script}
                     sys.exit(1)
                 
                 # Submit batch task
+                slide_batch_size = kwargs.get('slide_batch_size', 8)
+                # Exclude parameters that are passed explicitly
+                filtered_kwargs = {k: v for k, v in kwargs.items() if k not in ['slide_batch_size', 'output_dir']}
+                
                 job_id = self.submit_task(
                     job_name=batch_id,
                     slide_paths=slide_paths,
                     slide_ids=slide_ids,
                     output_dir_for_batch=output_dir_for_batch,
                     output_dir=kwargs.get('output_dir', 'slurm_logs'),
-                    slide_batch_size=kwargs.get('slide_batch_size', 8),
-                    **kwargs
+                    slide_batch_size=slide_batch_size,
+                    **filtered_kwargs
                 )
                 job_ids.append(job_id)
             
@@ -1006,6 +1007,10 @@ def main():
         )
     else:
         # CSV manifest (with optional config file for parameters)
+        
+        # Apply postfilter_models from config if not provided via CLI
+        if not args.postfilter_models and config_defaults.get('postfilter_model_types'):
+            args.postfilter_models = config_defaults['postfilter_model_types']
         
         # Prepare kwargs dict starting with command-line args
         # Note: Only include arguments with explicit defaults to prevent None values
