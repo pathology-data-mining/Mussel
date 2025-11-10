@@ -83,7 +83,12 @@ def main(cfg: CacheTilesConfig):
         use_imagenet_rgb_dist=True,
         limit_to_indices=indices if cfg.limit_to_class else None,
     )
-    kwargs = {"num_workers": cfg.num_workers, "pin_memory": True}
+    kwargs = {
+        "num_workers": cfg.num_workers,
+        "pin_memory": True,
+        "persistent_workers": cfg.num_workers > 0,
+        "prefetch_factor": 2 if cfg.num_workers > 0 else None,
+    }
     loader = DataLoader(
         dataset=dataset,
         batch_size=cfg.batch_size,
