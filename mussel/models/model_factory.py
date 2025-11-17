@@ -1,4 +1,5 @@
 import json
+import logging
 import pickle
 from abc import ABC, abstractmethod
 from enum import Enum
@@ -17,6 +18,8 @@ from timm.layers import SwiGLUPacked
 from torchvision import transforms
 from transformers import AutoModel
 
+logger = logging.getLogger(__name__)
+
 IMAGENET_MEAN = [0.485, 0.456, 0.406]
 
 IMAGENET_STD = [0.229, 0.224, 0.225]
@@ -27,9 +30,46 @@ torch.backends.cuda.matmul.allow_tf32 = True
 torch.backends.cudnn.allow_tf32 = True
 
 # Enable optimized SDPA (Scaled Dot Product Attention) for transformer models
-# This uses Flash Attention when available for 2-4x speedup
+# This uses Flash Attention 2 if available, otherwise falls back to xformers or efficient attention
+# All timm models (UNI, UNI2, Virchow, Virchow2, OPTIMUS) automatically use this
+# HuggingFace models (CONCH1.5) use attn_implementation parameter for flash attention
 torch.backends.cuda.enable_flash_sdp(True)
 torch.backends.cuda.enable_mem_efficient_sdp(True)
+
+
+def get_best_attn_implementation():
+    """Determine the best attention implementation available.
+    
+    Returns:
+        str: One of "flash_attention_2", "sdpa", or "eager"
+        
+    Priority:
+        1. flash_attention_2 - Fastest, requires flash-attn package and CUDA >= 8.0
+        2. sdpa - PyTorch 2.0+ built-in, uses xformers if available
+        3. eager - Fallback to standard PyTorch attention
+        
+    Note:
+        - timm models automatically use SDPA when available
+        - This function is for HuggingFace transformers models (e.g., CONCH1.5)
+    """
+    # Check for flash_attn package
+    try:
+        import flash_attn
+        # Check CUDA capability (flash_attn requires compute capability >= 8.0)
+        if torch.cuda.is_available() and torch.cuda.get_device_capability()[0] >= 8:
+            logger.info("Using flash_attention_2 for HuggingFace models")
+            return "flash_attention_2"
+    except (ImportError, AttributeError):
+        pass
+    
+    # SDPA is available in PyTorch 2.0+ and will use xformers if available
+    if hasattr(torch.nn.functional, 'scaled_dot_product_attention'):
+        logger.info("Using sdpa (scaled_dot_product_attention) for HuggingFace models")
+        return "sdpa"
+    
+    # Fallback to eager
+    logger.warning("Using eager attention (no acceleration available)")
+    return "eager"
 
 
 class ModelType(Enum):
@@ -408,7 +448,24 @@ class Conch15Model(TorchModel):
             model_path = ModelType.CONCH1_5.path
         model_obj = None
         if not Path(model_path).is_file():
-            titan = AutoModel.from_pretrained(model_path, trust_remote_code=True)
+            attn_impl = get_best_attn_implementation()
+            try:
+                titan = AutoModel.from_pretrained(
+                    model_path, 
+                    trust_remote_code=True,
+                    attn_implementation=attn_impl
+                )
+            except (ValueError, NotImplementedError) as e:
+                # TITAN model doesn't support SDPA yet, fallback to eager
+                if "does not support an attention implementation" in str(e):
+                    logger.info("TITAN model doesn't support optimized attention, using eager mode")
+                    titan = AutoModel.from_pretrained(
+                        model_path, 
+                        trust_remote_code=True,
+                        attn_implementation="eager"
+                    )
+                else:
+                    raise
             model_obj, _ = titan.return_conch()
         super().__init__(model_path, model_obj, use_gpu, gpu_device_id)
 
