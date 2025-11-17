@@ -21,6 +21,16 @@ IMAGENET_MEAN = [0.485, 0.456, 0.406]
 
 IMAGENET_STD = [0.229, 0.224, 0.225]
 
+# Enable TF32 for Ampere+ GPUs for faster matmul operations
+# This provides significant speedups on A100, A10, etc.
+torch.backends.cuda.matmul.allow_tf32 = True
+torch.backends.cudnn.allow_tf32 = True
+
+# Enable optimized SDPA (Scaled Dot Product Attention) for transformer models
+# This uses Flash Attention when available for 2-4x speedup
+torch.backends.cuda.enable_flash_sdp(True)
+torch.backends.cuda.enable_mem_efficient_sdp(True)
+
 
 class ModelType(Enum):
     def __init__(self, id, code, path):
@@ -319,8 +329,31 @@ class TorchModel(Model):
 
         if isinstance(gpu_device_id, list) and len(gpu_device_id) > 1:
             self.obj = nn.DataParallel(self.obj, device_ids=gpu_device_id)
+        
+        # Apply performance optimizations
+        if use_gpu:
+            # Enable cuDNN benchmarking for optimized convolution algorithms
+            torch.backends.cudnn.benchmark = True
+            # Set matmul precision for faster operations on Ampere+ GPUs
+            torch.set_float32_matmul_precision('high')
+            # Convert to channels_last memory format for better GPU utilization
+            try:
+                self.obj = self.obj.to(memory_format=torch.channels_last)
+            except:
+                pass  # Some models may not support channels_last
+        
         self.obj = self.obj.to(self.device)
         self.obj.eval()
+        
+        # Disable torch.compile for now due to compatibility issues
+        # Will re-enable after testing individual models
+        # if hasattr(torch, 'compile') and use_gpu:
+        #     try:
+        #         self.obj = torch.compile(self.obj, mode='max-autotune')
+        #     except Exception as e:
+        #         # Fall back if compilation fails
+        #         import logging
+        #         logging.getLogger(__name__).warning(f"Failed to compile model: {e}")
 
     def get_model_fun(self) -> Callable:
         """Get model inference function with automatic mixed precision.
@@ -337,6 +370,12 @@ class TorchModel(Model):
                 torch.autocast(device_type=self.device.type, dtype=torch.float16),
             ):
                 x = x.to(self.device, non_blocking=True)
+                # Convert to channels_last for better GPU utilization if possible
+                if self.use_gpu:
+                    try:
+                        x = x.to(memory_format=torch.channels_last)
+                    except:
+                        pass
                 return self.obj(x).cpu()
 
         return model_fun
@@ -404,16 +443,17 @@ class TitanSlideEncoderModel(TorchModel):
         CONCH patch-level features into slide-level representations.
 
         Args:
-            model_path: Path to slide encoder model file or HuggingFace repo ID.
+            model_path: Path to slide encoder model directory or HuggingFace repo ID.
             use_gpu: Whether to use GPU (default: True).
             gpu_device_id: GPU device ID or list of IDs for multi-GPU (default: None).
         """
         if model_path is None:
             model_path = ModelType.TITAN_SLIDE.path
         model_obj = None
+        # Check if it's a directory (saved model) or not a file (HuggingFace repo)
         if not Path(model_path).is_file():
-            # Load the TITAN model - we'll use the whole model
-            # and call encode_slide_from_patch_features on it
+            # Load the TITAN model from HuggingFace or saved directory
+            # This handles both MahmoodLab/TITAN and locally saved directories
             model_obj = AutoModel.from_pretrained(model_path, trust_remote_code=True)
         super().__init__(model_path, model_obj, use_gpu, gpu_device_id)
 
@@ -452,6 +492,36 @@ class TitanSlideEncoderModel(TorchModel):
             None, as slide encoders don't preprocess images.
         """
         return None
+
+    def save(self, save_path: str):
+        """Save TITAN slide encoder model to disk.
+
+        TITAN models loaded from HuggingFace cannot be pickled directly,
+        so we save the underlying state dict and model configuration.
+
+        Args:
+            save_path: Path to save the model.
+        """
+        # Create directory if it doesn't exist
+        save_dir = Path(save_path).parent
+        save_dir.mkdir(parents=True, exist_ok=True)
+        
+        # Get the base model (unwrap DataParallel if needed)
+        model_to_save = self.obj.module if hasattr(self.obj, 'module') else self.obj
+        
+        # Save using HuggingFace's save_pretrained method
+        # This saves the model weights and configuration
+        try:
+            # For HuggingFace models, use save_pretrained
+            model_to_save.save_pretrained(save_path)
+            print(f"Saved TITAN slide encoder to {save_path}")
+        except Exception as e:
+            # Fallback to saving state dict only
+            print(f"Warning: Could not use save_pretrained, saving state dict only: {e}")
+            torch.save({
+                'state_dict': model_to_save.state_dict(),
+                'model_path': ModelType.TITAN_SLIDE.path,
+            }, save_path)
 
 
 class GigapathModel(TorchModel):
@@ -660,8 +730,8 @@ class UniModel(TorchModel):
             model_obj = timm.create_model(
                 model_path,
                 pretrained=True,
-                mlp_layer=SwiGLUPacked,
-                act_layer=torch.nn.SiLU,
+                init_values=1e-5,
+                dynamic_img_size=True,
             )
         super().__init__(model_path, model_obj, use_gpu, gpu_device_id)
 
@@ -698,6 +768,8 @@ class Uni2Model(TorchModel):
             model_obj = timm.create_model(
                 model_path,
                 pretrained=True,
+                img_size=224,
+                dynamic_img_size=True,
                 mlp_layer=SwiGLUPacked,
                 act_layer=torch.nn.SiLU,
             )
