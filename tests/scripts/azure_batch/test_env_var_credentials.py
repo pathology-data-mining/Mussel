@@ -64,10 +64,18 @@ def test_azure_credentials_from_env_vars():
             args.batch_account_url = os.environ.get('AZURE_BATCH_ACCOUNT_URL') or config_defaults.get('batch_account_url')
         
         if not args.storage_account_name:
-            args.storage_account_name = os.environ.get('AZURE_STORAGE_ACCOUNT_NAME') or config_defaults.get('storage_account_name')
+            args.storage_account_name = (
+                os.environ.get('AZURE_STORAGE_ACCOUNT')
+                or os.environ.get('AZURE_STORAGE_ACCOUNT_NAME')
+                or config_defaults.get('storage_account_name')
+            )
         
         if not args.storage_account_key:
-            args.storage_account_key = os.environ.get('AZURE_STORAGE_ACCOUNT_KEY') or config_defaults.get('storage_account_key')
+            args.storage_account_key = (
+                os.environ.get('AZURE_STORAGE_KEY')
+                or os.environ.get('AZURE_STORAGE_ACCOUNT_KEY')
+                or config_defaults.get('storage_account_key')
+            )
         
         # Verify environment variables were read
         assert args.batch_account_name == 'env-batch-account', \
@@ -250,7 +258,11 @@ azure:
                 args.batch_account_url = os.environ.get('AZURE_BATCH_ACCOUNT_URL') or config_defaults.get('batch_account_url')
             
             if not args.storage_account_name:
-                args.storage_account_name = os.environ.get('AZURE_STORAGE_ACCOUNT_NAME') or config_defaults.get('storage_account_name')
+                args.storage_account_name = (
+                    os.environ.get('AZURE_STORAGE_ACCOUNT')
+                    or os.environ.get('AZURE_STORAGE_ACCOUNT_NAME')
+                    or config_defaults.get('storage_account_name')
+                )
             
             # Verify priority order
             assert args.batch_account_name == 'cli-batch-account', \
