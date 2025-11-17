@@ -1275,105 +1275,99 @@ DOCKEREOF
             and self._should_use_batch_encoding(**default_params)
         )
 
-        # Iterate over each model and create separate tasks
-        # This ensures each task only loads ONE model, saving disk space
-        total_tasks_submitted = 0
+        # Process ALL models in a single task per batch of slides
+        # This is more efficient than separate tasks per model
+        print(f"\n{'='*80}")
+        print(f"Processing {len(models_to_process)} models per task:")
+        print(f"  Patch-level models: {', '.join(all_models) if all_models else 'None'}")
+        print(f"  Slide-level models: {', '.join(all_slide_models) if all_slide_models else 'None'}")
+        print(f"{'='*80}")
         
-        for model_idx, model_type in enumerate(models_to_process):
-            is_slide_model = model_type in all_slide_models
-            is_patch_model = model_type in all_models
-            
-            print(f"\n{'='*80}")
-            print(f"Processing model {model_idx + 1}/{len(models_to_process)}: {model_type}")
-            print(f"  Model type: {'Slide-level' if is_slide_model else 'Patch-level'}")
-            print(f"{'='*80}")
-            
-            # Create model-specific parameters
-            model_params = dict(default_params)
-            
-            # Set only this model for processing
-            if is_patch_model:
-                model_params["model_types"] = model_type
-                model_params["slide_model_types"] = None
-            else:
-                model_params["model_types"] = None
-                model_params["slide_model_types"] = model_type
+        # Set all models in parameters (comma-separated)
+        model_params = dict(default_params)
+        if all_models:
+            model_params["model_types"] = ",".join(all_models)
+        if all_slide_models:
+            model_params["slide_model_types"] = ",".join(all_slide_models)
+        
+        total_tasks_submitted = 0
 
-            if use_batch_encoding:
-                print(f"\n[Batch Encoding Optimization] Enabled")
-                print(f"  Grouping slides into batches of {distributed_slide_batch_size}")
-            
-                # Stage model files to Azure Files if enabled
-                if self.azure_files_staging:
-                    # Stage classifier model
-                    classifier_pkl = default_params.get("classifier_pkl")
-                    if classifier_pkl and not classifier_pkl.startswith(
-                        ("s3://", "azfiles://", "http://", "https://")
-                    ):
-                        if os.path.exists(classifier_pkl):
-                            self.log(
-                                f"Staging classifier model: {os.path.basename(classifier_pkl)}"
-                            )
-                            remote_path = f"models/{os.path.basename(classifier_pkl)}"
-                            self.azure_files_staging.upload_file(
-                                local_path=classifier_pkl,
-                                remote_path=remote_path,
-                                show_progress=False,
-                            )
-                            azfiles_url = f"azfiles://{self.storage_account_name}/{self.azure_files_share_name}/{remote_path}"
-                            default_params["classifier_pkl"] = azfiles_url
-                            self.log(f"  Staged to: {remote_path}")
+        if use_batch_encoding:
+            print(f"\n[Batch Encoding Optimization] Enabled")
+            print(f"  Grouping slides into batches of {distributed_slide_batch_size}")
+        
+            # Stage model files to Azure Files if enabled
+            if self.azure_files_staging:
+                # Stage classifier model
+                classifier_pkl = default_params.get("classifier_pkl")
+                if classifier_pkl and not classifier_pkl.startswith(
+                    ("s3://", "azfiles://", "http://", "https://")
+                ):
+                    if os.path.exists(classifier_pkl):
+                        self.log(
+                            f"Staging classifier model: {os.path.basename(classifier_pkl)}"
+                        )
+                        remote_path = f"models/{os.path.basename(classifier_pkl)}"
+                        self.azure_files_staging.upload_file(
+                            local_path=classifier_pkl,
+                            remote_path=remote_path,
+                            show_progress=False,
+                        )
+                        azfiles_url = f"azfiles://{self.storage_account_name}/{self.azure_files_share_name}/{remote_path}"
+                        default_params["classifier_pkl"] = azfiles_url
+                        self.log(f"  Staged to: {remote_path}")
 
-                    # Stage prefilter model
-                    prefilter_model_path = default_params.get("prefilter_model_path")
-                    if prefilter_model_path and not prefilter_model_path.startswith(
-                        ("s3://", "azfiles://", "http://", "https://")
-                    ):
-                        if os.path.exists(prefilter_model_path):
-                            self.log(
-                                f"Staging prefilter model: {os.path.basename(prefilter_model_path)}"
-                            )
-                            remote_path = f"models/{os.path.basename(prefilter_model_path)}"
-                            self.azure_files_staging.upload_file(
-                                local_path=prefilter_model_path,
-                                remote_path=remote_path,
-                                show_progress=False,
-                            )
-                            azfiles_url = f"azfiles://{self.storage_account_name}/{self.azure_files_share_name}/{remote_path}"
-                            default_params["prefilter_model_path"] = azfiles_url
-                            self.log(f"  Staged to: {remote_path}")
+                # Stage prefilter model
+                prefilter_model_path = default_params.get("prefilter_model_path")
+                if prefilter_model_path and not prefilter_model_path.startswith(
+                    ("s3://", "azfiles://", "http://", "https://")
+                ):
+                    if os.path.exists(prefilter_model_path):
+                        self.log(
+                            f"Staging prefilter model: {os.path.basename(prefilter_model_path)}"
+                        )
+                        remote_path = f"models/{os.path.basename(prefilter_model_path)}"
+                        self.azure_files_staging.upload_file(
+                            local_path=prefilter_model_path,
+                            remote_path=remote_path,
+                            show_progress=False,
+                        )
+                        azfiles_url = f"azfiles://{self.storage_account_name}/{self.azure_files_share_name}/{remote_path}"
+                        default_params["prefilter_model_path"] = azfiles_url
+                        self.log(f"  Staged to: {remote_path}")
 
-                    # Stage model
-                    model_path = default_params.get("model_path")
-                    if model_path and not model_path.startswith(
-                        ("s3://", "azfiles://", "http://", "https://")
-                    ):
-                        if os.path.exists(model_path):
-                            self.log(
-                                f"Staging model: {os.path.basename(model_path)}"
-                            )
-                            remote_path = (
-                                f"models/{os.path.basename(model_path)}"
-                            )
-                            self.azure_files_staging.upload_file(
-                                local_path=model_path,
-                                remote_path=remote_path,
-                                show_progress=False,
-                            )
-                            azfiles_url = f"azfiles://{self.storage_account_name}/{self.azure_files_share_name}/{remote_path}"
-                            default_params["model_path"] = azfiles_url
-                            self.log(f"  Staged to: {remote_path}")
+                # Stage model
+                model_path = default_params.get("model_path")
+                if model_path and not model_path.startswith(
+                    ("s3://", "azfiles://", "http://", "https://")
+                ):
+                    if os.path.exists(model_path):
+                        self.log(
+                            f"Staging model: {os.path.basename(model_path)}"
+                        )
+                        remote_path = (
+                            f"models/{os.path.basename(model_path)}"
+                        )
+                        self.azure_files_staging.upload_file(
+                            local_path=model_path,
+                            remote_path=remote_path,
+                            show_progress=False,
+                        )
+                        azfiles_url = f"azfiles://{self.storage_account_name}/{self.azure_files_share_name}/{remote_path}"
+                        default_params["model_path"] = azfiles_url
+                        self.log(f"  Staged to: {remote_path}")
 
-                # Group slides into batches
-                for batch_idx in range(0, len(slides), distributed_slide_batch_size):
+            # Group slides into batches
+            for batch_idx in range(0, len(slides), distributed_slide_batch_size):
                     batch_slides = slides[
                         batch_idx : batch_idx + distributed_slide_batch_size
                     ]
 
-                    # Create batch task ID with model name
+                    # Create batch task ID
                     batch_num = batch_idx // distributed_slide_batch_size + 1
                     total_batches = (len(slides) + distributed_slide_batch_size - 1) // distributed_slide_batch_size
-                    batch_id = f"{model_type}_batch_{batch_num}_of_{total_batches}"
+                    models_str = "_".join(models_to_process[:2])  # Use first 2 models in ID
+                    batch_id = f"batch_{batch_num}_of_{total_batches}_{models_str}"
 
                     # Extract slide IDs and paths for this batch
                     slide_ids = [s["slide_id"] for s in batch_slides]
@@ -1463,7 +1457,7 @@ DOCKEREOF
                         slide_paths_batch = staged_paths
 
                     print(f"\nSubmitting batch task: {batch_id}")
-                    print(f"  Model: {model_type}")
+                    print(f"  Models: {', '.join(models_to_process)}")
                     print(f"  Slides: {', '.join(slide_ids)}")
 
                     # Use output prefix as-is (CLI will add model subdirectory)
@@ -1532,142 +1526,14 @@ DOCKEREOF
                 
                     total_tasks_submitted += 1
 
-                # End of batch loop for this model
+                # End of batch loop
             
-        # End of model loop
-        
         print(f"\n{'='*80}")
-        print(f"Submitted {total_tasks_submitted} total tasks for {len(models_to_process)} models")
-        print(f"  Tasks per model: {total_tasks_submitted // len(models_to_process)}")
+        print(f"Submitted {total_tasks_submitted} total tasks")
+        print(f"  Models per task: {len(models_to_process)}")
+        print(f"  Slides per task: {distributed_slide_batch_size}")
         print(f"{'='*80}")
         return
-
-        # Original behavior: one task per slide (when not using batch encoding)
-        tasks = []
-        for slide in slides:
-            # Handle different column names flexibly
-            slide_id = slide.get("slide_id") or slide.get("sample_id") or slide.get("image_id")
-            slide_path = slide.get("slide_path") or slide.get("svs_path") or slide.get("path")
-            
-            if not slide_id or not slide_path:
-                raise ValueError(f"Could not find slide ID or path in CSV row: {slide}")
-
-            # Create ONE task per slide (models run sequentially within the task)
-            task_id = slide_id
-
-            # For multi-model, base output paths use the first model's directory
-            # The bash script will handle creating model-specific subdirectories
-            if output_s3_prefix:
-                base_prefix = output_s3_prefix.rstrip("/")
-                output_h5_path = f"{base_prefix}/{model_type}/h5/{slide_id}_features.h5"
-                output_pt_path = f"{base_prefix}/{model_type}/pt/{slide_id}_features.pt"
-                # Only set intermediate_h5_path if aggregation method requires it
-                if self._should_set_intermediate_h5_path(
-                    default_params.get("aggregation_method")
-                ):
-                    intermediate_h5_path = f"{base_prefix}/{model_type}/tile_h5/{slide_id}_tile_features.h5"
-                else:
-                    intermediate_h5_path = None
-            else:
-                output_h5_path = f"{output_dir}/{model_type}/h5/{slide_id}_features.h5"
-                output_pt_path = f"{output_dir}/{model_type}/pt/{slide_id}_features.pt"
-                # Only set intermediate_h5_path if aggregation method requires it
-                if self._should_set_intermediate_h5_path(
-                    default_params.get("aggregation_method")
-                ):
-                    intermediate_h5_path = (
-                        f"{output_dir}/{model_type}/tile_h5/{slide_id}_tile_features.h5"
-                    )
-                else:
-                    intermediate_h5_path = None
-
-            # Create task config
-            task_config = {
-                "task_id": task_id,
-                "slide_path": slide_path,
-                "output_h5_path": output_h5_path,
-                "output_pt_path": output_pt_path,
-            }
-
-            # Only add intermediate_h5_path if it's set
-            if intermediate_h5_path:
-                task_config["intermediate_h5_path"] = intermediate_h5_path
-
-            # Add model types as comma-separated list if multiple
-            if models and len(models) > 1:
-                task_config["model_types"] = ",".join(models)
-            elif models and len(models) == 1:
-                task_config["model_type"] = models[0]
-            
-            # Add slide models as comma-separated list if multiple
-            if slide_models and len(slide_models) > 1:
-                task_config["slide_model_types"] = ",".join(slide_models)
-            elif slide_models and len(slide_models) == 1:
-                task_config["slide_model_type"] = slide_models[0]
-
-            tasks.append(task_config)
-
-        print(f"Submitting {len(tasks)} tasks from CSV manifest...")
-
-        for task_config in tasks:
-            # Merge with default parameters
-            merged_config = {**default_params, **task_config}
-
-            # Normalize empty string to None for intermediate_h5_path
-            intermediate_h5_path = merged_config.get("intermediate_h5_path") or None
-
-            self.submit_task(
-                job_id=job_id,
-                task_id=merged_config["task_id"],
-                slide_path=merged_config["slide_path"],
-                output_h5_path=merged_config["output_h5_path"],
-                output_pt_path=merged_config["output_pt_path"],
-                intermediate_h5_path=intermediate_h5_path,
-                aggregation_method=merged_config.get("aggregation_method", "identity"),
-                classifier_pkl=merged_config.get("classifier_pkl"),
-                classifier_threshold=merged_config.get("classifier_threshold", 0.75),
-                prefilter_model_type=merged_config.get(
-                    "prefilter_model_type", None
-                ),
-                model_type=merged_config.get("model_type"),
-                model_types=merged_config.get("model_types"),
-                slide_model_type=merged_config.get("slide_model_type"),
-                slide_model_types=merged_config.get("slide_model_types"),
-                slide_model_paths=merged_config.get("slide_model_paths"),
-                seg_config_group=merged_config.get("seg_config_group"),
-                segment_threshold=merged_config.get("segment_threshold"),
-                patch_size=merged_config.get("patch_size"),
-                step_size=merged_config.get("step_size"),
-                mpp=merged_config.get("mpp"),
-                seg_level=merged_config.get("seg_level"),
-                segment_max_value=merged_config.get("segment_max_value"),
-                median_blur_ksize=merged_config.get("median_blur_ksize"),
-                morphology_ex_kernel=merged_config.get("morphology_ex_kernel"),
-                ref_patch_size=merged_config.get("ref_patch_size"),
-                use_otsu=merged_config.get("use_otsu"),
-                tissue_area_threshold=merged_config.get("tissue_area_threshold"),
-                hole_area_threshold=merged_config.get("hole_area_threshold"),
-                max_num_holes=merged_config.get("max_num_holes"),
-                num_workers=merged_config.get("num_workers", 4),
-                batch_size=merged_config.get("batch_size", 64),
-                use_gpu=merged_config.get("use_gpu", True),
-                keep_intermediate_files=merged_config.get(
-                    "keep_intermediate_files", False
-                ),
-                hf_token=merged_config.get("hf_token"),
-                aws_access_key_id=merged_config.get("aws_access_key_id"),
-                aws_secret_access_key=merged_config.get("aws_secret_access_key"),
-                aws_region=merged_config.get("aws_region"),
-                max_retry_count=merged_config.get("max_retry_count", 3),
-                container_image=container_image,
-                use_container_prepull=use_container_prepull,
-            )
-
-            # Store task configuration in metadata (excluding secrets)
-            if add_config_to_metadata:
-                add_config_to_metadata(
-                    self.task_metadata, merged_config, merged_config["task_id"]
-                )
 
     def monitor_tasks(self, job_id: str, poll_interval: int = 30) -> None:
         """Monitor task progress."""
