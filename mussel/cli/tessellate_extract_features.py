@@ -536,7 +536,7 @@ def _main_batch(cfg: TessellateExtractFeaturesConfig):
         # Determine output mask path
         output_mask_path = None
         if cfg.output_mask_suffix:
-            output_mask_path = _safe_path_join(output_dir_str, f"{slide_id}{cfg.output_mask_suffix}")
+            output_mask_path = _safe_path_join(output_dir_str, f"{slide_id}.{cfg.output_mask_suffix}")
         
         # Tessellate and filter (but don't extract features yet)
         result = process_slide_tessellation_only(
@@ -558,8 +558,8 @@ def _main_batch(cfg: TessellateExtractFeaturesConfig):
         
         # Add output paths to result
         result['slide_id'] = slide_id
-        result['output_h5_path'] = _safe_path_join(output_dir_str, f"{slide_id}{cfg.output_h5_suffix}")
-        result['output_pt_path'] = _safe_path_join(output_dir_str, f"{slide_id}{cfg.output_pt_suffix}")
+        result['output_h5_path'] = _safe_path_join(output_dir_str, f"{slide_id}.{cfg.output_h5_suffix}")
+        result['output_pt_path'] = _safe_path_join(output_dir_str, f"{slide_id}.{cfg.output_pt_suffix}")
         slide_results.append(result)
     
     if not slide_results:
@@ -655,15 +655,15 @@ def _main_batch(cfg: TessellateExtractFeaturesConfig):
         
         output_grid_mask_path = None
         if cfg.output_grid_mask_suffix:
-            output_grid_mask_path = _safe_path_join(output_dir_str, f"{slide_id}{cfg.output_grid_mask_suffix}")
+            output_grid_mask_path = _safe_path_join(output_dir_str, f"{slide_id}.{cfg.output_grid_mask_suffix}")
         
         output_png_dir = None
         if cfg.output_png_dir_suffix:
-            output_png_dir = _safe_path_join(output_dir_str, f"{slide_id}{cfg.output_png_dir_suffix}")
+            output_png_dir = _safe_path_join(output_dir_str, f"{slide_id}.{cfg.output_png_dir_suffix}")
         
         output_thumbnail_path = None
         if cfg.output_thumbnail_suffix:
-            output_thumbnail_path = _safe_path_join(output_dir_str, f"{slide_id}{cfg.output_thumbnail_suffix}")
+            output_thumbnail_path = _safe_path_join(output_dir_str, f"{slide_id}.{cfg.output_thumbnail_suffix}")
         
         create_visualizations(
             slide_path=r['slide_path'],
