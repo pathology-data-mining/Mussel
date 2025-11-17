@@ -2,46 +2,77 @@
 
 ## Overview
 
-Output files are now organized by **both model type AND file type** for better organization, especially with 40K+ slides.
+Output files are now organized by **model name AND file type** for optimal organization with 40K+ slides.
+
+**Key Feature:** Patch encoder and slide encoder features are saved in **separate directories** for slide-level models.
 
 ## Directory Structure
 
 ```
 output_dir/
-b��── OPTIMUS/
-b��   ├── h5/
-b��   │   ├── SLIDE_ID.features.h5
-b��   │   └── ...
-b��   ├── pt/
-b��   │   ├── SLIDE_ID.features.pt
-b��   │   └── ...
-b��   └── tile_h5/
-b��       ├── SLIDE_ID.patch.h5
-b��       └── ...
-b��── VIRCHOW2/
-b��   ├── h5/
-b��   ├── pt/
-b��   └── tile_h5/
-b��── UNI2/
-b��   ├── h5/
-b��   ├── pt/
-b��   └── tile_h5/
-b��── TITAN_SLIDE/
-b��   ├── h5/
-b��   ├── pt/
-b��   └── tile_h5/
-b��── GIGAPATH_SLIDE/
-    ├── h5/
-    ├── pt/
-    └── tile_h5/
+b��── OPTIMUS/
+b��   ├── h5/SLIDE_ID.features.h5
+b��   ├── pt/SLIDE_ID.features.pt
+b��   └── tile_h5/SLIDE_ID.patch.h5
+b��── VIRCHOW2/
+b��   ├── h5/SLIDE_ID.features.h5
+b��   ├── pt/SLIDE_ID.features.pt
+b��   └── tile_h5/SLIDE_ID.patch.h5
+b��── UNI2/
+b��   ├── h5/SLIDE_ID.features.h5
+b��   ├── pt/SLIDE_ID.features.pt
+b��   └── tile_h5/SLIDE_ID.patch.h5
+b��── TITAN_SLIDE/
+b��   ├── h5/SLIDE_ID.features.h5    <- TITAN slide encoder output
+b��   └── pt/SLIDE_ID.features.pt    <- TITAN slide encoder output
+b��── CONCH1_5/
+b��   ├── h5/SLIDE_ID.features.h5    <- CONCH1_5 patch encoder aggregated
+b��   ├── pt/SLIDE_ID.features.pt    <- CONCH1_5 patch encoder aggregated
+b��   └── tile_h5/SLIDE_ID.patch.h5  <- CONCH1_5 tile features
+b��── GIGAPATH_SLIDE/
+b��   ├── h5/SLIDE_ID.features.h5    <- GigaPath slide encoder output
+b��   └── pt/SLIDE_ID.features.pt    <- GigaPath slide encoder output
+b��── GIGAPATH/
+    ├── h5/SLIDE_ID.features.h5    <- GigaPath patch encoder aggregated
+    ├── pt/SLIDE_ID.features.pt    <- GigaPath patch encoder aggregated
+    └── tile_h5/SLIDE_ID.patch.h5  <- GigaPath tile features
 ```
+
+## Model Directories
+
+### Patch-Level Models (3)
+Each saves its own features in 3 subdirectories:
+
+1. **OPTIMUS** (224px patches)
+2. **VIRCHOW2** (224px patches)
+3. **UNI2** (256px patches)
+
+### Slide-Level Models (2)
+Each saves slide-level features AND patch encoder features separately:
+
+4. **TITAN_SLIDE** (512px patches via CONCH1_5)
+   - TITAN_SLIDE/ - Slide encoder output
+   - CONCH1_5/ - Patch encoder output
+
+5. **GIGAPATH_SLIDE** (256px patches via GIGAPATH)
+   - GIGAPATH_SLIDE/ - Slide encoder output
+   - GIGAPATH/ - Patch encoder output
+
+### Patch Encoders for Slide Models (2)
+These are automatically created when processing slide-level models:
+
+6. **CONCH1_5** - Patch encoder for TITAN_SLIDE
+7. **GIGAPATH** - Patch encoder for GIGAPATH_SLIDE
+
+**Total: 7 model directories** (3 patch + 2 slide + 2 patch encoders)
 
 ## File Types
 
 ### h5/ - Aggregated Features (HDF5)
 Contains slide-level aggregated features in HDF5 format.
-- **Patch models:** Aggregated from patch-level features
-- **Slide models:** Slide-level encoding from aggregated patches
+- **Patch models:** Mean/max aggregated from patch-level features
+- **Slide models:** Slide encoder output (model-based aggregation)
+- **Patch encoders:** Mean aggregated patches (for slide model's patch encoder)
 - **File pattern:** `{slide_id}.features.h5`
 
 ### pt/ - Aggregated Features (PyTorch)
@@ -52,149 +83,157 @@ Contains slide-level aggregated features in PyTorch format.
 ### tile_h5/ - Patch-Level Features (HDF5)
 Contains intermediate patch/tile-level features from the patch encoder.
 - **File pattern:** `{slide_id}.patch.h5`
-- Created for ALL models (both patch and slide-level)
-- **Patch models (OPTIMUS, VIRCHOW2, UNI2):** Patch encoder outputs
-- **Slide models (TITAN_SLIDE, GIGAPATH_SLIDE):** Patch encoder outputs before slide-level aggregation
+- Created for patch models and patch encoders
+- NOT created for slide encoders (TITAN_SLIDE, GIGAPATH_SLIDE)
 
-## Changes From Previous Version
+## Feature Processing Flow
 
-### Before (Flat Structure):
+### Patch Models (OPTIMUS, VIRCHOW2, UNI2)
 ```
-output_dir/
-b��── OPTIMUS/
-    ├── 1000326.features.h5
-    ├── 1000326.features.pt
-    ├── 1000326.patch.h5
-    ├── 1000331.features.h5
-    ├── 1000331.features.pt
-    ├── 1000331.patch.h5
-    └── ... (40,000+ files mixed together)
+Slide → Tessellation → Patch Encoder → tile_h5/
+                                     ↓
+                              Aggregation (mean)
+                                     ↓
+                               h5/ + pt/
 ```
 
-### After (Organized Structure):
+### Slide Models (TITAN_SLIDE, GIGAPATH_SLIDE)
 ```
-output_dir/
-b��── OPTIMUS/
-    ├── h5/
-    │   ├── 1000326.features.h5
-    │   ├── 1000331.features.h5
-    │   └── ... (40,000 h5 files)
-    ├── pt/
-    │   ├── 1000326.features.pt
-    │   ├── 1000331.features.pt
-    │   └── ... (40,000 pt files)
-    └── tile_h5/
-        ├── 1000326.patch.h5
-        ├── 1000331.patch.h5
-        └── ... (40,000 tile files)
+Slide → Tessellation → Patch Encoder → PATCH_ENCODER/tile_h5/
+                                     ↓
+                              Aggregation (mean) → PATCH_ENCODER/h5/ + pt/
+                                     ↓
+                          Slide Encoder (model-based) → SLIDE_ENCODER/h5/ + pt/
+```
+
+Example for TITAN_SLIDE:
+- CONCH1_5/tile_h5/SLIDE_ID.patch.h5 (tiles)
+- CONCH1_5/h5/SLIDE_ID.features.h5 (aggregated patches)
+- TITAN_SLIDE/h5/SLIDE_ID.features.h5 (slide encoding)
+
+## Total Files for 40K Slides
+
+### 7 Models × 40K Slides:
+
+**Patch Models (3):**
+- OPTIMUS: 120K files (40K × 3 types)
+- VIRCHOW2: 120K files (40K × 3 types)
+- UNI2: 120K files (40K × 3 types)
+
+**Slide Models (2):**
+- TITAN_SLIDE: 80K files (40K × 2 types)
+- GIGAPATH_SLIDE: 80K files (40K × 2 types)
+
+**Patch Encoders for Slide Models (2):**
+- CONCH1_5: 120K files (40K × 3 types)
+- GIGAPATH: 120K files (40K × 3 types)
+
+**Total: 760,000 files**
+- 560K aggregated (h5 + pt) = 40K × 7 models × 2 formats
+- 200K tile-level (tile_h5) = 40K × 5 encoders (3 patch + 2 patch encoders)
+
+## Patch Encoder Compatibility
+
+Slide models require specific patch encoders:
+- **TITAN_SLIDE** → **CONCH1_5** (512px patches)
+- **GIGAPATH_SLIDE** → **GIGAPATH** (256px patches)
+
+Source: `mussel/models/model_factory.py`
+```python
+SLIDE_ENCODER_COMPATIBILITY = {
+    ModelType.GIGAPATH_SLIDE: ModelType.GIGAPATH,
+    ModelType.TITAN_SLIDE: ModelType.CONCH1_5,
+}
 ```
 
 ## Benefits
 
-1. **Cleaner organization** with 40K+ slides
-2. **Easier to navigate** - files grouped by type
-3. **Better for downstream tools** - can target specific file types
-4. **Clearer separation** between aggregated features and tile-level features
-5. **Scalable** - works well with millions of files
+1. **Clear separation** - Patch encoder vs slide encoder features
+2. **Independent access** - Can use CONCH1_5 or GIGAPATH features directly
+3. **Organized by type** - h5, pt, tile_h5 subdirectories
+4. **Scalable** - Works with millions of files
+5. **Reusable** - Patch encoder features can be used for other purposes
 
-## Examples
+## Example Use Cases
 
-### 40K Slides with 5 Models
-
-Total directory structure:
-```
-output_dir/
-b��── OPTIMUS/         (h5/, pt/, tile_h5/)
-b��── VIRCHOW2/        (h5/, pt/, tile_h5/)
-b��── UNI2/            (h5/, pt/, tile_h5/)
-b��── TITAN_SLIDE/     (h5/, pt/, tile_h5/)
-b��── GIGAPATH_SLIDE/  (h5/, pt/, tile_h5/)
+### Use CONCH1_5 patch features independently
+```python
+# Load CONCH1_5 aggregated features (without TITAN_SLIDE encoding)
+features = load_h5("output/CONCH1_5/h5/SLIDE_ID.features.h5")
 ```
 
-Total files:
-- 40K × 5 models × 2 formats = 400,000 aggregated feature files (h5 + pt)
-- 40K × 5 models = 200,000 tile-level feature files (tile_h5)
-- **Total: 600,000 files** organized into 15 subdirectories
-
-### With Remote Storage (Azure Blob)
-
-When using Azure Blob Storage (`azblob://`), paths like:
-```
-azblob://account/container/output/OPTIMUS/h5/1000326.features.h5
-azblob://account/container/output/OPTIMUS/pt/1000326.features.pt
-azblob://account/container/output/OPTIMUS/tile_h5/1000326.patch.h5
+### Use TITAN_SLIDE features (slide encoding)
+```python
+# Load TITAN_SLIDE slide-level encoding
+features = load_h5("output/TITAN_SLIDE/h5/SLIDE_ID.features.h5")
 ```
 
-The subdirectory structure is created automatically by the blob path.
+### Access tile-level features
+```python
+# Load CONCH1_5 tile features
+tiles = load_h5("output/CONCH1_5/tile_h5/SLIDE_ID.patch.h5")
+```
 
-## Implementation Details
+## Implementation
 
-Changes in `mussel/cli/tessellate_extract_features.py`:
+### Multi-Model Processing
+The `_main_batch_multi_model()` function processes all models:
 
 ```python
-# H5 files go in h5/ subdirectory
-result['output_h5_path'] = _safe_path_join(output_dir_str, "h5", f"{slide_id}.{cfg.output_h5_suffix}")
+# Patch models - single output directory
+_main_batch(cfg_copy)  # OPTIMUS/h5/, pt/, tile_h5/
 
-# PT files go in pt/ subdirectory  
-result['output_pt_path'] = _safe_path_join(output_dir_str, "pt", f"{slide_id}.{cfg.output_pt_suffix}")
-
-# Tile H5 files go in tile_h5/ subdirectory (for ALL models)
-intermediate_h5_paths = [
-    _safe_path_join(output_dir_str, "tile_h5", f"{r['slide_id']}.patch.h5") 
-    for r in slide_results
-]
+# Slide models - separate patch and slide directories
+_main_batch(cfg_copy, patch_output_dir="CONCH1_5")
+# Creates: CONCH1_5/h5/, pt/, tile_h5/ + TITAN_SLIDE/h5/, pt/
 ```
 
-Directories are created automatically with `mkdir(parents=True, exist_ok=True)`.
+### Processing Phases
+For slide models, three phases:
 
-## Two-Step Processing
-
-All models use two-step processing:
-
-1. **Step 1: Extract patch features**
-   - Patch encoder extracts features from tiles
-   - Saved to `tile_h5/SLIDE_ID.patch.h5`
-
-2. **Step 2: Aggregate to slide level**
-   - **Patch models:** Simple aggregation (mean, max, etc.)
-   - **Slide models:** Model-based aggregation (TITAN_SLIDE, GIGAPATH_SLIDE)
-   - Saved to `h5/SLIDE_ID.features.h5` and `pt/SLIDE_ID.features.pt`
-
-### Patch Encoder Compatibility
-
-Slide models require specific patch encoders:
-- **TITAN_SLIDE** → Uses **CONCH1_5** patch encoder (512px patches)
-- **GIGAPATH_SLIDE** → Uses **GIGAPATH** patch encoder (256px patches)
-
-The patch encoder outputs are saved in `tile_h5/` before slide-level aggregation.
-   - Saved to `h5/SLIDE_ID.features.h5` and `pt/SLIDE_ID.features.pt`
-
-The only exception is when `aggregation_method = "identity"`, which writes patch features directly to output (not used in multi-model mode).
+1. **Phase 1:** Tessellation (all models)
+2. **Phase 2:** Extract patch features → `CONCH1_5/tile_h5/`
+3. **Phase 2b:** Aggregate patch features → `CONCH1_5/h5/`, `CONCH1_5/pt/`
+4. **Phase 3:** Slide-level encoding → `TITAN_SLIDE/h5/`, `TITAN_SLIDE/pt/`
 
 ## Migration
 
-Existing code using the old flat structure can be updated by:
+### Path Changes
+Old structure (before this update):
+```
+TITAN_SLIDE/
+  ├── h5/SLIDE_ID.features.h5
+  ├── pt/SLIDE_ID.features.pt
+  └── tile_h5/SLIDE_ID.patch.h5  <- CONCH1_5 features
+```
 
-1. **Path changes:**
-   - Old: `{model}/SLIDE_ID.features.h5`
-   - New: `{model}/h5/SLIDE_ID.features.h5`
+New structure:
+```
+TITAN_SLIDE/
+  ├── h5/SLIDE_ID.features.h5
+  └── pt/SLIDE_ID.features.pt
+CONCH1_5/
+  ├── h5/SLIDE_ID.features.h5
+  ├── pt/SLIDE_ID.features.pt
+  └── tile_h5/SLIDE_ID.patch.h5
+```
 
-2. **Glob patterns:**
-   - Old: `OPTIMUS/*.features.h5`
-   - New: `OPTIMUS/h5/*.features.h5`
-
-3. **Remote paths:**
-   - Old: `azblob://account/container/OPTIMUS/SLIDE_ID.features.h5`
-   - New: `azblob://account/container/OPTIMUS/h5/SLIDE_ID.features.h5`
+### Code Updates
+Update paths to access patch encoder features:
+- Old: `TITAN_SLIDE/tile_h5/SLIDE_ID.patch.h5`
+- New: `CONCH1_5/tile_h5/SLIDE_ID.patch.h5`
 
 ## Backward Compatibility
 
-b��️ **Breaking Change**: This is a breaking change to the output structure.
+b��️ **Breaking Change**: This is a breaking change to the output structure.
 
-Existing downstream tools expecting the flat structure will need to be updated to use the new subdirectory paths.
+Existing downstream tools will need to be updated to use the new paths, especially for accessing patch encoder features for slide-level models.
 
 ---
 
-**Commits:**
+**Recent Commits:**
 - `e9a0932` - Fix output filename formatting (added dots)
 - `716c4c3` - Organize output files into subdirectories by file type
+- `e2cae3e` - Fix documentation: slide models DO save tile_h5 files
+- `f5a474f` - Correct patch encoder documentation for slide models
+- `38fe944` - Separate patch encoder outputs from slide encoder outputs ✨
