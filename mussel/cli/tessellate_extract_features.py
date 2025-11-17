@@ -558,8 +558,8 @@ def _main_batch(cfg: TessellateExtractFeaturesConfig):
         
         # Add output paths to result
         result['slide_id'] = slide_id
-        result['output_h5_path'] = _safe_path_join(output_dir_str, f"{slide_id}.{cfg.output_h5_suffix}")
-        result['output_pt_path'] = _safe_path_join(output_dir_str, f"{slide_id}.{cfg.output_pt_suffix}")
+        result['output_h5_path'] = _safe_path_join(output_dir_str, "h5", f"{slide_id}.{cfg.output_h5_suffix}")
+        result['output_pt_path'] = _safe_path_join(output_dir_str, "pt", f"{slide_id}.{cfg.output_pt_suffix}")
         slide_results.append(result)
     
     if not slide_results:
@@ -582,7 +582,7 @@ def _main_batch(cfg: TessellateExtractFeaturesConfig):
     if use_two_step:
         # Extract to intermediate patch feature files for later aggregation
         intermediate_h5_paths = [
-            _safe_path_join(output_dir_str, f"{r['slide_id']}.patch.h5") 
+            _safe_path_join(output_dir_str, "tile_h5", f"{r['slide_id']}.patch.h5") 
             for r in slide_results
         ]
         
