@@ -765,13 +765,27 @@ class Uni2Model(TorchModel):
             model_path = ModelType.UNI2.path
         model_obj = None
         if model_path.startswith("hf-hub:"):
+            # UNI2 requires specific architecture parameters
+            # See: https://huggingface.co/MahmoodLab/UNI2-h
+            timm_kwargs = {
+                'img_size': 224,
+                'patch_size': 14,
+                'depth': 24,
+                'num_heads': 24,
+                'init_values': 1e-5,
+                'embed_dim': 1536,
+                'mlp_ratio': 2.66667 * 2,
+                'num_classes': 0,
+                'no_embed_class': True,
+                'mlp_layer': SwiGLUPacked,
+                'act_layer': torch.nn.SiLU,
+                'reg_tokens': 8,
+                'dynamic_img_size': True,
+            }
             model_obj = timm.create_model(
                 model_path,
                 pretrained=True,
-                img_size=224,
-                dynamic_img_size=True,
-                mlp_layer=SwiGLUPacked,
-                act_layer=torch.nn.SiLU,
+                **timm_kwargs
             )
         super().__init__(model_path, model_obj, use_gpu, gpu_device_id)
 
