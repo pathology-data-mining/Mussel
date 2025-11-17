@@ -584,9 +584,19 @@ class GigapathSlideEncoderModel(TorchModel):
             model_path = ModelType.GIGAPATH_SLIDE.path
         model_obj = None
         if model_path.startswith("hf-hub:"):
-            # Load the full GigaPath model which includes the slide encoder
-            # Note: timm.create_model expects the hf-hub: or hf_hub: prefix
-            model_obj = timm.create_model(model_path, pretrained=True)
+            # Load GigaPath slide encoder using their official API
+            # See: https://github.com/prov-gigapath/prov-gigapath#inference-with-the-slide-encoder
+            import gigapath.slide_encoder
+            
+            # gigapath expects "hf_hub:" format (underscore, not hyphen)
+            model_path_fixed = model_path.replace("hf-hub:", "hf_hub:")
+            # create_model(repo_id, model_name, in_chans)
+            # in_chans=1536 for GigaPath tile embeddings
+            model_obj = gigapath.slide_encoder.create_model(
+                model_path_fixed, 
+                "gigapath_slide_enc12l768d", 
+                1536
+            )
         super().__init__(model_path, model_obj, use_gpu, gpu_device_id)
 
     def get_model_fun(self) -> Callable:
@@ -609,7 +619,12 @@ class GigapathSlideEncoderModel(TorchModel):
             ):
                 features = features.to(self.device, non_blocking=True)
                 coords = coords.to(self.device, non_blocking=True)
-                return self.obj(features, coords)[0].squeeze().cpu()
+                # GigaPath slide encoder API: output = model(tile_embed, coordinates)
+                # Returns a list with the tensor as first element
+                result = self.obj(features, coords)
+                if isinstance(result, list):
+                    result = result[0]
+                return result.squeeze(0).cpu()
 
         return model_fun
 

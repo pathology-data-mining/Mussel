@@ -28,9 +28,37 @@ from mussel.cli.tessellate_extract_features_common import (
 )
 
 from mussel.models import ModelType, get_required_patch_encoder, get_default_patch_size
-from mussel.utils import aggregate_slide_features_batch, extract_patch_features_batch
+from mussel.utils import aggregate_slide_features_batch, extract_patch_features_batch, save_torch_tensor
 
 ssl._create_default_https_context = ssl._create_unverified_context
+
+
+def _is_remote_path(path):
+    """Check if a path is a remote URL scheme."""
+    if not isinstance(path, str):
+        return False
+    return path.startswith(('az://', 'abfs://', 's3://', 'gs://', 'http://', 'https://'))
+
+
+def _safe_path_join(base_path, *parts):
+    """Safely join path components, preserving URL schemes for remote paths.
+    
+    Args:
+        base_path: Base path (can be local or remote URL)
+        *parts: Path components to join
+        
+    Returns:
+        Joined path as string
+    """
+    if _is_remote_path(str(base_path)):
+        # For remote paths, use string concatenation with /
+        result = str(base_path).rstrip('/')
+        for part in parts:
+            result = f"{result}/{str(part).lstrip('/')}"
+        return result
+    else:
+        # For local paths, use Path
+        return str(Path(base_path) / Path(*parts))
 
 
 defaults = ["_self_", {"seg_config": "default"}]
@@ -49,12 +77,15 @@ class TessellateExtractFeaturesConfig:
         slide_path (str): Path to the whole-slide image.
         slide_id (Optional[str]): Optional slide ID. If None, uses slide filename without extension.
         output_h5_path (str): Path to save final HDF5 file with coordinates and features (post-filtering).
+            Supports remote paths (az://, s3://, etc.) when fsspec is installed.
         output_pt_path (str): Path to save final features in PyTorch format (post-filtering).
+            Supports remote paths (az://, s3://, etc.) when fsspec is installed.
     
     Core Parameters (Batch Mode):
         slide_paths (List[str]): Paths to the whole-slide images to process.
         slide_ids (Optional[List[str]]): Optional slide IDs. If None, uses slide filenames without extension.
         output_dir (str): Directory to save output files. Each slide will have separate output files.
+            Supports remote paths (az://, s3://, etc.) when fsspec is installed.
         output_h5_suffix (str): Suffix for output HDF5 files (default: "features.h5").
         output_pt_suffix (str): Suffix for output PyTorch files (default: "features.pt").
         slide_batch_size (int): Number of slides to process in a single batch during slide-level aggregation (default: 8).
@@ -65,14 +96,30 @@ class TessellateExtractFeaturesConfig:
     
     Model Parameters (Pre-Filter Extraction):
         prefilter_model_type (ModelType): Type of model for pre-filtering feature extraction.
+            This is a PATCH-LEVEL encoder. Use a single value (e.g., CTRANSPATH).
         prefilter_model_path (Optional[str]): Path to pre-filtering model weights, if applicable.
     
-    Model Parameters (Post-Filter Extraction):
-        postfilter_model_type (Optional[ModelType]): Type of model for post-filtering extraction.
-        postfilter_model_path (Optional[str]): Path to post-filtering model weights, if applicable.
+    Model Parameters (Post-Filter Patch-Level Extraction):
+        model_type (Optional[ModelType] or List[ModelType]): Type of model(s) for PATCH-LEVEL feature extraction.
+            - Single mode: Accepts a single ModelType (e.g., model_type=OPTIMUS)
+            - Batch mode: Accepts a list of ModelTypes for multi-model extraction
+                         (e.g., model_type=[OPTIMUS,VIRCHOW,UNI])
+            - Command line usage: model_type=[OPTIMUS,VIRCHOW] (no quotes around the list)
+            - When using slide encoders, the appropriate patch encoder is automatically selected
+        model_path (Optional[str]): Path to model weights, if applicable.
         intermediate_h5_path (Optional[str]): Path for intermediate patch features (single mode, two-step).
         aggregation_method (str): Aggregation method for post-filtering: identity (single-step), mean/max/model (two-step).
-        slide_model_type (Optional[ModelType]): Type of slide encoder model for post-filtering (when aggregation_method="model").
+    
+    Model Parameters (Slide-Level Aggregation):
+        slide_model_type (Optional[ModelType] or List[ModelType]): Type of model(s) for SLIDE-LEVEL encoding.
+            - Single mode: Accepts a single ModelType (e.g., slide_model_type=GIGAPATH_SLIDE)
+            - Batch mode: Accepts a list of ModelTypes for multi-model slide encoding
+                         (e.g., slide_model_type=[GIGAPATH_SLIDE,TITAN_SLIDE])
+            - Command line usage: slide_model_type=[GIGAPATH_SLIDE,TITAN_SLIDE] (no quotes)
+            - Each slide encoder requires a specific patch encoder:
+                * GIGAPATH_SLIDE requires GIGAPATH patch encoder
+                * TITAN_SLIDE requires CONCH1_5 patch encoder
+            - The required patch encoder is automatically paired and run as needed
         slide_model_path (Optional[str]): Path to slide encoder model weights for post-filtering.
     
     Visualization Parameters (Single Mode):
@@ -119,8 +166,8 @@ class TessellateExtractFeaturesConfig:
     classifier_threshold: float = 0.75
     prefilter_model_type: ModelType = ModelType.CTRANSPATH
     prefilter_model_path: Optional[str] = None
-    postfilter_model_type: Optional[ModelType] = None
-    postfilter_model_path: Optional[str] = None
+    model_type: Any = None  # Can be ModelType or List[ModelType]
+    model_path: Optional[str] = None
     # Single mode visualization
     output_png_dir: Optional[str] = None
     output_mask_path: Optional[str] = None
@@ -145,11 +192,24 @@ class TessellateExtractFeaturesConfig:
     png_config: PngConfig = field(default_factory=PngConfig)
     intermediate_h5_path: Optional[str] = None
     aggregation_method: str = "identity"
-    slide_model_type: Optional[ModelType] = None
+    slide_model_type: Any = None  # Can be ModelType or List[ModelType]
     slide_model_path: Optional[str] = None
 
     def __post_init__(self):
         """Set default patch size based on model type if not explicitly set."""
+        from omegaconf import ListConfig
+        
+        # Convert ListConfig to actual lists of ModelType enums
+        if isinstance(self.model_type, ListConfig):
+            self.model_type = [ModelType[name] for name in self.model_type]
+        elif isinstance(self.model_type, str):
+            self.model_type = ModelType[self.model_type]
+        
+        if isinstance(self.slide_model_type, ListConfig):
+            self.slide_model_type = [ModelType[name] for name in self.slide_model_type]
+        elif isinstance(self.slide_model_type, str):
+            self.slide_model_type = ModelType[self.slide_model_type]
+        
         # Only set patch size if seg_config.patch_size is at the default value
         # This allows users to override if they explicitly set a different value
         logger.debug(
@@ -184,12 +244,26 @@ class TessellateExtractFeaturesConfig:
 desc_doc = """== ${hydra.help.app_name} ==
 
 tessellate-extract-features performs an integrated workflow that tessellates whole-slide images
-and extracts features from the tiles using a foundation model. Optionally, it can filter tiles 
+and extracts features from the tiles using foundation models. Optionally, it can filter tiles 
 using a classifier and extract features again from the filtered tiles (dual extraction).
 
 Supports both single-slide and batch processing modes:
 - Single mode: Process one slide (provide slide_path, output_h5_path, output_pt_path)
 - Batch mode: Process multiple slides (provide slide_paths, output_dir)
+
+Model Types:
+- model_type: For PATCH-LEVEL feature extraction (e.g., OPTIMUS, VIRCHOW, UNI)
+  * Single mode: Single model (e.g., model_type=OPTIMUS)
+  * Batch mode: Accepts list (e.g., model_type=[OPTIMUS,VIRCHOH,UNI])
+  * Command line: Use unquoted list notation: model_type=[MODEL1,MODEL2]
+  
+- slide_model_type: For SLIDE-LEVEL encoding/aggregation (e.g., GIGAPATH_SLIDE, TITAN_SLIDE)
+  * Single mode: Single model (e.g., slide_model_type=GIGAPATH_SLIDE)
+  * Batch mode: Accepts list (e.g., slide_model_type=[GIGAPATH_SLIDE,TITAN_SLIDE])
+  * Command line: Use unquoted list notation: slide_model_type=[MODEL1,MODEL2]
+  * Each slide encoder automatically uses its required patch encoder:
+    - GIGAPATH_SLIDE → GIGAPATH (patch encoder)
+    - TITAN_SLIDE → CONCH1_5 (patch encoder)
 
 When processing multiple slides with slide-level model aggregation, batch mode provides 
 significant performance benefits (6-8x speedup) by:
@@ -240,15 +314,32 @@ def main(
     except RuntimeError:
         pass  # Already set
     
+    # Import ListConfig for type checking
+    from omegaconf import ListConfig
+    
     # Apply model-specific defaults if not explicitly set
     # Hydra doesn't call __post_init__ on structured configs, so we do it here
+    
+    # Convert model_type and slide_model_type from strings to ModelType enums
+    if isinstance(cfg.model_type, str):
+        cfg.model_type = ModelType[cfg.model_type]
+    elif isinstance(cfg.model_type, ListConfig):
+        cfg.model_type = [ModelType[name] for name in cfg.model_type]
+    
+    if isinstance(cfg.slide_model_type, str):
+        cfg.slide_model_type = ModelType[cfg.slide_model_type]
+    elif isinstance(cfg.slide_model_type, ListConfig):
+        cfg.slide_model_type = [ModelType[name] for name in cfg.slide_model_type]
+    
     if cfg.seg_config.patch_size == SegConfig.DEFAULT_PATCH_SIZE:
         try:
-            recommended_patch_size = get_default_patch_size(cfg.prefilter_model_type)
+            # Use model_type if set, otherwise fall back to prefilter_model_type
+            model_for_patch_size = cfg.model_type if cfg.model_type is not None else cfg.prefilter_model_type
+            recommended_patch_size = get_default_patch_size(model_for_patch_size)
             if recommended_patch_size != SegConfig.DEFAULT_PATCH_SIZE:
                 logger.info(
                     f"Setting seg_config.patch_size={recommended_patch_size} based on "
-                    f"model_type={cfg.prefilter_model_type.name} (recommended default for this model)"
+                    f"model_type={model_for_patch_size.name} (recommended default for this model)"
                 )
                 cfg.seg_config.patch_size = recommended_patch_size
         except (ValueError, AttributeError):
@@ -258,12 +349,30 @@ def main(
     # Detect mode based on configuration
     batch_mode = cfg.slide_paths is not None
     
+    # Detect if model_type or slide_model_type are lists (multi-model mode)
+    # Check for both list and ListConfig since __post_init__ may not have run yet
+    is_model_list = isinstance(cfg.model_type, (list, ListConfig))
+    is_slide_model_list = isinstance(cfg.slide_model_type, (list, ListConfig))
+    multi_model_mode = is_model_list or is_slide_model_list
+    
+    logger.debug(f"model_type type: {type(cfg.model_type)}, value: {cfg.model_type}, is_list: {is_model_list}")
+    logger.debug(f"slide_model_type type: {type(cfg.slide_model_type)}, value: {cfg.slide_model_type}, is_list: {is_slide_model_list}")
+    logger.debug(f"multi_model_mode: {multi_model_mode}")
+    
     if batch_mode:
         logger.info("Running in batch mode (multiple slides)")
-        _main_batch(cfg)
+        if multi_model_mode:
+            logger.info("Multi-model optimization enabled: grouping by patch size")
+            _main_batch_multi_model(cfg)
+        else:
+            _main_batch(cfg)
     else:
         logger.info("Running in single-slide mode")
-        _main_single(cfg)
+        if multi_model_mode:
+            logger.info("Multi-model mode with single slide")
+            _main_single_multi_model(cfg)
+        else:
+            _main_single(cfg)
 
 
 def _main_single(cfg: TessellateExtractFeaturesConfig):
@@ -285,22 +394,34 @@ def _main_single(cfg: TessellateExtractFeaturesConfig):
     use_filtering = cfg.classifier_pkl is not None
     
     # Determine models for each extraction step
-    postfilter_model_type = cfg.postfilter_model_type
-    if postfilter_model_type is None:
+    model_type = cfg.model_type
+    if model_type is None:
         if cfg.aggregation_method == "model" and cfg.slide_model_type is not None:
-            postfilter_model_type = get_required_patch_encoder(cfg.slide_model_type)
+            model_type = get_required_patch_encoder(cfg.slide_model_type)
             logger.info(
-                f"Auto-inferring postfilter_model_type={postfilter_model_type.name} "
+                f"Auto-inferring model_type={model_type.name} "
                 f"from slide_model_type={cfg.slide_model_type.name}"
             )
+            # Update patch_size if it was at default and the inferred model needs a different size
+            if cfg.seg_config.patch_size == SegConfig.DEFAULT_PATCH_SIZE:
+                try:
+                    recommended_patch_size = get_default_patch_size(model_type)
+                    if recommended_patch_size != SegConfig.DEFAULT_PATCH_SIZE:
+                        logger.info(
+                            f"Updating seg_config.patch_size={recommended_patch_size} based on "
+                            f"inferred model_type={model_type.name}"
+                        )
+                        cfg.seg_config.patch_size = recommended_patch_size
+                except ValueError:
+                    pass
         else:
-            postfilter_model_type = cfg.prefilter_model_type
+            model_type = cfg.prefilter_model_type
     
-    postfilter_model_path = cfg.postfilter_model_path if cfg.postfilter_model_path is not None else cfg.prefilter_model_path
+    model_path = cfg.model_path if cfg.model_path is not None else cfg.prefilter_model_path
     
     # Optimization: If filtering is enabled and models are the same, skip second extraction
-    models_are_same = (postfilter_model_type == cfg.prefilter_model_type and 
-                       postfilter_model_path == cfg.prefilter_model_path)
+    models_are_same = (model_type == cfg.prefilter_model_type and 
+                       model_path == cfg.prefilter_model_path)
     skip_second_extraction = use_filtering and models_are_same
     
     # Process the slide using shared logic
@@ -315,8 +436,8 @@ def _main_single(cfg: TessellateExtractFeaturesConfig):
         use_filtering=use_filtering,
         prefilter_model_type=cfg.prefilter_model_type,
         prefilter_model_path=cfg.prefilter_model_path,
-        postfilter_model_type=postfilter_model_type,
-        postfilter_model_path=postfilter_model_path,
+        model_type=model_type,
+        model_path=model_path,
         skip_second_extraction=skip_second_extraction,
         output_mask_path=cfg.output_mask_path,
         two_step_mode=False,  # Single-slide mode doesn't use two-step
@@ -354,9 +475,11 @@ def _main_batch(cfg: TessellateExtractFeaturesConfig):
             "Batch mode requires slide_paths and output_dir to be specified"
         )
     
-    # Create output directory
-    output_dir = Path(cfg.output_dir)
-    output_dir.mkdir(parents=True, exist_ok=True)
+    # Create output directory (only for local paths)
+    output_dir_str = cfg.output_dir
+    if not _is_remote_path(output_dir_str):
+        output_dir_path = Path(output_dir_str)
+        output_dir_path.mkdir(parents=True, exist_ok=True)
     
     # Create temporary directory for intermediate files if not keeping them
     temp_dir = None
@@ -368,22 +491,34 @@ def _main_batch(cfg: TessellateExtractFeaturesConfig):
     use_filtering = cfg.classifier_pkl is not None
     
     # Determine models for each extraction step
-    postfilter_model_type = cfg.postfilter_model_type
-    if postfilter_model_type is None:
+    model_type = cfg.model_type
+    if model_type is None:
         if cfg.aggregation_method == "model" and cfg.slide_model_type is not None:
-            postfilter_model_type = get_required_patch_encoder(cfg.slide_model_type)
+            model_type = get_required_patch_encoder(cfg.slide_model_type)
             logger.info(
-                f"Auto-inferring postfilter_model_type={postfilter_model_type.name} "
+                f"Auto-inferring model_type={model_type.name} "
                 f"from slide_model_type={cfg.slide_model_type.name}"
             )
+            # Update patch_size if it was at default and the inferred model needs a different size
+            if cfg.seg_config.patch_size == SegConfig.DEFAULT_PATCH_SIZE:
+                try:
+                    recommended_patch_size = get_default_patch_size(model_type)
+                    if recommended_patch_size != SegConfig.DEFAULT_PATCH_SIZE:
+                        logger.info(
+                            f"Updating seg_config.patch_size={recommended_patch_size} based on "
+                            f"inferred model_type={model_type.name}"
+                        )
+                        cfg.seg_config.patch_size = recommended_patch_size
+                except ValueError:
+                    pass
         else:
-            postfilter_model_type = cfg.prefilter_model_type
+            model_type = cfg.prefilter_model_type
     
-    postfilter_model_path = cfg.postfilter_model_path if cfg.postfilter_model_path is not None else cfg.prefilter_model_path
+    model_path = cfg.model_path if cfg.model_path is not None else cfg.prefilter_model_path
     
     # Optimization: If filtering is enabled and models are the same, skip second extraction
-    models_are_same = (postfilter_model_type == cfg.prefilter_model_type and 
-                       postfilter_model_path == cfg.prefilter_model_path)
+    models_are_same = (model_type == cfg.prefilter_model_type and 
+                       model_path == cfg.prefilter_model_path)
     skip_second_extraction = use_filtering and models_are_same
     
     # Generate slide IDs if not provided
@@ -398,13 +533,10 @@ def _main_batch(cfg: TessellateExtractFeaturesConfig):
     for i, (slide_path, slide_id) in enumerate(zip(cfg.slide_paths, slide_ids)):
         logger.info(f"\nTessellating slide {i+1}/{len(cfg.slide_paths)}: {slide_id}")
         
-        # Determine output paths
-        base_path = output_dir
-        
         # Determine output mask path
         output_mask_path = None
         if cfg.output_mask_suffix:
-            output_mask_path = str(base_path / f"{slide_id}{cfg.output_mask_suffix}")
+            output_mask_path = _safe_path_join(output_dir_str, f"{slide_id}{cfg.output_mask_suffix}")
         
         # Tessellate and filter (but don't extract features yet)
         result = process_slide_tessellation_only(
@@ -412,7 +544,7 @@ def _main_batch(cfg: TessellateExtractFeaturesConfig):
             slide_id=slide_id,
             cfg=cfg,
             temp_dir=temp_dir,
-            base_path=base_path,
+            base_path=output_dir_str,
             use_filtering=use_filtering,
             prefilter_model_type=cfg.prefilter_model_type,
             prefilter_model_path=cfg.prefilter_model_path,
@@ -426,8 +558,8 @@ def _main_batch(cfg: TessellateExtractFeaturesConfig):
         
         # Add output paths to result
         result['slide_id'] = slide_id
-        result['output_h5_path'] = str(output_dir / f"{slide_id}{cfg.output_h5_suffix}")
-        result['output_pt_path'] = str(output_dir / f"{slide_id}{cfg.output_pt_suffix}")
+        result['output_h5_path'] = _safe_path_join(output_dir_str, f"{slide_id}{cfg.output_h5_suffix}")
+        result['output_pt_path'] = _safe_path_join(output_dir_str, f"{slide_id}{cfg.output_pt_suffix}")
         slide_results.append(result)
     
     if not slide_results:
@@ -450,7 +582,7 @@ def _main_batch(cfg: TessellateExtractFeaturesConfig):
     if use_two_step:
         # Extract to intermediate patch feature files for later aggregation
         intermediate_h5_paths = [
-            str(base_path / f"{r['slide_id']}.patch.h5") 
+            _safe_path_join(output_dir_str, f"{r['slide_id']}.patch.h5") 
             for r in slide_results
         ]
         
@@ -458,8 +590,8 @@ def _main_batch(cfg: TessellateExtractFeaturesConfig):
             patch_h5_paths=patch_h5_paths,
             slide_paths=slide_paths,
             output_h5_paths=intermediate_h5_paths,
-            model_type=postfilter_model_type,
-            model_path=postfilter_model_path,
+            model_type=model_type,
+            model_path=model_path,
             batch_size=cfg.batch_size,
             use_gpu=cfg.use_gpu,
             gpu_device_id=cfg.gpu_device_id,
@@ -499,8 +631,8 @@ def _main_batch(cfg: TessellateExtractFeaturesConfig):
             patch_h5_paths=patch_h5_paths,
             slide_paths=slide_paths,
             output_h5_paths=output_h5_paths,
-            model_type=postfilter_model_type,
-            model_path=postfilter_model_path,
+            model_type=model_type,
+            model_path=model_path,
             batch_size=cfg.batch_size,
             use_gpu=cfg.use_gpu,
             gpu_device_id=cfg.gpu_device_id,
@@ -514,7 +646,7 @@ def _main_batch(cfg: TessellateExtractFeaturesConfig):
         for r in slide_results:
             with h5py.File(r['output_h5_path'], "r") as f:
                 features = torch.from_numpy(f["features"][:])
-                torch.save(features, r['output_pt_path'])
+                save_torch_tensor(r['output_pt_path'], features)
     
     # Phase 4: Create visualizations
     logger.info(f"\n=== Phase 4: Creating visualizations ===")
@@ -523,15 +655,15 @@ def _main_batch(cfg: TessellateExtractFeaturesConfig):
         
         output_grid_mask_path = None
         if cfg.output_grid_mask_suffix:
-            output_grid_mask_path = str(output_dir / f"{slide_id}{cfg.output_grid_mask_suffix}")
+            output_grid_mask_path = _safe_path_join(output_dir_str, f"{slide_id}{cfg.output_grid_mask_suffix}")
         
         output_png_dir = None
         if cfg.output_png_dir_suffix:
-            output_png_dir = str(output_dir / f"{slide_id}{cfg.output_png_dir_suffix}")
+            output_png_dir = _safe_path_join(output_dir_str, f"{slide_id}{cfg.output_png_dir_suffix}")
         
         output_thumbnail_path = None
         if cfg.output_thumbnail_suffix:
-            output_thumbnail_path = str(output_dir / f"{slide_id}{cfg.output_thumbnail_suffix}")
+            output_thumbnail_path = _safe_path_join(output_dir_str, f"{slide_id}{cfg.output_thumbnail_suffix}")
         
         create_visualizations(
             slide_path=r['slide_path'],
@@ -551,7 +683,148 @@ def _main_batch(cfg: TessellateExtractFeaturesConfig):
     
     logger.info(f"\n=== Batch processing complete! ===")
     logger.info(f"Processed {len(cfg.slide_paths)} slides")
-    logger.info(f"Output directory: {output_dir}")
+    logger.info(f"Output directory: {cfg.output_dir}")
+
+
+def _main_batch_multi_model(cfg: TessellateExtractFeaturesConfig):
+    """Process multiple slides with multiple models, optimized by grouping models with same patch size."""
+    from collections import defaultdict
+    from omegaconf import ListConfig
+    from mussel.models.model_factory import get_default_patch_size, get_required_patch_encoder, ModelType
+    
+    if cfg.slide_paths is None or cfg.output_dir is None:
+        raise ValueError("Batch mode requires slide_paths and output_dir")
+    
+    # Normalize model_type and slide_model_type to lists of ModelType enums
+    patch_models = []
+    if cfg.model_type is not None:
+        if isinstance(cfg.model_type, (list, ListConfig)):
+            # Convert strings to ModelType enums if needed
+            patch_models = [ModelType[m] if isinstance(m, str) else m for m in cfg.model_type]
+        else:
+            patch_models = [cfg.model_type]
+    
+    slide_models = []
+    if cfg.slide_model_type is not None:
+        if isinstance(cfg.slide_model_type, (list, ListConfig)):
+            # Convert strings to ModelType enums if needed
+            slide_models = [ModelType[m] if isinstance(m, str) else m for m in cfg.slide_model_type]
+        else:
+            slide_models = [cfg.slide_model_type]
+    
+    all_models = patch_models + slide_models
+    
+    if not all_models:
+        raise ValueError("Multi-model mode requires at least one model in model_type or slide_model_type")
+    
+    logger.info(f"Multi-model batch processing: {len(cfg.slide_paths)} slides × {len(all_models)} models")
+    logger.info(f"Patch-level models: {[m.name for m in patch_models]}")
+    logger.info(f"Slide-level models: {[m.name for m in slide_models]}")
+    
+    # Group models by required patch size
+    models_by_patch_size = defaultdict(lambda: {'patch': [], 'slide': []})
+    
+    for model in patch_models:
+        patch_size = get_default_patch_size(model)
+        models_by_patch_size[patch_size]['patch'].append(model)
+    
+    for model in slide_models:
+        # Slide models use their required patch encoder's patch size
+        patch_encoder = get_required_patch_encoder(model)
+        patch_size = get_default_patch_size(patch_encoder)
+        models_by_patch_size[patch_size]['slide'].append(model)
+    
+    logger.info(f"\nGrouped by patch size:")
+    for patch_size in sorted(models_by_patch_size.keys()):
+        group = models_by_patch_size[patch_size]
+        logger.info(f"  {patch_size}px:")
+        if group['patch']:
+            logger.info(f"    Patch models: {[m.name for m in group['patch']]}")
+        if group['slide']:
+            logger.info(f"    Slide models: {[m.name for m in group['slide']]}")
+    
+    # Calculate optimization benefit
+    total_tessellations_without = len(all_models) * len(cfg.slide_paths)
+    total_tessellations_with = len(models_by_patch_size) * len(cfg.slide_paths)
+    savings_pct = (1 - total_tessellations_with / total_tessellations_without) * 100
+    logger.info(f"\nTessellation optimization: {total_tessellations_with}/{total_tessellations_without} ({savings_pct:.0f}% fewer)")
+    
+    # Create output directory (only for local paths)
+    output_dir_str = cfg.output_dir
+    if not _is_remote_path(output_dir_str):
+        output_dir_path = Path(output_dir_str)
+        output_dir_path.mkdir(parents=True, exist_ok=True)
+    
+    # Process each patch size group
+    for patch_size in sorted(models_by_patch_size.keys()):
+        group = models_by_patch_size[patch_size]
+        
+        logger.info(f"\n{'='*80}")
+        logger.info(f"Processing patch size: {patch_size}px")
+        logger.info(f"{'='*80}")
+        
+        # Override patch size in config
+        cfg_copy = OmegaConf.structured(cfg)
+        cfg_copy.seg_config.patch_size = patch_size
+        
+        # Process patch-level models
+        for model in group['patch']:
+            logger.info(f"\n--- Patch model: {model.name} ---")
+            cfg_copy.model_type = model
+            cfg_copy.slide_model_type = None
+            cfg_copy.aggregation_method = "identity"
+            
+            # Set output paths with model subdirectory
+            model_output_dir = _safe_path_join(output_dir_str, model.name)
+            
+            # Create model subdirectory (only for local paths)
+            if not _is_remote_path(model_output_dir):
+                Path(model_output_dir).mkdir(parents=True, exist_ok=True)
+            
+            # Call regular batch processing for this model
+            cfg_copy.output_h5_suffix = f"features.h5"
+            cfg_copy.output_pt_suffix = f"features.pt"
+            cfg_copy.output_dir = model_output_dir
+            
+            _main_batch(cfg_copy)
+        
+        # Process slide-level models (with slide batching!)
+        for model in group['slide']:
+            logger.info(f"\n--- Slide model: {model.name} ---")
+            
+            # Infer required patch encoder
+            patch_encoder = get_required_patch_encoder(model)
+            logger.info(f"Using patch encoder: {patch_encoder.name}")
+            
+            cfg_copy.model_type = patch_encoder
+            cfg_copy.slide_model_type = model
+            cfg_copy.aggregation_method = "model"
+            cfg_copy.output_dir = _safe_path_join(output_dir_str, model.name)
+            
+            # Call regular batch processing - it will batch slides automatically
+            _main_batch(cfg_copy)
+    
+    logger.info(f"\n{'='*80}")
+    logger.info(f"Multi-model batch processing complete!")
+    logger.info(f"Processed {len(cfg.slide_paths)} slides × {len(all_models)} models")
+    logger.info(f"Output directory: {output_dir_str}")
+    logger.info(f"{'='*80}")
+
+
+def _main_single_multi_model(cfg: TessellateExtractFeaturesConfig):
+    """Process single slide with multiple models, optimized by grouping models with same patch size."""
+    # Convert to batch mode with single slide
+    cfg_batch = OmegaConf.structured(cfg)
+    cfg_batch.slide_paths = [cfg.slide_path]
+    cfg_batch.slide_ids = [cfg.slide_id] if cfg.slide_id else None
+    
+    # Use parent directory of output paths as output_dir
+    if cfg.output_h5_path:
+        cfg_batch.output_dir = str(Path(cfg.output_h5_path).parent)
+    else:
+        raise ValueError("Single-slide multi-model mode requires output_h5_path")
+    
+    _main_batch_multi_model(cfg_batch)
 
 
 if __name__ == "__main__":
