@@ -468,8 +468,17 @@ def _main_single(cfg: TessellateExtractFeaturesConfig):
         logger.info("Cleaned up temporary files.")
 
 
-def _main_batch(cfg: TessellateExtractFeaturesConfig):
-    """Process multiple slides in batch mode with tile-level batching."""
+def _main_batch(cfg: TessellateExtractFeaturesConfig, patch_output_dir: Optional[str] = None):
+    """Process multiple slides in batch mode with tile-level batching.
+    
+    Args:
+        cfg: Configuration for tessellation and feature extraction.
+        patch_output_dir: Optional separate output directory for patch-level features.
+                         If None, patch features go in cfg.output_dir. If specified,
+                         patch features go in patch_output_dir while slide features
+                         go in cfg.output_dir. Used for slide models to separate
+                         patch encoder outputs from slide encoder outputs.
+    """
     if cfg.slide_paths is None or cfg.output_dir is None:
         raise ValueError(
             "Batch mode requires slide_paths and output_dir to be specified"
@@ -480,6 +489,12 @@ def _main_batch(cfg: TessellateExtractFeaturesConfig):
     if not _is_remote_path(output_dir_str):
         output_dir_path = Path(output_dir_str)
         output_dir_path.mkdir(parents=True, exist_ok=True)
+    
+    # Create patch output directory if specified
+    patch_output_dir_str = patch_output_dir if patch_output_dir else output_dir_str
+    if patch_output_dir and not _is_remote_path(patch_output_dir_str):
+        patch_output_dir_path = Path(patch_output_dir_str)
+        patch_output_dir_path.mkdir(parents=True, exist_ok=True)
     
     # Create temporary directory for intermediate files if not keeping them
     temp_dir = None
@@ -581,8 +596,9 @@ def _main_batch(cfg: TessellateExtractFeaturesConfig):
     
     if use_two_step:
         # Extract to intermediate patch feature files for later aggregation
+        # Use patch_output_dir_str for patch features (separate from slide features for slide models)
         intermediate_h5_paths = [
-            _safe_path_join(output_dir_str, "tile_h5", f"{r['slide_id']}.patch.h5") 
+            _safe_path_join(patch_output_dir_str, "tile_h5", f"{r['slide_id']}.patch.h5") 
             for r in slide_results
         ]
         
@@ -604,6 +620,32 @@ def _main_batch(cfg: TessellateExtractFeaturesConfig):
         # Add intermediate paths to results
         for r, intermediate_h5_path in zip(slide_results, intermediate_h5_paths):
             r['intermediate_h5_path'] = intermediate_h5_path
+        
+        # If patch_output_dir is specified, also save aggregated patch encoder features
+        if patch_output_dir:
+            logger.info(f"\n=== Phase 2b: Saving aggregated patch encoder features to {patch_output_dir} ===")
+            patch_encoder_h5_paths = [
+                _safe_path_join(patch_output_dir_str, "h5", f"{r['slide_id']}.{cfg.output_h5_suffix}")
+                for r in slide_results
+            ]
+            patch_encoder_pt_paths = [
+                _safe_path_join(patch_output_dir_str, "pt", f"{r['slide_id']}.{cfg.output_pt_suffix}")
+                for r in slide_results
+            ]
+            
+            # Aggregate patch features using simple aggregation (mean)
+            aggregate_slide_features_batch(
+                patch_features_h5_paths=intermediate_h5_paths,
+                output_h5_paths=patch_encoder_h5_paths,
+                output_pt_paths=patch_encoder_pt_paths,
+                aggregation_method="mean",  # Simple aggregation for patch encoder
+                model_type=None,
+                model_path=None,
+                use_gpu=False,
+                gpu_device_id=None,
+                gpu_device_ids=None,
+                slide_batch_size=cfg.slide_batch_size,
+            )
         
         # Phase 3: Batch aggregate to slide level
         logger.info(f"\n=== Phase 3: Batch aggregating {len(slide_results)} slides (aggregation_method={cfg.aggregation_method}) ===")
@@ -799,10 +841,14 @@ def _main_batch_multi_model(cfg: TessellateExtractFeaturesConfig):
             cfg_copy.model_type = patch_encoder
             cfg_copy.slide_model_type = model
             cfg_copy.aggregation_method = "model"
-            cfg_copy.output_dir = _safe_path_join(output_dir_str, model.name)
             
-            # Call regular batch processing - it will batch slides automatically
-            _main_batch(cfg_copy)
+            # Separate output directories: patch encoder features and slide encoder features
+            slide_output_dir = _safe_path_join(output_dir_str, model.name)
+            patch_output_dir = _safe_path_join(output_dir_str, patch_encoder.name)
+            cfg_copy.output_dir = slide_output_dir
+            
+            # Call regular batch processing with separate patch output directory
+            _main_batch(cfg_copy, patch_output_dir=patch_output_dir)
     
     logger.info(f"\n{'='*80}")
     logger.info(f"Multi-model batch processing complete!")
