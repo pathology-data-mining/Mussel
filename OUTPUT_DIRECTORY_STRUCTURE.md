@@ -8,29 +8,29 @@ Output files are now organized by **both model type AND file type** for better o
 
 ```
 output_dir/
-b��── OPTIMUS/
-b��   ├── h5/
-b��   │   ├── SLIDE_ID.features.h5
-b��   │   └── ...
-b��   ├── pt/
-b��   │   ├── SLIDE_ID.features.pt
-b��   │   └── ...
-b��   └── tile_h5/
-b��       ├── SLIDE_ID.patch.h5
-b��       └── ...
-b��── VIRCHOW2/
-b��   ├── h5/
-b��   ├── pt/
-b��   └── tile_h5/
-b��── UNI2/
-b��   ├── h5/
-b��   ├── pt/
-b��   └── tile_h5/
-b��── TITAN_SLIDE/
-b��   ├── h5/
-b��   ├── pt/
-b��   └── tile_h5/
-b��── GIGAPATH_SLIDE/
+b��── OPTIMUS/
+b��   ├── h5/
+b��   │   ├── SLIDE_ID.features.h5
+b��   │   └── ...
+b��   ├── pt/
+b��   │   ├── SLIDE_ID.features.pt
+b��   │   └── ...
+b��   └── tile_h5/
+b��       ├── SLIDE_ID.patch.h5
+b��       └── ...
+b��── VIRCHOW2/
+b��   ├── h5/
+b��   ├── pt/
+b��   └── tile_h5/
+b��── UNI2/
+b��   ├── h5/
+b��   ├── pt/
+b��   └── tile_h5/
+b��── TITAN_SLIDE/
+b��   ├── h5/
+b��   ├── pt/
+b��   └── tile_h5/
+b��── GIGAPATH_SLIDE/
     ├── h5/
     ├── pt/
     └── tile_h5/
@@ -61,7 +61,7 @@ Contains intermediate patch/tile-level features from the patch encoder.
 ### Before (Flat Structure):
 ```
 output_dir/
-b��── OPTIMUS/
+b��── OPTIMUS/
     ├── 1000326.features.h5
     ├── 1000326.features.pt
     ├── 1000326.patch.h5
@@ -74,7 +74,7 @@ b��── OPTIMUS/
 ### After (Organized Structure):
 ```
 output_dir/
-b��── OPTIMUS/
+b��── OPTIMUS/
     ├── h5/
     │   ├── 1000326.features.h5
     │   ├── 1000331.features.h5
@@ -104,11 +104,11 @@ b��── OPTIMUS/
 Total directory structure:
 ```
 output_dir/
-b��── OPTIMUS/         (h5/, pt/, tile_h5/)
-b��── VIRCHOW2/        (h5/, pt/, tile_h5/)
-b��── UNI2/            (h5/, pt/, tile_h5/)
-b��── TITAN_SLIDE/     (h5/, pt/, tile_h5/)
-b��── GIGAPATH_SLIDE/  (h5/, pt/, tile_h5/)
+b��── OPTIMUS/         (h5/, pt/, tile_h5/)
+b��── VIRCHOW2/        (h5/, pt/, tile_h5/)
+b��── UNI2/            (h5/, pt/, tile_h5/)
+b��── TITAN_SLIDE/     (h5/, pt/, tile_h5/)
+b��── GIGAPATH_SLIDE/  (h5/, pt/, tile_h5/)
 ```
 
 Total files:
@@ -160,6 +160,15 @@ All models use two-step processing:
    - **Slide models:** Model-based aggregation (TITAN_SLIDE, GIGAPATH_SLIDE)
    - Saved to `h5/SLIDE_ID.features.h5` and `pt/SLIDE_ID.features.pt`
 
+### Patch Encoder Compatibility
+
+Slide models require specific patch encoders:
+- **TITAN_SLIDE** → Uses **CONCH1_5** patch encoder (512px patches)
+- **GIGAPATH_SLIDE** → Uses **GIGAPATH** patch encoder (256px patches)
+
+The patch encoder outputs are saved in `tile_h5/` before slide-level aggregation.
+   - Saved to `h5/SLIDE_ID.features.h5` and `pt/SLIDE_ID.features.pt`
+
 The only exception is when `aggregation_method = "identity"`, which writes patch features directly to output (not used in multi-model mode).
 
 ## Migration
@@ -180,7 +189,7 @@ Existing code using the old flat structure can be updated by:
 
 ## Backward Compatibility
 
-b��️ **Breaking Change**: This is a breaking change to the output structure.
+b��️ **Breaking Change**: This is a breaking change to the output structure.
 
 Existing downstream tools expecting the flat structure will need to be updated to use the new subdirectory paths.
 
