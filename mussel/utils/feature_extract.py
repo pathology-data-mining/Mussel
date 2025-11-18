@@ -1,3 +1,4 @@
+import gc
 import logging
 from pathlib import Path
 
@@ -15,6 +16,7 @@ from mussel.models import (
     get_model_factory,
     validate_slide_encoder_compatibility,
     get_required_patch_encoder,
+    get_default_patch_size,
 )
 
 from .file import save_hdf5
@@ -122,6 +124,7 @@ def _(
     patch_h5_path=None,
     output_h5_path=None,
     is_test_run=False,
+    save_patch_tokens=False,
 ):
     """Process a WholeSlideImageH5Dataset to extract features and save to HDF5.
 
@@ -132,6 +135,8 @@ def _(
         patch_h5_path: Path to the h5 file containing patch coordinates.
         output_h5_path: Path to save the extracted features.
         is_test_run: If True, only process first 3 batches (default: False).
+        save_patch_tokens: If True, saves full patch tokens (e.g., 257 for ViT).
+                          If False (default), aggregates to single embedding per patch.
 
     Returns:
         Path to the output HDF5 file.
@@ -143,6 +148,16 @@ def _(
 
         features = model_fun(batch)
         features = features.numpy()
+        
+        # Aggregate patch tokens to single embedding if needed
+        # ViT models return shape (batch, num_tokens, embed_dim)
+        # We want (batch, embed_dim) by default
+        if not save_patch_tokens and len(features.shape) == 3:
+            # Use CLS token (first token) or mean pooling
+            # CLS token is typically at index 0
+            features = features[:, 0, :]  # Take CLS token
+            logger.info(f"Aggregating patch tokens using CLS token: {features.shape}")
+        
         asset_dict = {"features": features, "coords": coords}
         save_hdf5(output_h5_path, asset_dict, attr_h5_path=patch_h5_path, mode=mode)
         mode = "a"
@@ -229,10 +244,11 @@ def _apply_slide_aggregation(
                 if coords is None:
                     raise ValueError("TITAN_SLIDE requires coordinates")
                 if patch_size is None:
-                    # Default patch size at level 0 (commonly 256 for TITAN/CONCH)
-                    patch_size = 256
+                    # Get the default patch size for the required patch encoder
+                    patch_encoder = get_required_patch_encoder(slide_model_type)
+                    patch_size = get_default_patch_size(patch_encoder)
                     logger.warning(
-                        f"patch_size not provided, using default: {patch_size}"
+                        f"patch_size not provided, using default for {patch_encoder}: {patch_size}"
                     )
                 coords_tensor = torch.from_numpy(coords).long().unsqueeze(
                     0
@@ -280,6 +296,7 @@ def get_features(
     slide_model_type=None,
     slide_model_path=None,
     aggregation_method="identity",
+    save_patch_tokens=False,
 ):
     """Extract features from whole slide image tiles.
 
@@ -304,6 +321,8 @@ def get_features(
         slide_model_path: Optional path to slide encoder model weights.
         aggregation_method: Aggregation method when using slide encoder (default: "identity").
             Options: "identity", "mean", "max", "model".
+        save_patch_tokens: If True, saves full patch tokens for ViT models.
+            If False (default), aggregates to single embedding per patch.
 
     Returns:
         Tuple of (features array, labels array).
@@ -369,7 +388,7 @@ def get_features(
     )
 
     features, labels = process_dataset(
-        dataset, loader, model_fun=model.get_model_fun(), is_test_run=is_test_run
+        dataset, loader, model_fun=model.get_model_fun(), is_test_run=is_test_run, save_patch_tokens=save_patch_tokens
     )
 
     # Apply slide-level encoding if requested
@@ -519,6 +538,7 @@ def extract_patch_features_batch(
     num_workers=16,
     pin_memory=True,
     is_test_run=False,
+    save_patch_tokens=False,
 ):
     """Extract patch-level features from multiple slides in batch mode.
 
@@ -542,6 +562,8 @@ def extract_patch_features_batch(
         num_workers: Number of worker processes for data loading (default: 16).
         pin_memory: Whether to pin memory for data loading (default: True).
         is_test_run: If True, only process first 3 batches per slide (default: False).
+        save_patch_tokens: If True, saves full patch tokens for ViT models.
+            If False (default), aggregates to single embedding per patch.
 
     Returns:
         List of paths to output HDF5 files containing patch-level features.
@@ -608,10 +630,19 @@ def extract_patch_features_batch(
             patch_h5_path=patch_h5_path,
             output_h5_path=output_h5_path,
             is_test_run=is_test_run,
+            save_patch_tokens=save_patch_tokens,
         )
 
         logger.info(f"Patch-level features saved to {output_h5_path}")
 
+    # Clean up model to free GPU/CPU memory
+    del model
+    del model_fun
+    if use_gpu and torch.cuda.is_available():
+        torch.cuda.empty_cache()
+    gc.collect()
+    logger.info("Model cleaned up, memory freed")
+    
     logger.info(f"Batch extraction complete for {num_slides} slides")
     return output_h5_paths
 
@@ -709,7 +740,8 @@ def aggregate_slide_features_batch(
                 if output_pt:
                     logger.info(f"Saving aggregated features to {output_pt}")
                     features_tensor = torch.from_numpy(aggregated_features)
-                    torch.save(features_tensor, output_pt)
+                    from .file import save_torch_tensor
+                    save_torch_tensor(output_pt, features_tensor)
         
         return output_h5_paths, output_pt_paths
     
@@ -811,7 +843,16 @@ def aggregate_slide_features_batch(
             # Save to PyTorch if requested
             if output_pt_paths and output_pt_paths[i] is not None:
                 features_tensor = torch.from_numpy(aggregated_features)
-                torch.save(features_tensor, output_pt_paths[i])
+                from .file import save_torch_tensor
+                save_torch_tensor(output_pt_paths[i], features_tensor)
+    
+    # Clean up model to free GPU/CPU memory
+    del model
+    del model_fun
+    if use_gpu and torch.cuda.is_available():
+        torch.cuda.empty_cache()
+    gc.collect()
+    logger.info("Model cleaned up, memory freed")
     
     logger.info(f"Batch aggregation complete for {num_slides} slides")
     return output_h5_paths, output_pt_paths
@@ -896,7 +937,8 @@ def aggregate_slide_features(
         if output_pt_path is not None:
             logger.info(f"Saving aggregated features to {output_pt_path}")
             features_tensor = torch.from_numpy(aggregated_features)
-            torch.save(features_tensor, output_pt_path)
+            from .file import save_torch_tensor
+            save_torch_tensor(output_pt_path, features_tensor)
 
     return output_h5_path, output_pt_path
 
@@ -1088,7 +1130,8 @@ def save_features(
                 # logger.info(f'coordinates size: {file["coords"].shape} ')
 
                 features = torch.from_numpy(features)
-                torch.save(features, output_pt_path)
+                from .file import save_torch_tensor
+                save_torch_tensor(output_pt_path, features)
 
 
 @timed

@@ -150,11 +150,19 @@ def save_hdf5(output_path, asset_dict, attr_dict=None, attr_h5_path=None, mode="
                     chunk_shape = (chunk_rows,) + data_shape[1:]
                     maxshape = (None,) + data_shape[1:]
                     
+                    # Auto-detect if this is patch tokens (3D with many tokens)
+                    # ViT models return (batch, num_tokens, embed_dim) - e.g., (64, 257, 1280)
+                    # Aggregated features are (batch, embed_dim) - e.g., (64, 1280)
+                    is_patch_tokens = len(data_shape) == 3 and data_shape[1] > 100
+                    
                     # Setup compression if enabled
+                    # Disable compression for patch tokens (high-entropy ViT features don't compress well)
                     compression_opts = {}
-                    if compression:
+                    use_compression = compression and not is_patch_tokens
+                    
+                    if use_compression:
                         # gzip level 4 is a good balance between speed and compression ratio
-                        # Typically achieves 3-4x compression with minimal CPU overhead
+                        # Typically achieves 3-4x compression for aggregated embeddings
                         compression_opts['compression'] = 'gzip'
                         compression_opts['compression_opts'] = 4
                         # Shuffle filter can improve compression for numerical data

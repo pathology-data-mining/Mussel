@@ -146,6 +146,11 @@ class TessellateExtractFeaturesConfig:
         gpu_device_ids (Optional[List[int]]): List of GPU device IDs to use, if applicable.
         keep_intermediate_files (bool): Whether to keep intermediate files (tessellation and pre-filter features).
         save_features_to_h5 (bool): Whether to save the post-filtering features to HDF5.
+        save_patch_tokens (bool): Whether to save full patch tokens instead of aggregated embeddings.
+            - Default: False (saves aggregated single embedding per patch)
+            - When True: Saves all patch tokens (e.g., 257 tokens for ViT models)
+            - Impact: Setting to True increases file sizes 257x for ViT models
+            - Recommendation: Keep False unless you need patch-level attention analysis
     """
 
     defaults: List[Any] = field(default_factory=lambda: defaults)
@@ -187,6 +192,7 @@ class TessellateExtractFeaturesConfig:
     gpu_device_ids: Optional[List[int]] = None
     keep_intermediate_files: bool = False
     save_features_to_h5: bool = False
+    save_patch_tokens: bool = False  # Whether to save full patch tokens (e.g., 257 tokens for ViT) instead of aggregated embeddings
     seg_config: SegConfig = MISSING
     vis_config: VisConfig = field(default_factory=VisConfig)
     png_config: PngConfig = field(default_factory=PngConfig)
@@ -626,6 +632,7 @@ def _main_batch(cfg: TessellateExtractFeaturesConfig, patch_output_dir: Optional
             num_workers=cfg.num_workers,
             pin_memory=True,
             is_test_run=False,
+            save_patch_tokens=cfg.save_patch_tokens,
         )
         
         # Add intermediate paths to results
@@ -700,6 +707,7 @@ def _main_batch(cfg: TessellateExtractFeaturesConfig, patch_output_dir: Optional
             num_workers=cfg.num_workers,
             pin_memory=True,
             is_test_run=False,
+            save_patch_tokens=cfg.save_patch_tokens,
         )
         
         # Also save as PT format for consistency
