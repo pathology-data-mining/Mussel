@@ -23,6 +23,50 @@ import time
 from pathlib import Path
 from typing import Dict, List, Optional
 
+# Function to load environment variables from a file
+def load_env_file(env_file_path, verbose=True):
+    """
+    Load environment variables from a file.
+    
+    Args:
+        env_file_path: Path to the .env file
+        verbose: Print loading messages (default: True)
+        
+    Returns:
+        int: Number of variables loaded
+    """
+    if not os.path.exists(env_file_path):
+        if verbose:
+            print(f"Warning: {env_file_path} not found")
+        return 0
+    
+    if verbose:
+        print(f"Loading environment variables from: {env_file_path}")
+    
+    import re
+    count = 0
+    with open(env_file_path, 'r') as f:
+        for line in f:
+            line = line.strip()
+            if not line or line.startswith('#'):
+                continue
+            if line.startswith('export '):
+                line = line[7:]
+            match = re.match(r'^([^=]+)=(.*)$', line)
+            if match:
+                key = match.group(1).strip()
+                value = match.group(2).strip()
+                if (value.startswith('"') and value.endswith('"')) or \
+                   (value.startswith("'") and value.endswith("'")):
+                    value = value[1:-1]
+                os.environ[key] = value
+                count += 1
+    
+    if verbose:
+        print(f"✓ Loaded {count} environment variables")
+    
+    return count
+
 # Import model pre-download utility and Azure Files staging
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "common"))
 try:
@@ -123,7 +167,7 @@ class AzureBatchJobSubmitter:
         storage_account_name: Optional[str] = None,
         storage_account_key: Optional[str] = None,
         azure_files_share_name: Optional[str] = None,
-        azure_blob_container: Optional[str] = None,
+        staging_container: Optional[str] = None,
     ):
         """Initialize Azure Batch client."""
         credentials = SharedKeyCredentials(batch_account_name, batch_account_key)
@@ -132,7 +176,7 @@ class AzureBatchJobSubmitter:
         self.storage_account_name = storage_account_name
         self.storage_account_key = storage_account_key
         self.azure_files_share_name = azure_files_share_name
-        self.azure_blob_container = azure_blob_container
+        self.staging_container = staging_container
 
         # Track task metadata for failure reporting
         self.task_metadata = {}
@@ -167,13 +211,13 @@ class AzureBatchJobSubmitter:
         if (
             storage_account_name
             and storage_account_key
-            and azure_blob_container
+            and staging_container
             and AzureBlobStaging
         ):
             self.azure_blob_staging = AzureBlobStaging(
                 account_name=storage_account_name,
                 account_key=storage_account_key,
-                container_name=azure_blob_container,
+                container_name=staging_container,
             )
         else:
             self.azure_blob_staging = None
@@ -599,7 +643,7 @@ DOCKEREOF
         intermediate_h5_path: Optional[str] = None,
         aggregation_method: str = "identity",
         slide_model_types: Optional[str] = None,
-        slide_batch_size: int = 8,
+        slide_batch_size: int = 8,  # Batch size for slide encoding within a task
         classifier_pkl: Optional[str] = None,
         classifier_threshold: float = 0.75,
         prefilter_model_types: Optional[str] = None,
@@ -1175,7 +1219,7 @@ DOCKEREOF
         models: Optional[List[str]] = None,
         slide_models: Optional[List[str]] = None,
         staged_slide_paths: Optional[Dict[str, str]] = None,
-        distributed_slide_batch_size: int = 1,
+        slides_per_task: int = 1,
         use_container_prepull: bool = False,
         **default_params,
     ) -> None:
@@ -1194,9 +1238,11 @@ DOCKEREOF
             container_image: Docker image to use
             models: List of model types to run sequentially in same task
             staged_slide_paths: Optional dict mapping slide_id to staged Azure Files paths
-            distributed_slide_batch_size: Number of slides to group per task for batch encoding (default: 1).
-                When > 1 and using slide-level model aggregation, slides are grouped into batches
-                to optimize slide encoder loading. Recommended: 8-16 for GIGAPATH_SLIDE/TITAN_SLIDE.
+            slides_per_task: Number of slides to group per Azure Batch task (default: 1).
+                This controls how many slides are processed together in a single batch task.
+                When > 1, slides are grouped to optimize model loading (load once per batch).
+                Recommended: 8-16 for better efficiency. Note: This is different from the
+                'slide_batch_size' parameter which controls internal batching within a task.
             **default_params: Default parameters for all tasks (e.g., prefilter_model_type, batch_size)
         """
         print(f"Loading task manifest from '{csv_file}'...")
@@ -1257,21 +1303,21 @@ DOCKEREOF
 
                 slides.append({"slide_id": slide_id, "slide_path": slide_path})
 
-        # Auto-adjust distributed_slide_batch_size if using default value (1)
+        # Auto-adjust slides_per_task if using default value (1)
         # and slide-level model aggregation is enabled
-        if distributed_slide_batch_size == 1 and self._should_use_batch_encoding(
+        if slides_per_task == 1 and self._should_use_batch_encoding(
             **default_params
         ):
-            distributed_slide_batch_size = 8  # Recommended default for batch encoding
+            slides_per_task = 8  # Recommended default for batch encoding
             print(f"\n[Auto-Batching] Detected slide-level model aggregation")
             print(
-                f"  Automatically enabling batch processing with batch_size={distributed_slide_batch_size}"
+                f"  Automatically enabling batch processing with slides_per_task={slides_per_task}"
             )
-            print(f"  (Use --distributed-slide-batch-size to override)")
+            print(f"  (Use --slides-per-task to override)")
 
         # Determine if we should use batch encoding
         use_batch_encoding = (
-            distributed_slide_batch_size > 1
+            slides_per_task > 1
             and self._should_use_batch_encoding(**default_params)
         )
 
@@ -1294,7 +1340,7 @@ DOCKEREOF
 
         if use_batch_encoding:
             print(f"\n[Batch Encoding Optimization] Enabled")
-            print(f"  Grouping slides into batches of {distributed_slide_batch_size}")
+            print(f"  Grouping slides into batches of {slides_per_task}")
         
             # Stage model files to Azure Files if enabled
             if self.azure_files_staging:
@@ -1358,14 +1404,14 @@ DOCKEREOF
                         self.log(f"  Staged to: {remote_path}")
 
             # Group slides into batches
-            for batch_idx in range(0, len(slides), distributed_slide_batch_size):
+            for batch_idx in range(0, len(slides), slides_per_task):
                     batch_slides = slides[
-                        batch_idx : batch_idx + distributed_slide_batch_size
+                        batch_idx : batch_idx + slides_per_task
                     ]
 
                     # Create batch task ID
-                    batch_num = batch_idx // distributed_slide_batch_size + 1
-                    total_batches = (len(slides) + distributed_slide_batch_size - 1) // distributed_slide_batch_size
+                    batch_num = batch_idx // slides_per_task + 1
+                    total_batches = (len(slides) + slides_per_task - 1) // slides_per_task
                     models_str = "_".join(models_to_process[:2])  # Use first 2 models in ID
                     batch_id = f"batch_{batch_num}_of_{total_batches}_{models_str}"
 
@@ -1394,7 +1440,7 @@ DOCKEREOF
                                             show_progress=False,
                                         )
                                         # Convert to azblob:// URL
-                                        azblob_url = f"azblob://{self.storage_account_name}/{self.azure_blob_container}/{blob_name}"
+                                        azblob_url = f"azblob://{self.storage_account_name}/{self.staging_container}/{blob_name}"
                                         staged_paths.append(azblob_url)
                                     # Otherwise stage to Azure Files if available
                                     elif self.azure_files_staging:
@@ -1431,7 +1477,7 @@ DOCKEREOF
                         
                                 if staged_blob_name:
                                     # File already staged to Blob - use azblob:// URL
-                                    azblob_url = f"azblob://{self.storage_account_name}/{self.azure_blob_container}/{staged_blob_name}"
+                                    azblob_url = f"azblob://{self.storage_account_name}/{self.staging_container}/{staged_blob_name}"
                                     self.log(f"Using already-staged slide (Blob): {slide_filename} (from {staged_blob_name})")
                                     staged_paths.append(azblob_url)
                                 else:
@@ -1531,7 +1577,7 @@ DOCKEREOF
         print(f"\n{'='*80}")
         print(f"Submitted {total_tasks_submitted} total tasks")
         print(f"  Models per task: {len(models_to_process)}")
-        print(f"  Slides per task: {distributed_slide_batch_size}")
+        print(f"  Slides per task: {slides_per_task}")
         print(f"{'='*80}")
         return
 
@@ -1864,6 +1910,13 @@ def main():
         description="Submit tessellate-extract-features jobs to Azure Batch"
     )
 
+    # Environment file configuration
+    parser.add_argument(
+        "--env-file",
+        help="Path to environment file with credentials (e.g., secrets.env). "
+        "Loads Azure, AWS, and HuggingFace credentials from file.",
+    )
+
     # Azure credentials (can be provided via command-line, environment variables, or config file)
     parser.add_argument(
         "--batch-account-name",
@@ -1908,7 +1961,13 @@ def main():
 
     # Azure Blob staging configuration
     parser.add_argument(
-        "--azure-blob-container", help="Azure Blob container name for staging files"
+        "--staging-container",
+        help="Azure Blob container name for staging slides and models (default: uses output_prefix for models)",
+    )
+    parser.add_argument(
+        "--azure-blob-container",
+        dest="staging_container",
+        help="(Deprecated) Use --staging-container instead",
     )
     parser.add_argument(
         "--stage-to-azure-blob",
@@ -2054,14 +2113,15 @@ def main():
         help="Comma-separated list of model types to run (e.g., CTRANSPATH,CLIP,VIRCHOW)",
     )
     parser.add_argument(
-        "--distributed-slide-batch-size",
+        "--slides-per-task",
         type=int,
         default=1,
-        help="Number of slides to group per distributed task for batch processing optimization (default: 1, auto-adjusted to 8). "
+        help="Number of slides to group per Azure Batch task (default: 1, auto-adjusted to 8). "
         "Groups slides together to load models once instead of N times. Beneficial for all multi-slide processing, "
         "especially with slide-level model aggregation. Recommended: 8-16 for better efficiency. "
         "Auto-enabled (batch_size=8) when processing multiple slides; use 1 to disable. "
-        "Note: Not applicable when using --stage-to-azure-files (incremental staging).",
+        "Note: Not applicable when using --stage-to-azure-files (incremental staging). "
+        "This is different from 'slide_batch_size' which controls internal batching within a task.",
     )
     parser.add_argument("--task-id", help="Single task ID")
     parser.add_argument(
@@ -2163,6 +2223,14 @@ def main():
     )
 
     args = parser.parse_args()
+
+    # Load environment file if specified
+    if args.env_file:
+        if os.path.exists(args.env_file):
+            load_env_file(args.env_file, verbose=True)
+        else:
+            print(f"ERROR: Environment file not found: {args.env_file}")
+            sys.exit(1)
 
     # Load config file early if provided, to check for model paths before pre-download
     config_defaults = {}
@@ -2297,10 +2365,10 @@ def main():
 
         # Azure Blob container name
         if (
-            not args.azure_blob_container
-            and "azure_blob_container" in config_defaults
+            not args.staging_container
+            and "staging_container" in config_defaults
         ):
-            args.azure_blob_container = config_defaults["azure_blob_container"]
+            args.staging_container = config_defaults["staging_container"]
 
         # Boolean flags (only set if not already set via command-line)
         if not args.create_pool and config_defaults.get("create_pool"):
@@ -2496,21 +2564,43 @@ def main():
                     model_types=models_to_download, cache_dir=args.model_cache_dir
                 )
 
-                # Upload to S3 if output prefix specified
-                if args.output_prefix and upload_models_to_s3:
-                    # Determine S3 model prefix
+                # Upload models to remote storage
+                # Priority: 1) model_s3_prefix, 2) staging_container, 3) output_prefix
+                if upload_models_to_s3:
+                    # Determine model staging location
                     if args.model_s3_prefix:
+                        # Explicit model location specified
                         s3_model_prefix = args.model_s3_prefix
-                    else:
-                        # Use output prefix + /models/
+                        print(f"[Model Staging] Using custom model prefix: {s3_model_prefix}")
+                    elif args.staging_container and args.storage_account_name:
+                        # Use staging container for models (recommended)
+                        s3_model_prefix = f"azblob://{args.staging_container}/models/"
+                        print(f"[Model Staging] Using staging container: {s3_model_prefix}")
+                    elif args.output_prefix:
+                        # Fall back to output prefix + /models/ (legacy)
                         s3_model_prefix = args.output_prefix.rstrip("/") + "/models/"
+                        print(f"[Model Staging] Using output prefix (legacy): {s3_model_prefix}")
+                    else:
+                        # No remote storage configured, skip upload
+                        print("[Model Staging] No remote storage configured, using local cache")
+                        model_paths = cached_models
+                        s3_model_prefix = None
 
-                    # Upload models to S3
-                    s3_model_paths = upload_models_to_s3(cached_models, s3_model_prefix)
-                    model_paths = s3_model_paths
-                    print(
-                        f"[Model Pre-Download] Models available at S3: {s3_model_prefix}"
-                    )
+                    # Set Azure Storage environment variables and upload if we have a remote prefix
+                    if s3_model_prefix:
+                        # Set Azure Storage environment variables if using Azure Blob
+                        if s3_model_prefix.startswith("azblob://"):
+                            if args.storage_account_name:
+                                os.environ["AZURE_STORAGE_ACCOUNT"] = args.storage_account_name
+                            if args.storage_account_key:
+                                os.environ["AZURE_STORAGE_KEY"] = args.storage_account_key
+
+                        # Upload models to remote storage
+                        s3_model_paths = upload_models_to_s3(cached_models, s3_model_prefix)
+                        model_paths = s3_model_paths
+                        print(
+                            f"[Model Pre-Download] Models available at: {s3_model_prefix}"
+                        )
                 else:
                     # Use local paths (for non-S3 workflows or testing)
                     model_paths = cached_models
@@ -2593,7 +2683,7 @@ def main():
         storage_account_name=args.storage_account_name,
         storage_account_key=args.storage_account_key,
         azure_files_share_name=args.azure_files_share_name,
-        azure_blob_container=args.azure_blob_container,
+        staging_container=args.staging_container,
     )
 
     # Create pool if requested
@@ -2697,6 +2787,7 @@ def main():
             "job_id",
             "pool_id",
             "output_prefix",
+            "slides_per_task",
         ]:
             task_default_params.pop(key, None)
 
@@ -2708,15 +2799,15 @@ def main():
                 )
                 sys.exit(1)
             
-            if args.stage_to_azure_blob and not args.azure_blob_container:
+            if args.stage_to_azure_blob and not args.staging_container:
                 print(
-                    "ERROR: --azure-blob-container required when using --stage-to-azure-blob"
+                    "ERROR: --staging-container required when using --stage-to-azure-blob"
                 )
                 sys.exit(1)
 
             # For Azure Blob staging, stage slides and pass blob URLs to tasks
             if args.stage_to_azure_blob:
-                print(f"\n[Azure Blob] Staging to container: {args.azure_blob_container}")
+                print(f"\n[Azure Blob] Staging to container: {args.staging_container}")
                 
                 # Initialize blob staging
                 if not submitter.azure_blob_staging:
@@ -2727,7 +2818,7 @@ def main():
                     submitter.azure_blob_staging = AzureBlobStaging(
                         account_name=args.storage_account_name,
                         account_key=args.storage_account_key,
-                        container_name=args.azure_blob_container,
+                        container_name=args.staging_container,
                     )
                 
                 # Apply pre-downloaded model paths to task_default_params if not already set
@@ -2812,7 +2903,7 @@ def main():
                         )
                     
                     # Create blob URL (use azblob:// prefix for batch script to download)
-                    blob_url = f"azblob://{args.storage_account_name}.blob.core.windows.net/{args.azure_blob_container}/{blob_name}"
+                    blob_url = f"azblob://{args.storage_account_name}.blob.core.windows.net/{args.staging_container}/{blob_name}"
                     
                     # Update task_default_params with blob URL
                     if model_type == 'prefilter':
@@ -2879,7 +2970,7 @@ def main():
                     
                     if already_staged_name:
                         # File already staged to Blob - use it
-                        blob_url = f"azblob://{args.storage_account_name}.blob.core.windows.net/{args.azure_blob_container}/{already_staged_name}"
+                        blob_url = f"azblob://{args.storage_account_name}.blob.core.windows.net/{args.staging_container}/{already_staged_name}"
                         print(f"  [{slide_id}] Using already-staged: {slide_filename} (from {already_staged_name})")
                         staged_slide_paths[slide_id] = blob_url
                     elif slide_path.startswith("azblob://"):
@@ -2912,7 +3003,7 @@ def main():
                                     blob_name=blob_name,
                                     show_progress=False,
                                 )
-                                blob_url = f"azblob://{args.storage_account_name}.blob.core.windows.net/{args.azure_blob_container}/{blob_name}"
+                                blob_url = f"azblob://{args.storage_account_name}.blob.core.windows.net/{args.staging_container}/{blob_name}"
                                 staged_slide_paths[slide_id] = blob_url
                                 print(f"  [{slide_id}] Staged to blob: {blob_name}")
                         finally:
@@ -2931,7 +3022,7 @@ def main():
                                 blob_name=blob_name,
                                 show_progress=False,
                             )
-                            blob_url = f"azblob://{args.storage_account_name}.blob.core.windows.net/{args.azure_blob_container}/{blob_name}"
+                            blob_url = f"azblob://{args.storage_account_name}.blob.core.windows.net/{args.staging_container}/{blob_name}"
                             staged_slide_paths[slide_id] = blob_url
                         else:
                             print(f"  [{slide_id}] WARNING: File not found: {slide_path}")
@@ -2947,7 +3038,7 @@ def main():
                     container_image=args.container_image,
                     models=models_list,
                     slide_models=slide_models_list,
-                    distributed_slide_batch_size=args.distributed_slide_batch_size,
+                    slides_per_task=args.slides_per_task,
                     staged_slide_paths=staged_slide_paths,
                     use_container_prepull=args.use_container_prepull,
                     **task_default_params,
@@ -2958,7 +3049,7 @@ def main():
                     print(f"\n[Azure Blob] Cleaning up staged slides...")
                     for slide_id, blob_url in staged_slide_paths.items():
                         if blob_url.startswith("https://"):
-                            blob_name = blob_url.split(f"{args.azure_blob_container}/")[1]
+                            blob_name = blob_url.split(f"{args.staging_container}/")[1]
                             try:
                                 submitter.azure_blob_staging.delete_file(blob_name)
                                 print(f"  Deleted: {blob_name}")
@@ -3114,7 +3205,7 @@ def main():
                 container_image=args.container_image,
                 models=models_list,
                 slide_models=slide_models_list,
-                distributed_slide_batch_size=args.distributed_slide_batch_size,
+                slides_per_task=args.slides_per_task,
                 use_container_prepull=args.use_container_prepull,
                 **task_default_params,
             )
