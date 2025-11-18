@@ -124,7 +124,6 @@ def _(
     patch_h5_path=None,
     output_h5_path=None,
     is_test_run=False,
-    save_patch_tokens=False,
 ):
     """Process a WholeSlideImageH5Dataset to extract features and save to HDF5.
 
@@ -135,8 +134,6 @@ def _(
         patch_h5_path: Path to the h5 file containing patch coordinates.
         output_h5_path: Path to save the extracted features.
         is_test_run: If True, only process first 3 batches (default: False).
-        save_patch_tokens: If True, saves full patch tokens (e.g., 257 for ViT).
-                          If False (default), aggregates to single embedding per patch.
 
     Returns:
         Path to the output HDF5 file.
@@ -148,15 +145,6 @@ def _(
 
         features = model_fun(batch)
         features = features.numpy()
-        
-        # Aggregate patch tokens to single embedding if needed
-        # ViT models return shape (batch, num_tokens, embed_dim)
-        # We want (batch, embed_dim) by default
-        if not save_patch_tokens and len(features.shape) == 3:
-            # Use CLS token (first token) or mean pooling
-            # CLS token is typically at index 0
-            features = features[:, 0, :]  # Take CLS token
-            logger.info(f"Aggregating patch tokens using CLS token: {features.shape}")
         
         asset_dict = {"features": features, "coords": coords}
         save_hdf5(output_h5_path, asset_dict, attr_h5_path=patch_h5_path, mode=mode)
@@ -296,7 +284,6 @@ def get_features(
     slide_model_type=None,
     slide_model_path=None,
     aggregation_method="identity",
-    save_patch_tokens=False,
 ):
     """Extract features from whole slide image tiles.
 
@@ -321,8 +308,6 @@ def get_features(
         slide_model_path: Optional path to slide encoder model weights.
         aggregation_method: Aggregation method when using slide encoder (default: "identity").
             Options: "identity", "mean", "max", "model".
-        save_patch_tokens: If True, saves full patch tokens for ViT models.
-            If False (default), aggregates to single embedding per patch.
 
     Returns:
         Tuple of (features array, labels array).
@@ -388,7 +373,7 @@ def get_features(
     )
 
     features, labels = process_dataset(
-        dataset, loader, model_fun=model.get_model_fun(), is_test_run=is_test_run, save_patch_tokens=save_patch_tokens
+        dataset, loader, model_fun=model.get_model_fun(), is_test_run=is_test_run
     )
 
     # Apply slide-level encoding if requested
@@ -538,7 +523,6 @@ def extract_patch_features_batch(
     num_workers=16,
     pin_memory=True,
     is_test_run=False,
-    save_patch_tokens=False,
 ):
     """Extract patch-level features from multiple slides in batch mode.
 
@@ -562,8 +546,6 @@ def extract_patch_features_batch(
         num_workers: Number of worker processes for data loading (default: 16).
         pin_memory: Whether to pin memory for data loading (default: True).
         is_test_run: If True, only process first 3 batches per slide (default: False).
-        save_patch_tokens: If True, saves full patch tokens for ViT models.
-            If False (default), aggregates to single embedding per patch.
 
     Returns:
         List of paths to output HDF5 files containing patch-level features.
@@ -630,7 +612,6 @@ def extract_patch_features_batch(
             patch_h5_path=patch_h5_path,
             output_h5_path=output_h5_path,
             is_test_run=is_test_run,
-            save_patch_tokens=save_patch_tokens,
         )
 
         logger.info(f"Patch-level features saved to {output_h5_path}")

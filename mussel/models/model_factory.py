@@ -780,6 +780,77 @@ class VirchowModel(TorchModel):
         )
         return preprocessing
 
+    def get_model_fun(self) -> Callable:
+        """Get model inference function that concatenates class token with average pooled patch tokens.
+
+        For Virchow, we concatenate the class token (CLS) with the average of patch tokens
+        as recommended in: https://huggingface.co/paige-ai/Virchow#image-embeddings
+
+        Returns:
+            Callable that runs inference and returns concatenated embeddings.
+        """
+
+        def model_fun(x):
+            """Run inference with mixed precision and concatenate class + avg patch tokens."""
+            with (
+                torch.no_grad(),
+                torch.inference_mode(),
+                torch.autocast(device_type=self.device.type, dtype=torch.float16),
+            ):
+                x = x.to(self.device, non_blocking=True)
+                if self.use_gpu:
+                    try:
+                        x = x.to(memory_format=torch.channels_last)
+                    except:
+                        pass
+                
+                output = self.obj(x)
+                
+                # Virchow returns [batch, num_tokens, embed_dim]
+                # First token is CLS, rest are patch tokens
+                class_token = output[:, 0]  # [batch, embed_dim]
+                patch_tokens = output[:, 1:]  # [batch, num_patches, embed_dim]
+                
+                # Average pool the patch tokens
+                avg_patch_tokens = patch_tokens.mean(dim=1)  # [batch, embed_dim]
+                
+                # Concatenate class token with averaged patch tokens
+                concatenated = torch.cat([class_token, avg_patch_tokens], dim=1)  # [batch, embed_dim * 2]
+                
+                return concatenated.cpu()
+
+        return model_fun
+
+
+class Virchow2Model(VirchowModel):
+    """Virchow2 model - uses same architecture and feature extraction as Virchow."""
+    
+    def __init__(
+        self,
+        model_path,
+        use_gpu: bool = True,
+        gpu_device_id: int | List[int] | None = None,
+    ):
+        """Initialize Virchow2 model.
+
+        Args:
+            model_path: Path to model file or HuggingFace repo ID.
+            use_gpu: Whether to use GPU (default: True).
+            gpu_device_id: GPU device ID or list of IDs for multi-GPU (default: None).
+        """
+        if model_path is None:
+            model_path = ModelType.VIRCHOW2.path
+        model_obj = None
+        if model_path.startswith("hf-hub:"):
+            model_obj = timm.create_model(
+                model_path,
+                pretrained=True,
+                mlp_layer=SwiGLUPacked,
+                act_layer=torch.nn.SiLU,
+            )
+        # Call TorchModel.__init__ directly to avoid calling VirchowModel.__init__
+        TorchModel.__init__(self, model_path, model_obj, use_gpu, gpu_device_id)
+
 
 class UniModel(TorchModel):
     def __init__(
@@ -1035,7 +1106,7 @@ class VirchowModelFactory(ModelFactory):
 class Virchow2ModelFactory(ModelFactory):
     def get_model(self, model_path=None, use_gpu=True, gpu_device_id=None):
         """Create Virchow2 model instance."""
-        return VirchowModel(model_path, use_gpu, gpu_device_id)
+        return Virchow2Model(model_path, use_gpu, gpu_device_id)
 
 
 @register_model_factory(ModelType.UNI)
