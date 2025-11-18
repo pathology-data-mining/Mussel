@@ -584,6 +584,12 @@ def _main_batch(cfg: TessellateExtractFeaturesConfig, patch_output_dir: Optional
             shutil.rmtree(temp_dir)
         return
     
+    # Create output subdirectories (h5, pt) if they're local paths
+    for subdir in ["h5", "pt"]:
+        subdir_path = _safe_path_join(output_dir_str, subdir)
+        if not _is_remote_path(subdir_path):
+            Path(subdir_path).mkdir(parents=True, exist_ok=True)
+    
     # Phase 2: Batch extract patch features for all slides
     logger.info(f"\n=== Phase 2: Batch extracting patch features for {len(slide_results)} slides ===")
     
@@ -601,6 +607,11 @@ def _main_batch(cfg: TessellateExtractFeaturesConfig, patch_output_dir: Optional
             _safe_path_join(patch_output_dir_str, "tile_h5", f"{r['slide_id']}.patch.h5") 
             for r in slide_results
         ]
+        
+        # Create tile_h5 subdirectory if it's a local path
+        tile_h5_dir = _safe_path_join(patch_output_dir_str, "tile_h5")
+        if not _is_remote_path(tile_h5_dir):
+            Path(tile_h5_dir).mkdir(parents=True, exist_ok=True)
         
         extract_patch_features_batch(
             patch_h5_paths=patch_h5_paths,
@@ -624,6 +635,13 @@ def _main_batch(cfg: TessellateExtractFeaturesConfig, patch_output_dir: Optional
         # If patch_output_dir is specified, also save aggregated patch encoder features
         if patch_output_dir:
             logger.info(f"\n=== Phase 2b: Saving aggregated patch encoder features to {patch_output_dir} ===")
+            
+            # Create h5 and pt subdirectories if they're local paths
+            for subdir in ["h5", "pt"]:
+                subdir_path = _safe_path_join(patch_output_dir_str, subdir)
+                if not _is_remote_path(subdir_path):
+                    Path(subdir_path).mkdir(parents=True, exist_ok=True)
+            
             patch_encoder_h5_paths = [
                 _safe_path_join(patch_output_dir_str, "h5", f"{r['slide_id']}.{cfg.output_h5_suffix}")
                 for r in slide_results
