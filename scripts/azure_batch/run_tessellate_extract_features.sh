@@ -243,15 +243,17 @@ IS_REMOTE_OUTPUT=false
 # Check if output is remote (azblob://, az://, s3://, etc.)
 if [[ "$REMOTE_OUTPUT_DIR" =~ ^(azblob://|az://|s3://|http://|https://) ]]; then
     log "Remote output detected: $REMOTE_OUTPUT_DIR"
-    log "Using local temp directory for processing, will upload at end"
+    log "Will write final outputs directly to remote storage"
+    log "Intermediate files will use local temp directory"
     IS_REMOTE_OUTPUT=true
-    # Use local temp directory for processing
+    # Pass remote path directly to Python - it handles remote writes
+    EFFECTIVE_OUTPUT_DIR="$REMOTE_OUTPUT_DIR"
+    # Local temp for intermediate files only
     LOCAL_OUTPUT_DIR="${WORK_DIR}/output"
-    mkdir -p "$LOCAL_OUTPUT_DIR"
-    EFFECTIVE_OUTPUT_DIR="$LOCAL_OUTPUT_DIR"
 else
     # Local output path - use directly
     EFFECTIVE_OUTPUT_DIR="$REMOTE_OUTPUT_DIR"
+    LOCAL_OUTPUT_DIR="$REMOTE_OUTPUT_DIR"
 fi
 
 # Build command arguments - pass everything through to Python CLI
@@ -429,83 +431,10 @@ fi
 
 log "SUCCESS: Processing completed in $DURATION seconds"
 
-# Upload output files to remote storage if needed
+# When using remote output, files are written directly to remote storage
+# No upload needed - Python code handles remote writes directly
 if [ "$IS_REMOTE_OUTPUT" = true ]; then
-    log "Uploading output files to remote storage: $REMOTE_OUTPUT_DIR"
-    UPLOAD_START=$(date +%s)
-    
-    # Determine upload method based on remote path type
-    if [[ "$REMOTE_OUTPUT_DIR" =~ ^(azblob://|az://) ]]; then
-        # Azure Blob Storage upload
-        log "Using az CLI for Azure Blob upload"
-        
-        # Convert az:// to azblob:// format for az storage
-        BLOB_URL="$REMOTE_OUTPUT_DIR"
-        if [[ "$BLOB_URL" =~ ^az:// ]]; then
-            # az://container/path -> need to reconstruct with account name
-            CONTAINER_PATH="${BLOB_URL#az://}"
-            BLOB_URL="https://${AZURE_STORAGE_ACCOUNT}.blob.core.windows.net/${CONTAINER_PATH}"
-        fi
-        
-        # Upload all files in output directory
-        if command -v azcopy &> /dev/null && [ -n "$AZURE_STORAGE_KEY" ]; then
-            log "Using azcopy for batch upload"
-            # Upload entire directory with azcopy
-            azcopy copy "$LOCAL_OUTPUT_DIR/*" "$BLOB_URL" --recursive --overwrite=true
-            UPLOAD_EXIT=$?
-        elif command -v az &> /dev/null && [ -n "$AZURE_STORAGE_KEY" ]; then
-            log "Using az storage blob upload-batch"
-            # Extract container and path from URL
-            if [[ "$REMOTE_OUTPUT_DIR" =~ ^az://([^/]+)/(.*)$ ]]; then
-                CONTAINER="${BASH_REMATCH[1]}"
-                BLOB_PREFIX="${BASH_REMATCH[2]}"
-                
-                # Upload all files
-                az storage blob upload-batch \
-                    --account-name "$AZURE_STORAGE_ACCOUNT" \
-                    --account-key "$AZURE_STORAGE_KEY" \
-                    --destination "$CONTAINER" \
-                    --destination-path "$BLOB_PREFIX" \
-                    --source "$LOCAL_OUTPUT_DIR" \
-                    --overwrite true
-                UPLOAD_EXIT=$?
-            else
-                log "ERROR: Could not parse Azure Blob path: $REMOTE_OUTPUT_DIR"
-                UPLOAD_EXIT=1
-            fi
-        else
-            log "ERROR: No Azure upload tool available (need azcopy or az CLI with credentials)"
-            UPLOAD_EXIT=1
-        fi
-        
-    elif [[ "$REMOTE_OUTPUT_DIR" =~ ^s3:// ]]; then
-        # S3 upload
-        log "Using aws CLI for S3 upload"
-        if command -v aws &> /dev/null; then
-            aws s3 sync "$LOCAL_OUTPUT_DIR" "$REMOTE_OUTPUT_DIR" --no-progress
-            UPLOAD_EXIT=$?
-        else
-            log "ERROR: aws CLI not available for S3 upload"
-            UPLOAD_EXIT=1
-        fi
-    else
-        log "WARNING: Unknown remote storage type: $REMOTE_OUTPUT_DIR"
-        UPLOAD_EXIT=1
-    fi
-    
-    UPLOAD_DURATION=$(($(date +%s) - UPLOAD_START))
-    
-    if [ $UPLOAD_EXIT -eq 0 ]; then
-        log "SUCCESS: Files uploaded to $REMOTE_OUTPUT_DIR in $UPLOAD_DURATION seconds"
-        
-        # Clean up local output directory
-        log "Cleaning up local output directory: $LOCAL_OUTPUT_DIR"
-        rm -rf "$LOCAL_OUTPUT_DIR"
-    else
-        log "ERROR: Failed to upload files to remote storage (exit code: $UPLOAD_EXIT)"
-        log "Local files preserved at: $LOCAL_OUTPUT_DIR"
-        exit $UPLOAD_EXIT
-    fi
+    log "Output files written directly to remote storage: $REMOTE_OUTPUT_DIR"
 else
     log "Output written to: $EFFECTIVE_OUTPUT_DIR"
 fi
