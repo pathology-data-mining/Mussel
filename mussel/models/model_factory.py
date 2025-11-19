@@ -456,8 +456,8 @@ class Conch15Model(TorchModel):
                     attn_implementation=attn_impl
                 )
             except (ValueError, NotImplementedError) as e:
-                # TITAN model doesn't support SDPA yet, fallback to eager
-                if "does not support an attention implementation" in str(e):
+                # TITAN model doesn't support Flash Attention 2.0 or SDPA yet, fallback to eager
+                if "does not support an attention implementation" in str(e) or "does not support Flash Attention" in str(e):
                     logger.info("TITAN model doesn't support optimized attention, using eager mode")
                     titan = AutoModel.from_pretrained(
                         model_path, 
@@ -511,7 +511,16 @@ class TitanSlideEncoderModel(TorchModel):
         if not Path(model_path).is_file():
             # Load the TITAN model from HuggingFace or saved directory
             # This handles both MahmoodLab/TITAN and locally saved directories
-            model_obj = AutoModel.from_pretrained(model_path, trust_remote_code=True)
+            # TITAN doesn't support Flash Attention 2.0, so we use eager mode
+            try:
+                model_obj = AutoModel.from_pretrained(
+                    model_path, 
+                    trust_remote_code=True,
+                    attn_implementation="eager"
+                )
+            except TypeError:
+                # Fallback for older transformers that don't support attn_implementation
+                model_obj = AutoModel.from_pretrained(model_path, trust_remote_code=True)
         super().__init__(model_path, model_obj, use_gpu, gpu_device_id)
 
     def get_model_fun(self) -> Callable:
