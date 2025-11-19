@@ -1,0 +1,83 @@
+# Run for paper revisions, everything combined
+# Use this file with --config when specifying --csv-manifest
+
+# General processing parameters
+# prefilter_model_type: CTRANSPATH
+# Use model_types for multiple models (comma-separated or list)
+model_types:
+  - OPTIMUS
+  - VIRCHOW2
+  - UNI2
+slide_model_types:
+  - TITAN_SLIDE
+  - GIGAPATH_SLIDE
+# prefilter_model_path: /gpfs/mskmind_ess/limr/repos/TransPath/ctranspath.pth
+# classifier_pkl: /gpfs/mskmind_ess/limr/repos/Mussel/model-1727990346535.pkl
+#classifier_threshold: 0.75
+slide_batch_size: 8
+slides_per_task: 4
+
+# Patch extraction batch size (default for all models)
+batch_size: 256
+
+# Per-model batch sizes (optional, overrides default batch_size)
+# Recommended values for A100 80GB:
+#   - 224x224 input models (OPTIMUS, UNI2): 256-512
+#   - 448x448 input models (VIRCHOW2, GIGAPATH patch encoder): 192-256
+model_batch_sizes:
+  OPTIMUS: 384      # 224x224 input, medium model
+  VIRCHOW2: 256     # 448x448 input (4x pixels)
+  UNI2: 384         # 224x224 input, medium model
+  GIGAPATH: 256     # 448x448 input for patch encoder
+  CONCH1_5: 256     # 448x448 input for TITAN_SLIDE patch encoder
+
+num_workers: 8
+use_gpu: true
+seg_config:
+  group: biopsy
+
+# Aggregation settings
+aggregation_method: model
+
+# Retry configuration
+max_retry_count: 3
+
+# Standardized resource requirements (works across all backends)
+resources:
+  cpus: 8
+  memory: 32G
+  gpus: 1
+
+# AWS S3 configuration (optional, for S3-compatible storage)
+aws:
+  endpoint_url: http://pmindecs.mskcc.org:9020
+
+# SLURM-specific parameters (optional, for SLURM-only settings)
+slurm:
+  time: "04:00:00"
+
+azure:
+  batch_account_name: "ocra"
+  batch_account_url: "https://ocra.eastus2.batch.azure.com"
+  container_image: "mskocracontainerregister-cfbfchg8dgfbedan.azurecr.io/mussel:fastattn"
+  storage_account_name: "mskpdmgen2"
+  staging_container: "mussel-staging"
+  stage_to_azure_blob: true
+  cleanup_staged_files: false
+  output_prefix: "azblob://mussel-results/paper-revisions-final/"
+  pool_id: "mussel-pool"
+  job_id: "mussel-test-pr-job"
+  create_pool: true
+  create_job: true
+  vm_size: "Standard_NC24ads_A100_v4"
+  max_node_count: 2  # Reduced for testing - increase for production runs
+  min_node_count: 1
+  enable_auto_scale: true
+  publisher: "microsoft-dsvm"
+  offer: "ubuntu-hpc"
+  sku: "2204"
+  node_agent_sku_id: "batch.node.ubuntu 22.04"
+
+
+# Note: Sensitive fields like AWS credentials should be provided via command-line
+# not in the config file for security

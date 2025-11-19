@@ -3,7 +3,7 @@ import ssl
 import tempfile
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, List, Optional, Union
+from typing import Any, Dict, List, Optional, Union
 
 import h5py
 import torch
@@ -146,11 +146,6 @@ class TessellateExtractFeaturesConfig:
         gpu_device_ids (Optional[List[int]]): List of GPU device IDs to use, if applicable.
         keep_intermediate_files (bool): Whether to keep intermediate files (tessellation and pre-filter features).
         save_features_to_h5 (bool): Whether to save the post-filtering features to HDF5.
-        save_patch_tokens (bool): Whether to save full patch tokens instead of aggregated embeddings.
-            - Default: False (saves aggregated single embedding per patch)
-            - When True: Saves all patch tokens (e.g., 257 tokens for ViT models)
-            - Impact: Setting to True increases file sizes 257x for ViT models
-            - Recommendation: Keep False unless you need patch-level attention analysis
     """
 
     defaults: List[Any] = field(default_factory=lambda: defaults)
@@ -187,12 +182,12 @@ class TessellateExtractFeaturesConfig:
     thumbnail_size: tuple = (1024, 1024)
     num_workers: int = 4
     batch_size: int = 64
+    model_batch_sizes: Optional[Dict[str, int]] = None  # Per-model batch sizes (e.g., {"VIRCHOW2": 256, "OPTIMUS": 384})
     use_gpu: bool = True
     gpu_device_id: Optional[int] = None
     gpu_device_ids: Optional[List[int]] = None
     keep_intermediate_files: bool = False
     save_features_to_h5: bool = False
-    save_patch_tokens: bool = False  # Whether to save full patch tokens (e.g., 257 tokens for ViT) instead of aggregated embeddings
     seg_config: SegConfig = MISSING
     vis_config: VisConfig = field(default_factory=VisConfig)
     png_config: PngConfig = field(default_factory=PngConfig)
@@ -203,7 +198,7 @@ class TessellateExtractFeaturesConfig:
 
     def __post_init__(self):
         """Set default patch size based on model type if not explicitly set."""
-        from omegaconf import ListConfig
+        from omegaconf import ListConfig, DictConfig
         
         # Convert ListConfig to actual lists of ModelType enums
         if isinstance(self.model_type, ListConfig):
@@ -215,6 +210,48 @@ class TessellateExtractFeaturesConfig:
             self.slide_model_type = [ModelType[name] for name in self.slide_model_type]
         elif isinstance(self.slide_model_type, str):
             self.slide_model_type = ModelType[self.slide_model_type]
+        
+        # Convert DictConfig to regular dict for model_batch_sizes
+        if isinstance(self.model_batch_sizes, DictConfig):
+            self.model_batch_sizes = dict(self.model_batch_sizes)
+        
+        # Determine optimal batch_size based on models being processed
+        if self.model_batch_sizes:
+            batch_sizes_to_consider = []
+            
+            # Get list of all models
+            model_list = []
+            if isinstance(self.model_type, list):
+                model_list.extend([m.name for m in self.model_type])
+            elif self.model_type:
+                model_list.append(self.model_type.name)
+            
+            # Add slide model patch encoders
+            slide_model_list = []
+            if isinstance(self.slide_model_type, list):
+                slide_model_list.extend(self.slide_model_type)
+            elif self.slide_model_type:
+                slide_model_list.append(self.slide_model_type)
+            
+            for slide_model in slide_model_list:
+                slide_model_name = slide_model.name if hasattr(slide_model, 'name') else str(slide_model)
+                # TITAN_SLIDE uses CONCH1_5, GIGAPATH_SLIDE uses GIGAPATH
+                if slide_model_name == "TITAN_SLIDE":
+                    model_list.append("CONCH1_5")
+                elif slide_model_name == "GIGAPATH_SLIDE":
+                    model_list.append("GIGAPATH")
+            
+            # Collect batch sizes for all models
+            for model_name in model_list:
+                if model_name in self.model_batch_sizes:
+                    batch_sizes_to_consider.append(self.model_batch_sizes[model_name])
+            
+            # Use minimum batch size to ensure all models fit in memory
+            if batch_sizes_to_consider:
+                optimal_batch_size = min(batch_sizes_to_consider)
+                if self.batch_size != optimal_batch_size:
+                    logger.info(f"Using per-model batch_size={optimal_batch_size} (models: {', '.join(model_list)})")
+                    self.batch_size = optimal_batch_size
         
         # Only set patch size if seg_config.patch_size is at the default value
         # This allows users to override if they explicitly set a different value
@@ -632,7 +669,6 @@ def _main_batch(cfg: TessellateExtractFeaturesConfig, patch_output_dir: Optional
             num_workers=cfg.num_workers,
             pin_memory=True,
             is_test_run=False,
-            save_patch_tokens=cfg.save_patch_tokens,
         )
         
         # Add intermediate paths to results
@@ -707,7 +743,6 @@ def _main_batch(cfg: TessellateExtractFeaturesConfig, patch_output_dir: Optional
             num_workers=cfg.num_workers,
             pin_memory=True,
             is_test_run=False,
-            save_patch_tokens=cfg.save_patch_tokens,
         )
         
         # Also save as PT format for consistency

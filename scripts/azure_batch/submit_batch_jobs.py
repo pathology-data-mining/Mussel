@@ -1336,6 +1336,43 @@ DOCKEREOF
         if all_slide_models:
             model_params["slide_model_types"] = ",".join(all_slide_models)
         
+        # Determine appropriate batch_size based on models being processed
+        # If model_batch_sizes dict is provided in config, use it to set batch_size
+        # to the minimum value for all models being processed
+        if "model_batch_sizes" in default_params and isinstance(default_params["model_batch_sizes"], dict):
+            model_batch_sizes = default_params["model_batch_sizes"]
+            
+            # Collect batch sizes for all models being processed
+            batch_sizes_to_consider = []
+            
+            # Check patch-level models
+            if all_models:
+                for model in all_models:
+                    if model in model_batch_sizes:
+                        batch_sizes_to_consider.append(model_batch_sizes[model])
+            
+            # Check slide-level models and their required patch encoders
+            # TITAN_SLIDE uses CONCH1_5, GIGAPATH_SLIDE uses GIGAPATH
+            if all_slide_models:
+                for slide_model in all_slide_models:
+                    if slide_model == "TITAN_SLIDE" and "CONCH1_5" in model_batch_sizes:
+                        batch_sizes_to_consider.append(model_batch_sizes["CONCH1_5"])
+                    elif slide_model == "GIGAPATH_SLIDE" and "GIGAPATH" in model_batch_sizes:
+                        batch_sizes_to_consider.append(model_batch_sizes["GIGAPATH"])
+                    elif slide_model in model_batch_sizes:
+                        batch_sizes_to_consider.append(model_batch_sizes[slide_model])
+            
+            # Use the minimum batch size to ensure all models fit in memory
+            if batch_sizes_to_consider:
+                optimal_batch_size = min(batch_sizes_to_consider)
+                if "batch_size" not in model_params or model_params["batch_size"] != optimal_batch_size:
+                    print(f"\n[Per-Model Batch Size] Using batch_size={optimal_batch_size}")
+                    print(f"  Models: {', '.join(all_models + all_slide_models)}")
+                    model_list = all_models + all_slide_models
+                    size_strs = [f"{m}={model_batch_sizes.get(m, 'default')}" for m in model_list]
+                    print(f"  Per-model sizes: {', '.join(size_strs)}")
+                    model_params["batch_size"] = optimal_batch_size
+        
         total_tasks_submitted = 0
 
         if use_batch_encoding:
@@ -2123,6 +2160,15 @@ def main():
         "Note: Not applicable when using --stage-to-azure-files (incremental staging). "
         "This is different from 'slide_batch_size' which controls internal batching within a task.",
     )
+    parser.add_argument(
+        "--slide-batch-size",
+        type=int,
+        default=None,
+        help="Batch size for slide encoding within a task (default: 8). "
+        "Controls how many slides are processed together in GPU memory during slide-level encoding. "
+        "Increase for better GPU utilization, decrease if running out of memory. "
+        "This is different from '--slides-per-task' which controls task grouping.",
+    )
     parser.add_argument("--task-id", help="Single task ID")
     parser.add_argument(
         "--slide-path", help="Path to slide file (for single task, can be s3://)"
@@ -2145,8 +2191,8 @@ def main():
     )
     parser.add_argument(
         "--aws-region",
-        default="us-east-1",
-        help="AWS region (or set AWS_DEFAULT_REGION env var)",
+        default=None,
+        help="AWS region (default: us-east-1, or set AWS_DEFAULT_REGION env var)",
     )
     parser.add_argument(
         "--aws-endpoint-url",
@@ -2198,7 +2244,7 @@ def main():
     parser.add_argument(
         "--max-retry-count",
         type=int,
-        default=3,
+        default=None,
         help="Maximum number of retry attempts for failed tasks (default: 3)",
     )
     parser.add_argument(
@@ -2286,7 +2332,7 @@ def main():
             "AWS_SECRET_ACCESS_KEY"
         ) or config_defaults.get("aws_secret_access_key")
 
-    if args.aws_region == "us-east-1":  # Check if it's the default value
+    if not args.aws_region:  # Not set via CLI
         env_region = os.environ.get("AWS_DEFAULT_REGION") or os.environ.get(
             "AWS_REGION"
         )
@@ -2294,6 +2340,8 @@ def main():
             args.aws_region = env_region
         elif "aws_region" in config_defaults:
             args.aws_region = config_defaults["aws_region"]
+        else:
+            args.aws_region = "us-east-1"  # Default fallback
 
     if not args.aws_endpoint_url:
         args.aws_endpoint_url = os.environ.get(
@@ -2472,6 +2520,16 @@ def main():
         # Output prefix from config
         if not args.output_prefix and "output_prefix" in config_defaults:
             args.output_prefix = config_defaults["output_prefix"]
+
+        # slides_per_task - override default value (1) with config if present
+        if args.slides_per_task == 1 and "slides_per_task" in config_defaults:
+            args.slides_per_task = config_defaults["slides_per_task"]
+        
+        # use_gpu - check if explicitly set via --no-gpu, otherwise use config
+        # Since --use-gpu has action="store_true" with default=True, we need special handling
+        # Only override if --no-gpu wasn't explicitly used and config has a value
+        if "--no-gpu" not in sys.argv and "use_gpu" in config_defaults:
+            args.use_gpu = config_defaults["use_gpu"]
 
     # Auto-generate pool_id and job_id if not provided (use same timestamp for consistency)
     if not args.pool_id or not args.job_id:
@@ -2738,12 +2796,14 @@ def main():
             default_params["aws_access_key_id"] = args.aws_access_key_id
         if args.aws_secret_access_key:
             default_params["aws_secret_access_key"] = args.aws_secret_access_key
-        if args.aws_region:
+        if args.aws_region is not None:
             default_params["aws_region"] = args.aws_region
         if args.hf_token:
             default_params["hf_token"] = args.hf_token
         if args.max_retry_count is not None:
             default_params["max_retry_count"] = args.max_retry_count
+        if args.slide_batch_size is not None:
+            default_params["slide_batch_size"] = args.slide_batch_size
 
         # Add model paths from pre-download or user-provided
         # Command-line args override config and pre-download
