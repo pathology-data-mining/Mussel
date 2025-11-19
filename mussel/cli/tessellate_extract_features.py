@@ -196,6 +196,28 @@ class TessellateExtractFeaturesConfig:
     slide_model_type: Any = None  # Can be ModelType or List[ModelType]
     slide_model_path: Optional[str] = None
 
+    def get_batch_size_for_model(self, model_type) -> int:
+        """
+        Get the appropriate batch size for a given model type.
+        
+        Args:
+            model_type: ModelType enum or string name
+            
+        Returns:
+            Batch size to use for this model (from model_batch_sizes if defined, else default batch_size)
+        """
+        if self.model_batch_sizes is None:
+            return self.batch_size
+        
+        # Get model name
+        if hasattr(model_type, 'name'):
+            model_name = model_type.name
+        else:
+            model_name = str(model_type)
+        
+        # Return per-model batch size if defined, else default
+        return self.model_batch_sizes.get(model_name, self.batch_size)
+
     def __post_init__(self):
         """Set default patch size based on model type if not explicitly set."""
         from omegaconf import ListConfig, DictConfig
@@ -214,44 +236,6 @@ class TessellateExtractFeaturesConfig:
         # Convert DictConfig to regular dict for model_batch_sizes
         if isinstance(self.model_batch_sizes, DictConfig):
             self.model_batch_sizes = dict(self.model_batch_sizes)
-        
-        # Determine optimal batch_size based on models being processed
-        if self.model_batch_sizes:
-            batch_sizes_to_consider = []
-            
-            # Get list of all models
-            model_list = []
-            if isinstance(self.model_type, list):
-                model_list.extend([m.name for m in self.model_type])
-            elif self.model_type:
-                model_list.append(self.model_type.name)
-            
-            # Add slide model patch encoders
-            slide_model_list = []
-            if isinstance(self.slide_model_type, list):
-                slide_model_list.extend(self.slide_model_type)
-            elif self.slide_model_type:
-                slide_model_list.append(self.slide_model_type)
-            
-            for slide_model in slide_model_list:
-                slide_model_name = slide_model.name if hasattr(slide_model, 'name') else str(slide_model)
-                # TITAN_SLIDE uses CONCH1_5, GIGAPATH_SLIDE uses GIGAPATH
-                if slide_model_name == "TITAN_SLIDE":
-                    model_list.append("CONCH1_5")
-                elif slide_model_name == "GIGAPATH_SLIDE":
-                    model_list.append("GIGAPATH")
-            
-            # Collect batch sizes for all models
-            for model_name in model_list:
-                if model_name in self.model_batch_sizes:
-                    batch_sizes_to_consider.append(self.model_batch_sizes[model_name])
-            
-            # Use minimum batch size to ensure all models fit in memory
-            if batch_sizes_to_consider:
-                optimal_batch_size = min(batch_sizes_to_consider)
-                if self.batch_size != optimal_batch_size:
-                    logger.info(f"Using per-model batch_size={optimal_batch_size} (models: {', '.join(model_list)})")
-                    self.batch_size = optimal_batch_size
         
         # Only set patch size if seg_config.patch_size is at the default value
         # This allows users to override if they explicitly set a different value
@@ -662,7 +646,7 @@ def _main_batch(cfg: TessellateExtractFeaturesConfig, patch_output_dir: Optional
             output_h5_paths=intermediate_h5_paths,
             model_type=model_type,
             model_path=model_path,
-            batch_size=cfg.batch_size,
+            batch_size=cfg.get_batch_size_for_model(model_type),
             use_gpu=cfg.use_gpu,
             gpu_device_id=cfg.gpu_device_id,
             gpu_device_ids=cfg.gpu_device_ids,
@@ -736,7 +720,7 @@ def _main_batch(cfg: TessellateExtractFeaturesConfig, patch_output_dir: Optional
             output_h5_paths=output_h5_paths,
             model_type=model_type,
             model_path=model_path,
-            batch_size=cfg.batch_size,
+            batch_size=cfg.get_batch_size_for_model(model_type),
             use_gpu=cfg.use_gpu,
             gpu_device_id=cfg.gpu_device_id,
             gpu_device_ids=cfg.gpu_device_ids,
