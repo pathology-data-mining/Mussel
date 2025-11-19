@@ -699,52 +699,76 @@ def aggregate_slide_features_batch(
     # without loading a model
     if aggregation_method != "model":
         logger.info(f"Processing {num_slides} slides with aggregation_method={aggregation_method}")
+        successful_slides = []
+        failed_slides = []
+        
         for i, patch_h5_path in enumerate(patch_features_h5_paths):
             output_h5 = output_h5_paths[i] if output_h5_paths else None
             output_pt = output_pt_paths[i] if output_pt_paths else None
+            slide_name = Path(patch_h5_path).stem
             
-            with h5py.File(patch_h5_path, "r") as file:
-                features = file["features"][:]
-                logger.info(f"Loaded patch features with shape: {features.shape} for slide {i+1}/{num_slides}")
-                
-                # Load coordinates if available
-                coords = file["coords"][:] if "coords" in file else None
-                
-                # Load patch_size from coords attributes if available
-                patch_size = None
-                if "coords" in file and "patch_size" in file["coords"].attrs:
-                    patch_size = file["coords"].attrs["patch_size"]
-                
-                # Apply aggregation using shared helper function
-                aggregated_features = _apply_slide_aggregation(
-                    features,
-                    aggregation_method=aggregation_method,
-                    slide_model_type=model_type,
-                    slide_model_path=model_path,
-                    use_gpu=use_gpu,
-                    gpu_device_id=gpu_device_id,
-                    gpu_device_ids=gpu_device_ids,
-                    coords=coords,
-                    patch_size=patch_size,
-                )
-                
-                # Save to HDF5 if requested
+            try:
+                with h5py.File(patch_h5_path, "r") as file:
+                    features = file["features"][:]
+                    logger.info(f"Loaded patch features with shape: {features.shape} for slide {i+1}/{num_slides}")
+                    
+                    # Load coordinates if available
+                    coords = file["coords"][:] if "coords" in file else None
+                    
+                    # Load patch_size from coords attributes if available
+                    patch_size = None
+                    if "coords" in file and "patch_size" in file["coords"].attrs:
+                        patch_size = file["coords"].attrs["patch_size"]
+                    
+                    # Apply aggregation using shared helper function
+                    aggregated_features = _apply_slide_aggregation(
+                        features,
+                        aggregation_method=aggregation_method,
+                        slide_model_type=model_type,
+                        slide_model_path=model_path,
+                        use_gpu=use_gpu,
+                        gpu_device_id=gpu_device_id,
+                        gpu_device_ids=gpu_device_ids,
+                        coords=coords,
+                        patch_size=patch_size,
+                    )
+                    
+                    # Save to HDF5 if requested
+                    if output_h5:
+                        logger.info(f"Saving aggregated features to {output_h5}")
+                        asset_dict = {"features": aggregated_features}
+                        
+                        # Copy coordinates if they exist and we're using identity
+                        if aggregation_method == "identity" and "coords" in file:
+                            asset_dict["coords"] = file["coords"][:]
+                        
+                        save_hdf5(output_h5, asset_dict, attr_h5_path=None, mode="w")
+                    
+                    # Save to PyTorch if requested
+                    if output_pt:
+                        logger.info(f"Saving aggregated features to {output_pt}")
+                        features_tensor = torch.from_numpy(aggregated_features)
+                        from .file import save_torch_tensor
+                        save_torch_tensor(output_pt, features_tensor)
+                    
+                    successful_slides.append(slide_name)
+                    
+            except Exception as e:
+                logger.error(f"Failed to process slide {slide_name} (slide {i+1}/{num_slides}): {str(e)}")
+                logger.error(f"  Input: {patch_h5_path}")
                 if output_h5:
-                    logger.info(f"Saving aggregated features to {output_h5}")
-                    asset_dict = {"features": aggregated_features}
-                    
-                    # Copy coordinates if they exist and we're using identity
-                    if aggregation_method == "identity" and "coords" in file:
-                        asset_dict["coords"] = file["coords"][:]
-                    
-                    save_hdf5(output_h5, asset_dict, attr_h5_path=None, mode="w")
-                
-                # Save to PyTorch if requested
-                if output_pt:
-                    logger.info(f"Saving aggregated features to {output_pt}")
-                    features_tensor = torch.from_numpy(aggregated_features)
-                    from .file import save_torch_tensor
-                    save_torch_tensor(output_pt, features_tensor)
+                    logger.error(f"  Output (not created): {output_h5}")
+                failed_slides.append(slide_name)
+                # Continue with next slide
+                continue
+        
+        if failed_slides:
+            logger.warning(f"\n=== Batch Processing Summary ===")
+            logger.warning(f"Successfully processed: {len(successful_slides)}/{num_slides} slides")
+            logger.warning(f"Failed: {len(failed_slides)} slides")
+            logger.warning(f"Failed slides: {', '.join(failed_slides)}")
+        else:
+            logger.info(f"\n=== All {num_slides} slides processed successfully ===")
         
         return output_h5_paths, output_pt_paths
     
@@ -762,6 +786,9 @@ def aggregate_slide_features_batch(
     model = model_factory.get_model(model_path, use_gpu, gpu_device_id)
     model_fun = model.get_model_fun()
     
+    successful_slides = []
+    failed_slides = []
+    
     # Process slides in batches
     for batch_start in range(0, num_slides, slide_batch_size):
         batch_end = min(batch_start + slide_batch_size, num_slides)
@@ -773,6 +800,7 @@ def aggregate_slide_features_batch(
         batch_features = []
         batch_coords = []
         batch_patch_sizes = []
+        batch_slide_names = []
         
         for i in batch_indices:
             with h5py.File(patch_features_h5_paths[i], "r") as file:
@@ -786,6 +814,7 @@ def aggregate_slide_features_batch(
                 batch_features.append(features)
                 batch_coords.append(coords)
                 batch_patch_sizes.append(patch_size)
+                batch_slide_names.append(Path(patch_features_h5_paths[i]).stem)
         
         # Process batch based on model type requirements
         with torch.no_grad():
@@ -796,18 +825,25 @@ def aggregate_slide_features_batch(
                 # from loading the model once rather than N times.
                 # Future optimization: Implement true batching with padding if model supports it
                 aggregated_batch = []
-                for features, coords, patch_size in zip(batch_features, batch_coords, batch_patch_sizes):
-                    if coords is None:
-                        raise ValueError("TITAN_SLIDE requires coordinates")
-                    if patch_size is None:
-                        patch_size = 256
-                        logger.warning(f"patch_size not provided, using default: {patch_size}")
-                    
-                    features_tensor = torch.from_numpy(features).unsqueeze(0)
-                    coords_tensor = torch.from_numpy(coords).long().unsqueeze(0)
-                    agg_features = model_fun(features_tensor, coords_tensor, patch_size).cpu().numpy()
-                    aggregated_batch.append(agg_features)
-                    
+                for slide_idx, (features, coords, patch_size, slide_name) in enumerate(zip(batch_features, batch_coords, batch_patch_sizes, batch_slide_names)):
+                    try:
+                        if coords is None:
+                            raise ValueError("TITAN_SLIDE requires coordinates")
+                        if patch_size is None:
+                            patch_size = 256
+                            logger.warning(f"patch_size not provided, using default: {patch_size}")
+                        
+                        features_tensor = torch.from_numpy(features).unsqueeze(0)
+                        coords_tensor = torch.from_numpy(coords).long().unsqueeze(0)
+                        agg_features = model_fun(features_tensor, coords_tensor, patch_size).cpu().numpy()
+                        aggregated_batch.append(agg_features)
+                        successful_slides.append(slide_name)
+                    except Exception as e:
+                        logger.error(f"Failed to process slide {slide_name}: {str(e)}")
+                        aggregated_batch.append(None)
+                        failed_slides.append(slide_name)
+                        # Continue with next slide
+                        
             elif model_type == ModelType.GIGAPATH_SLIDE:
                 # GIGAPATH requires features and coords per slide
                 # Note: We process slides sequentially here because GIGAPATH_SLIDE expects
@@ -815,39 +851,65 @@ def aggregate_slide_features_batch(
                 # from loading the model once rather than N times.
                 # Future optimization: Implement true batching with padding if model supports it
                 aggregated_batch = []
-                for features, coords in zip(batch_features, batch_coords):
-                    if coords is None:
-                        raise ValueError("GIGAPATH_SLIDE requires coordinates")
-                    
-                    features_tensor = torch.from_numpy(features).unsqueeze(0)
-                    coords_tensor = torch.from_numpy(coords).unsqueeze(0)
-                    agg_features = model_fun(features_tensor, coords_tensor).numpy()
-                    aggregated_batch.append(agg_features)
+                for slide_idx, (features, coords, slide_name) in enumerate(zip(batch_features, batch_coords, batch_slide_names)):
+                    try:
+                        if coords is None:
+                            raise ValueError("GIGAPATH_SLIDE requires coordinates")
+                        
+                        features_tensor = torch.from_numpy(features).unsqueeze(0)
+                        coords_tensor = torch.from_numpy(coords).unsqueeze(0)
+                        agg_features = model_fun(features_tensor, coords_tensor).numpy()
+                        aggregated_batch.append(agg_features)
+                        successful_slides.append(slide_name)
+                    except Exception as e:
+                        logger.error(f"Failed to process slide {slide_name}: {str(e)}")
+                        aggregated_batch.append(None)
+                        failed_slides.append(slide_name)
+                        # Continue with next slide
                     
             else:
                 # Other slide encoders may only need features
                 # Stack features from all slides in batch and process together
-                features_list = [torch.from_numpy(f).unsqueeze(0) for f in batch_features]
-                features_batch = torch.cat(features_list, dim=0)
-                
-                # Process entire batch at once for maximum efficiency
-                aggregated_batch_tensor = model_fun(features_batch).cpu().numpy()
-                aggregated_batch = [aggregated_batch_tensor[i:i+1] for i in range(len(batch_features))]
+                try:
+                    features_list = [torch.from_numpy(f).unsqueeze(0) for f in batch_features]
+                    features_batch = torch.cat(features_list, dim=0)
+                    
+                    # Process entire batch at once for maximum efficiency
+                    aggregated_batch_tensor = model_fun(features_batch).cpu().numpy()
+                    aggregated_batch = [aggregated_batch_tensor[i:i+1] for i in range(len(batch_features))]
+                    successful_slides.extend(batch_slide_names)
+                except Exception as e:
+                    logger.error(f"Failed to process batch {batch_start+1}-{batch_end}: {str(e)}")
+                    # Mark all slides in batch as failed
+                    aggregated_batch = [None] * len(batch_features)
+                    failed_slides.extend(batch_slide_names)
         
-        # Save results for each slide in batch
+        # Save results for each slide in batch (skip failed slides)
         for idx, i in enumerate(batch_indices):
             aggregated_features = aggregated_batch[idx]
+            slide_name = batch_slide_names[idx]
             
-            # Save to HDF5 if requested
-            if output_h5_paths and output_h5_paths[i] is not None:
-                asset_dict = {"features": aggregated_features}
-                save_hdf5(output_h5_paths[i], asset_dict, attr_h5_path=None, mode="w")
+            if aggregated_features is None:
+                logger.warning(f"Skipping save for failed slide: {slide_name}")
+                continue
             
-            # Save to PyTorch if requested
-            if output_pt_paths and output_pt_paths[i] is not None:
-                features_tensor = torch.from_numpy(aggregated_features)
-                from .file import save_torch_tensor
-                save_torch_tensor(output_pt_paths[i], features_tensor)
+            try:
+                # Save to HDF5 if requested
+                if output_h5_paths and output_h5_paths[i] is not None:
+                    asset_dict = {"features": aggregated_features}
+                    save_hdf5(output_h5_paths[i], asset_dict, attr_h5_path=None, mode="w")
+                
+                # Save to PyTorch if requested
+                if output_pt_paths and output_pt_paths[i] is not None:
+                    features_tensor = torch.from_numpy(aggregated_features)
+                    from .file import save_torch_tensor
+                    save_torch_tensor(output_pt_paths[i], features_tensor)
+            except Exception as e:
+                logger.error(f"Failed to save results for slide {slide_name}: {str(e)}")
+                if slide_name in successful_slides:
+                    successful_slides.remove(slide_name)
+                if slide_name not in failed_slides:
+                    failed_slides.append(slide_name)
     
     # Clean up model to free GPU/CPU memory
     del model
@@ -857,7 +919,15 @@ def aggregate_slide_features_batch(
     gc.collect()
     logger.info("Model cleaned up, memory freed")
     
-    logger.info(f"Batch aggregation complete for {num_slides} slides")
+    if failed_slides:
+        logger.warning(f"\n=== Batch Processing Summary ===")
+        logger.warning(f"Successfully processed: {len(successful_slides)}/{num_slides} slides")
+        logger.warning(f"Failed: {len(failed_slides)} slides")
+        logger.warning(f"Failed slides: {', '.join(failed_slides)}")
+    else:
+        logger.info(f"\n=== All {num_slides} slides processed successfully ===")
+    
+    logger.info(f"Batch aggregation complete")
     return output_h5_paths, output_pt_paths
 
 
