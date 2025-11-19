@@ -227,37 +227,59 @@ def _apply_slide_aggregation(
         # GIGAPATH_SLIDE: requires (features, coords)
         # TITAN_SLIDE: requires (features, coords, patch_size)
         with torch.no_grad():
-            if slide_model_type == ModelType.TITAN_SLIDE:
-                # TITAN requires features, coords, and patch_size
-                if coords is None:
-                    raise ValueError("TITAN_SLIDE requires coordinates")
-                if patch_size is None:
-                    # Get the default patch size for the required patch encoder
-                    patch_encoder = get_required_patch_encoder(slide_model_type)
-                    patch_size = get_default_patch_size(patch_encoder)
-                    logger.warning(
-                        f"patch_size not provided, using default for {patch_encoder}: {patch_size}"
+            try:
+                if slide_model_type == ModelType.TITAN_SLIDE:
+                    # TITAN requires features, coords, and patch_size
+                    if coords is None:
+                        raise ValueError("TITAN_SLIDE requires coordinates")
+                    if patch_size is None:
+                        # Get the default patch size for the required patch encoder
+                        patch_encoder = get_required_patch_encoder(slide_model_type)
+                        patch_size = get_default_patch_size(patch_encoder)
+                        logger.warning(
+                            f"patch_size not provided, using default for {patch_encoder}: {patch_size}"
+                        )
+                    coords_tensor = torch.from_numpy(coords).long().unsqueeze(
+                        0
+                    )  # Add batch dimension and convert to int64
+                    aggregated_features = (
+                        model_fun(features_tensor, coords_tensor, patch_size).cpu().numpy()
                     )
-                coords_tensor = torch.from_numpy(coords).long().unsqueeze(
-                    0
-                )  # Add batch dimension and convert to int64
-                aggregated_features = (
-                    model_fun(features_tensor, coords_tensor, patch_size).cpu().numpy()
-                )
-            elif slide_model_type == ModelType.GIGAPATH_SLIDE:
-                # GIGAPATH requires features and coords
-                if coords is None:
-                    raise ValueError("GIGAPATH_SLIDE requires coordinates")
+                elif slide_model_type == ModelType.GIGAPATH_SLIDE:
+                    # GIGAPATH requires features and coords
+                    if coords is None:
+                        raise ValueError("GIGAPATH_SLIDE requires coordinates")
 
-                coords_tensor = torch.from_numpy(coords).unsqueeze(
-                    0
-                )  # Add batch dimension
-                aggregated_features = (
-                    model_fun(features_tensor, coords_tensor).numpy()
+                    coords_tensor = torch.from_numpy(coords).unsqueeze(
+                        0
+                    )  # Add batch dimension
+                    aggregated_features = (
+                        model_fun(features_tensor, coords_tensor).numpy()
+                    )
+                else:
+                    # Other slide encoders may only need features
+                    aggregated_features = model_fun(features_tensor).cpu().numpy()
+            except torch.cuda.OutOfMemoryError as e:
+                num_patches = features.shape[0]
+                logger.error(
+                    f"GPU Out of Memory during slide aggregation with {slide_model_type.name}"
                 )
-            else:
-                # Other slide encoders may only need features
-                aggregated_features = model_fun(features_tensor).cpu().numpy()
+                logger.error(f"Number of patches: {num_patches:,}")
+                logger.error(f"Feature dimensions: {features.shape}")
+                logger.error(
+                    f"\nSuggestions to fix OOM for {slide_model_type.name}:"
+                )
+                logger.error("  1. Use more aggressive tissue segmentation to reduce patches")
+                logger.error("     (increase tissue_area_threshold or step_size)")
+                logger.error("  2. Use mean/max pooling instead of model-based aggregation:")
+                logger.error("     aggregation_method=mean or aggregation_method=max")
+                logger.error(f"  3. Process a smaller slide (current: {num_patches:,} patches)")
+                logger.error(f"\nOriginal error: {str(e)}")
+                raise RuntimeError(
+                    f"GPU Out of Memory: {slide_model_type.name} cannot process {num_patches:,} patches. "
+                    f"Maximum recommended: ~10,000 patches. "
+                    f"Try using mean pooling (aggregation_method=mean) or more aggressive segmentation."
+                ) from e
 
         logger.info(
             f"Applied model aggregation: {features.shape} -> {aggregated_features.shape}"
