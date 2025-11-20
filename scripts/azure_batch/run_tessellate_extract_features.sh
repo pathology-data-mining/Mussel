@@ -168,11 +168,6 @@ if [ -n "$SEG_CONFIG_GROUP" ]; then
     CMD="$CMD seg_config=$SEG_CONFIG_GROUP"
 fi
 
-# Add model cache dir
-if [ -n "$MODEL_CACHE_DIR" ]; then
-    CMD="$CMD model_dir='$MODEL_CACHE_DIR'"
-fi
-
 log "Running command: $CMD"
 log ""
 
