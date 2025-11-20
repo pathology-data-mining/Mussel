@@ -492,13 +492,34 @@ def main(
 
 def _main_single(cfg: TessellateExtractFeaturesConfig):
     """Process a single slide."""
+    # Check if output_dir is provided instead of output_h5_path/output_pt_path
+    if cfg.output_dir:
+        # Convert single-slide mode with output_dir to use explicit paths
+        output_dir = Path(cfg.output_dir)
+        output_dir.mkdir(parents=True, exist_ok=True)
+        
+        # Generate slide_id if not provided
+        slide_id = cfg.slide_id if cfg.slide_id else Path(cfg.slide_path).stem
+        
+        # Generate output paths from output_dir
+        cfg.output_h5_path = str(output_dir / "h5" / f"{slide_id}.{cfg.output_h5_suffix}")
+        cfg.output_pt_path = str(output_dir / "pt" / f"{slide_id}.{cfg.output_pt_suffix}")
+        
+        # Create subdirectories
+        Path(cfg.output_h5_path).parent.mkdir(parents=True, exist_ok=True)
+        Path(cfg.output_pt_path).parent.mkdir(parents=True, exist_ok=True)
+        
+        logger.info(f"Using output_dir: {cfg.output_dir}")
+        logger.info(f"Generated output_h5_path: {cfg.output_h5_path}")
+        logger.info(f"Generated output_pt_path: {cfg.output_pt_path}")
+    
     if (
         cfg.slide_path is None
         or cfg.output_h5_path is None
         or cfg.output_pt_path is None
     ):
         raise ValueError(
-            "Single-slide mode requires slide_path, output_h5_path, and output_pt_path to be specified"
+            "Single-slide mode requires slide_path and either (output_h5_path, output_pt_path) or output_dir"
         )
 
     # Create temporary directory for intermediate files if not keeping them
@@ -1152,11 +1173,13 @@ def _main_single_multi_model(cfg: TessellateExtractFeaturesConfig):
     cfg_batch.slide_paths = [cfg.slide_path]
     cfg_batch.slide_ids = [cfg.slide_id] if cfg.slide_id else None
 
-    # Use parent directory of output paths as output_dir
+    # Use parent directory of output paths as output_dir, or output_dir if provided
     if cfg.output_h5_path:
         cfg_batch.output_dir = str(Path(cfg.output_h5_path).parent)
+    elif cfg.output_dir:
+        cfg_batch.output_dir = str(cfg.output_dir)
     else:
-        raise ValueError("Single-slide multi-model mode requires output_h5_path")
+        raise ValueError("Single-slide multi-model mode requires output_h5_path or output_dir")
 
     _main_batch_multi_model(cfg_batch)
 
