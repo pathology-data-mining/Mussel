@@ -241,34 +241,34 @@ def save_torch_tensor(output_path, tensor):
 
 def download_slide(slide_path, local_dir=None):
     """Download a remote slide to a local path.
-    
+
     If the slide is already local, returns the original path.
     If the slide is remote (s3://, az://, etc.), downloads it to a local temporary location.
-    
+
     Args:
         slide_path: Path to the slide (local or remote).
         local_dir: Optional directory to download to. If None, uses system temp directory.
-        
+
     Returns:
         Tuple of (local_path, is_temp) where is_temp indicates if cleanup is needed.
     """
     from loguru import logger
-    
+
     if not _is_remote_path(slide_path):
         # Already local
         return slide_path, False
-    
+
     # Download remote file
     import tempfile
     if local_dir is None:
         local_dir = tempfile.mkdtemp(prefix='mussel_slides_')
     else:
         os.makedirs(local_dir, exist_ok=True)
-    
+
     # Extract filename from remote path
     filename = Path(slide_path).name
     local_path = os.path.join(local_dir, filename)
-    
+
     logger.info(f"Downloading remote slide {slide_path} to {local_path}")
     try:
         fs = _get_fsspec_filesystem(slide_path)
@@ -278,3 +278,156 @@ def download_slide(slide_path, local_dir=None):
     except Exception as e:
         logger.error(f"Failed to download {slide_path}: {e}")
         raise
+
+
+def download_model_path(model_path, cache_dir=None):
+    """Download a remote model path to a local cache directory.
+
+    If the model path is already local, returns the original path.
+    If the model path is remote (s3://, az://, etc.), downloads it to a cache directory.
+    Supports both single files and directories.
+
+    Args:
+        model_path: Path to the model file or directory (local or remote).
+        cache_dir: Optional cache directory to download to. If None, uses HF_HOME or system default.
+
+    Returns:
+        Local path to the downloaded model (file or directory).
+    """
+    from loguru import logger
+
+    if not _is_remote_path(model_path):
+        # Already local
+        return model_path
+
+    # Determine cache directory
+    if cache_dir is None:
+        cache_dir = os.environ.get('HF_HOME') or os.environ.get('TRANSFORMERS_CACHE') or os.path.expanduser('~/.cache/mussel')
+
+    # Create cache subdirectory for models
+    models_cache_dir = os.path.join(cache_dir, 'remote_models')
+    os.makedirs(models_cache_dir, exist_ok=True)
+
+    # Extract the base name from remote path to create a cache location
+    # For URLs like az://container/models/GIGAPATH_SLIDE, we want to preserve the structure
+    path_parts = model_path.split('://', 1)[1]  # Remove scheme
+    # Replace slashes with underscores to create a unique cache key
+    cache_key = path_parts.replace('/', '_').replace('\\', '_')
+    local_path = os.path.join(models_cache_dir, cache_key)
+
+    # Check if already cached
+    if os.path.exists(local_path):
+        logger.info(f"Using cached model from {local_path}")
+        return local_path
+
+    # Download remote model
+    logger.info(f"Downloading remote model {model_path} to {local_path}")
+    try:
+        fs = _get_fsspec_filesystem(model_path)
+
+        # Check if remote path is a directory or file
+        try:
+            # Try to list contents to see if it's a directory
+            is_directory = fs.isdir(model_path)
+        except Exception:
+            # If we can't determine, assume it's a file
+            is_directory = False
+
+        if is_directory:
+            # Download directory recursively
+            logger.info(f"Downloading directory {model_path}")
+            fs.get(model_path, local_path, recursive=True)
+        else:
+            # Download single file
+            logger.info(f"Downloading file {model_path}")
+            fs.get(model_path, local_path)
+
+        logger.info(f"Download complete: {local_path}")
+        return local_path
+    except Exception as e:
+        logger.error(f"Failed to download model from {model_path}: {e}")
+        raise
+
+
+def resolve_remote_paths(*attrs, auto_detect=True, suffixes=None):
+    """
+    Decorator that automatically resolves remote paths in config to local cached paths.
+
+    Checks specified config attributes (or auto-detects them) for remote paths
+    (az://, s3://, gs://, etc.) and downloads them to a local cache directory
+    before the function executes.
+
+    Args:
+        *attrs: Specific attribute names to check and resolve. If provided along with
+                auto_detect=True, these will be checked in addition to auto-detected attrs.
+        auto_detect: If True, automatically detect attributes ending with common path suffixes.
+                    Default: True
+        suffixes: List of suffixes to detect (e.g., ['_path', '_dir', '_pkl']).
+                 If None, uses default: ['_path', '_dir', '_pkl', '_file']
+
+    Usage:
+        # Auto-detect all path-like attributes
+        @resolve_remote_paths()
+        def process_slides(cfg):
+            ...
+
+        # Specify exact attributes
+        @resolve_remote_paths('model_path', 'classifier_pkl', auto_detect=False)
+        def process_slides(cfg):
+            ...
+
+        # Combine explicit + auto-detection
+        @resolve_remote_paths('custom_attr', auto_detect=True)
+        def process_slides(cfg):
+            ...
+    """
+    from functools import wraps
+    from loguru import logger
+
+    # Default suffixes for auto-detection
+    if suffixes is None:
+        suffixes = ['_path', '_dir', '_pkl', '_file', '_model']
+
+    def decorator(func):
+        @wraps(func)
+        def wrapper(cfg, *args, **kwargs):
+            # Collect attributes to check
+            attrs_to_check = set(attrs) if attrs else set()
+
+            # Auto-detect path-like attributes if enabled
+            if auto_detect:
+                for attr in dir(cfg):
+                    # Skip private/magic attributes
+                    if attr.startswith('_'):
+                        continue
+                    # Check if attribute ends with common path suffixes
+                    if any(attr.endswith(suffix) for suffix in suffixes):
+                        attrs_to_check.add(attr)
+
+            # Resolve each attribute
+            for attr in sorted(attrs_to_check):
+                if not hasattr(cfg, attr):
+                    continue
+
+                value = getattr(cfg, attr)
+
+                # Skip None values and non-string values
+                if value is None or not isinstance(value, str):
+                    continue
+
+                # Check if it's a remote path
+                if _is_remote_path(value):
+                    logger.info(f"Downloading remote {attr}: {value}")
+                    try:
+                        local_path = download_model_path(value)
+                        setattr(cfg, attr, local_path)
+                        logger.info(f"Resolved {attr} to local path: {local_path}")
+                    except Exception as e:
+                        logger.error(f"Failed to download remote {attr} '{value}': {e}")
+                        # Continue execution - let the original code handle missing paths
+
+            return func(cfg, *args, **kwargs)
+
+        return wrapper
+
+    return decorator

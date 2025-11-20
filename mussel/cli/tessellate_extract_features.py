@@ -33,6 +33,7 @@ from mussel.utils import (
     aggregate_slide_features_batch,
     extract_patch_features_batch,
     save_torch_tensor,
+    resolve_remote_paths,
 )
 
 ssl._create_default_https_context = ssl._create_unverified_context
@@ -71,20 +72,60 @@ def _safe_path_join(base_path, *parts):
 defaults = ["_self_", {"seg_config": "default"}]
 
 
+def resolve_model_path(model_path: Optional[str], model_dir: Optional[str], model_type: ModelType) -> Optional[str]:
+    """
+    Resolve model path, handling both direct model_path and model_dir.
+
+    Supports both local and remote paths (az://, s3://, etc.). Remote paths
+    will be downloaded to a cache directory.
+
+    Priority:
+    1. If model_path is provided, use it (download if remote)
+    2. Otherwise, try to find model in model_dir (download model_dir if remote)
+
+    Args:
+        model_path: Direct path to model weights (local or remote)
+        model_dir: Directory containing pre-downloaded models (local or remote)
+        model_type: ModelType enum
+
+    Returns:
+        Local path to model if found, None otherwise
+    """
+    # If model_path is directly provided, download if remote
+    if model_path is not None:
+        if _is_remote_path(model_path):
+            logger.info(f"Downloading remote model_path: {model_path}")
+            try:
+                return download_model_path(model_path)
+            except Exception as e:
+                logger.error(f"Failed to download remote model_path {model_path}: {e}")
+                return None
+        return model_path
+
+    # Otherwise, try to find model in model_dir
+    if model_dir is not None:
+        return get_model_path_from_dir(model_dir, model_type)
+
+    return None
+
+
 def get_model_path_from_dir(model_dir: Optional[str], model_type: ModelType) -> Optional[str]:
     """
     Get model path from model_dir if available.
-    
+
+    Note: Remote paths should be resolved via @resolve_remote_paths decorator before calling this.
+    This function expects local paths.
+
     Args:
-        model_dir: Directory containing pre-downloaded models
+        model_dir: Directory containing pre-downloaded models (should be local)
         model_type: ModelType enum
-        
+
     Returns:
         Path to model if found in model_dir, None otherwise
     """
     if model_dir is None:
         return None
-    
+
     model_dir_path = Path(model_dir)
     if not model_dir_path.exists():
         return None
@@ -490,6 +531,7 @@ def main(
             _main_single(cfg)
 
 
+@resolve_remote_paths()
 def _main_single(cfg: TessellateExtractFeaturesConfig):
     """Process a single slide."""
     # Check if output_dir is provided instead of output_h5_path/output_pt_path
@@ -497,18 +539,18 @@ def _main_single(cfg: TessellateExtractFeaturesConfig):
         # Convert single-slide mode with output_dir to use explicit paths
         output_dir = Path(cfg.output_dir)
         output_dir.mkdir(parents=True, exist_ok=True)
-        
+
         # Generate slide_id if not provided
         slide_id = cfg.slide_id if cfg.slide_id else Path(cfg.slide_path).stem
-        
+
         # Generate output paths from output_dir
         cfg.output_h5_path = str(output_dir / "h5" / f"{slide_id}.{cfg.output_h5_suffix}")
         cfg.output_pt_path = str(output_dir / "pt" / f"{slide_id}.{cfg.output_pt_suffix}")
-        
+
         # Create subdirectories
         Path(cfg.output_h5_path).parent.mkdir(parents=True, exist_ok=True)
         Path(cfg.output_pt_path).parent.mkdir(parents=True, exist_ok=True)
-        
+
         logger.info(f"Using output_dir: {cfg.output_dir}")
         logger.info(f"Generated output_h5_path: {cfg.output_h5_path}")
         logger.info(f"Generated output_pt_path: {cfg.output_pt_path}")
@@ -627,6 +669,7 @@ def _main_single(cfg: TessellateExtractFeaturesConfig):
         logger.info("Cleaned up temporary files.")
 
 
+@resolve_remote_paths()
 def _main_batch(
     cfg: TessellateExtractFeaturesConfig, patch_output_dir: Optional[str] = None
 ):
@@ -1002,6 +1045,7 @@ def _main_batch(
     logger.info(f"Output directory: {cfg.output_dir}")
 
 
+@resolve_remote_paths()
 def _main_batch_multi_model(cfg: TessellateExtractFeaturesConfig):
     """Process multiple slides with multiple models, optimized by grouping models with same patch size."""
     from collections import defaultdict

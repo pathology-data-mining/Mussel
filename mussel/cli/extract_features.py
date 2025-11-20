@@ -13,7 +13,7 @@ from loguru import logger
 from omegaconf import MISSING
 
 from mussel.models import ModelType
-from mussel.utils import save_features, extract_patch_features_batch, aggregate_slide_features_batch, aggregate_slide_features
+from mussel.utils import save_features, extract_patch_features_batch, aggregate_slide_features_batch, aggregate_slide_features, resolve_remote_paths
 
 ssl._create_default_https_context = ssl._create_unverified_context
 
@@ -145,6 +145,7 @@ def main(cfg: ExtractFeaturesConfig):
         _main_single(cfg)
 
 
+@resolve_remote_paths()
 def _main_single(cfg: ExtractFeaturesConfig):
     """Process a single slide."""
     if cfg.patch_h5_path is None or cfg.slide_path is None or cfg.output_h5_path is None:
@@ -174,6 +175,7 @@ def _main_single(cfg: ExtractFeaturesConfig):
     )
 
 
+@resolve_remote_paths()
 def _main_batch(cfg: ExtractFeaturesConfig):
     """Process multiple slides in batch mode."""
     if cfg.patch_h5_paths is None or cfg.slide_paths is None or cfg.output_dir is None:
