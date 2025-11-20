@@ -1,7 +1,7 @@
-.PHONY: help build build-cpu build-tf build-tf-cpu shell test clean
+.PHONY: help build build-cpu build-tf build-tf-cpu push push-cpu push-tf push-tf-cpu push-fastattn shell test clean az-login
 
 # Default Docker image name
-IMAGE_NAME ?= mskmind/mussel
+IMAGE_NAME ?= mskocracontainerregister-cfbfchg8dgfbedan.azurecr.io/mussel
 IMAGE_TAG ?= latest
 FULL_IMAGE = $(IMAGE_NAME):$(IMAGE_TAG)
 
@@ -27,8 +27,27 @@ build-tf: ## Build Docker image with TensorFlow GPU support
 build-tf-cpu: ## Build Docker image with TensorFlow CPU support
 	$(MAKE) build BACKEND=tensorflow-cpu IMAGE_TAG=tf-cpu
 
-build-gigapath: ## Build Docker image with gigapath
-	$(MAKE) build BACKEND=gigapath IMAGE_TAG=gigapath
+build-fastattn: ## Build Docker image with flash-attention support
+	$(MAKE) build BACKEND=fastattn IMAGE_TAG=fastattn
+
+push: az-login ## Push Docker image to registry
+	@echo "Pushing Docker image: $(FULL_IMAGE)"
+	docker push $(FULL_IMAGE)
+
+push-cpu: az-login ## Push Docker image with CPU support to registry
+	$(MAKE) push IMAGE_TAG=cpu
+
+push-tf: az-login ## Push Docker image with TensorFlow GPU support to registry
+	$(MAKE) push IMAGE_TAG=tf-gpu
+
+push-tf-cpu: az-login ## Push Docker image with TensorFlow CPU support to registry
+	$(MAKE) push IMAGE_TAG=tf-cpu
+
+push-fastattn: az-login ## Push Docker image with flash-attention support to registry
+	$(MAKE) push IMAGE_TAG=fastattn
+
+az-login:
+	az acr login -n mskOcraContainerRegister
 
 shell: ## Start an interactive shell in the container
 	docker run --rm -it \

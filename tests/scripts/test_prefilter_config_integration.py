@@ -194,8 +194,8 @@ def test_multiple_model_paths_config():
     yaml_content = """
 prefilter_model_type: CTRANSPATH
 prefilter_model_path: /shared/models/ctranspath.pth
-postfilter_model_type: UNI
-postfilter_model_path: /shared/models/uni.pth
+model_type: UNI
+model_path: /shared/models/uni.pth
 slide_model_type: GIGAPATH_SLIDE
 slide_model_path: /shared/models/gigapath.pth
 aggregation_method: model
@@ -211,7 +211,7 @@ aggregation_method: model
         
         # Verify all model paths are loaded
         assert config_defaults['prefilter_model_path'] == '/shared/models/ctranspath.pth'
-        assert config_defaults['postfilter_model_path'] == '/shared/models/uni.pth'
+        assert config_defaults['model_path'] == '/shared/models/uni.pth'
         assert config_defaults['slide_model_path'] == '/shared/models/gigapath.pth'
         
         # Simulate pre-download logic
@@ -221,7 +221,7 @@ aggregation_method: model
         
         user_provided_paths = {
             'prefilter': args_prefilter or config_defaults.get('prefilter_model_path'),
-            'postfilter': args_postfilter or config_defaults.get('postfilter_model_path'),
+            'postfilter': args_postfilter or config_defaults.get('model_path'),
             'slide': args_slide or config_defaults.get('slide_model_path'),
         }
         

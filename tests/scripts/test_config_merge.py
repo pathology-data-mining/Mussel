@@ -75,16 +75,16 @@ num_workers: 4
         os.unlink(config_file)
 
 
-def test_postfilter_model_path_from_config():
+def test_model_path_from_config():
     """
-    Test that postfilter_model_path from config file is correctly loaded in CSV workflow.
+    Test that model_path from config file is correctly loaded in CSV workflow.
     
-    This tests the fix for the same issue with postfilter_model_path.
+    This tests the fix for the same issue with model_path.
     """
     yaml_content = """
-# Test config with postfilter_model_path
-postfilter_model_type: UNI
-postfilter_model_path: /path/to/uni.pth
+# Test config with model_path
+model_type: UNI
+model_path: /path/to/uni.pth
 batch_size: 64
 """
     
@@ -96,22 +96,22 @@ batch_size: 64
         # Load config defaults
         config_defaults = load_config_defaults(config_file, backend='condor')
         
-        # Verify postfilter_model_path is present in loaded config
-        assert 'postfilter_model_path' in config_defaults
-        assert config_defaults['postfilter_model_path'] == '/path/to/uni.pth'
-        assert config_defaults['postfilter_model_type'] == 'UNI'
+        # Verify model_path is present in loaded config
+        assert 'model_path' in config_defaults
+        assert config_defaults['model_path'] == '/path/to/uni.pth'
+        assert config_defaults['model_type'] == 'UNI'
         
         # Simulate the fixed behavior
         csv_kwargs_fixed = {
-            'postfilter_model_type': 'UNI',
-            # postfilter_model_path is not included if it's None
+            'model_type': 'UNI',
+            # model_path is not included if it's None
             'batch_size': 64,
         }
         
         # Fixed merge: config first, then csv_kwargs
         merged_fixed = {**config_defaults, **csv_kwargs_fixed}
-        # The fix: postfilter_model_path retains the config value
-        assert merged_fixed['postfilter_model_path'] == '/path/to/uni.pth'
+        # The fix: model_path retains the config value
+        assert merged_fixed['model_path'] == '/path/to/uni.pth'
         
     finally:
         os.unlink(config_file)
@@ -264,7 +264,7 @@ def test_optional_args_from_config():
 # Test config with various optional parameters
 aggregation_method: model
 slide_model_type: GIGAPATH_SLIDE
-postfilter_model_type: UNI
+model_type: UNI
 classifier_pkl: /path/to/classifier.pkl
 aws:
   endpoint_url: https://s3.example.com
@@ -285,7 +285,7 @@ seg_config:
         # Verify optional parameters are present in loaded config
         assert config_defaults['aggregation_method'] == 'model'
         assert config_defaults['slide_model_type'] == 'GIGAPATH_SLIDE'
-        assert config_defaults['postfilter_model_type'] == 'UNI'
+        assert config_defaults['model_type'] == 'UNI'
         assert config_defaults['classifier_pkl'] == '/path/to/classifier.pkl'
         assert config_defaults['aws_endpoint_url'] == 'https://s3.example.com'
         assert config_defaults['seg_config_group'] == 'biopsy'
@@ -305,7 +305,7 @@ seg_config:
         # The fix: optional parameters retain config values
         assert merged_fixed['aggregation_method'] == 'model'
         assert merged_fixed['slide_model_type'] == 'GIGAPATH_SLIDE'
-        assert merged_fixed['postfilter_model_type'] == 'UNI'
+        assert merged_fixed['model_type'] == 'UNI'
         assert merged_fixed['classifier_pkl'] == '/path/to/classifier.pkl'
         assert merged_fixed['aws_endpoint_url'] == 'https://s3.example.com'
         assert merged_fixed['seg_config_group'] == 'biopsy'

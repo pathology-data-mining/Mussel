@@ -89,6 +89,9 @@ def load_config_defaults(config_file: str, backend: str = None) -> Dict[str, Any
     group -> seg_config_group). All parameters from seg_config are extracted and made 
     available as top-level parameters for the submission scripts.
     
+    List parameters (e.g., model_types, slide_model_types) are automatically
+    converted to comma-separated strings for compatibility with the submission scripts.
+    
     Args:
         config_file: Path to configuration file (.json, .yaml, or .yml)
         backend: Backend name ('slurm', 'condor', or 'azure') to map
@@ -106,6 +109,12 @@ def load_config_defaults(config_file: str, backend: str = None) -> Dict[str, Any
         # Otherwise, return all parameters except 'tasks', 'resources', 'aws', 'seg_config', and backend sections
         params = {k: v for k, v in config.items() 
                   if k not in ['tasks', 'resources', 'aws', 'seg_config', 'slurm', 'condor', 'azure', 'azure_batch']}
+    
+    # Normalize list parameters to comma-separated strings
+    list_params = ['model_types', 'slide_model_types', 'prefilter_model_types']
+    for param in list_params:
+        if param in params and isinstance(params[param], list):
+            params[param] = ','.join(str(item) for item in params[param])
     
     # Process AWS configuration section and flatten with proper parameter names
     if 'aws' in config and isinstance(config['aws'], dict):

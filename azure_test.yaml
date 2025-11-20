@@ -2,26 +2,26 @@
 # ==================================
 # Use this file with: --config-file azure_test.yaml --csv-manifest slides.csv
 #
-# Output Location Options (choose one):
-# 1. output_azfiles_prefix: Write directly to mounted Azure Files share
-#    - Fastest for small files
-#    - Example: azfiles://account/share/outputs/
+# Output Location (specify with output_prefix):
+# - Azure Blob: https://account.blob.core.windows.net/container/results/
+# - S3: s3://bucket/results/
+# - Azure Files: azfiles://account/share/outputs/
+# - Local path: /path/to/output
 #
-# 2. output_blob_prefix: Write to Azure Blob Storage or S3
-#    - Best for large-scale permanent storage
-#    - Azure Blob: https://account.blob.core.windows.net/container/results/
-#    - S3: s3://bucket/results/
-#
-# 3. output_dir: Local container directory (default: /mnt/batch/tasks/shared/output)
-#    - Used as staging area, then copied to cloud storage
+# Results are automatically uploaded to the specified location after processing.
+
+classifier_pkl: null
+classifier_threshold: 0.75
+slide_batch_size: 8
+intermediate_h5_path: null
 
 # General processing parameters
+# Models will be automatically downloaded from HuggingFace
+# Skip prefilter to avoid Azure Files dependency (use only model)
 prefilter_model_type: CTRANSPATH
-postfilter_model_type: OPTIMUS
-prefilter_model_path: azfiles://mskpdmgen2/mussel-staging/models/ctranspath.pth
-postfilter_model_path: azfiles://mskpdmgen2/mussel-staging/models/optimus.pth
-classifier_pkl: azfiles://mskpdmgen2/mussel-staging/models/model-1727990346535.pkl
-classifier_threshold: 0.75
+model_type: OPTIMUS
+prefilter_model_path: /gpfs/mskmind_ess/limr/repos/TransPath/ctranspath.pth
+classifier_pkl: /gpfs/mskmind_ess/limr/repos/Mussel/model-1727990346535.pkl
 batch_size: 128
 num_workers: 8
 use_gpu: true
@@ -52,29 +52,35 @@ slurm:
 azure:
   batch_account_name: "ocra"
   batch_account_url: "https://ocra.eastus2.batch.azure.com"
-  container_image: "mskmind/mussel:latest"
+  container_image: "mskmind/mussel:v2"
   storage_account_name: "mskpdmgen2"
-  azure_files_share_name: "mussel-staging"
-  stage_to_azure_files: true
-  mount_azure_files: true
-  cleanup_staged_files: false
-  # Output location: Use output_azfiles_prefix when writing to mounted Azure Files
-  output_azfiles_prefix: "azfiles://mskpdmgen2/mussel-staging/outputs"
-  # Alternative: Use output_blob_prefix for Azure Blob Storage or S3
-  # output_blob_prefix: "https://mskpdmgen2.blob.core.windows.net/results/"
-  # output_blob_prefix: "s3://my-bucket/results/"
-  pool_id: "mussel-pool"
-  job_id: "mussel-local-copy-test"
+  # Enable staging to Azure Blob for local slide paths (will download to container local temp)
+  stage_to_azure_blob: true
+  azure_blob_container: "mussel-slides"
+  stage_to_azure_files: false
+  mount_azure_files: false
+  cleanup_staged_files: true
+  # Output location: Use S3 for simplicity
+  output_prefix: "s3://mussel-test/outputs/"
+  pool_id: "mussel-unified-test-pool"
+  job_id: "mussel-unified-test-job"
   create_pool: true
   create_job: true
   vm_size: "Standard_NC24ads_A100_v4"
-  max_node_count: 5
-  min_node_count: 1
+  max_node_count: 2
+  min_node_count: 0
   enable_auto_scale: true
   publisher: "microsoft-dsvm"
   offer: "ubuntu-hpc"
   sku: "2204"
   node_agent_sku_id: "batch.node.ubuntu 22.04"
+  # Container registry settings (optional, for ACR pre-pull)
+  # If using Azure Container Registry, uncomment and configure:
+  # container_registry_server: "myregistry.azurecr.io"
+  # container_registry_username: "myregistry"
+  # container_registry_password: "..."  # Or use AZURE_CONTAINER_REGISTRY_PASSWORD env var
+  # Container prepull is now always enabled (no need to specify)
+  # use_container_prepull is always true
 
 
 # Note: Sensitive fields like AWS credentials should be provided via command-line

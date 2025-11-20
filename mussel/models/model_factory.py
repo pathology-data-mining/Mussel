@@ -18,6 +18,16 @@ from timm.layers import SwiGLUPacked
 from torchvision import transforms
 from transformers import AutoModel
 
+# Import model cache utilities for file locking
+try:
+    from mussel.utils.model_cache import model_download_lock
+except ImportError:
+    # Fallback if module not available
+    from contextlib import contextmanager
+    @contextmanager
+    def model_download_lock(model_name, **kwargs):
+        yield True  # No locking, always download
+
 logger = logging.getLogger(__name__)
 
 IMAGENET_MEAN = [0.485, 0.456, 0.406]
@@ -334,18 +344,20 @@ class TorchModel(Model):
         if model_obj is None:
             if model_path.startswith("hf-hub:"):
                 repo_id = model_path.replace("hf-hub:", "")
-                config_file = hf_hub_download(
-                    repo_id=repo_id,
-                    filename="config.json",
-                )
-                with open(config_file, "r") as f:
-                    config = json.load(f)
-                model_name = config.get("model_name", None)
-                if not model_name:
-                    raise ValueError(
-                        f"model_name not found in config.json from {repo_id}"
+                # Use locking when downloading from HuggingFace
+                with model_download_lock(repo_id) as should_download:
+                    config_file = hf_hub_download(
+                        repo_id=repo_id,
+                        filename="config.json",
                     )
-                model_obj = timm.create_model(model_name, pretrained=True)
+                    with open(config_file, "r") as f:
+                        config = json.load(f)
+                    model_name = config.get("model_name", None)
+                    if not model_name:
+                        raise ValueError(
+                            f"model_name not found in config.json from {repo_id}"
+                        )
+                    model_obj = timm.create_model(model_name, pretrained=True)
             elif Path(model_path).is_file():
                 with open(model_path, "rb") as f:
                     model_obj = pickle.load(f)
@@ -449,23 +461,25 @@ class Conch15Model(TorchModel):
         model_obj = None
         if not Path(model_path).is_file():
             attn_impl = get_best_attn_implementation()
-            try:
-                titan = AutoModel.from_pretrained(
-                    model_path, 
-                    trust_remote_code=True,
-                    attn_implementation=attn_impl
-                )
-            except (ValueError, NotImplementedError) as e:
-                # TITAN model doesn't support Flash Attention 2.0 or SDPA yet, fallback to eager
-                if "does not support an attention implementation" in str(e) or "does not support Flash Attention" in str(e):
-                    logger.info("TITAN model doesn't support optimized attention, using eager mode")
+            # Use locking when downloading from HuggingFace
+            with model_download_lock(model_path) as should_download:
+                try:
                     titan = AutoModel.from_pretrained(
                         model_path, 
                         trust_remote_code=True,
-                        attn_implementation="eager"
+                        attn_implementation=attn_impl
                     )
-                else:
-                    raise
+                except (ValueError, NotImplementedError) as e:
+                    # TITAN model doesn't support Flash Attention 2.0 or SDPA yet, fallback to eager
+                    if "does not support an attention implementation" in str(e) or "does not support Flash Attention" in str(e):
+                        logger.info("TITAN model doesn't support optimized attention, using eager mode")
+                        titan = AutoModel.from_pretrained(
+                            model_path, 
+                            trust_remote_code=True,
+                            attn_implementation="eager"
+                        )
+                    else:
+                        raise
             model_obj, _ = titan.return_conch()
         super().__init__(model_path, model_obj, use_gpu, gpu_device_id)
 
@@ -485,6 +499,24 @@ class Conch15Model(TorchModel):
             ]
         )
         return preprocessing
+
+    def save(self, save_path: str):
+        """CONCH1_5 model saving is disabled.
+        
+        The CONCH model is extracted from TITAN and contains dynamic modules 
+        that cannot be reliably pickled/unpickled. Use TITAN_SLIDE directory instead.
+        
+        Args:
+            save_path: Path where model would be saved (ignored).
+        
+        Raises:
+            NotImplementedError: Always raised to prevent saving.
+        """
+        raise NotImplementedError(
+            "Saving CONCH1_5 model is not supported. "
+            "CONCH is extracted from TITAN model and contains dynamic modules that "
+            "cannot be reliably pickled. To cache models, save the TITAN_SLIDE directory instead."
+        )
 
 
 class TitanSlideEncoderModel(TorchModel):
@@ -506,12 +538,22 @@ class TitanSlideEncoderModel(TorchModel):
         """
         if model_path is None:
             model_path = ModelType.TITAN_SLIDE.path
+        
+        # Validate that model_path is appropriate for TITAN slide encoder
+        if Path(model_path).is_file():
+            raise ValueError(
+                f"TITAN_SLIDE requires a directory path or HuggingFace repo ID, not a file. "
+                f"Got: {model_path}\n"
+                f"Hint: Use slide_model_type=TITAN_SLIDE (not model_type) and "
+                f"slide_model_path='path/to/TITAN_SLIDE/'"
+            )
+        
         model_obj = None
-        # Check if it's a directory (saved model) or not a file (HuggingFace repo)
-        if not Path(model_path).is_file():
-            # Load the TITAN model from HuggingFace or saved directory
-            # This handles both MahmoodLab/TITAN and locally saved directories
-            # TITAN doesn't support Flash Attention 2.0, so we use eager mode
+        # Load the TITAN model from HuggingFace or saved directory
+        # This handles both MahmoodLab/TITAN and locally saved directories
+        # TITAN doesn't support Flash Attention 2.0, so we use eager mode
+        # Use locking when downloading from HuggingFace
+        with model_download_lock(model_path) as should_download:
             try:
                 model_obj = AutoModel.from_pretrained(
                     model_path, 
@@ -563,11 +605,22 @@ class TitanSlideEncoderModel(TorchModel):
         """Save TITAN slide encoder model to disk.
 
         TITAN models loaded from HuggingFace cannot be pickled directly,
-        so we save the underlying state dict and model configuration.
+        so we save using HuggingFace's save_pretrained method to a directory.
 
         Args:
-            save_path: Path to save the model.
+            save_path: Path to save the model (must be a directory, not a file).
+            
+        Raises:
+            ValueError: If save_path has a file extension (like .pth or .pkl).
         """
+        # Check if save_path looks like a file (has extension)
+        if Path(save_path).suffix:
+            raise ValueError(
+                f"TITAN_SLIDE model cannot be saved to a file ({save_path}). "
+                f"It must be saved as a directory using HuggingFace's format. "
+                f"Remove the file extension and try again."
+            )
+        
         # Create directory if it doesn't exist
         save_dir = Path(save_path).parent
         save_dir.mkdir(parents=True, exist_ok=True)
@@ -580,14 +633,11 @@ class TitanSlideEncoderModel(TorchModel):
         try:
             # For HuggingFace models, use save_pretrained
             model_to_save.save_pretrained(save_path)
-            print(f"Saved TITAN slide encoder to {save_path}")
+            logger.info(f"Saved TITAN slide encoder to {save_path}")
         except Exception as e:
-            # Fallback to saving state dict only
-            print(f"Warning: Could not use save_pretrained, saving state dict only: {e}")
-            torch.save({
-                'state_dict': model_to_save.state_dict(),
-                'model_path': ModelType.TITAN_SLIDE.path,
-            }, save_path)
+            raise RuntimeError(
+                f"Failed to save TITAN_SLIDE model to {save_path}: {e}"
+            ) from e
 
 
 class GigapathModel(TorchModel):
@@ -656,13 +706,15 @@ class GigapathSlideEncoderModel(TorchModel):
             
             # gigapath expects "hf_hub:" format (underscore, not hyphen)
             model_path_fixed = model_path.replace("hf-hub:", "hf_hub:")
-            # create_model(repo_id, model_name, in_chans)
-            # in_chans=1536 for GigaPath tile embeddings
-            model_obj = gigapath.slide_encoder.create_model(
-                model_path_fixed, 
-                "gigapath_slide_enc12l768d", 
-                1536
-            )
+            # Use locking when downloading from HuggingFace
+            with model_download_lock(model_path) as should_download:
+                # create_model(repo_id, model_name, in_chans)
+                # in_chans=1536 for GigaPath tile embeddings
+                model_obj = gigapath.slide_encoder.create_model(
+                    model_path_fixed, 
+                    "gigapath_slide_enc12l768d", 
+                    1536
+                )
         super().__init__(model_path, model_obj, use_gpu, gpu_device_id)
 
     def get_model_fun(self) -> Callable:

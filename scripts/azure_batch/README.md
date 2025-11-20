@@ -8,6 +8,7 @@ The Azure Batch integration allows you to:
 - Process multiple whole-slide images in parallel
 - Scale computation using Azure's cloud infrastructure
 - Use GPU-enabled VMs for fast feature extraction
+- **Multi-GPU parallel processing**: Automatically distribute slides across multiple GPUs on multi-GPU VMs
 - Manage long-running jobs with automatic retry and monitoring
 - Stage slides from S3 or local storage to Azure Files for preprocessing
 - Mount Azure Files to batch nodes for direct access (eliminating download overhead)
@@ -990,6 +991,74 @@ az batch job delete --job-id mussel-job-001 --yes
 # Delete pool
 az batch pool delete --pool-id mussel-pool --yes
 ```
+
+## Multi-GPU Processing
+
+The batch task script automatically detects and utilizes multiple GPUs when available, significantly improving throughput for multi-slide processing.
+
+### How It Works
+
+When a task is assigned multiple slides on a multi-GPU VM:
+
+1. **GPU Detection**: The script detects the number of available GPUs using `nvidia-smi`
+2. **Slide Distribution**: Slides are evenly distributed across GPUs
+3. **Parallel Execution**: One `tessellate_extract_features` process is launched per GPU
+4. **GPU Isolation**: Each process sees only its assigned GPU via `CUDA_VISIBLE_DEVICES`
+
+### Performance Benefits
+
+Multi-GPU processing provides:
+- **Linear scaling**: Near-linear speedup with number of GPUs
+- **Higher throughput**: Process N×more slides in the same time
+- **Better resource utilization**: Maximize GPU usage on multi-GPU instances
+- **Cost efficiency**: Reduce wall-clock time and batch job duration
+
+### Recommended VM Sizes
+
+For multi-GPU processing, consider these Azure VM sizes:
+
+| VM Size | GPUs | GPU Memory | Best For |
+|---------|------|------------|----------|
+| Standard_NC24ads_A100_v4 | 1x A100 | 80GB | Single large slide or small batches |
+| Standard_NC48ads_A100_v4 | 2x A100 | 80GB each | Medium batches (6-12 slides) |
+| Standard_NC96ads_A100_v4 | 4x A100 | 80GB each | Large batches (12+ slides) |
+| Standard_ND96asr_v4 | 8x A100 | 40GB each | Very large batches (24+ slides) |
+
+### Example Configuration
+
+To take advantage of multi-GPU processing:
+
+```yaml
+batch:
+  pool:
+    vm_size: "Standard_NC96ads_A100_v4"  # 4x A100 GPUs
+    node_count: 1
+  
+  tasks:
+    slides_per_task: 12  # Will distribute across 4 GPUs (3 slides per GPU)
+```
+
+### Monitoring Multi-GPU Tasks
+
+When monitoring tasks via SSH, you can see parallel GPU usage:
+
+```bash
+# Watch GPU utilization
+watch -n 1 nvidia-smi
+
+# Check running processes
+ps aux | grep tessellate_extract_features
+```
+
+You should see multiple `tessellate_extract_features` processes, each using a different GPU.
+
+### Disk Space Considerations
+
+Multi-GPU processing loads multiple slides simultaneously, which may require more disk space. To ensure sufficient space:
+
+1. **Use larger VMs** with more local disk (P-series or LSv3-series)
+2. **Stream from remote storage** to avoid storing all slides locally
+3. **Increase shared memory** for Docker containers if using `/dev/shm`
 
 ## Advanced Usage
 

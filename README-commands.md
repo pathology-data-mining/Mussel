@@ -10,6 +10,7 @@ This document provides detailed information about the command-line tools provide
   - [tessellate](#tessellate)
   - [extract_features](#extract_features)
   - [filter_tessellate](#filter_tessellate)
+  - [tessellate_extract_features](#tessellate_extract_features)
   - [aggregate_slide_features](#aggregate_slide_features)
   - [create_class_embeddings](#create_class_embeddings)
   - [annotate](#annotate)
@@ -22,14 +23,13 @@ This document provides detailed information about the command-line tools provide
 
 ## Overview
 
-## Overview
-
 Mussel provides a set of CLI tools for tiling whole-slide images, working with tiled
 slides, and generating feature embeddings with pathology foundation models.
 
 * `tessellate` - Tile whole-slide images with foreground detection
 * `extract_features` - Extract feature embeddings using foundation models
 * `filter_tessellate` - Integrated workflow: tessellate, extract CTRANSPATH features, and filter
+* `tessellate_extract_features` - Integrated workflow with multi-model support: tessellate, extract patch/slide features with optional filtering
 * `aggregate_slide_features` - Aggregate patch-level features to slide-level using various methods
 * `create_class_embeddings` - Generate tissue-type embeddings for zero-shot classification
 * `annotate` - Annotate tiles with tissue types using zero-shot learning
@@ -333,6 +333,105 @@ filter_tessellate \
 - By default, intermediate files are created in a temporary directory and cleaned up automatically
 - Lower `classifier_threshold` to keep more tiles, higher to be more selective
 - Adjust `batch_size` based on available GPU memory
+
+---
+
+### `tessellate_extract_features`
+
+**Purpose**: Integrated workflow that tessellates whole-slide images, extracts patch-level and/or slide-level features, with optional filtering in a single command.
+
+This command combines tessellation, feature extraction, and optional filtering into one streamlined workflow. It supports both single-slide and batch processing modes, and can extract features using multiple models simultaneously.
+
+**Key Model Parameters:**
+
+There are two types of models used in this workflow:
+
+1. **Patch-Level Models** (`model_type`):
+   - Extracts features from individual tissue patches/tiles
+   - Examples: OPTIMUS, VIRCHOW, UNI, CTRANSPATH, RESNET50
+   - Single mode: `model_type=OPTIMUS`
+   - Batch mode with multiple models: `model_type=[OPTIMUS,VIRCHOW,UNI]`
+   - Command line usage: Use unquoted list notation: `model_type=[MODEL1,MODEL2]`
+
+2. **Slide-Level Models** (`slide_model_type`):
+   - Aggregates patch features into slide-level representations
+   - Examples: GIGAPATH_SLIDE, TITAN_SLIDE
+   - Single mode: `slide_model_type=GIGAPATH_SLIDE`
+   - Batch mode with multiple models: `slide_model_type=[GIGAPATH_SLIDE,TITAN_SLIDE]`
+   - Command line usage: Use unquoted list notation: `slide_model_type=[MODEL1,MODEL2]`
+   - **Important**: Each slide encoder automatically uses its required patch encoder:
+     - `GIGAPATH_SLIDE` → automatically uses `GIGAPATH` patch encoder
+     - `TITAN_SLIDE` → automatically uses `CONCH1_5` patch encoder
+
+**Key Parameters:**
+- `slide_path` (single mode): Path to whole-slide image
+- `slide_paths` (batch mode): List of paths to whole-slide images (use `slide_paths=[path1.svs,path2.svs]`)
+- `output_h5_path` (single mode): Path to save features HDF5
+- `output_pt_path` (single mode): Path to save features PyTorch tensor
+- `output_dir` (batch mode): Directory to save all outputs
+- `model_type`: Patch-level feature extraction model(s) - accepts lists in batch mode
+- `slide_model_type`: Slide-level aggregation model(s) - accepts lists in batch mode
+- `prefilter_model_type`: Model for initial filtering (if using classifier)
+- `classifier_pkl`: Optional classifier for tile filtering
+- `seg_config.*`: Segmentation parameters
+
+**Example - Single slide with patch-level model:**
+```bash
+tessellate_extract_features \
+    slide_path=tests/testdata/948176.svs \
+    output_h5_path=948176_features.h5 \
+    output_pt_path=948176_features.pt \
+    model_type=OPTIMUS
+```
+
+**Example - Single slide with slide-level model:**
+```bash
+# GIGAPATH_SLIDE automatically uses GIGAPATH as the patch encoder
+tessellate_extract_features \
+    slide_path=tests/testdata/948176.svs \
+    output_h5_path=948176_slide_features.h5 \
+    output_pt_path=948176_slide_features.pt \
+    slide_model_type=GIGAPATH_SLIDE
+```
+
+**Example - Batch processing with multiple patch-level models:**
+```bash
+tessellate_extract_features \
+    slide_paths=[slide1.svs,slide2.svs,slide3.svs] \
+    output_dir=./output \
+    model_type=[OPTIMUS,VIRCHOW,UNI]
+```
+
+**Example - Batch processing with multiple slide-level models:**
+```bash
+# Both GIGAPATH_SLIDE and TITAN_SLIDE will automatically use their required patch encoders
+tessellate_extract_features \
+    slide_paths=[slide1.svs,slide2.svs,slide3.svs] \
+    output_dir=./output \
+    slide_model_type=[GIGAPATH_SLIDE,TITAN_SLIDE]
+```
+
+**Example - With filtering:**
+```bash
+tessellate_extract_features \
+    slide_paths=[slide1.svs,slide2.svs] \
+    output_dir=./output \
+    model_type=OPTIMUS \
+    classifier_pkl=my_classifier.pkl \
+    classifier_threshold=0.75 \
+    prefilter_model_type=CTRANSPATH
+```
+
+**Output Files:**
+- Batch mode with multiple models creates subdirectories for each model
+- Each model's output is organized in: `{output_dir}/{slide_id}/{model_name}/`
+- Includes HDF5 features, PyTorch tensors, and optional visualizations
+
+**Tips:**
+- Use batch mode with lists for efficient multi-model processing
+- When specifying lists on command line, don't quote the brackets: `model_type=[A,B,C]`
+- Slide encoders automatically pair with their required patch encoders
+- Batch processing provides 6-8x speedup when using slide-level models
 
 ---
 

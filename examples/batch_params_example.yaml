@@ -33,7 +33,7 @@ seg_config:
 aggregation_method: identity
 
 # Optional: Postfilter model
-# postfilter_model_type: VIRCHOW
+# model_type: VIRCHOW
 
 # Optional: Slide-level aggregation
 # aggregation_method: model

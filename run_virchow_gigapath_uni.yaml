@@ -2,12 +2,12 @@
 # Use this file with --config when specifying --csv-manifest
 
 # General processing parameters
-prefilter_model_type: CTRANSPATH
-# Use postfilter_model_types for multiple models (comma-separated)
-postfilter_model_types: VIRCHOW,GIGAPATH,UNI,UNI2
+# prefilter_model_type: CTRANSPATH
+# Use model_types for multiple models (comma-separated)
+model_types: VIRCHOW,GIGAPATH,UNI,UNI2
 prefilter_model_path: /gpfs/mskmind_ess/limr/repos/TransPath/ctranspath.pth
-classifier_pkl: /gpfs/mskmind_ess/limr/repos/Mussel/model-1727990346535.pkl
-classifier_threshold: 0.75
+# classifier_pkl: /gpfs/mskmind_ess/limr/repos/Mussel/model-1727990346535.pkl
+# classifier_threshold: 0.75
 batch_size: 128
 num_workers: 8
 use_gpu: true
@@ -39,11 +39,9 @@ azure:
   batch_account_url: "https://ocra.eastus2.batch.azure.com"
   container_image: "mskmind/mussel:latest"
   storage_account_name: "mskpdmgen2"
-  azure_files_share_name: "mussel-staging"
-  stage_to_azure_files: true
-  mount_azure_files: true
+  azure_blob_container: "mussel-staging"
+  stage_to_azure_blob: true
   cleanup_staged_files: false
-  #output_azfiles_prefix: "azfiles://mskpdmgen2/mussel-staging/outputs"
   output_blob_prefix: "https://mskpdmgen2.blob.core.windows.net/virchow-gigapath-uni/"
   pool_id: "mussel-pool"
   job_id: "mussel-virchow-gigapath-uni-job"

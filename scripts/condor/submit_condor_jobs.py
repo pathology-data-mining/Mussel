@@ -75,9 +75,9 @@ class CondorJobSubmitter:
         classifier_threshold: float = 0.75,
         prefilter_model_type: str = "CTRANSPATH",
         prefilter_model_path: Optional[str] = None,
-        postfilter_model_type: Optional[str] = None,
-        postfilter_model_path: Optional[str] = None,
-        postfilter_model_types: Optional[str] = None,
+        model_type: Optional[str] = None,
+        model_path: Optional[str] = None,
+        model_types: Optional[str] = None,
         aggregation_method: Optional[str] = None,
         slide_model_type: Optional[str] = None,
         slide_model_path: Optional[str] = None,
@@ -187,12 +187,12 @@ class CondorJobSubmitter:
             env_vars["CLASSIFIER_PKL"] = classifier_pkl
         if prefilter_model_path:
             env_vars["PREFILTER_MODEL_PATH"] = prefilter_model_path
-        if postfilter_model_type:
-            env_vars["POSTFILTER_MODEL_TYPE"] = postfilter_model_type
-        if postfilter_model_path:
-            env_vars["POSTFILTER_MODEL_PATH"] = postfilter_model_path
-        if postfilter_model_types:
-            env_vars["POSTFILTER_MODEL_TYPES"] = postfilter_model_types
+        if model_type:
+            env_vars["MODEL_TYPE"] = model_type
+        if model_path:
+            env_vars["MODEL_PATH"] = model_path
+        if model_types:
+            env_vars["MODEL_TYPES"] = model_types
         if aggregation_method:
             env_vars["AGGREGATION_METHOD"] = aggregation_method
         if slide_model_type:
@@ -484,8 +484,8 @@ queue 1
                 # Determine output directory for batch
                 if output_s3_prefix:
                     model_type = kwargs.get('prefilter_model_type', 'CTRANSPATH')
-                    if kwargs.get('postfilter_model_types'):
-                        models = kwargs['postfilter_model_types'].split(',')
+                    if kwargs.get('model_types'):
+                        models = kwargs['model_types'].split(',')
                         model_type = models[0]
                     output_dir_for_batch = f"{output_s3_prefix.rstrip('/')}/{model_type}"
                 elif output_dir:
@@ -521,9 +521,9 @@ queue 1
                     model_type = kwargs.get('prefilter_model_type', 'CTRANSPATH')
                     
                     # Check if multi-model mode
-                    if kwargs.get('postfilter_model_types'):
+                    if kwargs.get('model_types'):
                         # Multi-model: organize by model type
-                        models = kwargs['postfilter_model_types'].split(',')
+                        models = kwargs['model_types'].split(',')
                         model_type = models[0]  # Use first model for primary outputs
                     
                     output_h5_path = f"{prefix}/{model_type}/h5/{slide_id}_features.h5"
@@ -581,8 +581,8 @@ def main():
     parser.add_argument("--classifier-pkl", help="Classifier pickle file for filtering")
     parser.add_argument("--classifier-threshold", type=float, default=0.75)
     parser.add_argument("--prefilter-model-type", default="CTRANSPATH")
-    parser.add_argument("--postfilter-model-type", help="Single postfilter model type")
-    parser.add_argument("--postfilter-models", help="Comma-separated list of postfilter models")
+    parser.add_argument("--model-type", help="Single postfilter model type")
+    parser.add_argument("--models", help="Comma-separated list of postfilter models")
     parser.add_argument("--aggregation-method", choices=["identity", "mean", "max", "model"])
     parser.add_argument("--slide-model-type", help="Model for aggregation_method=model")
     
@@ -637,7 +637,7 @@ def main():
     parser.add_argument("--model-cache-dir", default="./model_cache",
                         help="Shared filesystem directory to cache models (default: ./model_cache)")
     parser.add_argument("--prefilter-model-path", help="Path to prefilter model weights (local filesystem)")
-    parser.add_argument("--postfilter-model-path", help="Path to postfilter model weights (local filesystem)")
+    parser.add_argument("--model-path", help="Path to postfilter model weights (local filesystem)")
     parser.add_argument("--slide-model-path", help="Path to slide encoder model weights (local filesystem)")
     
     # Retry configuration
@@ -669,7 +669,7 @@ def main():
         # Check both command-line args and config file
         user_provided_paths = {
             'prefilter': args.prefilter_model_path or config_defaults.get('prefilter_model_path'),
-            'postfilter': args.postfilter_model_path or config_defaults.get('postfilter_model_path'),
+            'model': args.model_path or config_defaults.get('model_path'),
             'slide': args.slide_model_path or config_defaults.get('slide_model_path'),
         }
         
@@ -679,19 +679,19 @@ def main():
             prefilter_model_type = args.prefilter_model_type or config_defaults.get('prefilter_model_type', 'CTRANSPATH')
             models_to_download.append(prefilter_model_type)
         
-        # Add postfilter models if not provided by user
-        if not user_provided_paths['postfilter']:
-            # Check for both single postfilter_model_type and multiple postfilter_models
-            postfilter_model_type = args.postfilter_model_type or config_defaults.get('postfilter_model_type')
-            postfilter_models_arg = args.postfilter_models or config_defaults.get('postfilter_model_types')
+        # Add models if not provided by user
+        if not user_provided_paths['model']:
+            # Check for both single model_type and multiple models
+            model_type = args.model_type or config_defaults.get('model_type')
+            models_arg = args.models or config_defaults.get('model_types')
             
-            if postfilter_model_type:
-                # Single postfilter model specified
-                models_to_download.append(postfilter_model_type)
-            elif postfilter_models_arg:
-                # Multiple postfilter models specified (comma-separated)
-                postfilter_list = [m.strip() for m in postfilter_models_arg.split(',')]
-                models_to_download.extend(postfilter_list)
+            if model_type:
+                # Single model specified
+                models_to_download.append(model_type)
+            elif models_arg:
+                # Multiple models specified (comma-separated)
+                model_list = [m.strip() for m in models_arg.split(',')]
+                models_to_download.extend(model_list)
         
         # Add slide model if not provided by user and slide model type is specified
         slide_model_type = args.slide_model_type or config_defaults.get('slide_model_type')
@@ -725,13 +725,13 @@ def main():
         # Use the actual prefilter model type, not hardcoded CTRANSPATH
         prefilter_model_type = args.prefilter_model_type or config_defaults.get('prefilter_model_type', 'CTRANSPATH')
         model_paths[prefilter_model_type] = args.prefilter_model_path
-    if args.postfilter_model_path:
-        # Apply to all postfilter models if multi-model
-        if args.postfilter_models:
-            for model in args.postfilter_models.split(','):
-                model_paths[model.strip()] = args.postfilter_model_path
-        elif args.postfilter_model_type:
-            model_paths[args.postfilter_model_type] = args.postfilter_model_path
+    if args.model_path:
+        # Apply to all models if multi-model
+        if args.models:
+            for model in args.models.split(','):
+                model_paths[model.strip()] = args.model_path
+        elif args.model_type:
+            model_paths[args.model_type] = args.model_path
     if args.slide_model_path and args.slide_model_type:
         model_paths[args.slide_model_type] = args.slide_model_path
     
@@ -773,7 +773,7 @@ def main():
         if model_paths:
             task_model_paths = {
                 'prefilter': model_paths.get('CTRANSPATH', args.prefilter_model_path),
-                'postfilter': model_paths.get(args.postfilter_model_type, args.postfilter_model_path) if args.postfilter_model_type else None,
+                'model': model_paths.get(args.model_type, args.model_path) if args.model_type else None,
                 'slide': model_paths.get(args.slide_model_type, args.slide_model_path) if args.slide_model_type else None,
             }
         
@@ -786,9 +786,9 @@ def main():
             classifier_threshold=args.classifier_threshold,
             prefilter_model_type=args.prefilter_model_type,
             prefilter_model_path=task_model_paths.get('prefilter'),
-            postfilter_model_type=args.postfilter_model_type,
-            postfilter_model_path=task_model_paths.get('postfilter'),
-            postfilter_model_types=args.postfilter_models,
+            model_type=args.model_type,
+            model_path=task_model_paths.get('model'),
+            model_types=args.models,
             aggregation_method=args.aggregation_method,
             slide_model_type=args.slide_model_type,
             slide_model_path=task_model_paths.get('slide'),
@@ -829,7 +829,7 @@ def main():
         csv_kwargs = {
             'classifier_threshold': args.classifier_threshold,
             'prefilter_model_type': args.prefilter_model_type,
-            'postfilter_model_types': args.postfilter_models,
+            'model_types': args.models,
             'num_workers': args.num_workers,
             'batch_size': args.batch_size,
             'slide_batch_size': args.slide_batch_size,
@@ -854,8 +854,8 @@ def main():
         # This ensures they don't override config file values with None
         if args.classifier_pkl:
             csv_kwargs['classifier_pkl'] = args.classifier_pkl
-        if args.postfilter_model_type:
-            csv_kwargs['postfilter_model_type'] = args.postfilter_model_type
+        if args.model_type:
+            csv_kwargs['model_type'] = args.model_type
         if args.aggregation_method:
             csv_kwargs['aggregation_method'] = args.aggregation_method
         if args.slide_model_type:
@@ -904,8 +904,8 @@ def main():
         # Command-line args also override config values if explicitly provided
         if args.prefilter_model_path:
             csv_kwargs['prefilter_model_path'] = args.prefilter_model_path
-        if args.postfilter_model_path:
-            csv_kwargs['postfilter_model_path'] = args.postfilter_model_path
+        if args.model_path:
+            csv_kwargs['model_path'] = args.model_path
         if model_paths and args.slide_model_type and model_paths.get(args.slide_model_type):
             csv_kwargs['slide_model_path'] = model_paths[args.slide_model_type]
         

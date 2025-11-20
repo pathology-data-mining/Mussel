@@ -64,7 +64,7 @@ def test_tessellate_extract_features_batch_with_filtering(tmp_path):
         classifier_pkl=classifier_pkl,
         classifier_threshold=0.75,
         prefilter_model_type=ModelType.RESNET50,
-        postfilter_model_type=None,  # Will use same as prefilter
+        model_type=None,  # Will use same as prefilter
         seg_config=seg_config,
         num_workers=1,
         batch_size=32,

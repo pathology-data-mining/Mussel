@@ -45,6 +45,7 @@ class ExtractFeaturesConfig:
     Model Parameters:
         model_type (ModelType): Type of model to use for patch-level feature extraction.
         model_path (Optional[str]): Path to the patch encoder model weights, if applicable.
+        model_dir (Optional[str]): Directory containing pre-downloaded models (for convenience).
         patch_path (Optional[str]): Directory containing pre-tiled images, if applicable.
         intermediate_h5_path (Optional[str]): Path for intermediate patch features (two-step mode, single mode only).
         aggregation_method (str): Aggregation method: identity (single-step), mean/max/model (two-step).
@@ -75,6 +76,7 @@ class ExtractFeaturesConfig:
     # Model parameters
     model_type: ModelType = ModelType.CLIP
     model_path: Optional[str] = None
+    model_dir: Optional[str] = None  # Directory containing pre-downloaded models
     model_save_path: Optional[str] = None
     patch_path: Optional[str] = None
     intermediate_h5_path: Optional[str] = None
@@ -223,6 +225,7 @@ def _main_batch(cfg: ExtractFeaturesConfig):
             output_h5_paths=intermediate_h5_paths,
             model_type=cfg.model_type,
             model_path=cfg.model_path,
+            model_dir=cfg.model_dir,
             batch_size=cfg.batch_size,
             use_gpu=cfg.use_gpu,
             gpu_device_id=cfg.gpu_device_id,
@@ -241,6 +244,7 @@ def _main_batch(cfg: ExtractFeaturesConfig):
             aggregation_method=cfg.aggregation_method,
             model_type=cfg.slide_model_type,
             model_path=cfg.slide_model_path,
+            model_dir=cfg.model_dir,
             use_gpu=cfg.use_gpu,
             gpu_device_id=cfg.gpu_device_id,
             gpu_device_ids=cfg.gpu_device_ids,
@@ -254,6 +258,7 @@ def _main_batch(cfg: ExtractFeaturesConfig):
             output_h5_paths=output_h5_paths,
             model_type=cfg.model_type,
             model_path=cfg.model_path,
+            model_dir=cfg.model_dir,
             batch_size=cfg.batch_size,
             use_gpu=cfg.use_gpu,
             gpu_device_id=cfg.gpu_device_id,

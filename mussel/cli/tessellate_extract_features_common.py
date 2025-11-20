@@ -3,7 +3,7 @@
 import os
 import pickle
 from pathlib import Path
-from typing import Optional, Tuple
+from typing import Optional, Tuple, Union
 
 import h5py
 import numpy as np
@@ -13,8 +13,36 @@ from loguru import logger
 from omegaconf import OmegaConf
 from shapely.geometry import Polygon
 
-from mussel.utils import save_features, filter_features, save_hdf5
+from mussel.utils import save_features, filter_features, save_hdf5, save_torch_tensor
 from mussel.utils.segment import draw_slide_mask, save_patches_png, segment_tissue
+
+
+def _is_remote_path(path):
+    """Check if a path is a remote URL scheme."""
+    if not isinstance(path, str):
+        return False
+    return path.startswith(('az://', 'abfs://', 's3://', 'gs://', 'http://', 'https://'))
+
+
+def _safe_path_join(base_path, *parts):
+    """Safely join path components, preserving URL schemes for remote paths.
+    
+    Args:
+        base_path: Base path (can be local or remote URL)
+        *parts: Path components to join
+        
+    Returns:
+        Joined path as string
+    """
+    if _is_remote_path(str(base_path)):
+        # For remote paths, use string concatenation with /
+        result = str(base_path).rstrip('/')
+        for part in parts:
+            result = f"{result}/{str(part).lstrip('/')}"
+        return result
+    else:
+        # For local paths, use Path
+        return str(Path(base_path) / Path(*parts))
 
 
 def process_slide_tessellation_and_filtering(
@@ -24,12 +52,12 @@ def process_slide_tessellation_and_filtering(
     output_pt_path: str,
     cfg,
     temp_dir: str,
-    base_path: Path,
+    base_path: Union[str, Path],
     use_filtering: bool,
     prefilter_model_type,
     prefilter_model_path: Optional[str],
-    postfilter_model_type,
-    postfilter_model_path: Optional[str],
+    model_type,
+    model_path: Optional[str],
     skip_second_extraction: bool,
     output_mask_path: Optional[str] = None,
     two_step_mode: bool = False,
@@ -50,8 +78,8 @@ def process_slide_tessellation_and_filtering(
         use_filtering: Whether to apply filtering
         prefilter_model_type: Model type for pre-filtering
         prefilter_model_path: Path to pre-filter model weights
-        postfilter_model_type: Model type for post-filtering
-        postfilter_model_path: Path to post-filter model weights
+        model_type: Model type for post-filtering
+        model_path: Path to post-filter model weights
         skip_second_extraction: Whether to skip second extraction (when models are same)
         output_mask_path: Optional path to save mask visualization
         two_step_mode: Whether using two-step aggregation (for batch processing)
@@ -62,7 +90,7 @@ def process_slide_tessellation_and_filtering(
     # Step 1: Tessellate
     logger.info(f"Tessellating slide: {slide_path}")
     if cfg.keep_intermediate_files:
-        tessellate_h5_path = str(base_path / f"{Path(slide_path).stem}.tessellate.h5")
+        tessellate_h5_path = _safe_path_join(base_path, f"{Path(slide_path).stem}.tessellate.h5")
     else:
         tessellate_h5_path = os.path.join(temp_dir, f"{Path(slide_path).stem}.tessellate.h5")
     
@@ -96,8 +124,8 @@ def process_slide_tessellation_and_filtering(
         # Extract features for filtering
         logger.info(f"Extracting features for filtering: {slide_path}")
         if cfg.keep_intermediate_files:
-            prefilter_features_h5_path = str(base_path / f"{Path(slide_path).stem}.prefilter_features.h5")
-            prefilter_features_pt_path = str(base_path / f"{Path(slide_path).stem}.prefilter_features.pt")
+            prefilter_features_h5_path = _safe_path_join(base_path, f"{Path(slide_path).stem}.prefilter_features.h5")
+            prefilter_features_pt_path = _safe_path_join(base_path, f"{Path(slide_path).stem}.prefilter_features.pt")
         else:
             prefilter_features_h5_path = os.path.join(temp_dir, f"{Path(slide_path).stem}.prefilter_features.h5")
             prefilter_features_pt_path = os.path.join(temp_dir, f"{Path(slide_path).stem}.prefilter_features.pt")
@@ -150,12 +178,12 @@ def process_slide_tessellation_and_filtering(
                     attr_h5_path=prefilter_features_h5_path,
                     mode="w",
                 )
-                torch.save(filtered_features, output_pt_path)
+                save_torch_tensor(output_pt_path, filtered_features)
                 return None  # No further processing needed
             else:
                 # Save filtered coordinates for second extraction
                 if cfg.keep_intermediate_files:
-                    filtered_coords_h5_path = str(base_path / f"{Path(slide_path).stem}.filtered_coords.h5")
+                    filtered_coords_h5_path = _safe_path_join(base_path, f"{Path(slide_path).stem}.filtered_coords.h5")
                 else:
                     filtered_coords_h5_path = os.path.join(temp_dir, f"{Path(slide_path).stem}.filtered_coords.h5")
                 
@@ -174,13 +202,13 @@ def process_slide_tessellation_and_filtering(
     if two_step_mode and cfg.aggregation_method != "identity":
         # Extract patch features for batch aggregation later
         logger.info(f"Extracting patch features: {slide_path}")
-        intermediate_h5_path = str(base_path / f"{Path(slide_path).stem}.patch.h5")
+        intermediate_h5_path = _safe_path_join(base_path, f"{Path(slide_path).stem}.patch.h5")
         
         save_features(
             slide_path=slide_path,
             gpu_device_id=cfg.gpu_device_id,
-            model_type=postfilter_model_type,
-            model_path=postfilter_model_path,
+            model_type=model_type,
+            model_path=model_path,
             use_gpu=cfg.use_gpu,
             output_h5_path=intermediate_h5_path,
             output_pt_path=None,  # Don't save PT yet
@@ -209,8 +237,8 @@ def process_slide_tessellation_and_filtering(
         save_features(
             slide_path=slide_path,
             gpu_device_id=cfg.gpu_device_id,
-            model_type=postfilter_model_type,
-            model_path=postfilter_model_path,
+            model_type=model_type,
+            model_path=model_path,
             use_gpu=cfg.use_gpu,
             output_h5_path=output_h5_path,
             output_pt_path=output_pt_path,
@@ -236,7 +264,7 @@ def process_slide_tessellation_only(
     slide_id: Optional[str],
     cfg,
     temp_dir: str,
-    base_path: Path,
+    base_path: Union[str, Path],
     use_filtering: bool,
     prefilter_model_type,
     prefilter_model_path: Optional[str],
@@ -266,7 +294,7 @@ def process_slide_tessellation_only(
     # Step 1: Tessellate
     logger.info(f"Tessellating slide: {slide_path}")
     if cfg.keep_intermediate_files:
-        tessellate_h5_path = str(base_path / f"{Path(slide_path).stem}.tessellate.h5")
+        tessellate_h5_path = _safe_path_join(base_path, f"{Path(slide_path).stem}.tessellate.h5")
     else:
         tessellate_h5_path = os.path.join(temp_dir, f"{Path(slide_path).stem}.tessellate.h5")
     
@@ -301,8 +329,8 @@ def process_slide_tessellation_only(
         # Extract features for filtering
         logger.info(f"Extracting features for filtering: {slide_path}")
         if cfg.keep_intermediate_files:
-            prefilter_features_h5_path = str(base_path / f"{Path(slide_path).stem}.prefilter_features.h5")
-            prefilter_features_pt_path = str(base_path / f"{Path(slide_path).stem}.prefilter_features.pt")
+            prefilter_features_h5_path = _safe_path_join(base_path, f"{Path(slide_path).stem}.prefilter_features.h5")
+            prefilter_features_pt_path = _safe_path_join(base_path, f"{Path(slide_path).stem}.prefilter_features.pt")
         else:
             prefilter_features_h5_path = os.path.join(temp_dir, f"{Path(slide_path).stem}.prefilter_features.h5")
             prefilter_features_pt_path = os.path.join(temp_dir, f"{Path(slide_path).stem}.prefilter_features.pt")
@@ -352,7 +380,7 @@ def process_slide_tessellation_only(
             else:
                 # Create filtered coords h5 for second extraction
                 if cfg.keep_intermediate_files:
-                    filtered_coords_h5_path = str(base_path / f"{Path(slide_path).stem}.filtered_coords.h5")
+                    filtered_coords_h5_path = _safe_path_join(base_path, f"{Path(slide_path).stem}.filtered_coords.h5")
                 else:
                     filtered_coords_h5_path = os.path.join(temp_dir, f"{Path(slide_path).stem}.filtered_coords.h5")
                 

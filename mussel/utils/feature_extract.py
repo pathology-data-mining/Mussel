@@ -26,6 +26,51 @@ from .timer import timed
 logger = logging.getLogger(__name__)
 
 
+def get_model_path_from_dir(model_dir, model_type):
+    """
+    Get model path from model_dir if available.
+    
+    Args:
+        model_dir: Directory containing pre-downloaded models
+        model_type: ModelType enum
+        
+    Returns:
+        Path to model if found in model_dir, None otherwise
+    """
+    if model_dir is None:
+        return None
+    
+    model_dir_path = Path(model_dir)
+    if not model_dir_path.exists():
+        return None
+    
+    # Check for model directory named after the model type
+    model_subdir = model_dir_path / model_type.name
+    if model_subdir.exists() and model_subdir.is_dir():
+        logger.info(f"Found {model_type.name} in model_dir: {model_subdir}")
+        return str(model_subdir)
+    
+    # Check for model directory named with lowercase
+    model_subdir_lower = model_dir_path / model_type.name.lower()
+    if model_subdir_lower.exists() and model_subdir_lower.is_dir():
+        logger.info(f"Found {model_type.name} in model_dir: {model_subdir_lower}")
+        return str(model_subdir_lower)
+    
+    # Check for .pth file (pickled models) - uppercase
+    model_file_pth = model_dir_path / f"{model_type.name}.pth"
+    if model_file_pth.exists() and model_file_pth.is_file():
+        logger.info(f"Found {model_type.name} in model_dir: {model_file_pth}")
+        return str(model_file_pth)
+    
+    # Check for .pth file (pickled models) - lowercase
+    model_file_pth_lower = model_dir_path / f"{model_type.name.lower()}.pth"
+    if model_file_pth_lower.exists() and model_file_pth_lower.is_file():
+        logger.info(f"Found {model_type.name} in model_dir: {model_file_pth_lower}")
+        return str(model_file_pth_lower)
+    
+    return None
+
+
 @singledispatch
 def process_dataset(
     dataset,
@@ -538,6 +583,7 @@ def extract_patch_features_batch(
     output_h5_paths,
     model_type=ModelType.CLIP,
     model_path=None,
+    model_dir=None,
     batch_size=64,
     use_gpu=True,
     gpu_device_id=None,
@@ -561,6 +607,7 @@ def extract_patch_features_batch(
         output_h5_paths: List of paths to save extracted patch-level features.
         model_type: Type of foundation model to use (default: ModelType.CLIP).
         model_path: Optional path to model weights.
+        model_dir: Optional directory containing pre-downloaded models.
         batch_size: Batch size for feature extraction (default: 64).
         use_gpu: Whether to use GPU for inference (default: True).
         gpu_device_id: GPU device ID to use.
@@ -589,6 +636,12 @@ def extract_patch_features_batch(
     
     if gpu_device_ids:
         gpu_device_id = gpu_device_ids
+
+    # Resolve model_path from model_dir if provided
+    if model_path is None and model_dir is not None:
+        model_path = get_model_path_from_dir(model_dir, model_type)
+        if model_path:
+            logger.info(f"Using model from model_dir: {model_path}")
 
     # Load the model once for all slides
     logger.info("Loading model checkpoint (once for all slides)")
@@ -658,6 +711,7 @@ def aggregate_slide_features_batch(
     aggregation_method="identity",
     model_type=None,
     model_path=None,
+    model_dir=None,
     use_gpu=True,
     gpu_device_id=None,
     gpu_device_ids=None,
@@ -683,6 +737,7 @@ def aggregate_slide_features_batch(
             - "model": Use a slide encoder model for aggregation
         model_type: Type of slide encoder model to use (only when aggregation_method="model").
         model_path: Optional path to slide encoder model weights.
+        model_dir: Optional directory containing pre-downloaded models.
         use_gpu: Whether to use GPU for model-based aggregation (default: True).
         gpu_device_id: GPU device ID to use.
         gpu_device_ids: List of GPU device IDs for multi-GPU.
@@ -777,6 +832,12 @@ def aggregate_slide_features_batch(
     
     if gpu_device_ids:
         gpu_device_id = gpu_device_ids
+    
+    # Resolve model_path from model_dir if provided
+    if model_path is None and model_dir is not None:
+        model_path = get_model_path_from_dir(model_dir, model_type)
+        if model_path:
+            logger.info(f"Using slide model from model_dir: {model_path}")
     
     # Load the slide encoder model once
     logger.info(f"Loading slide encoder model: {model_type}")

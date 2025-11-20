@@ -32,6 +32,7 @@ This is a fork of Faisal Mahmood's [CLAM repository](https://github.com/mahmoodl
 - **Efficient Processing**: Optimized for batch processing and job submission systems
 - **Caching Support**: Fast tile access for I/O-intensive operations like training
 - **Multi-GPU Support**: Scale feature extraction across multiple GPUs
+- **Remote Storage Support**: Direct write to Azure Blob Storage, S3, and other remote filesystems via fsspec
 
 ## Installation
 
@@ -324,6 +325,67 @@ The tools currently available from Mussel are,
 * `save_model` - download and save a foundation model locally
 
 These are described, with examples, in the accompanying document, [README-commands.md](README-commands.md)
+
+## Remote Storage Support
+
+Mussel supports direct writing of output files to remote storage systems including Azure Blob Storage, Amazon S3, and Google Cloud Storage using [fsspec](https://filesystem-spec.readthedocs.io/).
+
+### Installation
+
+To enable remote storage support, install Mussel with the `distributed` extras:
+
+```bash
+uv pip install -e ".[distributed]"
+```
+
+This installs the required dependencies:
+- `fsspec` - Unified filesystem interface
+- `adlfs` - Azure Data Lake and Blob Storage support
+- Additional Azure and AWS libraries
+
+### Usage
+
+Simply provide remote paths in the standard URI format:
+
+**Azure Blob Storage:**
+```bash
+tessellate_extract_features \
+  slide_path=slide.svs \
+  output_h5_path=az://container/path/features.h5 \
+  output_pt_path=az://container/path/features.pt
+```
+
+**Amazon S3:**
+```bash
+tessellate_extract_features \
+  slide_path=slide.svs \
+  output_h5_path=s3://bucket/path/features.h5 \
+  output_pt_path=s3://bucket/path/features.pt
+```
+
+### Azure Credentials
+
+Set Azure credentials via environment variables:
+
+```bash
+# Option 1: Connection string
+export AZURE_STORAGE_CONNECTION_STRING="DefaultEndpointsProtocol=https;..."
+
+# Option 2: Account name and key
+export AZURE_STORAGE_ACCOUNT_NAME="mystorageaccount"
+export AZURE_STORAGE_ACCOUNT_KEY="..."
+
+# Option 3: Account name and SAS token
+export AZURE_STORAGE_ACCOUNT_NAME="mystorageaccount"
+export AZURE_STORAGE_SAS_TOKEN="..."
+```
+
+### Benefits
+
+- **No Local Staging**: Saves local disk space by writing directly to remote storage
+- **Seamless Integration**: Works with all CLI tools that produce output files
+- **Automatic Handling**: Files are written locally first then uploaded atomically
+- **Multiple Providers**: Supports Azure, S3, GCS, and more via fsspec
 
 ## Troubleshooting
 

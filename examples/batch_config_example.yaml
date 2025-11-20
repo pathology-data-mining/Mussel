@@ -32,4 +32,4 @@ tasks:
     output_h5_path: /output/slide_003_features.h5
     output_pt_path: /output/slide_003_features.pt
     # Use different model for this task
-    postfilter_model_type: VIRCHOW
+    model_type: VIRCHOW

@@ -64,7 +64,7 @@ except KeyError:
 
 def run_save_model(model_type: str, output_path: str, model_path: Optional[str] = None) -> bool:
     """
-    Download and save a model directly using Python API.
+    Download and save a model using the save_model CLI.
     
     Args:
         model_type: Type of model (e.g., CTRANSPATH, CLIP, VIRCHOW)
@@ -74,60 +74,33 @@ def run_save_model(model_type: str, output_path: str, model_path: Optional[str] 
     Returns:
         True if successful, False otherwise
     """
-    # Try direct import first
-    try:
-        from mussel.models.model_factory import get_model_factory
-        
-        print(f"  Downloading {model_type}...")
-        
-        # Get model factory and download model
-        model_factory = get_model_factory(model_type)
-        if model_factory is None:
-            raise ValueError(f"Model factory not found for {model_type}")
-        
-        # Download model with GPU disabled (we're just saving it)
-        model = model_factory.get_model(model_path, use_gpu=False)
-        
-        # Save model to output path
-        model.save(output_path)
-        print(f"  ✓ {model_type} saved to {output_path}")
-        return True
-        
-    except ImportError:
-        # If mussel is not in the current environment, try using uv run
-        import subprocess
-        print(f"  Downloading {model_type} using uv run...")
-        
-        try:
-            # Pass through all relevant environment variables
-            env = os.environ.copy()
-            if 'HF_TOKEN' in env and 'HUGGINGFACE_TOKEN' not in env:
-                env['HUGGINGFACE_TOKEN'] = env['HF_TOKEN']
-            
-            cmd = ["uv", "run", "python", "-c", f"""
-import sys
-from mussel.models.model_factory import get_model_factory
-
-model_factory = get_model_factory('{model_type}')
-if model_factory is None:
-    raise ValueError('Model factory not found for {model_type}')
-
-model = model_factory.get_model({repr(model_path)}, use_gpu=False)
-model.save('{output_path}')
-"""]
-            result = subprocess.run(cmd, capture_output=True, text=True, env=env, timeout=300)
-            if result.returncode == 0:
-                print(f"  ✓ {model_type} saved to {output_path}")
-                return True
-            else:
-                print(f"  ✗ Failed to download {model_type}: {result.stderr}", file=sys.stderr)
-                return False
-        except Exception as e:
-            print(f"  ✗ Failed to download {model_type} with uv run: {e}", file=sys.stderr)
-            import traceback
-            traceback.print_exc(file=sys.stderr)
-            return False
+    import subprocess
     
+    print(f"  Downloading {model_type}...")
+    
+    try:
+        # Pass through all relevant environment variables
+        env = os.environ.copy()
+        if 'HF_TOKEN' in env and 'HUGGINGFACE_TOKEN' not in env:
+            env['HUGGINGFACE_TOKEN'] = env['HF_TOKEN']
+        
+        # Build command to call save_model CLI
+        cmd = ["python", "-m", "mussel.cli.save_model",
+               f"model_type={model_type}",
+               f"output_path={output_path}"]
+        
+        if model_path:
+            cmd.append(f"model_path={model_path}")
+        
+        result = subprocess.run(cmd, capture_output=True, text=True, env=env, timeout=600)
+        
+        if result.returncode == 0:
+            print(f"  ✓ {model_type} saved to {output_path}")
+            return True
+        else:
+            print(f"  ✗ Failed to download {model_type}: {result.stderr}", file=sys.stderr)
+            return False
+            
     except Exception as e:
         print(f"  ✗ Failed to download {model_type}: {e}", file=sys.stderr)
         import traceback
@@ -165,50 +138,82 @@ def pre_download_models(
     model_paths = model_paths or {}
     skipped_models = []
     
+    # Filter models that can be downloaded
+    downloadable_models = []
     for model_type in model_types:
-        # Check if model can be saved via save_model
         if not can_model_be_saved(model_type):
             print(f"[Pre-download] ⚠️  Skipping {model_type}: model does not have a default path in ModelType")
             print(f"[Pre-download]     {model_type} must be provided via configuration (e.g., prefilter_model_path)")
             skipped_models.append(model_type)
-            continue
-        
-        # Generate cache filename
-        # Some models (like TITAN_SLIDE) are saved as directories without .pth extension
-        cache_file_with_ext = os.path.join(cache_dir, f"{model_type.lower()}.pth")
-        cache_file_no_ext = os.path.join(cache_dir, f"{model_type.lower()}")
-        
-        # Check if already cached (try both with and without .pth extension)
-        cache_file = None
-        if os.path.exists(cache_file_no_ext):
-            cache_file = cache_file_no_ext
-        elif os.path.exists(cache_file_with_ext):
-            cache_file = cache_file_with_ext
-            
-        if cache_file:
-            print(f"[Pre-download] {model_type} already cached: {cache_file}")
-            cached_models[model_type] = cache_file
-            continue
-        
-        print(f"[Pre-download] Downloading {model_type}...")
-        hf_path = model_paths.get(model_type)
-        
-        # Save without extension - the model save method will determine the format
-        if not run_save_model(model_type, cache_file_no_ext, hf_path):
-            raise RuntimeError(f"Failed to download model: {model_type}")
-        
-        # Verify cache was created (could be file or directory, with or without extension)
-        if os.path.exists(cache_file_no_ext):
-            cached_models[model_type] = cache_file_no_ext
-        elif os.path.exists(cache_file_with_ext):
-            cached_models[model_type] = cache_file_with_ext
         else:
-            raise RuntimeError(f"Model cache not found after download: {cache_file_no_ext}")
+            downloadable_models.append(model_type)
+    
+    if not downloadable_models:
+        print("[Pre-download] No downloadable models found")
+        if skipped_models:
+            print(f"[Pre-download] ℹ️  Skipped models (must be provided via config): {', '.join(skipped_models)}")
+        return cached_models
+    
+    # Use batch download for efficiency
+    print(f"[Pre-download] Downloading {len(downloadable_models)} models in batch...")
+    if batch_download_models(downloadable_models, cache_dir):
+        # Verify all models were downloaded
+        for model_type in downloadable_models:
+            cache_file_no_ext = os.path.join(cache_dir, model_type)
+            cache_file_with_ext = os.path.join(cache_dir, f"{model_type.lower()}.pth")
+            
+            if os.path.exists(cache_file_no_ext):
+                cached_models[model_type] = cache_file_no_ext
+                print(f"[Pre-download] ✓ {model_type} cached at: {cache_file_no_ext}")
+            elif os.path.exists(cache_file_with_ext):
+                cached_models[model_type] = cache_file_with_ext
+                print(f"[Pre-download] ✓ {model_type} cached at: {cache_file_with_ext}")
+            else:
+                raise RuntimeError(f"Model cache not found after download: {model_type}")
+    else:
+        raise RuntimeError("Batch download failed")
     
     if skipped_models:
         print(f"\n[Pre-download] ℹ️  Skipped models (must be provided via config): {', '.join(skipped_models)}")
     
     return cached_models
+
+
+def batch_download_models(model_types: List[str], output_dir: str) -> bool:
+    """
+    Download multiple models in a single call using save_model CLI.
+    
+    Args:
+        model_types: List of model types to download
+        output_dir: Directory to save models
+        
+    Returns:
+        True if successful, False otherwise
+    """
+    import subprocess
+    
+    try:
+        # Pass through all relevant environment variables
+        env = os.environ.copy()
+        if 'HF_TOKEN' in env and 'HUGGINGFACE_TOKEN' not in env:
+            env['HUGGINGFACE_TOKEN'] = env['HF_TOKEN']
+        
+        # Build command with model_types list
+        model_types_arg = f"[{','.join(model_types)}]"
+        cmd = ["python", "-m", "mussel.cli.save_model",
+               f"model_types={model_types_arg}",
+               f"output_dir={output_dir}"]
+        
+        print(f"[Pre-download] Running: {' '.join(cmd)}")
+        result = subprocess.run(cmd, env=env, timeout=3600)
+        
+        return result.returncode == 0
+            
+    except Exception as e:
+        print(f"[Pre-download] ✗ Batch download failed: {e}", file=sys.stderr)
+        import traceback
+        traceback.print_exc(file=sys.stderr)
+        return False
 
 
 def upload_models_to_s3(cached_models: Dict[str, str], s3_prefix: str) -> Dict[str, str]:

@@ -25,11 +25,11 @@ batch_size: 256
 #   - 224x224 input models (OPTIMUS, UNI2): 256-512
 #   - 448x448 input models (VIRCHOW2, GIGAPATH patch encoder): 192-256
 model_batch_sizes:
-  OPTIMUS: 384      # 224x224 input, medium model
-  VIRCHOW2: 256     # 448x448 input (4x pixels)
-  UNI2: 384         # 224x224 input, medium model
-  GIGAPATH: 256     # 448x448 input for patch encoder
-  CONCH1_5: 256     # 448x448 input for TITAN_SLIDE patch encoder
+  OPTIMUS: 2048      # 224x224 input, medium model
+  VIRCHOW2: 1024     # 448x448 input (4x pixels)
+  UNI2: 2048         # 224x224 input, medium model
+  GIGAPATH: 1024     # 448x448 input for patch encoder
+  CONCH1_5: 1024     # 448x448 input for TITAN_SLIDE patch encoder
 
 num_workers: 8
 use_gpu: true
@@ -65,6 +65,7 @@ azure:
   stage_to_azure_blob: true
   cleanup_staged_files: false
   output_prefix: "azblob://mussel-results/paper-revisions-final/"
+  script_blob_url: "https://mskpdmgen2.blob.core.windows.net/mussel-staging/scripts/"
   pool_id: "mussel-pool"
   job_id: "mussel-test-pr-job"
   create_pool: true

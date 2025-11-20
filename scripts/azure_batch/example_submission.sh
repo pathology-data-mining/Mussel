@@ -162,7 +162,7 @@ example_with_filtering() {
     "prefilter_model_type": "CTRANSPATH",
     "classifier_pkl": "/mnt/data/tissue_classifier.pkl",
     "classifier_threshold": 0.75,
-    "postfilter_model_type": "CLIP",
+    "model_type": "CLIP",
     "segment_threshold": 0,
     "patch_size": 256,
     "mpp": 0.5,

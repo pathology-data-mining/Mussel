@@ -13,11 +13,11 @@
 #   SLIDE_MODEL_TYPE - (Optional) Slide model type for aggregation_method=model
 #   CLASSIFIER_PKL - (Optional) Path to classifier pickle file for filtering
 #   CLASSIFIER_THRESHOLD - (Optional) Threshold for classifier (default: 0.75)
-#   PREFILTER_MODEL_TYPE - Model type for pre-filter extraction (default: CTRANSPATH)
+#   PREFILTER_MODEL_TYPE - (Optional) Model type for pre-filter extraction
 #   PREFILTER_MODEL_PATH - (Optional) Path to prefilter model weights (can be s3://)
-#   POSTFILTER_MODEL_TYPE - (Optional) Model type for post-filter extraction
-#   POSTFILTER_MODEL_PATH - (Optional) Path to postfilter model weights (can be s3://)
-#   POSTFILTER_MODEL_TYPES - (Optional) Comma-separated list of postfilter models to run sequentially
+#   MODEL_TYPE - (Optional) Model type for post-filter extraction (deprecated)
+#   MODEL_PATH - (Optional) Path to model weights (can be s3://)
+#   MODEL_TYPES - (Optional) Comma-separated list of models to run sequentially
 #   SLIDE_MODEL_PATH - (Optional) Path to slide encoder model weights (can be s3://)
 #   SEGMENT_THRESHOLD - Tissue segmentation threshold (default: 0)
 #   PATCH_SIZE - Patch size in pixels (default: 256)
@@ -117,7 +117,7 @@ fi
 
 # Set defaults for optional parameters
 CLASSIFIER_THRESHOLD=${CLASSIFIER_THRESHOLD:-0.75}
-PREFILTER_MODEL_TYPE=${PREFILTER_MODEL_TYPE:-CTRANSPATH}
+PREFILTER_MODEL_TYPE=${PREFILTER_MODEL_TYPE:-}
 SEGMENT_THRESHOLD=${SEGMENT_THRESHOLD:-0}
 # PATCH_SIZE - Let Python code apply model-specific defaults (no default here)
 PATCH_SIZE=${PATCH_SIZE:-}
@@ -188,10 +188,11 @@ log "  CLASSIFIER_PKL: ${CLASSIFIER_PKL:-<not set>}"
 log "  CLASSIFIER_THRESHOLD: $CLASSIFIER_THRESHOLD"
 log "  PREFILTER_MODEL_TYPE: $PREFILTER_MODEL_TYPE"
 log "  PREFILTER_MODEL_PATH: ${PREFILTER_MODEL_PATH:-<not set>}"
-log "  POSTFILTER_MODEL_TYPE: ${POSTFILTER_MODEL_TYPE:-<not set>}"
-log "  POSTFILTER_MODEL_PATH: ${POSTFILTER_MODEL_PATH:-<not set>}"
+log "  MODEL_TYPE: ${MODEL_TYPE:-<not set>}"
+log "  MODEL_PATH: ${MODEL_PATH:-<not set>}"
 log "  AGGREGATION_METHOD: $AGGREGATION_METHOD"
 log "  SLIDE_MODEL_TYPE: ${SLIDE_MODEL_TYPE:-<not set>}"
+log "  SLIDE_MODEL_TYPES: ${SLIDE_MODEL_TYPES:-<not set>}"
 log "  SLIDE_MODEL_PATH: ${SLIDE_MODEL_PATH:-<not set>}"
 log "  SEGMENT_THRESHOLD: $SEGMENT_THRESHOLD"
 log "  PATCH_SIZE: $PATCH_SIZE"
@@ -235,14 +236,14 @@ if [ -n "$PREFILTER_MODEL_PATH" ] && is_s3_path "$PREFILTER_MODEL_PATH"; then
     log "Prefilter model staged to: $PREFILTER_MODEL_PATH"
 fi
 
-if [ -n "$POSTFILTER_MODEL_PATH" ] && is_s3_path "$POSTFILTER_MODEL_PATH"; then
+if [ -n "$MODEL_PATH" ] && is_s3_path "$MODEL_PATH"; then
     log "Postfilter model is in S3, staging locally..."
     WORK_DIR="${WORK_DIR:-${TMPDIR:-/tmp}/mussel_work_$$}"
     mkdir -p "$WORK_DIR"
-    LOCAL_POSTFILTER_MODEL_PATH="$WORK_DIR/$(basename "$POSTFILTER_MODEL_PATH")"
-    download_from_s3 "$POSTFILTER_MODEL_PATH" "$LOCAL_POSTFILTER_MODEL_PATH"
-    POSTFILTER_MODEL_PATH="$LOCAL_POSTFILTER_MODEL_PATH"
-    log "Postfilter model staged to: $POSTFILTER_MODEL_PATH"
+    LOCAL_MODEL_PATH="$WORK_DIR/$(basename "$MODEL_PATH")"
+    download_from_s3 "$MODEL_PATH" "$LOCAL_MODEL_PATH"
+    MODEL_PATH="$LOCAL_MODEL_PATH"
+    log "Postfilter model staged to: $MODEL_PATH"
 fi
 
 if [ -n "$SLIDE_MODEL_PATH" ] && is_s3_path "$SLIDE_MODEL_PATH"; then
@@ -259,6 +260,39 @@ fi
 if [ -n "$HF_TOKEN" ]; then
     export HUGGINGFACE_TOKEN="$HF_TOKEN"
     log "HuggingFace token set"
+fi
+
+# Pre-save slide models if SLIDE_MODEL_TYPES is specified
+if [ -n "$SLIDE_MODEL_TYPES" ] && [ "$AGGREGATION_METHOD" = "model" ]; then
+    log "Pre-saving slide models for batch processing..."
+    IFS=',' read -ra SLIDE_MODELS_TO_SAVE <<< "$SLIDE_MODEL_TYPES"
+    
+    WORK_DIR="${WORK_DIR:-${TMPDIR:-/tmp}/mussel_work_$$}"
+    mkdir -p "$WORK_DIR/models"
+    
+    # Store model save directory for later use
+    SLIDE_MODELS_DIR="$WORK_DIR/models"
+    
+    for SLIDE_MODEL_TYPE in "${SLIDE_MODELS_TO_SAVE[@]}"; do
+        SLIDE_MODEL_TYPE=$(echo "$SLIDE_MODEL_TYPE" | xargs)  # Trim whitespace
+        MODEL_SAVE_PATH="$SLIDE_MODELS_DIR/${SLIDE_MODEL_TYPE}.pth"
+        
+        log "  Saving slide model: $SLIDE_MODEL_TYPE to $MODEL_SAVE_PATH"
+        
+        # Use save_model CLI to download and save the model
+        ${UV_PREFIX} save_model \
+            "model_type=$SLIDE_MODEL_TYPE" \
+            "output_path=$MODEL_SAVE_PATH"
+        
+        if [ $? -eq 0 ]; then
+            log "  ✓ Successfully saved $SLIDE_MODEL_TYPE"
+        else
+            log "  ERROR: Failed to save $SLIDE_MODEL_TYPE"
+            exit 1
+        fi
+    done
+    
+    log "All slide models pre-saved successfully"
 fi
 
 # Check if GPU is available when USE_GPU=true
@@ -355,10 +389,10 @@ if [ "$BATCH_MODE" = true ]; then
     fi
     
     # Check if multi-model mode is enabled
-    if [ -n "$POSTFILTER_MODEL_TYPES" ]; then
-        # Multi-model batch mode: Run full pipeline for each postfilter model
-        IFS=',' read -ra MODELS <<< "$POSTFILTER_MODEL_TYPES"
-        log "Multi-model batch mode: Will process ${#MODELS[@]} models: ${POSTFILTER_MODEL_TYPES}"
+    if [ -n "$MODEL_TYPES" ]; then
+        # Multi-model batch mode: Run full pipeline for each model
+        IFS=',' read -ra MODELS <<< "$MODEL_TYPES"
+        log "Multi-model batch mode: Will process ${#MODELS[@]} models: ${MODEL_TYPES}"
         log ""
         
         MODEL_INDEX=0
@@ -387,7 +421,7 @@ if [ "$BATCH_MODE" = true ]; then
                 "slide_paths=[${SLIDE_PATHS}]"
                 "output_dir=${OUTPUT_DIR}/${MODEL}"
                 "prefilter_model_type=${PREFILTER_MODEL_TYPE}"
-                "postfilter_model_type=${MODEL}"
+                "model_type=${MODEL}"
                 "num_workers=${NUM_WORKERS}"
                 "batch_size=${BATCH_SIZE}"
                 "slide_batch_size=${SLIDE_BATCH_SIZE}"
@@ -450,9 +484,9 @@ if [ "$BATCH_MODE" = true ]; then
                 MODEL_CMD_ARGS+=("prefilter_model_path=$PREFILTER_MODEL_PATH")
             fi
             
-            # Add postfilter model path if specified
-            if [ -n "$POSTFILTER_MODEL_PATH" ]; then
-                MODEL_CMD_ARGS+=("postfilter_model_path=$POSTFILTER_MODEL_PATH")
+            # Add model path if specified
+            if [ -n "$MODEL_PATH" ]; then
+                MODEL_CMD_ARGS+=("model_path=$MODEL_PATH")
             fi
             
             # Add classifier if specified
@@ -505,7 +539,166 @@ if [ "$BATCH_MODE" = true ]; then
         exit 0
     fi
     
-    # Single postfilter model batch processing (original behavior)
+    # Check if multiple slide models are specified
+    if [ -n "$SLIDE_MODEL_TYPES" ] && [ "$AGGREGATION_METHOD" = "model" ]; then
+        # Multi-slide-model batch mode: Run pipeline for each slide model
+        IFS=',' read -ra SLIDE_MODELS <<< "$SLIDE_MODEL_TYPES"
+        log "Multi-slide-model batch mode: Will process ${#SLIDE_MODELS[@]} slide models: ${SLIDE_MODEL_TYPES}"
+        log ""
+        
+        MODEL_INDEX=0
+        for SLIDE_MODEL in "${SLIDE_MODELS[@]}"; do
+            MODEL_INDEX=$((MODEL_INDEX + 1))
+            SLIDE_MODEL=$(echo "$SLIDE_MODEL" | xargs)  # Trim whitespace
+            
+            log ""
+            log "=========================================="
+            log "Processing slide model $MODEL_INDEX/${#SLIDE_MODELS[@]}: $SLIDE_MODEL"
+            log "=========================================="
+            log ""
+            
+            # Set slide model path for this specific model (from pre-saved models)
+            CURRENT_SLIDE_MODEL_PATH=""
+            if [ -n "$SLIDE_MODELS_DIR" ]; then
+                POTENTIAL_PATH="$SLIDE_MODELS_DIR/${SLIDE_MODEL}.pth"
+                log "Checking for pre-saved model at: $POTENTIAL_PATH"
+                log "SLIDE_MODELS_DIR=$SLIDE_MODELS_DIR"
+                log "Contents of SLIDE_MODELS_DIR:"
+                ls -la "$SLIDE_MODELS_DIR" || log "  Directory does not exist or is not accessible"
+                if [ -f "$POTENTIAL_PATH" ]; then
+                    CURRENT_SLIDE_MODEL_PATH="$POTENTIAL_PATH"
+                    log "Using pre-saved slide model: $CURRENT_SLIDE_MODEL_PATH"
+                else
+                    log "WARNING: Pre-saved model not found at $POTENTIAL_PATH, will attempt to download"
+                fi
+            else
+                log "SLIDE_MODELS_DIR not set, skipping pre-saved model check"
+            fi
+            
+            # Build command for this slide model
+            MODEL_CMD_ARGS=(
+                "tessellate_extract_features"
+                "slide_paths=[${SLIDE_PATHS}]"
+                "output_dir=${OUTPUT_DIR}/${SLIDE_MODEL}"
+                "prefilter_model_type=${PREFILTER_MODEL_TYPE}"
+                "num_workers=${NUM_WORKERS}"
+                "batch_size=${BATCH_SIZE}"
+                "slide_batch_size=${SLIDE_BATCH_SIZE}"
+                "use_gpu=${USE_GPU}"
+                "aggregation_method=${AGGREGATION_METHOD}"
+                "slide_model_type=${SLIDE_MODEL}"
+            )
+            
+            # Add seg_config group if specified
+            if [ -n "$SEG_CONFIG_GROUP" ]; then
+                MODEL_CMD_ARGS+=("seg_config=${SEG_CONFIG_GROUP}")
+            fi
+            
+            # Add individual SegConfig parameters
+            if [ -n "$SEGMENT_THRESHOLD" ]; then
+                MODEL_CMD_ARGS+=("seg_config.segment_threshold=${SEGMENT_THRESHOLD}")
+            fi
+            if [ -n "$PATCH_SIZE" ]; then
+                MODEL_CMD_ARGS+=("seg_config.patch_size=${PATCH_SIZE}")
+            fi
+            if [ -n "$STEP_SIZE" ]; then
+                MODEL_CMD_ARGS+=("seg_config.step_size=${STEP_SIZE}")
+            fi
+            if [ -n "$MPP" ]; then
+                MODEL_CMD_ARGS+=("seg_config.mpp=${MPP}")
+            fi
+            if [ -n "$SEG_LEVEL" ]; then
+                MODEL_CMD_ARGS+=("seg_config.seg_level=${SEG_LEVEL}")
+            fi
+            if [ -n "$SEGMENT_MAX_VALUE" ]; then
+                MODEL_CMD_ARGS+=("seg_config.segment_max_value=${SEGMENT_MAX_VALUE}")
+            fi
+            if [ -n "$MEDIAN_BLUR_KSIZE" ]; then
+                MODEL_CMD_ARGS+=("seg_config.median_blur_ksize=${MEDIAN_BLUR_KSIZE}")
+            fi
+            if [ -n "$MORPHOLOGY_EX_KERNEL" ]; then
+                MODEL_CMD_ARGS+=("seg_config.morphology_ex_kernel=${MORPHOLOGY_EX_KERNEL}")
+            fi
+            if [ -n "$REF_PATCH_SIZE" ]; then
+                MODEL_CMD_ARGS+=("seg_config.ref_patch_size=${REF_PATCH_SIZE}")
+            fi
+            if [ -n "$USE_OTSU" ]; then
+                MODEL_CMD_ARGS+=("seg_config.use_otsu=${USE_OTSU}")
+            fi
+            if [ -n "$TISSUE_AREA_THRESHOLD" ]; then
+                MODEL_CMD_ARGS+=("seg_config.tissue_area_threshold=${TISSUE_AREA_THRESHOLD}")
+            fi
+            if [ -n "$HOLE_AREA_THRESHOLD" ]; then
+                MODEL_CMD_ARGS+=("seg_config.hole_area_threshold=${HOLE_AREA_THRESHOLD}")
+            fi
+            if [ -n "$MAX_NUM_HOLES" ]; then
+                MODEL_CMD_ARGS+=("seg_config.max_num_holes=${MAX_NUM_HOLES}")
+            fi
+            
+            # Add slide IDs if provided
+            if [ -n "$SLIDE_IDS" ]; then
+                MODEL_CMD_ARGS+=("slide_ids=[${SLIDE_IDS}]")
+            fi
+            
+            # Add prefilter model path if specified
+            if [ -n "$PREFILTER_MODEL_PATH" ]; then
+                MODEL_CMD_ARGS+=("prefilter_model_path=$PREFILTER_MODEL_PATH")
+            fi
+            
+            # Add classifier if specified
+            if [ -n "$CLASSIFIER_PKL" ]; then
+                MODEL_CMD_ARGS+=("classifier_pkl=$CLASSIFIER_PKL")
+                MODEL_CMD_ARGS+=("classifier_threshold=$CLASSIFIER_THRESHOLD")
+            fi
+            
+            # Add model if specified
+            if [ -n "$MODEL_TYPE" ]; then
+                MODEL_CMD_ARGS+=("model_type=$MODEL_TYPE")
+            fi
+            
+            if [ -n "$MODEL_PATH" ]; then
+                MODEL_CMD_ARGS+=("model_path=$MODEL_PATH")
+            fi
+            
+            # Add slide model path if specified or pre-saved
+            if [ -n "$CURRENT_SLIDE_MODEL_PATH" ]; then
+                MODEL_CMD_ARGS+=("slide_model_path=$CURRENT_SLIDE_MODEL_PATH")
+            elif [ -n "$SLIDE_MODEL_PATH" ]; then
+                MODEL_CMD_ARGS+=("slide_model_path=$SLIDE_MODEL_PATH")
+            fi
+            
+            log "Executing command for slide model $SLIDE_MODEL:"
+            log "${MODEL_CMD_ARGS[*]}"
+            echo ""
+            
+            START_TIME=$(date +%s)
+            ${UV_PREFIX} "${MODEL_CMD_ARGS[@]}"
+            EXIT_CODE=$?
+            END_TIME=$(date +%s)
+            DURATION=$((END_TIME - START_TIME))
+            
+            if [ $EXIT_CODE -ne 0 ]; then
+                log "ERROR: Slide model $SLIDE_MODEL processing failed with exit code $EXIT_CODE (duration: $DURATION seconds)"
+                exit $EXIT_CODE
+            fi
+            
+            log "SUCCESS: Slide model $SLIDE_MODEL processing completed in $DURATION seconds"
+        done
+        
+        log ""
+        log "=========================================="
+        log "Multi-slide-model batch processing completed successfully"
+        log "All ${#SLIDE_MODELS[@]} slide models processed"
+        log "=========================================="
+        
+        echo "============================================"
+        echo "End time: $(date)"
+        echo "============================================"
+        
+        exit 0
+    fi
+    
+    # Single model / single slide model batch processing (original behavior)
     # Build command for batch processing
     # Note: slide_paths parameter uses Hydra list syntax: slide_paths=[item1,item2,...]
     CMD_ARGS=(
@@ -581,13 +774,13 @@ if [ "$BATCH_MODE" = true ]; then
         CMD_ARGS+=("classifier_threshold=$CLASSIFIER_THRESHOLD")
     fi
     
-    # Add postfilter if specified
-    if [ -n "$POSTFILTER_MODEL_TYPE" ]; then
-        CMD_ARGS+=("postfilter_model_type=$POSTFILTER_MODEL_TYPE")
+    # Add model if specified
+    if [ -n "$MODEL_TYPE" ]; then
+        CMD_ARGS+=("model_type=$MODEL_TYPE")
     fi
     
-    if [ -n "$POSTFILTER_MODEL_PATH" ]; then
-        CMD_ARGS+=("postfilter_model_path=$POSTFILTER_MODEL_PATH")
+    if [ -n "$MODEL_PATH" ]; then
+        CMD_ARGS+=("model_path=$MODEL_PATH")
     fi
     
     # Add aggregation parameters if specified
@@ -645,39 +838,54 @@ if [ ! -d "$OUTPUT_DIR" ]; then
     mkdir -p "$OUTPUT_DIR"
 fi
 
-# Determine which postfilter models to run
-if [ -n "$POSTFILTER_MODEL_TYPES" ]; then
-    # Multiple models specified - use optimized two-command approach:
-    # 1. Run filter-tessellate once (tessellate + prefilter + filter)
-    # 2. Run extract-features for each postfilter model
+# Determine which models to run
+if [ -n "$MODEL_TYPES" ]; then
+    # Multiple models specified
+    IFS=',' read -ra MODELS <<< "$MODEL_TYPES"
+    log "Multi-model mode: Will process ${#MODELS[@]} models: ${MODEL_TYPES}"
     
-    IFS=',' read -ra MODELS <<< "$POSTFILTER_MODEL_TYPES"
-    log "Multi-model mode: Will run filter-tessellate once, then extract-features for ${#MODELS[@]} models: ${POSTFILTER_MODEL_TYPES}"
-    
-    # Step 1: Run filter-tessellate to get filtered coordinates
-    log ""
-    log "=========================================="
-    log "Step 1: Running filter-tessellate (tessellation + prefiltering + filtering)"
-    log "=========================================="
-    log ""
-    
-    # Create temp directory for filtered coordinates
-    FILTERED_COORDS_H5="$OUTPUT_DIR/filtered_coords.h5"
-    FILTERED_FEATURES_PT="$OUTPUT_DIR/filtered_features.pt"
-    
-    FILTER_CMD_ARGS=(
-        "filter_tessellate"
-        "slide_path=$SLIDE_PATH"
-        "output_h5_path=$FILTERED_COORDS_H5"
-        "output_pt_path=$FILTERED_FEATURES_PT"
-        "model_type=$PREFILTER_MODEL_TYPE"
-        "classifier_pkl=$CLASSIFIER_PKL"
-        "classifier_threshold=$CLASSIFIER_THRESHOLD"
-        "num_workers=$NUM_WORKERS"
-        "batch_size=$BATCH_SIZE"
-        "use_gpu=$USE_GPU"
-        "keep_intermediate_files=false"
-    )
+    # Check if we need to run filter-tessellate first (only if prefilter is specified)
+    if [ -n "$PREFILTER_MODEL_TYPE" ]; then
+        # Use optimized two-command approach:
+        # 1. Run filter-tessellate once (tessellate + prefilter + filter)
+        # 2. Run extract-features for each model
+        
+        log "Prefilter specified: Will run filter-tessellate once, then extract-features for ${#MODELS[@]} models"
+        
+        # Step 1: Run filter-tessellate to get filtered coordinates
+        log ""
+        log "=========================================="
+        log "Step 1: Running filter-tessellate (tessellation + prefiltering + filtering)"
+        log "=========================================="
+        log ""
+        
+        # Create temp directory for filtered coordinates
+        FILTERED_COORDS_H5="$OUTPUT_DIR/filtered_coords.h5"
+        FILTERED_FEATURES_PT="$OUTPUT_DIR/filtered_features.pt"
+        
+        FILTER_CMD_ARGS=(
+            "filter_tessellate"
+            "slide_path=$SLIDE_PATH"
+            "output_h5_path=$FILTERED_COORDS_H5"
+            "output_pt_path=$FILTERED_FEATURES_PT"
+            "classifier_pkl=$CLASSIFIER_PKL"
+            "classifier_threshold=$CLASSIFIER_THRESHOLD"
+            "num_workers=$NUM_WORKERS"
+            "batch_size=$BATCH_SIZE"
+            "use_gpu=$USE_GPU"
+            "keep_intermediate_files=false"
+        )
+        
+        # Only add model_type if prefilter model is specified
+        if [ -n "$PREFILTER_MODEL_TYPE" ]; then
+            FILTER_CMD_ARGS+=("model_type=$PREFILTER_MODEL_TYPE")
+        fi
+        USE_FILTERED_COORDS=true
+    else
+        # No prefilter - just run tessellate and then extract features
+        log "No prefilter specified: Will run tessellate once, then extract-features for ${#MODELS[@]} models"
+        USE_FILTERED_COORDS=false
+    fi
     
     # Add seg_config group if specified
     if [ -n "$SEG_CONFIG_GROUP" ]; then
@@ -748,7 +956,7 @@ if [ -n "$POSTFILTER_MODEL_TYPES" ]; then
     log "SUCCESS: filter-tessellate completed in $DURATION seconds"
     log ""
     
-    # Step 2: Run extract-features for each postfilter model
+    # Step 2: Run extract-features for each model
     MODEL_INDEX=0
     for MODEL in "${MODELS[@]}"; do
         MODEL_INDEX=$((MODEL_INDEX + 1))
@@ -756,7 +964,11 @@ if [ -n "$POSTFILTER_MODEL_TYPES" ]; then
         
         log ""
         log "=========================================="
-        log "Step $((MODEL_INDEX + 1)): Extracting features with model $MODEL_INDEX/${#MODELS[@]}: $MODEL"
+        if [ "$USE_FILTERED_COORDS" = true ]; then
+            log "Step $((MODEL_INDEX + 1)): Extracting features with model $MODEL_INDEX/${#MODELS[@]}: $MODEL"
+        else
+            log "Step $MODEL_INDEX: Processing with model $MODEL_INDEX/${#MODELS[@]}: $MODEL"
+        fi
         log "=========================================="
         log ""
         
@@ -779,21 +991,59 @@ if [ -n "$POSTFILTER_MODEL_TYPES" ]; then
             MODEL_INTERMEDIATE_H5=""
         fi
         
-        EXTRACT_CMD_ARGS=(
-            "extract_features"
-            "patch_h5_path=$FILTERED_COORDS_H5"
-            "slide_path=$SLIDE_PATH"
-            "output_h5_path=$MODEL_H5_PATH"
-            "output_pt_path=$MODEL_PT_PATH"
-            "model_type=$MODEL"
-            "batch_size=$BATCH_SIZE"
-            "use_gpu=$USE_GPU"
-            "num_workers=$NUM_WORKERS"
-        )
+        if [ "$USE_FILTERED_COORDS" = true ]; then
+            # Use extract-features with filtered coordinates
+            EXTRACT_CMD_ARGS=(
+                "extract_features"
+                "patch_h5_path=$FILTERED_COORDS_H5"
+                "slide_path=$SLIDE_PATH"
+                "output_h5_path=$MODEL_H5_PATH"
+                "output_pt_path=$MODEL_PT_PATH"
+                "model_type=$MODEL"
+                "batch_size=$BATCH_SIZE"
+                "use_gpu=$USE_GPU"
+                "num_workers=$NUM_WORKERS"
+            )
+        else
+            # Use tessellate-extract-features for each model
+            EXTRACT_CMD_ARGS=(
+                "tessellate_extract_features"
+                "slide_path=$SLIDE_PATH"
+                "output_h5_path=$MODEL_H5_PATH"
+                "output_pt_path=$MODEL_PT_PATH"
+                "model_type=$MODEL"
+                "num_workers=$NUM_WORKERS"
+                "batch_size=$BATCH_SIZE"
+                "use_gpu=$USE_GPU"
+                "keep_intermediate_files=$KEEP_INTERMEDIATE_FILES"
+            )
+            
+            # Add seg_config group if specified
+            if [ -n "$SEG_CONFIG_GROUP" ]; then
+                EXTRACT_CMD_ARGS+=("seg_config=${SEG_CONFIG_GROUP}")
+            fi
+            
+            # Add individual SegConfig parameters if specified
+            if [ -n "$SEGMENT_THRESHOLD" ]; then
+                EXTRACT_CMD_ARGS+=("seg_config.segment_threshold=$SEGMENT_THRESHOLD")
+            fi
+            if [ -n "$PATCH_SIZE" ]; then
+                EXTRACT_CMD_ARGS+=("seg_config.patch_size=$PATCH_SIZE")
+            fi
+            if [ -n "$STEP_SIZE" ]; then
+                EXTRACT_CMD_ARGS+=("seg_config.step_size=$STEP_SIZE")
+            fi
+            if [ -n "$MPP" ]; then
+                EXTRACT_CMD_ARGS+=("seg_config.mpp=$MPP")
+            fi
+            if [ -n "$SEG_LEVEL" ]; then
+                EXTRACT_CMD_ARGS+=("seg_config.seg_level=$SEG_LEVEL")
+            fi
+        fi
         
         # Add model_path if specified
-        if [ -n "$POSTFILTER_MODEL_PATH" ]; then
-            EXTRACT_CMD_ARGS+=("model_path=$POSTFILTER_MODEL_PATH")
+        if [ -n "$MODEL_PATH" ]; then
+            EXTRACT_CMD_ARGS+=("model_path=$MODEL_PATH")
         fi
         
         # Add aggregation parameters if specified
@@ -864,16 +1114,16 @@ if [ -n "$POSTFILTER_MODEL_TYPES" ]; then
         done
     fi
 
-elif [ -n "$POSTFILTER_MODEL_TYPE" ]; then
+elif [ -n "$MODEL_TYPE" ]; then
     # Single model specified - use tessellate-extract-features
-    MODEL="$POSTFILTER_MODEL_TYPE"
+    MODEL="$MODEL_TYPE"
 else
-    # No postfilter model specified - use prefilter model
+    # No model specified - use prefilter model if available
     MODEL="$PREFILTER_MODEL_TYPE"
 fi
 
 # Single-model mode (backward compatible - uses tessellate-extract-features)
-if [ -z "$POSTFILTER_MODEL_TYPES" ]; then
+if [ -z "$MODEL_TYPES" ]; then
     MODEL_H5_PATH="$LOCAL_OUTPUT_H5_PATH"
     MODEL_PT_PATH="$LOCAL_OUTPUT_PT_PATH"
     MODEL_INTERMEDIATE_H5_PATH="$LOCAL_INTERMEDIATE_H5_PATH"
@@ -957,11 +1207,11 @@ if [ -z "$POSTFILTER_MODEL_TYPES" ]; then
         CMD_ARGS+=("prefilter_model_path=$PREFILTER_MODEL_PATH")
     fi
 
-    # Add the specific postfilter model
-    CMD_ARGS+=("postfilter_model_type=$MODEL")
+    # Add the specific model
+    CMD_ARGS+=("model_type=$MODEL")
     
-    if [ -n "$POSTFILTER_MODEL_PATH" ]; then
-        CMD_ARGS+=("postfilter_model_path=$POSTFILTER_MODEL_PATH")
+    if [ -n "$MODEL_PATH" ]; then
+        CMD_ARGS+=("model_path=$MODEL_PATH")
     fi
 
     # Add aggregation parameters if specified

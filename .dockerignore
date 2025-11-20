@@ -72,14 +72,31 @@ docs/
 *.pt
 *.pth
 *.ckpt
+*.safetensors
+*.bin
 
 # Output and cache directories
 outputs/
 output/
 *-output/
+*_output/
+*output/
 docker-example-output/
 model_cache/
 .cache/
+.torch/
+.huggingface/
+hub/
+gigapath_official_embeddings/
+gigapath_demo_output/
+panda_embeddings/
+titan_official_embeddings/
+tcga_slides/
+panda_slides/
+scripts/azure_batch/model_cache/
+my_models/
+my_models*/
+test_cache/
 
 # Configuration (secrets should not be in image)
 *.env

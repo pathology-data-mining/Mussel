@@ -3,7 +3,7 @@
 
 # General processing parameters
 #prefilter_model_type: CTRANSPATH
-postfilter_model_type: OPTIMUS
+model_type: OPTIMUS
 #prefilter_model_path: /gpfs/mskmind_ess/limr/repos/TransPath/ctranspath.pth
 #classifier_pkl: /gpfs/mskmind_ess/limr/repos/Mussel/model-1727990346535.pkl
 #classifier_threshold: 0.75
@@ -38,11 +38,9 @@ azure:
   batch_account_url: "https://ocra.eastus2.batch.azure.com"
   container_image: "mskmind/mussel:latest"
   storage_account_name: "mskpdmgen2"
-  azure_files_share_name: "mussel-staging"
-  stage_to_azure_files: true
-  mount_azure_files: true
+  azure_blob_container: "mussel-staging"
+  stage_to_azure_blob: true
   cleanup_staged_files: false
-  #output_az_files_prefix: "azfiles://mskpdmgen2/mussel-staging/outputs"
   output_blob_prefix: "https://mskpdmgen2.blob.core.windows.net/no-filter-optimus/"
   pool_id: "mussel-pool"
   job_id: "mussel-no-filter-optimus-job"

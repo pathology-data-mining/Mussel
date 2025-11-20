@@ -3,13 +3,13 @@
 # Use with: --csv-manifest <manifest.csv> --config <this-file>
 
 # Model configuration
-# Model paths (prefilter, postfilter, slide) can be specified here and will be correctly used
+# Model paths (prefilter, model, slide) can be specified here and will be correctly used
 prefilter_model_type: CTRANSPATH
 prefilter_model_path: /shared/models/ctranspath.pth
 
 # Optional: Postfilter model configuration
-# postfilter_model_type: UNI
-# postfilter_model_path: /shared/models/uni.pth
+# model_type: UNI
+# model_path: /shared/models/uni.pth
 
 # Optional: Slide model configuration for aggregation
 # slide_model_type: GIGAPATH_SLIDE

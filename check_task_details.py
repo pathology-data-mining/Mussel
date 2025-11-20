@@ -1,36 +1,41 @@
+#!/usr/bin/env python3
 import os
 from azure.batch import BatchServiceClient
 from azure.batch.batch_auth import SharedKeyCredentials
 
-batch_account_name = os.environ['AZURE_BATCH_ACCOUNT_NAME']
-batch_account_key = os.environ['AZURE_BATCH_ACCOUNT_KEY']
-batch_account_url = os.environ['AZURE_BATCH_ACCOUNT_URL']
+# Load credentials from secrets.env
+secrets = {}
+with open('secrets.env', 'r') as f:
+    for line in f:
+        line = line.strip()
+        if line and not line.startswith('#') and '=' in line:
+            if line.startswith('export '):
+                line = line[7:]
+            key, value = line.split('=', 1)
+            value = value.strip('"').strip("'")
+            secrets[key] = value
+
+batch_account_name = secrets.get('AZURE_BATCH_ACCOUNT_NAME')
+batch_account_key = secrets.get('AZURE_BATCH_ACCOUNT_KEY')
+batch_account_url = secrets.get('AZURE_BATCH_ACCOUNT_URL')
 
 credentials = SharedKeyCredentials(batch_account_name, batch_account_key)
 batch_client = BatchServiceClient(credentials, batch_account_url)
 
-job_id = "mussel-test-job"
-tasks = list(batch_client.task.list(job_id))
-
-for task in tasks:
-    print(f"\n{'='*60}")
-    print(f"Task: {task.id}")
-    print(f"State: {task.state}")
-    print(f"Exit code: {task.execution_info.exit_code if task.execution_info else 'N/A'}")
+# Get the most recent job
+jobs = list(batch_client.job.list())
+if jobs:
+    job = sorted(jobs, key=lambda j: j.creation_time, reverse=True)[0]
+    print(f"Job: {job.id}")
+    print(f"State: {job.state}\n")
     
-    if task.execution_info and task.execution_info.failure_info:
-        print(f"Failure category: {task.execution_info.failure_info.category}")
-        print(f"Failure code: {task.execution_info.failure_info.code}")
-        print(f"Failure message: {task.execution_info.failure_info.message}")
-        
-        if task.execution_info.failure_info.details:
-            print("Failure details:")
-            for detail in task.execution_info.failure_info.details:
-                print(f"  - {detail.name}: {detail.value}")
-    
-    if task.execution_info:
-        print(f"Start time: {task.execution_info.start_time}")
-        print(f"End time: {task.execution_info.end_time}")
-        if task.execution_info.start_time and task.execution_info.end_time:
-            duration = task.execution_info.end_time - task.execution_info.start_time
-            print(f"Duration: {duration}")
+    # Get tasks
+    tasks = list(batch_client.task.list(job.id))
+    for task in tasks:
+        print(f"Task: {task.id}")
+        print(f"State: {task.state}")
+        if task.execution_info:
+            print(f"Exit code: {task.execution_info.exit_code}")
+            if task.execution_info.failure_info:
+                print(f"Failure: {task.execution_info.failure_info.category} - {task.execution_info.failure_info.message}")
+        print()

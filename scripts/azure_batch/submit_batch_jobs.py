@@ -221,6 +221,24 @@ class AzureBatchJobSubmitter:
             )
         else:
             self.azure_blob_staging = None
+        
+        # Ensure log container exists for automatic log upload
+        self._ensure_log_container()
+
+    def _ensure_log_container(self):
+        """Ensure the batch-logs container exists for automatic log upload."""
+        if self.blob_client:
+            try:
+                container_client = self.blob_client.get_container_client("batch-logs")
+                container_client.create_container()
+                print("✓ Created batch-logs container for automatic log upload")
+            except Exception as e:
+                # Container might already exist
+                if "ContainerAlreadyExists" in str(e) or "already exists" in str(e).lower():
+                    pass  # This is fine
+                else:
+                    print(f"Warning: Could not create batch-logs container: {e}")
+                    print("  Automatic log upload may not work")
 
     def _should_set_intermediate_h5_path(
         self, aggregation_method: Optional[str]
@@ -285,6 +303,7 @@ class AzureBatchJobSubmitter:
         use_container_prepull: bool = False,
         use_spot_nodes: bool = False,
         spot_node_count: Optional[int] = None,
+        model_cache_blob_prefix: Optional[str] = None,
     ) -> None:
         """Create a pool of compute nodes with optional Azure Files mount and auto-scaling.
 
@@ -405,6 +424,10 @@ class AzureBatchJobSubmitter:
         # Start task to configure node for docker GPU access
         # For ubuntu-hpc images (needed for A100 Gen2 support), install NVIDIA drivers
         # For ubuntu-server-container images, drivers are pre-installed
+        # Model pre-staging removed - using persistent cache instead
+        # Models will be downloaded on-demand from Hugging Face to /mnt/batch_models
+        model_download_cmd = ""
+        
         if "ubuntu-hpc" in offer:
             # ubuntu-hpc images come with NVIDIA drivers and nvidia-docker2 pre-installed
             # Conditionally pull the image if not using pre-pull
@@ -452,10 +475,14 @@ DOCKEREOF
                 
                 echo \\"Docker data root: $(docker info | grep 'Docker Root Dir')\\"
                 
-                # Create cache directories in task working directory (has more space than /tmp)
-                mkdir -p /mnt/batch/tasks/workitems/torch_cache /mnt/batch/tasks/workitems/hf_cache /mnt/batch/tasks/workitems/tmp
+                # Create cache directories
+                # Persistent model cache (survives across tasks)
+                mkdir -p /mnt/batch_models
+                chmod -R 777 /mnt/batch_models
+                # Temporary working directories
+                mkdir -p /mnt/batch/tasks/workitems/tmp
                 chmod -R 777 /mnt/batch/tasks/workitems
-                
+                {model_download_cmd}
                 {pull_image_cmd}
                 # Add batch user to docker group
                 usermod -aG docker _azbatch
@@ -490,8 +517,12 @@ DOCKEREOF
                     exit 1
                 fi
                 
-                mkdir -p /mnt/batch/tasks/workitems/torch_cache /mnt/batch/tasks/workitems/hf_cache /mnt/batch/tasks/workitems/tmp
+                # Create cache directories
+                mkdir -p /mnt/batch_models
+                chmod -R 777 /mnt/batch_models
+                mkdir -p /mnt/batch/tasks/workitems/tmp
                 chmod -R 777 /mnt/batch/tasks/workitems
+                {model_download_cmd}
                 {pull_image_cmd}
                 usermod -aG docker _azbatch
             "'''
@@ -651,6 +682,7 @@ DOCKEREOF
         model_types: Optional[str] = None,
         model_path: Optional[str] = None,
         slide_model_paths: Optional[str] = None,
+        model_cache_dir: Optional[str] = None,
         seg_config_group: Optional[str] = None,
         segment_threshold: Optional[int] = None,
         patch_size: Optional[int] = None,
@@ -667,6 +699,7 @@ DOCKEREOF
         max_num_holes: Optional[int] = None,
         num_workers: int = 4,
         batch_size: int = 64,
+        model_batch_sizes: Optional[Dict[str, int]] = None,
         use_gpu: bool = True,
         keep_intermediate_files: bool = False,
         hf_token: Optional[str] = None,
@@ -678,9 +711,16 @@ DOCKEREOF
         container_image: str = "mskmind/mussel:latest-torch-gpu",
         cleanup_staged_file: bool = False,
         use_container_prepull: bool = False,
+        script_blob_url: Optional[str] = None,
     ) -> None:
         """
         Submit a tessellate-extract-features task to Azure Batch.
+        
+        Args:
+            script_blob_url: Optional Azure Blob URL to download scripts from (e.g., 
+                https://account.blob.core.windows.net/container/scripts/).
+                If provided, scripts will be downloaded at runtime instead of using bundled versions.
+                This allows updating scripts without rebuilding the container.
 
         Supports both single-slide and multi-slide batch processing.
         For batch processing, provide slide_paths and slide_ids instead of slide_path.
@@ -748,6 +788,14 @@ DOCKEREOF
                 name="AGGREGATION_METHOD", value=aggregation_method
             ),
         ]
+        
+        # Add model_batch_sizes as JSON string if provided
+        if model_batch_sizes:
+            common_env_vars.append(
+                batchmodels.EnvironmentSetting(
+                    name="MODEL_BATCH_SIZES", value=json.dumps(model_batch_sizes)
+                )
+            )
         
         # Only set prefilter model types if provided
         if prefilter_model_types:
@@ -891,6 +939,12 @@ DOCKEREOF
                     name="SLIDE_MODEL_PATHS", value=slide_model_paths
                 )
             )
+        if model_cache_dir:
+            env_vars.append(
+                batchmodels.EnvironmentSetting(
+                    name="MODEL_CACHE_DIR", value=model_cache_dir
+                )
+            )
 
         if hf_token:
             env_vars.append(
@@ -957,6 +1011,14 @@ DOCKEREOF
                     name="AZURE_FILES_SHARE", value=self.azure_files_share_name
                 )
             )
+        
+        # Add script blob URL if provided (allows updating scripts without rebuilding container)
+        if script_blob_url:
+            env_vars.append(
+                batchmodels.EnvironmentSetting(
+                    name="SCRIPT_BLOB_URL", value=script_blob_url
+                )
+            )
 
         # Convert env vars to docker -e format
         docker_env_args = " ".join([f'-e {var.name}="{var.value}"' for var in env_vars])
@@ -969,24 +1031,79 @@ DOCKEREOF
 
         # Performance optimization: Use local VM storage for caching and temp files
         # - /mnt/batch/tasks/workitems: Azure Batch task working directory (local SSD, large space)
+        # - /mnt/batch_models: Persistent model cache directory (survives across tasks)
         # - Use /mnt/batch/tasks/workitems for temp storage instead of /tmp (limited space)
-        # - Model cache: Store in task working directory for fast access
         volume_mounts = (
             f"-v {azure_files_mount}:{azure_files_mount}" if azure_files_mount else ""
         )
         volume_mounts += " -v /mnt/batch/tasks/workitems:/mnt/batch/tasks/workitems"
         volume_mounts += " -v /mnt/batch/tasks/shared:/mnt/batch/tasks/shared"
+        volume_mounts += " -v /mnt/batch_models:/mnt/batch_models"
 
-        # Set cache and temp directories to use task working directory (has more space than /tmp)
-        # Use spawn for multiprocessing to avoid permission issues with shared memory
-        cache_env = "-e TORCH_HOME=/mnt/batch/tasks/workitems/torch_cache -e HF_HOME=/mnt/batch/tasks/workitems/hf_cache -e TMPDIR=/mnt/batch/tasks/workitems/tmp -e PYTHONUNBUFFERED=1 -e OMP_NUM_THREADS=1"
+        # Set cache and temp directories
+        # Use persistent model cache at /mnt/batch_models (survives across tasks)
+        # TMPDIR uses task working directory (has more space than /tmp)
+        cache_env = "-e TORCH_HOME=/mnt/batch_models -e HF_HOME=/mnt/batch_models -e HF_HUB_CACHE=/mnt/batch_models/hub -e TRANSFORMERS_CACHE=/mnt/batch_models -e TMPDIR=/mnt/batch/tasks/workitems/tmp -e PYTHONUNBUFFERED=1 -e OMP_NUM_THREADS=1"
 
-        task_command = f'/bin/bash -c "mkdir -p /mnt/batch/tasks/workitems/torch_cache /mnt/batch/tasks/workitems/hf_cache /mnt/batch/tasks/workitems/tmp /mnt/batch/tasks/shared && chmod -R 777 /mnt/batch/tasks/workitems && docker run --rm --user root --ipc host --gpus all --shm-size=8g {docker_env_args} {cache_env} {volume_mounts} {container_image} /bin/bash /app/scripts/azure_batch/run_tessellate_extract_features.sh"'
+        task_command = f'/bin/bash -c "mkdir -p /mnt/batch_models /mnt/batch/tasks/workitems/tmp /mnt/batch/tasks/shared && chmod -R 777 /mnt/batch_models /mnt/batch/tasks/workitems && docker run --rm --user root --ipc host --gpus all --shm-size=8g {docker_env_args} {cache_env} {volume_mounts} {container_image} /bin/bash /app/scripts/azure_batch/run_tessellate_extract_features.sh"'
 
         # Task constraints with retry configuration
         task_constraints = batchmodels.TaskConstraints(
             max_task_retry_count=max_retry_count
         )
+
+        # Configure automatic log upload to blob storage
+        # This ensures logs are preserved even if the pool is deleted
+        output_files = []
+        if self.storage_account_name and self.storage_account_key:
+            # Upload logs to a dedicated container
+            log_container = "batch-logs"
+            
+            # Create SAS URL for log uploads (valid for 7 days)
+            from datetime import datetime, timedelta
+            from azure.storage.blob import generate_container_sas, ContainerSasPermissions
+            
+            sas_token = generate_container_sas(
+                account_name=self.storage_account_name,
+                container_name=log_container,
+                account_key=self.storage_account_key,
+                permission=ContainerSasPermissions(write=True, create=True, list=True),
+                expiry=datetime.utcnow() + timedelta(days=7)
+            )
+            
+            container_url = f"https://{self.storage_account_name}.blob.core.windows.net/{log_container}?{sas_token}"
+            
+            # Upload stdout
+            output_files.append(
+                batchmodels.OutputFile(
+                    file_pattern='../stdout.txt',
+                    destination=batchmodels.OutputFileDestination(
+                        container=batchmodels.OutputFileBlobContainerDestination(
+                            container_url=container_url,
+                            path=f"{job_id}/{task_id}/stdout.txt"
+                        )
+                    ),
+                    upload_options=batchmodels.OutputFileUploadOptions(
+                        upload_condition=batchmodels.OutputFileUploadCondition.task_completion
+                    )
+                )
+            )
+            
+            # Upload stderr
+            output_files.append(
+                batchmodels.OutputFile(
+                    file_pattern='../stderr.txt',
+                    destination=batchmodels.OutputFileDestination(
+                        container=batchmodels.OutputFileBlobContainerDestination(
+                            container_url=container_url,
+                            path=f"{job_id}/{task_id}/stderr.txt"
+                        )
+                    ),
+                    upload_options=batchmodels.OutputFileUploadOptions(
+                        upload_condition=batchmodels.OutputFileUploadCondition.task_completion
+                    )
+                )
+            )
 
         # Create task with container settings if prepull is enabled
         if use_container_prepull:
@@ -1011,6 +1128,7 @@ DOCKEREOF
                 environment_settings=env_vars,  # Pass env vars directly to container
                 constraints=task_constraints,
                 container_settings=container_settings,
+                output_files=output_files if output_files else None,
             )
         else:
             # Use docker invocation for non-container pools
@@ -1019,6 +1137,7 @@ DOCKEREOF
                 command_line=task_command,
                 environment_settings=[],  # Env vars passed via docker -e
                 constraints=task_constraints,
+                output_files=output_files if output_files else None,
             )
 
         try:
@@ -1177,6 +1296,7 @@ DOCKEREOF
                 model_path=merged_config.get("model_path"),
                 slide_model_types=merged_config.get("slide_model_types"),
                 slide_model_paths=merged_config.get("slide_model_paths"),
+                model_cache_dir=merged_config.get("model_cache_dir"),
                 seg_config_group=merged_config.get("seg_config_group"),
                 segment_threshold=merged_config.get("segment_threshold"),
                 patch_size=merged_config.get("patch_size"),
@@ -1336,42 +1456,15 @@ DOCKEREOF
         if all_slide_models:
             model_params["slide_model_types"] = ",".join(all_slide_models)
         
-        # Determine appropriate batch_size based on models being processed
-        # If model_batch_sizes dict is provided in config, use it to set batch_size
-        # to the minimum value for all models being processed
+        # Pass model_batch_sizes dict if provided (instead of computing a single batch_size)
+        # This allows per-model batch sizes to be used by tessellate_extract_features
         if "model_batch_sizes" in default_params and isinstance(default_params["model_batch_sizes"], dict):
             model_batch_sizes = default_params["model_batch_sizes"]
+            model_params["model_batch_sizes"] = model_batch_sizes
             
-            # Collect batch sizes for all models being processed
-            batch_sizes_to_consider = []
-            
-            # Check patch-level models
-            if all_models:
-                for model in all_models:
-                    if model in model_batch_sizes:
-                        batch_sizes_to_consider.append(model_batch_sizes[model])
-            
-            # Check slide-level models and their required patch encoders
-            # TITAN_SLIDE uses CONCH1_5, GIGAPATH_SLIDE uses GIGAPATH
-            if all_slide_models:
-                for slide_model in all_slide_models:
-                    if slide_model == "TITAN_SLIDE" and "CONCH1_5" in model_batch_sizes:
-                        batch_sizes_to_consider.append(model_batch_sizes["CONCH1_5"])
-                    elif slide_model == "GIGAPATH_SLIDE" and "GIGAPATH" in model_batch_sizes:
-                        batch_sizes_to_consider.append(model_batch_sizes["GIGAPATH"])
-                    elif slide_model in model_batch_sizes:
-                        batch_sizes_to_consider.append(model_batch_sizes[slide_model])
-            
-            # Use the minimum batch size to ensure all models fit in memory
-            if batch_sizes_to_consider:
-                optimal_batch_size = min(batch_sizes_to_consider)
-                if "batch_size" not in model_params or model_params["batch_size"] != optimal_batch_size:
-                    print(f"\n[Per-Model Batch Size] Using batch_size={optimal_batch_size}")
-                    print(f"  Models: {', '.join(all_models + all_slide_models)}")
-                    model_list = all_models + all_slide_models
-                    size_strs = [f"{m}={model_batch_sizes.get(m, 'default')}" for m in model_list]
-                    print(f"  Per-model sizes: {', '.join(size_strs)}")
-                    model_params["batch_size"] = optimal_batch_size
+            print(f"\n[Per-Model Batch Sizes]")
+            for model, batch_size in model_batch_sizes.items():
+                print(f"  {model}: {batch_size}")
         
         total_tasks_submitted = 0
 
@@ -1449,7 +1542,17 @@ DOCKEREOF
                     # Create batch task ID
                     batch_num = batch_idx // slides_per_task + 1
                     total_batches = (len(slides) + slides_per_task - 1) // slides_per_task
-                    models_str = "_".join(models_to_process[:2])  # Use first 2 models in ID
+                    
+                    # Create concise model identifier for task ID
+                    # Use first model + count if multiple models
+                    if len(models_to_process) == 1:
+                        models_str = models_to_process[0]
+                    elif len(models_to_process) == 2:
+                        models_str = "_".join(models_to_process)
+                    else:
+                        # Multiple models: show first + count (e.g., "OPTIMUS_plus4more")
+                        models_str = f"{models_to_process[0]}_plus{len(models_to_process)-1}more"
+                    
                     batch_id = f"batch_{batch_num}_of_{total_batches}_{models_str}"
 
                     # Extract slide IDs and paths for this batch
@@ -1573,6 +1676,7 @@ DOCKEREOF
                     model_path=model_params.get("model_path"),
                     slide_model_types=model_params.get("slide_model_types"),
                     slide_model_paths=model_params.get("slide_model_paths"),
+                    model_cache_dir=model_params.get("model_cache_dir"),
                     seg_config_group=model_params.get("seg_config_group"),
                     segment_threshold=model_params.get("segment_threshold"),
                     patch_size=model_params.get("patch_size"),
@@ -1589,6 +1693,7 @@ DOCKEREOF
                     max_num_holes=model_params.get("max_num_holes"),
                     num_workers=model_params.get("num_workers", 4),
                     batch_size=model_params.get("batch_size", 64),
+                    model_batch_sizes=model_params.get("model_batch_sizes"),
                     use_gpu=model_params.get("use_gpu", True),
                     keep_intermediate_files=model_params.get(
                         "keep_intermediate_files", False
@@ -1601,6 +1706,7 @@ DOCKEREOF
                     max_retry_count=model_params.get("max_retry_count", 3),
                     container_image=container_image,
                     use_container_prepull=use_container_prepull,
+                    script_blob_url=model_params.get("script_blob_url"),
                 )
 
                     # Store task configuration in metadata (excluding secrets)
@@ -2228,6 +2334,10 @@ def main():
         help="S3 prefix for uploaded models (default: use output-s3-prefix/models/)",
     )
     parser.add_argument(
+        "--model-dir",
+        help="Path to directory containing pre-downloaded models (azblob://, s3://, or local path). When specified, disables automatic model download and uses this directory instead.",
+    )
+    parser.add_argument(
         "--prefilter-model-path",
         help="Path to prefilter model weights (local or s3://)",
     )
@@ -2543,140 +2653,12 @@ def main():
             args.job_id = f"mussel-job-{timestamp}"
             print(f"Auto-generated job ID: {args.job_id}")
 
-    # Pre-download models if requested and using batch processing
+    # Pre-download models removed - using persistent cache instead
+    # Models will be downloaded on-demand from Hugging Face to /mnt/batch_models
     model_paths = {}
-    if (
-        args.pre_download_models
-        and pre_download_models
-        and (args.csv_manifest or args.config_file)
-    ):
-        print("\n[Model Pre-Download] Starting model pre-download process...")
+    model_dir = None
 
-        # Determine which models need to be downloaded
-        models_to_download = []
-
-        # Check if user provided explicit model paths (skip pre-download for those)
-        # Check both command-line args and config file
-        user_provided_paths = {
-            "prefilter": args.prefilter_model_path
-            or config_defaults.get("prefilter_model_path"),
-            "postfilter": args.model_path
-            or config_defaults.get("model_path"),
-            "slide": args.slide_model_path or config_defaults.get("slide_model_path"),
-        }
-
-        # Add prefilter model if not provided by user
-        if not user_provided_paths["prefilter"]:
-            # Get the actual prefilter model type from args or config
-            prefilter_model_type = getattr(
-                args, "prefilter_model_type", None
-            ) or config_defaults.get("prefilter_model_type", None)
-            if prefilter_model_type:
-                models_to_download.append(prefilter_model_type)
-
-        # Add models if not provided by user
-        if not user_provided_paths["postfilter"]:
-            # Check for both single model_type and multiple model_types
-            model_type = getattr(
-                args, "model_type", None
-            ) or config_defaults.get("model_type")
-            model_types_arg = args.models or config_defaults.get(
-                "model_types"
-            )
-
-            if model_type:
-                # Single model specified
-                models_to_download.append(model_type)
-            elif model_types_arg:
-                # Multiple models specified (comma-separated)
-                model_list = [m.strip() for m in model_types_arg.split(",")]
-                models_to_download.extend(model_list)
-
-        # Add slide model if not provided by user and slide model type is specified
-        slide_model_type = getattr(
-            args, "slide_model_type", None
-        ) or config_defaults.get("slide_model_type")
-        slide_model_types_arg = config_defaults.get("slide_model_types")
-        
-        if slide_model_type:
-            # Single slide model specified
-            if not user_provided_paths["slide"]:
-                models_to_download.append(slide_model_type)
-        elif slide_model_types_arg:
-            # Multiple slide models specified (comma-separated)
-            slide_models_list = [m.strip() for m in slide_model_types_arg.split(",")]
-            if not user_provided_paths["slide"]:
-                models_to_download.extend(slide_models_list)
-
-        # Remove duplicates
-        models_to_download = list(set(models_to_download))
-
-        if models_to_download:
-            print(
-                f"[Model Pre-Download] Models to download: {', '.join(models_to_download)}"
-            )
-
-            try:
-                # Download models to cache directory
-                cached_models = pre_download_models(
-                    model_types=models_to_download, cache_dir=args.model_cache_dir
-                )
-
-                # Upload models to remote storage
-                # Priority: 1) model_s3_prefix, 2) staging_container, 3) output_prefix
-                if upload_models_to_s3:
-                    # Determine model staging location
-                    if args.model_s3_prefix:
-                        # Explicit model location specified
-                        s3_model_prefix = args.model_s3_prefix
-                        print(f"[Model Staging] Using custom model prefix: {s3_model_prefix}")
-                    elif args.staging_container and args.storage_account_name:
-                        # Use staging container for models (recommended)
-                        s3_model_prefix = f"azblob://{args.staging_container}/models/"
-                        print(f"[Model Staging] Using staging container: {s3_model_prefix}")
-                    elif args.output_prefix:
-                        # Fall back to output prefix + /models/ (legacy)
-                        s3_model_prefix = args.output_prefix.rstrip("/") + "/models/"
-                        print(f"[Model Staging] Using output prefix (legacy): {s3_model_prefix}")
-                    else:
-                        # No remote storage configured, skip upload
-                        print("[Model Staging] No remote storage configured, using local cache")
-                        model_paths = cached_models
-                        s3_model_prefix = None
-
-                    # Set Azure Storage environment variables and upload if we have a remote prefix
-                    if s3_model_prefix:
-                        # Set Azure Storage environment variables if using Azure Blob
-                        if s3_model_prefix.startswith("azblob://"):
-                            if args.storage_account_name:
-                                os.environ["AZURE_STORAGE_ACCOUNT"] = args.storage_account_name
-                            if args.storage_account_key:
-                                os.environ["AZURE_STORAGE_KEY"] = args.storage_account_key
-
-                        # Upload models to remote storage
-                        s3_model_paths = upload_models_to_s3(cached_models, s3_model_prefix)
-                        model_paths = s3_model_paths
-                        print(
-                            f"[Model Pre-Download] Models available at: {s3_model_prefix}"
-                        )
-                else:
-                    # Use local paths (for non-S3 workflows or testing)
-                    model_paths = cached_models
-                    print(
-                        f"[Model Pre-Download] Models cached locally: {args.model_cache_dir}"
-                    )
-
-            except Exception as e:
-                print(f"ERROR: Model pre-download failed: {e}", file=sys.stderr)
-                print(
-                    "Continuing with job submission (tasks will download models from HuggingFace Hub)"
-                )
-        else:
-            print(
-                "[Model Pre-Download] All models provided by user, skipping pre-download"
-            )
-
-    # Apply user-provided model paths (override pre-downloaded if both specified)
+    # Apply user-provided model paths if specified
     if args.prefilter_model_path:
         # Use the actual prefilter model type
         prefilter_model_type = getattr(
@@ -2744,6 +2726,10 @@ def main():
         staging_container=args.staging_container,
     )
 
+    # Model staging removed - using persistent cache at /mnt/batch_models instead
+    # Models will be downloaded on-demand from Hugging Face to the persistent cache
+    pool_model_cache_prefix = None
+
     # Create pool if requested
     if args.create_pool:
         submitter.create_pool(
@@ -2767,6 +2753,7 @@ def main():
             use_container_prepull=args.use_container_prepull,
             use_spot_nodes=args.use_spot_nodes,
             spot_node_count=args.spot_node_count,
+            model_cache_blob_prefix=pool_model_cache_prefix,
         )
 
     # Create job if requested
@@ -2807,23 +2794,31 @@ def main():
 
         # Add model paths from pre-download or user-provided
         # Command-line args override config and pre-download
+        
+        # Use persistent model cache directory - models downloaded on-demand from Hugging Face
+        # The persistent cache at /mnt/batch_models survives across tasks and reduces redundant downloads
+        default_params["model_cache_dir"] = "/mnt/batch_models"
+        print(f"[Model Cache] Using persistent cache at: /mnt/batch_models")
+        print(f"[Model Cache] Models will be downloaded on-demand from Hugging Face")
+        
+        # Individual model paths can still override the cache if provided
         if model_paths.get("CTRANSPATH"):
             default_params["prefilter_model_path"] = model_paths["CTRANSPATH"]
-        if args.prefilter_model_path:
-            default_params["prefilter_model_path"] = args.prefilter_model_path
-        # For postfilter, we'll pass the path that applies to all models
-        # The model_path will be used for all models in the list
-        if args.models and model_paths:
-            # Use the first model's path if available
-            first_model = args.models.split(",")[0].strip()
-            if first_model in model_paths:
-                default_params["model_path"] = model_paths[first_model]
-        if args.model_path:
-            default_params["model_path"] = args.model_path
-        if model_paths.get("slide"):
-            default_params["slide_model_path"] = model_paths["slide"]
-        if args.slide_model_path:
-            default_params["slide_model_path"] = args.slide_model_path
+            if args.prefilter_model_path:
+                default_params["prefilter_model_path"] = args.prefilter_model_path
+            # For postfilter, we'll pass the path that applies to all models
+            # The model_path will be used for all models in the list
+            if args.models and model_paths:
+                # Use the first model's path if available
+                first_model = args.models.split(",")[0].strip()
+                if first_model in model_paths:
+                    default_params["model_path"] = model_paths[first_model]
+            if args.model_path:
+                default_params["model_path"] = args.model_path
+            if model_paths.get("slide"):
+                default_params["slide_model_path"] = model_paths["slide"]
+            if args.slide_model_path:
+                default_params["slide_model_path"] = args.slide_model_path
 
         # Parse models if provided
         models_list = None
@@ -2904,97 +2899,10 @@ def main():
                             task_default_params["slide_model_path"] = model_paths[slide_model_type]
                             print(f"[Pre-download] Applied {slide_model_type} path: {model_paths[slide_model_type]}")
                 
-                # Stage models to blob storage
-                print(f"\n[Azure Blob] Staging models...")
-                models_to_stage = {}
-                
-                # Check prefilter model
-                prefilter_model_path = task_default_params.get("prefilter_model_path")
-                if prefilter_model_path and not prefilter_model_path.startswith(("s3://", "http://", "https://", "azblob://", "azfiles://")):
-                    if os.path.exists(prefilter_model_path):
-                        models_to_stage['prefilter'] = prefilter_model_path
-                
-                # Check model
-                model_path = task_default_params.get("model_path")
-                if model_path and not model_path.startswith(("s3://", "http://", "https://", "azblob://", "azfiles://")):
-                    if os.path.exists(model_path):
-                        models_to_stage["model"] = model_path
-                
-                # Check classifier
-                classifier_pkl = task_default_params.get("classifier_pkl")
-                if classifier_pkl and not classifier_pkl.startswith(("s3://", "http://", "https://", "azblob://", "azfiles://")):
-                    if os.path.exists(classifier_pkl):
-                        models_to_stage['classifier'] = classifier_pkl
-                
-                # Check slide model
-                slide_model_path = task_default_params.get("slide_model_path")
-                if slide_model_path and not slide_model_path.startswith(("s3://", "http://", "https://", "azblob://", "azfiles://")):
-                    if os.path.exists(slide_model_path):
-                        models_to_stage['slide_model'] = slide_model_path
-                
-                # Check for multiple slide models (from pre-download or config)
-                if slide_models_list and model_paths:
-                    for idx, slide_model_type in enumerate(slide_models_list):
-                        if slide_model_type in model_paths:
-                            local_path = model_paths[slide_model_type]
-                            if os.path.exists(local_path):
-                                models_to_stage[f'slide_model_{idx}_{slide_model_type}'] = local_path
-                
-                # Stage models
-                staged_slide_model_urls = []  # Track slide model URLs
-                for model_type, model_path in models_to_stage.items():
-                    blob_name = f"models/{os.path.basename(model_path)}"
-                    print(f"  Staging {model_type}: {os.path.basename(model_path)}...")
-                    
-                    # Check if model_path is a directory (e.g., HuggingFace models)
-                    if os.path.isdir(model_path):
-                        # Upload directory
-                        submitter.azure_blob_staging.upload_directory(
-                            local_dir=model_path,
-                            blob_prefix=blob_name,
-                            show_progress=False,
-                        )
-                    else:
-                        # Upload single file
-                        submitter.azure_blob_staging.upload_file(
-                            local_path=model_path,
-                            blob_name=blob_name,
-                            show_progress=False,
-                        )
-                    
-                    # Create blob URL (use azblob:// prefix for batch script to download)
-                    blob_url = f"azblob://{args.storage_account_name}.blob.core.windows.net/{args.staging_container}/{blob_name}"
-                    
-                    # Update task_default_params with blob URL
-                    if model_type == 'prefilter':
-                        task_default_params["prefilter_model_path"] = blob_url
-                        print(f"  Updated prefilter_model_path: {blob_url}")
-                    elif model_type == 'model':
-                        task_default_params["model_path"] = blob_url
-                        print(f"  Updated model_path: {blob_url}")
-                    elif model_type == 'classifier':
-                        task_default_params["classifier_pkl"] = blob_url
-                        print(f"  Updated classifier_pkl: {blob_url}")
-                    elif model_type == 'slide_model':
-                        task_default_params["slide_model_path"] = blob_url
-                        print(f"  Updated slide_model_path: {blob_url}")
-                    elif model_type.startswith('slide_model_'):
-                        # Multiple slide models - track URLs
-                        staged_slide_model_urls.append(blob_url)
-                        # Extract model type from key: slide_model_{idx}_{MODEL_TYPE}
-                        model_name = model_type.split('_', 3)[-1] if '_' in model_type else model_type
-                        print(f"  Updated slide model {model_name}: {blob_url}")
-                
-                # Update model_paths dictionary with staged URLs for multiple slide models
-                if staged_slide_model_urls and slide_models_list:
-                    for idx, (slide_model_type, url) in enumerate(zip(slide_models_list, staged_slide_model_urls)):
-                        model_paths[slide_model_type] = url
-                    
-                    # Build comma-separated slide_model_paths for environment variable
-                    task_default_params["slide_model_paths"] = ",".join(staged_slide_model_urls)
-                    print(f"  Set slide_model_paths: {len(staged_slide_model_urls)} models")
-                
-                print(f"[Azure Blob] Staged {len(models_to_stage)} models")
+                # Model staging removed - using persistent cache at /mnt/batch_models instead
+                # Models will be downloaded on-demand from Hugging Face with file locking to prevent clashes
+                print(f"\n[Model Cache] Using persistent cache at /mnt/batch_models")
+                print(f"[Model Cache] Models will be downloaded on-demand from Hugging Face")
                 
                 # Read CSV and stage slides to blob
                 print(f"\n[Azure Blob] Staging slides...")

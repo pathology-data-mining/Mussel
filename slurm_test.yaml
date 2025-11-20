@@ -4,8 +4,8 @@
 # General processing parameters
 prefilter_model_type: CTRANSPATH
 prefilter_model_path: /gpfs/mskmind_ess/limr/repos/TransPath/ctranspath.pth
-# Temporarily disable postfilter and classifier due to pickle version incompatibility
-# postfilter_model_type: OPTIMUS
+# Temporarily disable model and classifier due to pickle version incompatibility
+# model_type: OPTIMUS
 # classifier_pkl: /gpfs/mskmind_ess/limr/repos/Mussel/model-1727990346535.pkl
 # classifier_threshold: 0.75
 batch_size: 64
