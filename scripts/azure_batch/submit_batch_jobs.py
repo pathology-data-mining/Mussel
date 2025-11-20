@@ -1151,26 +1151,13 @@ DOCKEREOF
             # Create directories and run the batch script
             container_command = '-c "mkdir -p /mnt/batch/tasks/workitems/torch_cache /mnt/batch/tasks/workitems/hf_cache /mnt/batch/tasks/workitems/tmp /mnt/batch/tasks/shared && chmod -R 777 /mnt/batch/tasks/workitems && bash -x /app/scripts/azure_batch/run_tessellate_extract_features.sh"'
             
-            # Build container run options with environment variables
-            # Azure Batch environment_settings don't automatically pass into containers
-            # We need to explicitly add them as Docker -e flags
-            env_flags = []
-            for env_var in env_vars:
-                # Escape quotes in values
-                value = env_var.value.replace('"', '\\"') if env_var.value else ""
-                env_flags.append(f'-e {env_var.name}="{value}"')
-            
-            container_run_options = '--rm --user=root --ipc=host --shm-size=8g --entrypoint=/bin/bash'
-            if env_flags:
-                container_run_options += ' ' + ' '.join(env_flags)
-            
             # Azure Batch container settings
             # Note: GPU allocation is handled by Azure Batch at pool level, not container level
             # Override entrypoint to /bin/bash to avoid groupadd errors from default entrypoint
             # Use taskWorkingDirectory to access Azure Batch mounts (/mnt/batch/tasks/...)
             container_settings = batchmodels.TaskContainerSettings(
                 image_name=container_image,
-                container_run_options=container_run_options,
+                container_run_options='--rm --user=root --ipc=host --shm-size=8g --entrypoint=/bin/bash',
                 working_directory='taskWorkingDirectory'  # Use Azure Batch task directory to access mounts
             )
             
