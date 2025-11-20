@@ -65,14 +65,6 @@ RUN apt-get update && apt-get install -y \
   python3.11 \
   python3.11-distutils \
   curl \
-  && rm -rf /var/lib/apt/lists/*
-
-# Set Python 3.11 as default
-RUN update-alternatives --install /usr/bin/python3 python3 /usr/bin/python3.11 1 \
-  && update-alternatives --install /usr/bin/python python /usr/bin/python3.11 1
-
-# Install only runtime dependencies
-RUN apt-get update && apt-get install -y \
   libgdal30 \
   liblapack3 \
   libblas3 \
@@ -81,11 +73,13 @@ RUN apt-get update && apt-get install -y \
   ffmpeg \
   libsm6 \
   libxext6 \
-  curl \
-  ca-certificates \
   sudo \
   unzip \
   && rm -rf /var/lib/apt/lists/*
+
+# Set Python 3.11 as default
+RUN update-alternatives --install /usr/bin/python3 python3 /usr/bin/python3.11 1 \
+  && update-alternatives --install /usr/bin/python python /usr/bin/python3.11 1
 
 # Install AWS CLI (slim version)
 RUN curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip" && \
