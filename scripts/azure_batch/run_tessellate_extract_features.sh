@@ -168,6 +168,18 @@ if [ -n "$SEG_CONFIG_GROUP" ]; then
     CMD="$CMD seg_config=$SEG_CONFIG_GROUP"
 fi
 
+# Add model batch sizes as Hydra overrides
+# Convert JSON dict to Hydra syntax: +model_batch_sizes.MODEL=SIZE
+if [ -n "$MODEL_BATCH_SIZES" ]; then
+    # Parse JSON and add each model's batch size with + override syntax
+    # Example: {"OPTIMUS": 384, "VIRCHOW2": 256} -> +model_batch_sizes.OPTIMUS=384 +model_batch_sizes.VIRCHOW2=256
+    for pair in $(echo "$MODEL_BATCH_SIZES" | python3 -c "import sys, json; d=json.load(sys.stdin); print(' '.join([f'{k}={v}' for k,v in d.items()]))"); do
+        model=$(echo "$pair" | cut -d'=' -f1)
+        size=$(echo "$pair" | cut -d'=' -f2)
+        CMD="$CMD +model_batch_sizes.$model=$size"
+    done
+fi
+
 log "Running command: $CMD"
 log ""
 
