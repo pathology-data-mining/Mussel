@@ -130,31 +130,55 @@ fi
 # NO MODEL STAGING - Models download from HuggingFace automatically
 # Python code uses file locking to prevent concurrent download conflicts
 
-# Build command
-CMD="tessellate-extract-features"
+# Build command using Python CLI directly
+# The CLI reads all configuration from environment variables via Hydra
+CMD="python -m mussel.cli.tessellate_extract_features"
 
-# Add required parameters
-if [ -z "$CONFIG_NAME" ] && [ -z "$CONFIG_PATH" ]; then
-    log "ERROR: Must specify either CONFIG_NAME or CONFIG_PATH"
-    exit 1
+# Add slide path
+CMD="$CMD slide_path='$EFFECTIVE_SLIDE_PATH'"
+
+# Add output paths or output_dir
+if [ -n "$OUTPUT_DIR" ]; then
+    CMD="$CMD output_dir='$OUTPUT_DIR'"
+fi
+if [ -n "$OUTPUT_H5_PATH" ] && [ "$OUTPUT_H5_PATH" != "None" ]; then
+    CMD="$CMD output_h5_path='$OUTPUT_H5_PATH'"
+fi
+if [ -n "$OUTPUT_PT_PATH" ] && [ "$OUTPUT_PT_PATH" != "None" ]; then
+    CMD="$CMD output_pt_path='$OUTPUT_PT_PATH'"
 fi
 
-[ -n "$CONFIG_NAME" ] && CMD="$CMD config_name=$CONFIG_NAME"
-[ -n "$CONFIG_PATH" ] && CMD="$CMD config_path=$CONFIG_PATH"
-CMD="$CMD slide_path='$EFFECTIVE_SLIDE_PATH'"
-CMD="$CMD output_dir='$OUTPUT_DIR'"
+# Add model types
+if [ -n "$MODEL_TYPES" ]; then
+    # MODEL_TYPES is a comma-separated list, wrap in brackets for Hydra
+    CMD="$CMD model_type=[$MODEL_TYPES]"
+elif [ -n "$MODEL_TYPE" ]; then
+    CMD="$CMD model_type=$MODEL_TYPE"
+fi
 
-# Add optional parameters
-[ -n "$MODEL_TYPE" ] && CMD="$CMD model_type=$MODEL_TYPE"
-[ -n "$MODEL_TYPES" ] && CMD="$CMD model_types='$MODEL_TYPES'"
-[ -n "$TILE_BACKEND" ] && CMD="$CMD tile_backend=$TILE_BACKEND"
-[ -n "$BATCH_SIZE" ] && CMD="$CMD batch_size=$BATCH_SIZE"
-[ -n "$TILE_BATCH_SIZE" ] && CMD="$CMD tile_batch_size=$TILE_BATCH_SIZE"
+# Add common parameters
 [ -n "$NUM_WORKERS" ] && CMD="$CMD num_workers=$NUM_WORKERS"
-[ -n "$PREFETCH_FACTOR" ] && CMD="$CMD prefetch_factor=$PREFETCH_FACTOR"
-[ -n "$DEVICE" ] && CMD="$CMD device=$DEVICE"
-[ -n "$OVERWRITE" ] && CMD="$CMD overwrite=$OVERWRITE"
-[ -n "$USE_FLASH_ATTN" ] && CMD="$CMD use_flash_attn=$USE_FLASH_ATTN"
+[ -n "$BATCH_SIZE" ] && CMD="$CMD batch_size=$BATCH_SIZE"
+[ -n "$USE_GPU" ] && CMD="$CMD use_gpu=$USE_GPU"
+[ -n "$AGGREGATION_METHOD" ] && CMD="$CMD aggregation_method=$AGGREGATION_METHOD"
+[ -n "$KEEP_INTERMEDIATE_FILES" ] && CMD="$CMD keep_intermediate_files=$KEEP_INTERMEDIATE_FILES"
+
+# Add segmentation config
+if [ -n "$SEG_CONFIG_GROUP" ]; then
+    CMD="$CMD seg_config=$SEG_CONFIG_GROUP"
+fi
+
+# Add model batch sizes as Hydra overrides
+if [ -n "$MODEL_BATCH_SIZES" ]; then
+    # Parse JSON and add as Hydra overrides
+    # For now, just pass as string and let Python handle it
+    CMD="$CMD 'model_batch_sizes=$MODEL_BATCH_SIZES'"
+fi
+
+# Add model cache dir
+if [ -n "$MODEL_CACHE_DIR" ]; then
+    CMD="$CMD model_dir='$MODEL_CACHE_DIR'"
+fi
 
 log "Running command: $CMD"
 log ""
