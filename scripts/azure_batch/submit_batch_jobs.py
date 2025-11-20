@@ -979,11 +979,21 @@ DOCKEREOF
                 )
             )
         if model_cache_dir:
-            env_vars.append(
+            env_vars.extend([
                 batchmodels.EnvironmentSetting(
                     name="MODEL_CACHE_DIR", value=model_cache_dir
-                )
-            )
+                ),
+                # Set HuggingFace cache environment variables
+                batchmodels.EnvironmentSetting(
+                    name="HF_HOME", value=model_cache_dir
+                ),
+                batchmodels.EnvironmentSetting(
+                    name="TRANSFORMERS_CACHE", value=model_cache_dir
+                ),
+                batchmodels.EnvironmentSetting(
+                    name="HF_HUB_CACHE", value=f"{model_cache_dir}/hub"
+                ),
+            ])
 
         if hf_token:
             env_vars.append(
@@ -1147,9 +1157,8 @@ DOCKEREOF
         # Create task with container settings if prepull is enabled
         if use_container_prepull:
             # Use TaskContainerSettings for container-enabled pools
-            # Use the script from /app (copied during Docker build)
-            # Create directories and run the batch script
-            container_command = '-c "mkdir -p /mnt/batch/tasks/workitems/torch_cache /mnt/batch/tasks/workitems/hf_cache /mnt/batch/tasks/workitems/tmp /mnt/batch/tasks/shared && chmod -R 777 /mnt/batch/tasks/workitems && bash -x /app/scripts/azure_batch/run_tessellate_extract_features.sh"'
+            # The wrapper script is at /app/scripts/azure_batch/run_tessellate_extract_features.sh (copied during Docker build)
+            container_command = '/app/scripts/azure_batch/run_tessellate_extract_features.sh'
             
             # Azure Batch container settings
             # Note: GPU allocation is handled by Azure Batch at pool level, not container level
@@ -1157,7 +1166,7 @@ DOCKEREOF
             # Use taskWorkingDirectory to access Azure Batch mounts (/mnt/batch/tasks/...)
             container_settings = batchmodels.TaskContainerSettings(
                 image_name=container_image,
-                container_run_options='--rm --user=root --ipc=host --shm-size=8g --entrypoint=/bin/bash',
+                container_run_options='--rm --user=root --ipc=host --shm-size=8g',
                 working_directory='taskWorkingDirectory'  # Use Azure Batch task directory to access mounts
             )
             
