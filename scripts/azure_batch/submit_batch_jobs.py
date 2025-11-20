@@ -1158,15 +1158,15 @@ DOCKEREOF
         if use_container_prepull:
             # Use TaskContainerSettings for container-enabled pools
             # The wrapper script is at /app/scripts/azure_batch/run_tessellate_extract_features.sh (copied during Docker build)
-            container_command = '/app/scripts/azure_batch/run_tessellate_extract_features.sh'
+            container_command = '-c "/app/scripts/azure_batch/run_tessellate_extract_features.sh"'
             
             # Azure Batch container settings
             # Note: GPU allocation is handled by Azure Batch at pool level, not container level
-            # Override entrypoint to /bin/bash to avoid groupadd errors from default entrypoint
+            # Override entrypoint to /bin/bash to avoid group creation errors from default entrypoint
             # Use taskWorkingDirectory to access Azure Batch mounts (/mnt/batch/tasks/...)
             container_settings = batchmodels.TaskContainerSettings(
                 image_name=container_image,
-                container_run_options='--rm --user=root --ipc=host --shm-size=8g',
+                container_run_options='--rm --user=root --ipc=host --shm-size=8g --entrypoint=/bin/bash',
                 working_directory='taskWorkingDirectory'  # Use Azure Batch task directory to access mounts
             )
             
