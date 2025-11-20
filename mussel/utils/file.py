@@ -15,6 +15,12 @@ try:
 except ImportError:
     FSSPEC_AVAILABLE = False
 
+try:
+    from azure.storage.blob import BlobServiceClient
+    AZURE_SDK_AVAILABLE = True
+except ImportError:
+    AZURE_SDK_AVAILABLE = False
+
 
 def _is_remote_path(path):
     """Check if a path is a remote path (starts with az://, s3://, etc.)."""
@@ -25,6 +31,8 @@ def _is_remote_path(path):
 
 def _get_fsspec_filesystem(path):
     """Get an fsspec filesystem instance for a remote path."""
+    import ssl
+    
     if not FSSPEC_AVAILABLE:
         raise ImportError("fsspec is required for remote file operations. Install with: pip install fsspec")
     
@@ -47,11 +55,14 @@ def _get_fsspec_filesystem(path):
             storage_options['sas_token'] = sas_token
         # If no credentials, fsspec will try default Azure credentials
         
-        # For Azure, disable SSL verification - try both methods
+        # For Azure, disable SSL verification
         storage_options['connection_verify'] = False
-        # Also set the SSL context to not verify certificates
         storage_options['connection_timeout'] = 600
-        storage_options['connection_cert'] = None
+        
+        # Set environment variable to disable SSL verification globally for Azure SDK
+        # This is necessary because connection_verify alone doesn't always work
+        os.environ['REQUESTS_CA_BUNDLE'] = ''
+        os.environ['CURL_CA_BUNDLE'] = ''
     
     return fsspec.filesystem(path.split('://')[0], **storage_options)
 
@@ -280,6 +291,57 @@ def download_slide(slide_path, local_dir=None):
         raise
 
 
+def _download_azure_directory_with_sdk(container_name, prefix, local_path):
+    """Download an Azure blob directory using the Azure SDK directly (faster than fsspec).
+    
+    Args:
+        container_name: Azure blob container name
+        prefix: Blob prefix (directory path)
+        local_path: Local destination directory
+    """
+    from loguru import logger
+    
+    if not AZURE_SDK_AVAILABLE:
+        raise ImportError("azure-storage-blob is required for Azure downloads")
+    
+    # Get credentials
+    account_name = os.environ.get('AZURE_STORAGE_ACCOUNT_NAME')
+    account_key = os.environ.get('AZURE_STORAGE_ACCOUNT_KEY')
+    
+    if not account_name or not account_key:
+        raise ValueError("AZURE_STORAGE_ACCOUNT_NAME and AZURE_STORAGE_ACCOUNT_KEY must be set")
+    
+    account_url = f'https://{account_name}.blob.core.windows.net'
+    blob_service_client = BlobServiceClient(
+        account_url=account_url,
+        credential=account_key,
+        connection_verify=False
+    )
+    
+    container_client = blob_service_client.get_container_client(container_name)
+    
+    # List and download all blobs with the prefix
+    logger.info(f"Listing blobs in {container_name} with prefix {prefix}")
+    blob_count = 0
+    for blob in container_client.list_blobs(name_starts_with=prefix):
+        blob_count += 1
+        # Remove prefix to get relative path
+        relative_path = blob.name[len(prefix):].lstrip('/')
+        if not relative_path:
+            continue
+            
+        local_file_path = os.path.join(local_path, relative_path)
+        os.makedirs(os.path.dirname(local_file_path), exist_ok=True)
+        
+        logger.debug(f"Downloading {blob.name} to {local_file_path}")
+        blob_client = container_client.get_blob_client(blob.name)
+        with open(local_file_path, 'wb') as f:
+            download_stream = blob_client.download_blob()
+            f.write(download_stream.readall())
+    
+    logger.info(f"Downloaded {blob_count} blobs to {local_path}")
+
+
 def download_model_path(model_path, cache_dir=None):
     """Download a remote model path to a local cache directory.
 
@@ -323,24 +385,40 @@ def download_model_path(model_path, cache_dir=None):
     # Download remote model
     logger.info(f"Downloading remote model {model_path} to {local_path}")
     try:
-        fs = _get_fsspec_filesystem(model_path)
-
-        # Check if remote path is a directory or file
-        try:
-            # Try to list contents to see if it's a directory
-            is_directory = fs.isdir(model_path)
-        except Exception:
-            # If we can't determine, assume it's a file
-            is_directory = False
-
-        if is_directory:
-            # Download directory recursively
-            logger.info(f"Downloading directory {model_path}")
-            fs.get(model_path, local_path, recursive=True)
+        # For Azure paths, use direct Azure SDK (more reliable than fsspec)
+        if model_path.startswith(('az://', 'abfs://')) and AZURE_SDK_AVAILABLE:
+            logger.info("Using Azure SDK for download (more reliable than fsspec)")
+            # Parse container and prefix from az://container/prefix/path
+            path_parts = model_path.split('://', 1)[1]
+            parts = path_parts.split('/', 1)
+            container_name = parts[0]
+            prefix = parts[1] if len(parts) > 1 else ''
+            
+            # Azure paths ending with / are directories
+            if model_path.endswith('/'):
+                os.makedirs(local_path, exist_ok=True)
+                _download_azure_directory_with_sdk(container_name, prefix, local_path)
+            else:
+                # Single file - fall back to fsspec
+                logger.warning(f"Single file download from Azure via SDK not implemented, using fsspec")
+                fs = _get_fsspec_filesystem(model_path)
+                fs.get(model_path, local_path)
         else:
-            # Download single file
-            logger.info(f"Downloading file {model_path}")
-            fs.get(model_path, local_path)
+            # Use fsspec for non-Azure or if Azure SDK unavailable
+            fs = _get_fsspec_filesystem(model_path)
+
+            # For Azure blob storage, simply check if path ends with / to determine if directory
+            # Avoid pre-checking with ls() or isdir() as these can hang due to network issues
+            is_directory = model_path.endswith('/')
+
+            if is_directory:
+                # Download directory recursively
+                logger.info(f"Downloading directory {model_path} recursively")
+                fs.get(model_path.rstrip('/') + '/', local_path, recursive=True)
+            else:
+                # Download single file
+                logger.info(f"Downloading file {model_path}")
+                fs.get(model_path, local_path)
 
         logger.info(f"Download complete: {local_path}")
         return local_path
