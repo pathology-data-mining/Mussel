@@ -599,24 +599,14 @@ def _main_single(cfg: TessellateExtractFeaturesConfig):
         else:
             model_type = cfg.prefilter_model_type
 
-    model_path = (
-        cfg.model_path if cfg.model_path is not None else cfg.prefilter_model_path
-    )
-    
-    # Override with model_dir if available
-    if cfg.model_dir and model_type:
-        model_path_from_dir = get_model_path_from_dir(cfg.model_dir, model_type)
-        if model_path_from_dir:
-            model_path = model_path_from_dir
-            logger.info(f"Using model from model_dir: {model_path}")
-    
-    # Also check model_dir for slide_model_type if using model aggregation
-    slide_model_path = cfg.slide_model_path
-    if cfg.model_dir and cfg.slide_model_type:
-        slide_model_path_from_dir = get_model_path_from_dir(cfg.model_dir, cfg.slide_model_type)
-        if slide_model_path_from_dir:
-            slide_model_path = slide_model_path_from_dir
-            logger.info(f"Using slide model from model_dir: {slide_model_path}")
+    # Resolve model paths (handles both direct model_path and model_dir)
+    model_path_base = cfg.model_path if cfg.model_path is not None else cfg.prefilter_model_path
+    model_path = resolve_model_path(model_path_base, cfg.model_dir, model_type)
+
+    # Resolve slide model path if using model aggregation
+    slide_model_path = None
+    if cfg.slide_model_type:
+        slide_model_path = resolve_model_path(cfg.slide_model_path, cfg.model_dir, cfg.slide_model_type)
 
     # Optimization: If filtering is enabled and models are the same, skip second extraction
     models_are_same = (
@@ -733,24 +723,14 @@ def _main_batch(
         else:
             model_type = cfg.prefilter_model_type
 
-    model_path = (
-        cfg.model_path if cfg.model_path is not None else cfg.prefilter_model_path
-    )
-    
-    # Override with model_dir if available
-    if cfg.model_dir and model_type:
-        model_path_from_dir = get_model_path_from_dir(cfg.model_dir, model_type)
-        if model_path_from_dir:
-            model_path = model_path_from_dir
-            logger.info(f"Using model from model_dir: {model_path}")
-    
-    # Also check model_dir for slide_model_type if using model aggregation
-    slide_model_path = cfg.slide_model_path
-    if cfg.model_dir and cfg.slide_model_type:
-        slide_model_path_from_dir = get_model_path_from_dir(cfg.model_dir, cfg.slide_model_type)
-        if slide_model_path_from_dir:
-            slide_model_path = slide_model_path_from_dir
-            logger.info(f"Using slide model from model_dir: {slide_model_path}")
+    # Resolve model paths (handles both direct model_path and model_dir)
+    model_path_base = cfg.model_path if cfg.model_path is not None else cfg.prefilter_model_path
+    model_path = resolve_model_path(model_path_base, cfg.model_dir, model_type)
+
+    # Resolve slide model path if using model aggregation
+    slide_model_path = None
+    if cfg.slide_model_type:
+        slide_model_path = resolve_model_path(cfg.slide_model_path, cfg.model_dir, cfg.slide_model_type)
 
     # Optimization: If filtering is enabled and models are the same, skip second extraction
     models_are_same = (
@@ -1147,13 +1127,9 @@ def _main_batch_multi_model(cfg: TessellateExtractFeaturesConfig):
             cfg_copy.model_type = model
             cfg_copy.slide_model_type = None
             cfg_copy.aggregation_method = "identity"
-            
-            # Set model_path from model_dir if available
-            if cfg.model_dir:
-                model_path_from_dir = get_model_path_from_dir(cfg.model_dir, model)
-                if model_path_from_dir:
-                    cfg_copy.model_path = model_path_from_dir
-                    logger.info(f"Using model from model_dir: {model_path_from_dir}")
+
+            # Resolve model path from model_dir
+            cfg_copy.model_path = resolve_model_path(cfg.model_path, cfg.model_dir, model)
 
             # Set output paths with model subdirectory
             model_output_dir = _safe_path_join(output_dir_str, model.name)
@@ -1180,20 +1156,10 @@ def _main_batch_multi_model(cfg: TessellateExtractFeaturesConfig):
             cfg_copy.model_type = patch_encoder
             cfg_copy.slide_model_type = model
             cfg_copy.aggregation_method = "model"
-            
-            # Set model paths from model_dir if available
-            if cfg.model_dir:
-                # Set patch encoder model path
-                patch_model_path = get_model_path_from_dir(cfg.model_dir, patch_encoder)
-                if patch_model_path:
-                    cfg_copy.model_path = patch_model_path
-                    logger.info(f"Using patch encoder from model_dir: {patch_model_path}")
-                
-                # Set slide encoder model path
-                slide_model_path = get_model_path_from_dir(cfg.model_dir, model)
-                if slide_model_path:
-                    cfg_copy.slide_model_path = slide_model_path
-                    logger.info(f"Using slide encoder from model_dir: {slide_model_path}")
+
+            # Resolve model paths from model_dir
+            cfg_copy.model_path = resolve_model_path(cfg.model_path, cfg.model_dir, patch_encoder)
+            cfg_copy.slide_model_path = resolve_model_path(cfg.slide_model_path, cfg.model_dir, model)
 
             # Separate output directories: patch encoder features and slide encoder features
             slide_output_dir = _safe_path_join(output_dir_str, model.name)
