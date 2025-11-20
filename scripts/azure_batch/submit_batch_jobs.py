@@ -1156,10 +1156,9 @@ DOCKEREOF
             # We need to explicitly add them as Docker -e flags
             env_flags = []
             for env_var in env_vars:
-                # For Docker -e flags, use single quotes to avoid shell interpretation
-                # Replace single quotes in value with '\'' (end quote, escaped quote, start quote)
-                value = env_var.value.replace("'", "'\\''") if env_var.value else ""
-                env_flags.append(f"-e '{env_var.name}={value}'")
+                # Escape quotes in values
+                value = env_var.value.replace('"', '\\"') if env_var.value else ""
+                env_flags.append(f'-e {env_var.name}="{value}"')
             
             container_run_options = '--rm --user=root --ipc=host --shm-size=8g --entrypoint=/bin/bash'
             if env_flags:
