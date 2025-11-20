@@ -240,6 +240,38 @@ class AzureBatchJobSubmitter:
                     print(f"Warning: Could not create batch-logs container: {e}")
                     print("  Automatic log upload may not work")
 
+    def _ensure_output_container(self, output_prefix: str):
+        """Ensure the output container exists for remote output storage."""
+        if not output_prefix or not self.blob_client:
+            return
+        
+        # Parse container name from output prefix
+        # Formats: azblob://account/container/path or az://container/path
+        container_name = None
+        if output_prefix.startswith("azblob://"):
+            # azblob://account.blob.core.windows.net/container/path
+            parts = output_prefix.replace("azblob://", "").split("/")
+            if len(parts) >= 2:
+                container_name = parts[1]
+        elif output_prefix.startswith("az://"):
+            # az://container/path
+            parts = output_prefix.replace("az://", "").split("/")
+            if len(parts) >= 1:
+                container_name = parts[0]
+        
+        if container_name:
+            try:
+                container_client = self.blob_client.get_container_client(container_name)
+                container_client.create_container()
+                print(f"✓ Created output container: {container_name}")
+            except Exception as e:
+                # Container might already exist
+                if "ContainerAlreadyExists" in str(e) or "already exists" in str(e).lower():
+                    print(f"[Azure Blob] Using existing container: {container_name}")
+                else:
+                    print(f"Warning: Could not create output container '{container_name}': {e}")
+                    print("  Remote output upload may not work")
+
     def _should_set_intermediate_h5_path(
         self, aggregation_method: Optional[str]
     ) -> bool:
@@ -768,6 +800,13 @@ DOCKEREOF
                     ),
                 ]
             )
+            # Also set OUTPUT_DIR if remote output is requested (for upload support)
+            if output_dir_for_batch:
+                env_vars.append(
+                    batchmodels.EnvironmentSetting(
+                        name="OUTPUT_DIR", value=output_dir_for_batch
+                    )
+                )
 
         # Common environment variables
         common_env_vars = [
@@ -2997,6 +3036,10 @@ def main():
                             staged_slide_paths[slide_id] = slide_path
                 
                 print(f"[Azure Blob] Staged {len(staged_slide_paths)} slides")
+                
+                # Ensure output container exists if remote output is specified
+                if args.output_prefix:
+                    submitter._ensure_output_container(args.output_prefix)
                 
                 # Now submit tasks with blob URLs (no incremental staging)
                 submitter.submit_tasks_from_csv(
