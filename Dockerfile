@@ -52,8 +52,6 @@ RUN --mount=type=cache,target=/root/.cache/uv \
 
 # Stage 2: Runtime
 FROM nvidia/cuda:12.1.1-cudnn8-devel-ubuntu22.04
-# Set TMPDIR to use more spacious location (not /tmp which is small)
-ENV TMPDIR=/mnt/batch/tasks/workitems/tmp
 
 ENV DEBIAN_FRONTEND=noninteractive
 

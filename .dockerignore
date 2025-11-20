@@ -90,13 +90,19 @@ hub/
 gigapath_official_embeddings/
 gigapath_demo_output/
 panda_embeddings/
+panda*/
+titan*/
+test_*/
 titan_official_embeddings/
 tcga_slides/
 panda_slides/
 scripts/azure_batch/model_cache/
 my_models/
 my_models*/
+pr_models/
+pr_models*/
 test_cache/
+test_docker_cache/
 
 # Configuration (secrets should not be in image)
 *.env

@@ -1157,8 +1157,15 @@ DOCKEREOF
         # Create task with container settings if prepull is enabled
         if use_container_prepull:
             # Use TaskContainerSettings for container-enabled pools
-            # The wrapper script is at /app/scripts/azure_batch/run_tessellate_extract_features.sh (copied during Docker build)
-            container_command = '-c "/app/scripts/azure_batch/run_tessellate_extract_features.sh"'
+            # Download the latest wrapper script from Azure Blob (allows testing without rebuilding Docker image)
+            if hasattr(self, 'script_blob_url') and self.script_blob_url and hasattr(self, 'storage_account_name') and self.storage_account_name:
+                # Use az CLI to download (handles auth via env vars)
+                container_name = "mussel-staging"
+                blob_name = "scripts/azure_batch/run_tessellate_extract_features.sh"
+                container_command = f'-c "az storage blob download --account-name {self.storage_account_name} --container-name {container_name} --name {blob_name} --file /tmp/run_wrapper.sh --auth-mode key && chmod +x /tmp/run_wrapper.sh && /tmp/run_wrapper.sh"'
+            else:
+                # Fallback to baked-in script
+                container_command = '-c "/app/scripts/azure_batch/run_tessellate_extract_features.sh"'
             
             # Azure Batch container settings
             # Note: GPU allocation is handled by Azure Batch at pool level, not container level
