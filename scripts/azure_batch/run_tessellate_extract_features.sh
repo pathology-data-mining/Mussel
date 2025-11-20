@@ -168,13 +168,6 @@ if [ -n "$SEG_CONFIG_GROUP" ]; then
     CMD="$CMD seg_config=$SEG_CONFIG_GROUP"
 fi
 
-# Add model batch sizes as Hydra overrides
-if [ -n "$MODEL_BATCH_SIZES" ]; then
-    # Parse JSON and add as Hydra overrides
-    # For now, just pass as string and let Python handle it
-    CMD="$CMD 'model_batch_sizes=$MODEL_BATCH_SIZES'"
-fi
-
 # Add model cache dir
 if [ -n "$MODEL_CACHE_DIR" ]; then
     CMD="$CMD model_dir='$MODEL_CACHE_DIR'"

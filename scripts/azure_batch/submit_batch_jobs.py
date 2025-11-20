@@ -828,14 +828,6 @@ DOCKEREOF
             ),
         ]
         
-        # Add model_batch_sizes as JSON string if provided
-        if model_batch_sizes:
-            common_env_vars.append(
-                batchmodels.EnvironmentSetting(
-                    name="MODEL_BATCH_SIZES", value=json.dumps(model_batch_sizes)
-                )
-            )
-        
         # Only set prefilter model types if provided
         if prefilter_model_types:
             common_env_vars.append(
