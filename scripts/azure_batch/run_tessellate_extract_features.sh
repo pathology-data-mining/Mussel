@@ -212,7 +212,13 @@ fi
 
 # Setup output directory
 # Always write to local directory - Azure Batch will handle upload via output file staging
-OUTPUT_DIR="${AZ_BATCH_TASK_WORKING_DIR}/output"
+# Use OUTPUT_DIR from environment if set, otherwise default to working directory
+if [ -z "$OUTPUT_DIR" ]; then
+    OUTPUT_DIR="${AZ_BATCH_TASK_WORKING_DIR:-$(pwd)}/output"
+elif [[ "$OUTPUT_DIR" != /* ]]; then
+    # Convert relative path to absolute path
+    OUTPUT_DIR="$(pwd)/$OUTPUT_DIR"
+fi
 mkdir -p "$OUTPUT_DIR"
 log "Using local output directory: $OUTPUT_DIR"
 log "Azure Batch will automatically upload files on task success"
