@@ -15,6 +15,12 @@ try:
 except ImportError:
     FSSPEC_AVAILABLE = False
 
+try:
+    from azure.storage.blob import BlobServiceClient
+    AZURE_SDK_AVAILABLE = True
+except ImportError:
+    AZURE_SDK_AVAILABLE = False
+
 
 def _is_remote_path(path):
     """Check if a path is a remote path (starts with az://, s3://, etc.)."""
@@ -25,6 +31,8 @@ def _is_remote_path(path):
 
 def _get_fsspec_filesystem(path):
     """Get an fsspec filesystem instance for a remote path."""
+    import ssl
+    
     if not FSSPEC_AVAILABLE:
         raise ImportError("fsspec is required for remote file operations. Install with: pip install fsspec")
     
@@ -47,11 +55,14 @@ def _get_fsspec_filesystem(path):
             storage_options['sas_token'] = sas_token
         # If no credentials, fsspec will try default Azure credentials
         
-        # For Azure, disable SSL verification - try both methods
+        # For Azure, disable SSL verification
         storage_options['connection_verify'] = False
-        # Also set the SSL context to not verify certificates
         storage_options['connection_timeout'] = 600
-        storage_options['connection_cert'] = None
+        
+        # Set environment variable to disable SSL verification globally for Azure SDK
+        # This is necessary because connection_verify alone doesn't always work
+        os.environ['REQUESTS_CA_BUNDLE'] = ''
+        os.environ['CURL_CA_BUNDLE'] = ''
     
     return fsspec.filesystem(path.split('://')[0], **storage_options)
 
@@ -241,34 +252,34 @@ def save_torch_tensor(output_path, tensor):
 
 def download_slide(slide_path, local_dir=None):
     """Download a remote slide to a local path.
-    
+
     If the slide is already local, returns the original path.
     If the slide is remote (s3://, az://, etc.), downloads it to a local temporary location.
-    
+
     Args:
         slide_path: Path to the slide (local or remote).
         local_dir: Optional directory to download to. If None, uses system temp directory.
-        
+
     Returns:
         Tuple of (local_path, is_temp) where is_temp indicates if cleanup is needed.
     """
     from loguru import logger
-    
+
     if not _is_remote_path(slide_path):
         # Already local
         return slide_path, False
-    
+
     # Download remote file
     import tempfile
     if local_dir is None:
         local_dir = tempfile.mkdtemp(prefix='mussel_slides_')
     else:
         os.makedirs(local_dir, exist_ok=True)
-    
+
     # Extract filename from remote path
     filename = Path(slide_path).name
     local_path = os.path.join(local_dir, filename)
-    
+
     logger.info(f"Downloading remote slide {slide_path} to {local_path}")
     try:
         fs = _get_fsspec_filesystem(slide_path)
@@ -278,3 +289,223 @@ def download_slide(slide_path, local_dir=None):
     except Exception as e:
         logger.error(f"Failed to download {slide_path}: {e}")
         raise
+
+
+def _download_azure_directory_with_sdk(container_name, prefix, local_path):
+    """Download an Azure blob directory using the Azure SDK directly (faster than fsspec).
+    
+    Args:
+        container_name: Azure blob container name
+        prefix: Blob prefix (directory path)
+        local_path: Local destination directory
+    """
+    from loguru import logger
+    
+    if not AZURE_SDK_AVAILABLE:
+        raise ImportError("azure-storage-blob is required for Azure downloads")
+    
+    # Get credentials
+    account_name = os.environ.get('AZURE_STORAGE_ACCOUNT_NAME')
+    account_key = os.environ.get('AZURE_STORAGE_ACCOUNT_KEY')
+    
+    if not account_name or not account_key:
+        raise ValueError("AZURE_STORAGE_ACCOUNT_NAME and AZURE_STORAGE_ACCOUNT_KEY must be set")
+    
+    account_url = f'https://{account_name}.blob.core.windows.net'
+    blob_service_client = BlobServiceClient(
+        account_url=account_url,
+        credential=account_key,
+        connection_verify=False
+    )
+    
+    container_client = blob_service_client.get_container_client(container_name)
+    
+    # List and download all blobs with the prefix
+    logger.info(f"Listing blobs in {container_name} with prefix {prefix}")
+    blob_count = 0
+    for blob in container_client.list_blobs(name_starts_with=prefix):
+        blob_count += 1
+        # Remove prefix to get relative path
+        relative_path = blob.name[len(prefix):].lstrip('/')
+        if not relative_path:
+            continue
+            
+        local_file_path = os.path.join(local_path, relative_path)
+        os.makedirs(os.path.dirname(local_file_path), exist_ok=True)
+        
+        logger.debug(f"Downloading {blob.name} to {local_file_path}")
+        blob_client = container_client.get_blob_client(blob.name)
+        with open(local_file_path, 'wb') as f:
+            download_stream = blob_client.download_blob()
+            f.write(download_stream.readall())
+    
+    logger.info(f"Downloaded {blob_count} blobs to {local_path}")
+
+
+def download_model_path(model_path, cache_dir=None):
+    """Download a remote model path to a local cache directory.
+
+    If the model path is already local, returns the original path.
+    If the model path is remote (s3://, az://, etc.), downloads it to a cache directory.
+    Supports both single files and directories.
+
+    Args:
+        model_path: Path to the model file or directory (local or remote).
+        cache_dir: Optional cache directory to download to. If None, uses HF_HOME or system default.
+
+    Returns:
+        Local path to the downloaded model (file or directory).
+    """
+    from loguru import logger
+
+    if not _is_remote_path(model_path):
+        # Already local
+        return model_path
+
+    # Determine cache directory
+    if cache_dir is None:
+        cache_dir = os.environ.get('HF_HOME') or os.environ.get('TRANSFORMERS_CACHE') or os.path.expanduser('~/.cache/mussel')
+
+    # Create cache subdirectory for models
+    models_cache_dir = os.path.join(cache_dir, 'remote_models')
+    os.makedirs(models_cache_dir, exist_ok=True)
+
+    # Extract the base name from remote path to create a cache location
+    # For URLs like az://container/models/GIGAPATH_SLIDE, we want to preserve the structure
+    path_parts = model_path.split('://', 1)[1]  # Remove scheme
+    # Replace slashes with underscores to create a unique cache key
+    cache_key = path_parts.replace('/', '_').replace('\\', '_')
+    local_path = os.path.join(models_cache_dir, cache_key)
+
+    # Check if already cached
+    if os.path.exists(local_path):
+        logger.info(f"Using cached model from {local_path}")
+        return local_path
+
+    # Download remote model
+    logger.info(f"Downloading remote model {model_path} to {local_path}")
+    try:
+        # For Azure paths, use direct Azure SDK (more reliable than fsspec)
+        if model_path.startswith(('az://', 'abfs://')) and AZURE_SDK_AVAILABLE:
+            logger.info("Using Azure SDK for download (more reliable than fsspec)")
+            # Parse container and prefix from az://container/prefix/path
+            path_parts = model_path.split('://', 1)[1]
+            parts = path_parts.split('/', 1)
+            container_name = parts[0]
+            prefix = parts[1] if len(parts) > 1 else ''
+            
+            # Azure paths ending with / are directories
+            if model_path.endswith('/'):
+                os.makedirs(local_path, exist_ok=True)
+                _download_azure_directory_with_sdk(container_name, prefix, local_path)
+            else:
+                # Single file - fall back to fsspec
+                logger.warning(f"Single file download from Azure via SDK not implemented, using fsspec")
+                fs = _get_fsspec_filesystem(model_path)
+                fs.get(model_path, local_path)
+        else:
+            # Use fsspec for non-Azure or if Azure SDK unavailable
+            fs = _get_fsspec_filesystem(model_path)
+
+            # For Azure blob storage, simply check if path ends with / to determine if directory
+            # Avoid pre-checking with ls() or isdir() as these can hang due to network issues
+            is_directory = model_path.endswith('/')
+
+            if is_directory:
+                # Download directory recursively
+                logger.info(f"Downloading directory {model_path} recursively")
+                fs.get(model_path.rstrip('/') + '/', local_path, recursive=True)
+            else:
+                # Download single file
+                logger.info(f"Downloading file {model_path}")
+                fs.get(model_path, local_path)
+
+        logger.info(f"Download complete: {local_path}")
+        return local_path
+    except Exception as e:
+        logger.error(f"Failed to download model from {model_path}: {e}")
+        raise
+
+
+def resolve_remote_paths(*attrs, auto_detect=True, suffixes=None):
+    """
+    Decorator that automatically resolves remote paths in config to local cached paths.
+
+    Checks specified config attributes (or auto-detects them) for remote paths
+    (az://, s3://, gs://, etc.) and downloads them to a local cache directory
+    before the function executes.
+
+    Args:
+        *attrs: Specific attribute names to check and resolve. If provided along with
+                auto_detect=True, these will be checked in addition to auto-detected attrs.
+        auto_detect: If True, automatically detect attributes ending with common path suffixes.
+                    Default: True
+        suffixes: List of suffixes to detect (e.g., ['_path', '_dir', '_pkl']).
+                 If None, uses default: ['_path', '_dir', '_pkl', '_file']
+
+    Usage:
+        # Auto-detect all path-like attributes
+        @resolve_remote_paths()
+        def process_slides(cfg):
+            ...
+
+        # Specify exact attributes
+        @resolve_remote_paths('model_path', 'classifier_pkl', auto_detect=False)
+        def process_slides(cfg):
+            ...
+
+        # Combine explicit + auto-detection
+        @resolve_remote_paths('custom_attr', auto_detect=True)
+        def process_slides(cfg):
+            ...
+    """
+    from functools import wraps
+    from loguru import logger
+
+    # Default suffixes for auto-detection
+    if suffixes is None:
+        suffixes = ['_path', '_dir', '_pkl', '_file', '_model']
+
+    def decorator(func):
+        @wraps(func)
+        def wrapper(cfg, *args, **kwargs):
+            # Collect attributes to check
+            attrs_to_check = set(attrs) if attrs else set()
+
+            # Auto-detect path-like attributes if enabled
+            if auto_detect:
+                for attr in dir(cfg):
+                    # Skip private/magic attributes
+                    if attr.startswith('_'):
+                        continue
+                    # Check if attribute ends with common path suffixes
+                    if any(attr.endswith(suffix) for suffix in suffixes):
+                        attrs_to_check.add(attr)
+
+            # Resolve each attribute
+            for attr in sorted(attrs_to_check):
+                if not hasattr(cfg, attr):
+                    continue
+
+                value = getattr(cfg, attr)
+
+                # Skip None values and non-string values
+                if value is None or not isinstance(value, str):
+                    continue
+
+                # Check if it's a remote path
+                if _is_remote_path(value):
+                    logger.info(f"Downloading remote {attr}: {value}")
+                    try:
+                        local_path = download_model_path(value)
+                        setattr(cfg, attr, local_path)
+                        logger.info(f"Resolved {attr} to local path: {local_path}")
+                    except Exception as e:
+                        logger.error(f"Failed to download remote {attr} '{value}': {e}")
+                        # Continue execution - let the original code handle missing paths
+
+            return func(cfg, *args, **kwargs)
+
+        return wrapper
+
+    return decorator
