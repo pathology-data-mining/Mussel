@@ -479,7 +479,7 @@ class AzureBatchJobSubmitter:
         # For ubuntu-hpc images (needed for A100 Gen2 support), install NVIDIA drivers
         # For ubuntu-server-container images, drivers are pre-installed
         # Model pre-staging removed - using persistent cache instead
-        # Models will be downloaded on-demand from Hugging Face to /mnt/batch_models
+        # Models will be downloaded on-demand from Hugging Face to /mnt/batch/tasks/cache
         model_download_cmd = ""
         
         if "ubuntu-hpc" in offer:
@@ -2786,7 +2786,7 @@ def main():
             print(f"Auto-generated job ID: {args.job_id}")
 
     # Pre-download models removed - using persistent cache instead
-    # Models will be downloaded on-demand from Hugging Face to /mnt/batch_models
+    # Models will be downloaded on-demand from Hugging Face to /mnt/batch/tasks/cache
     model_paths = {}
     model_dir = None
 
@@ -2858,7 +2858,7 @@ def main():
         staging_container=args.staging_container,
     )
 
-    # Model staging removed - using persistent cache at /mnt/batch_models instead
+    # Model staging removed - using persistent cache at /mnt/batch/tasks/cache instead
     # Models will be downloaded on-demand from Hugging Face to the persistent cache
     pool_model_cache_prefix = None
 
@@ -2928,9 +2928,9 @@ def main():
         # Command-line args override config and pre-download
         
         # Use persistent model cache directory - models downloaded on-demand from Hugging Face
-        # The persistent cache at /mnt/batch_models survives across tasks and reduces redundant downloads
-        default_params["model_cache_dir"] = "/mnt/batch_models"
-        print(f"[Model Cache] Using persistent cache at: /mnt/batch_models")
+        # The persistent cache at /mnt/batch/tasks/cache survives across tasks and reduces redundant downloads
+        default_params["model_cache_dir"] = "/mnt/batch/tasks/cache"
+        print(f"[Model Cache] Using persistent cache at: /mnt/batch/tasks/cache")
         print(f"[Model Cache] Models will be downloaded on-demand from Hugging Face")
         
         # Individual model paths can still override the cache if provided
@@ -3031,9 +3031,9 @@ def main():
                             task_default_params["slide_model_path"] = model_paths[slide_model_type]
                             print(f"[Pre-download] Applied {slide_model_type} path: {model_paths[slide_model_type]}")
                 
-                # Model staging removed - using persistent cache at /mnt/batch_models instead
+                # Model staging removed - using persistent cache at /mnt/batch/tasks/cache instead
                 # Models will be downloaded on-demand from Hugging Face with file locking to prevent clashes
-                print(f"\n[Model Cache] Using persistent cache at /mnt/batch_models")
+                print(f"\n[Model Cache] Using persistent cache at /mnt/batch/tasks/cache")
                 print(f"[Model Cache] Models will be downloaded on-demand from Hugging Face")
                 
                 # Read CSV and stage slides to blob
