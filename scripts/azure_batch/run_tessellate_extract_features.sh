@@ -21,9 +21,12 @@ log() {
     echo "[$(date +'%Y-%m-%d %H:%M:%S')] $1" >&2
 }
 
-# Cleanup function
+# Cleanup function - only cleanup work directory, NOT cache or output directories
 cleanup() {
     local exit_code=$?
+    
+    # Only cleanup temporary work directory (staged slides)
+    # DO NOT cleanup output directory - Azure Batch needs it for output file staging
     if [ -n "$WORK_DIR" ] && [ -d "$WORK_DIR" ]; then
         log "Cleanup: Removing work directory: $WORK_DIR"
         rm -rf "$WORK_DIR" || log "Warning: Failed to remove work directory"
@@ -44,40 +47,7 @@ cleanup() {
         fi
     fi
     
-    # Cleanup model cache to free disk space after task completion
-    # Try environment variables first, then fall back to known cache locations
-    local cache_dirs=()
-    
-    # Add environment variable paths if set
-    [ -n "$HF_HOME" ] && cache_dirs+=("$HF_HOME")
-    [ -n "$TRANSFORMERS_CACHE" ] && cache_dirs+=("$TRANSFORMERS_CACHE")
-    [ -n "$TORCH_HOME" ] && cache_dirs+=("$TORCH_HOME")
-    
-    # Add known cache locations used by Azure Batch
-    cache_dirs+=(
-        "/mnt/batch/tasks/workitems/hf_cache"
-        "/mnt/batch/tasks/workitems/torch_cache"
-        "/root/.cache/huggingface"
-        "/root/.cache/torch"
-    )
-    
-    # Remove duplicates and clean up cache directories
-    local cleaned_dirs=()
-    for dir in "${cache_dirs[@]}"; do
-        if [ -d "$dir" ] && [[ ! " ${cleaned_dirs[@]} " =~ " ${dir} " ]]; then
-            log "Cleanup: Removing cache directory: $dir"
-            local size=$(du -sh "$dir" 2>/dev/null | cut -f1)
-            [ -n "$size" ] && log "  Cache size: $size"
-            rm -rf "$dir" || log "Warning: Failed to remove cache directory: $dir"
-            cleaned_dirs+=("$dir")
-        fi
-    done
-    
-    if [ ${#cleaned_dirs[@]} -eq 0 ]; then
-        log "Cleanup: No cache directories found to clean"
-    else
-        log "Cleanup: Cleaned ${#cleaned_dirs[@]} cache director(ies)"
-    fi
+    log "Cleanup: Model cache directories preserved for reuse across tasks"
 }
 
 trap cleanup EXIT INT TERM
@@ -235,30 +205,18 @@ fi
 # Set HuggingFace token
 [ -n "$HF_TOKEN" ] && export HUGGINGFACE_TOKEN="$HF_TOKEN"
 
-# Setup output directories
-# Store the remote output path for later upload
-REMOTE_OUTPUT_DIR="${OUTPUT_DIR:-/mnt/batch/tasks/shared/output}"
-IS_REMOTE_OUTPUT=false
-
-# Check if output is remote (azblob://, az://, s3://, etc.)
-if [[ "$REMOTE_OUTPUT_DIR" =~ ^(azblob://|az://|s3://|http://|https://) ]]; then
-    log "Remote output detected: $REMOTE_OUTPUT_DIR"
-    log "Using local temp directory for processing, will upload at end"
-    IS_REMOTE_OUTPUT=true
-    # Use local temp directory for processing
-    LOCAL_OUTPUT_DIR="${WORK_DIR}/output"
-    mkdir -p "$LOCAL_OUTPUT_DIR"
-    EFFECTIVE_OUTPUT_DIR="$LOCAL_OUTPUT_DIR"
-else
-    # Local output path - use directly
-    EFFECTIVE_OUTPUT_DIR="$REMOTE_OUTPUT_DIR"
-fi
+# Setup output directory
+# Always write to local directory - Azure Batch will handle upload via output file staging
+OUTPUT_DIR="${AZ_BATCH_TASK_WORKING_DIR}/output"
+mkdir -p "$OUTPUT_DIR"
+log "Using local output directory: $OUTPUT_DIR"
+log "Azure Batch will automatically upload files on task success"
 
 # Build command arguments - pass everything through to Python CLI
 CMD_ARGS=(
     "tessellate_extract_features"
     "hydra.run.dir=/mnt/batch/tasks/workitems/tmp/hydra_outputs"
-    "output_dir=$EFFECTIVE_OUTPUT_DIR"
+    "output_dir=$OUTPUT_DIR"
 )
 
 # Slide path - use slide_paths for lists (with brackets), slide_path for single
@@ -428,87 +386,7 @@ if [ $EXIT_CODE -ne 0 ]; then
 fi
 
 log "SUCCESS: Processing completed in $DURATION seconds"
-
-# Upload output files to remote storage if needed
-if [ "$IS_REMOTE_OUTPUT" = true ]; then
-    log "Uploading output files to remote storage: $REMOTE_OUTPUT_DIR"
-    UPLOAD_START=$(date +%s)
-    
-    # Determine upload method based on remote path type
-    if [[ "$REMOTE_OUTPUT_DIR" =~ ^(azblob://|az://) ]]; then
-        # Azure Blob Storage upload
-        log "Using az CLI for Azure Blob upload"
-        
-        # Convert az:// to azblob:// format for az storage
-        BLOB_URL="$REMOTE_OUTPUT_DIR"
-        if [[ "$BLOB_URL" =~ ^az:// ]]; then
-            # az://container/path -> need to reconstruct with account name
-            CONTAINER_PATH="${BLOB_URL#az://}"
-            BLOB_URL="https://${AZURE_STORAGE_ACCOUNT}.blob.core.windows.net/${CONTAINER_PATH}"
-        fi
-        
-        # Upload all files in output directory
-        if command -v azcopy &> /dev/null && [ -n "$AZURE_STORAGE_KEY" ]; then
-            log "Using azcopy for batch upload"
-            # Upload entire directory with azcopy
-            azcopy copy "$LOCAL_OUTPUT_DIR/*" "$BLOB_URL" --recursive --overwrite=true
-            UPLOAD_EXIT=$?
-        elif command -v az &> /dev/null && [ -n "$AZURE_STORAGE_KEY" ]; then
-            log "Using az storage blob upload-batch"
-            # Extract container and path from URL
-            if [[ "$REMOTE_OUTPUT_DIR" =~ ^az://([^/]+)/(.*)$ ]]; then
-                CONTAINER="${BASH_REMATCH[1]}"
-                BLOB_PREFIX="${BASH_REMATCH[2]}"
-                
-                # Upload all files
-                az storage blob upload-batch \
-                    --account-name "$AZURE_STORAGE_ACCOUNT" \
-                    --account-key "$AZURE_STORAGE_KEY" \
-                    --destination "$CONTAINER" \
-                    --destination-path "$BLOB_PREFIX" \
-                    --source "$LOCAL_OUTPUT_DIR" \
-                    --overwrite true
-                UPLOAD_EXIT=$?
-            else
-                log "ERROR: Could not parse Azure Blob path: $REMOTE_OUTPUT_DIR"
-                UPLOAD_EXIT=1
-            fi
-        else
-            log "ERROR: No Azure upload tool available (need azcopy or az CLI with credentials)"
-            UPLOAD_EXIT=1
-        fi
-        
-    elif [[ "$REMOTE_OUTPUT_DIR" =~ ^s3:// ]]; then
-        # S3 upload
-        log "Using aws CLI for S3 upload"
-        if command -v aws &> /dev/null; then
-            aws s3 sync "$LOCAL_OUTPUT_DIR" "$REMOTE_OUTPUT_DIR" --no-progress
-            UPLOAD_EXIT=$?
-        else
-            log "ERROR: aws CLI not available for S3 upload"
-            UPLOAD_EXIT=1
-        fi
-    else
-        log "WARNING: Unknown remote storage type: $REMOTE_OUTPUT_DIR"
-        UPLOAD_EXIT=1
-    fi
-    
-    UPLOAD_DURATION=$(($(date +%s) - UPLOAD_START))
-    
-    if [ $UPLOAD_EXIT -eq 0 ]; then
-        log "SUCCESS: Files uploaded to $REMOTE_OUTPUT_DIR in $UPLOAD_DURATION seconds"
-        
-        # Clean up local output directory
-        log "Cleaning up local output directory: $LOCAL_OUTPUT_DIR"
-        rm -rf "$LOCAL_OUTPUT_DIR"
-    else
-        log "ERROR: Failed to upload files to remote storage (exit code: $UPLOAD_EXIT)"
-        log "Local files preserved at: $LOCAL_OUTPUT_DIR"
-        exit $UPLOAD_EXIT
-    fi
-else
-    log "Output written to: $EFFECTIVE_OUTPUT_DIR"
-fi
+log "Output files will be automatically uploaded by Azure Batch"
 
 echo "============================================"
 echo "End time: $(date)"

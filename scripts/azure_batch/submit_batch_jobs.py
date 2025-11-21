@@ -143,17 +143,28 @@ class AzureBatchJobSubmitter:
 
     @staticmethod
     def convert_azblob_to_fsspec_url(url):
-        """Convert azblob://account/container/path to az://container/path format for fsspec."""
+        """Convert azblob://container/path to az://container/path format for fsspec.
+        
+        Supports two formats:
+        - azblob://container/path -> az://container/path (simple format)
+        - azblob://account/container/path -> az://container/path (full format)
+        """
         if url and url.startswith("azblob://"):
-            # azblob://account/container/path -> az://container/path
-            parts = url.replace("azblob://", "").split("/", 1)
-            if len(parts) >= 2:
-                # Skip account name, keep container and path
-                container_and_path = parts[1]
-                return f"az://{container_and_path}"
-            elif len(parts) == 1:
-                # Just container, no path
-                return f"az://{parts[0]}"
+            remainder = url.replace("azblob://", "")
+            parts = remainder.split("/")
+            
+            # Check if first part looks like account name (has dots or is storage account)
+            if parts and "." in parts[0]:
+                # Full format: azblob://account.blob.core.windows.net/container/path
+                # Skip account, keep container and path
+                if len(parts) > 1:
+                    return f"az://{'/'.join(parts[1:])}"
+                else:
+                    return url  # Invalid format
+            else:
+                # Simple format: azblob://container/path
+                # Keep everything as-is
+                return f"az://{remainder}"
         return url
 
     # Azure GPU VM family prefixes
@@ -246,13 +257,24 @@ class AzureBatchJobSubmitter:
             return
         
         # Parse container name from output prefix
-        # Formats: azblob://account/container/path or az://container/path
+        # Formats: 
+        # - azblob://container/path (simple format)
+        # - azblob://account/container/path or azblob://account.blob.core.windows.net/container/path (full format)
+        # - az://container/path (fsspec format)
         container_name = None
         if output_prefix.startswith("azblob://"):
-            # azblob://account.blob.core.windows.net/container/path
-            parts = output_prefix.replace("azblob://", "").split("/")
-            if len(parts) >= 2:
-                container_name = parts[1]
+            remainder = output_prefix.replace("azblob://", "")
+            parts = remainder.split("/")
+            
+            # Check if first part looks like account name (has dots)
+            if parts and "." in parts[0]:
+                # Full format: azblob://account.blob.core.windows.net/container/path
+                if len(parts) >= 2:
+                    container_name = parts[1]
+            else:
+                # Simple format: azblob://container/path
+                if len(parts) >= 1:
+                    container_name = parts[0]
         elif output_prefix.startswith("az://"):
             # az://container/path
             parts = output_prefix.replace("az://", "").split("/")
@@ -1101,17 +1123,49 @@ DOCKEREOF
             max_task_retry_count=max_retry_count
         )
 
-        # Configure automatic log upload to blob storage
-        # This ensures logs are preserved even if the pool is deleted
+        # Configure automatic output file staging to blob storage
+        # This replaces manual upload logic in bash scripts
         output_files = []
-        if self.storage_account_name and self.storage_account_key:
-            # Upload logs to a dedicated container
-            log_container = "batch-logs"
-            
-            # Create SAS URL for log uploads (valid for 7 days)
+        if self.storage_account_name and self.storage_account_key and output_dir_for_batch:
+            # Create SAS URL for uploads (valid for 7 days)
             from datetime import datetime, timedelta
             from azure.storage.blob import generate_container_sas, ContainerSasPermissions
             
+            # Extract container and path from output_dir_for_batch (az://container/path format)
+            if output_dir_for_batch.startswith("az://"):
+                parts = output_dir_for_batch.replace("az://", "").split("/", 1)
+                output_container = parts[0]
+                output_path_prefix = parts[1] if len(parts) > 1 else ""
+                
+                # Create SAS token for output container
+                sas_token = generate_container_sas(
+                    account_name=self.storage_account_name,
+                    container_name=output_container,
+                    account_key=self.storage_account_key,
+                    permission=ContainerSasPermissions(write=True, create=True, list=True),
+                    expiry=datetime.utcnow() + timedelta(days=7)
+                )
+                
+                output_container_url = f"https://{self.storage_account_name}.blob.core.windows.net/{output_container}?{sas_token}"
+                
+                # Upload all result files (h5, pt, json) on task success
+                output_files.append(
+                    batchmodels.OutputFile(
+                        file_pattern='$AZ_BATCH_TASK_WORKING_DIR/output/**/*',
+                        destination=batchmodels.OutputFileDestination(
+                            container=batchmodels.OutputFileBlobContainerDestination(
+                                container_url=output_container_url,
+                                path=output_path_prefix
+                            )
+                        ),
+                        upload_options=batchmodels.OutputFileUploadOptions(
+                            upload_condition=batchmodels.OutputFileUploadCondition.task_success
+                        )
+                    )
+                )
+            
+            # Upload logs to a dedicated container
+            log_container = "batch-logs"
             sas_token = generate_container_sas(
                 account_name=self.storage_account_name,
                 container_name=log_container,
@@ -1120,7 +1174,7 @@ DOCKEREOF
                 expiry=datetime.utcnow() + timedelta(days=7)
             )
             
-            container_url = f"https://{self.storage_account_name}.blob.core.windows.net/{log_container}?{sas_token}"
+            log_container_url = f"https://{self.storage_account_name}.blob.core.windows.net/{log_container}?{sas_token}"
             
             # Upload stdout
             output_files.append(
@@ -1128,7 +1182,7 @@ DOCKEREOF
                     file_pattern='../stdout.txt',
                     destination=batchmodels.OutputFileDestination(
                         container=batchmodels.OutputFileBlobContainerDestination(
-                            container_url=container_url,
+                            container_url=log_container_url,
                             path=f"{job_id}/{task_id}/stdout.txt"
                         )
                     ),
@@ -1144,7 +1198,7 @@ DOCKEREOF
                     file_pattern='../stderr.txt',
                     destination=batchmodels.OutputFileDestination(
                         container=batchmodels.OutputFileBlobContainerDestination(
-                            container_url=container_url,
+                            container_url=log_container_url,
                             path=f"{job_id}/{task_id}/stderr.txt"
                         )
                     ),
