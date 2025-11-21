@@ -18,7 +18,7 @@ slide_batch_size: 8
 slides_per_task: 4
 
 # Patch extraction batch size (default for all models)
-batch_size: 256
+batch_size: 1024
 
 # Per-model batch sizes (optional, overrides default batch_size)
 # Recommended values for A100 80GB:

@@ -16,6 +16,11 @@ echo "Start time: $(date)"
 echo "Node: $(hostname)"
 echo ""
 
+# Debug: Print environment variables
+echo "DEBUG: Environment variables related to MODEL_BATCH_SIZES:" >&2
+env | grep -i "batch\|model" | sort >&2
+echo "" >&2
+
 # Function to log with timestamp (send to stderr to not interfere with function return values)
 log() {
     echo "[$(date +'%Y-%m-%d %H:%M:%S')] $1" >&2
@@ -239,6 +244,22 @@ fi
 [ -n "$BATCH_SIZE" ] && CMD_ARGS+=("batch_size=$BATCH_SIZE")
 [ -n "$SLIDE_BATCH_SIZE" ] && CMD_ARGS+=("slide_batch_size=$SLIDE_BATCH_SIZE")
 [ -n "$USE_GPU" ] && CMD_ARGS+=("use_gpu=$USE_GPU")
+
+# Model-specific batch sizes (passed as JSON string, convert to Hydra overrides)
+log "DEBUG: MODEL_BATCH_SIZES value: '${MODEL_BATCH_SIZES}'"
+log "DEBUG: MODEL_BATCH_SIZES length: ${#MODEL_BATCH_SIZES}"
+if [ -n "$MODEL_BATCH_SIZES" ]; then
+    log "Parsing MODEL_BATCH_SIZES: $MODEL_BATCH_SIZES"
+    # Parse JSON and convert to Hydra overrides: +model_batch_sizes.MODEL=SIZE
+    while IFS= read -r line; do
+        model=$(echo "$line" | cut -d: -f1 | tr -d ' "')
+        size=$(echo "$line" | cut -d: -f2 | tr -d ' ,')
+        CMD_ARGS+=("+model_batch_sizes.$model=$size")
+        log "  $model: $size"
+    done < <(echo "$MODEL_BATCH_SIZES" | tr -d '{}' | tr ',' '\n')
+else
+    log "DEBUG: MODEL_BATCH_SIZES is empty or not set"
+fi
 
 # Segmentation config
 [ -n "$SEG_CONFIG_GROUP" ] && CMD_ARGS+=("seg_config=$SEG_CONFIG_GROUP")
