@@ -1230,13 +1230,21 @@ DOCKEREOF
                 # Fallback to baked-in script
                 container_command = '-c "/app/scripts/azure_batch/run_tessellate_extract_features.sh"'
             
-            # Azure Batch container settings
-            # Note: GPU allocation is handled by Azure Batch at pool level, not container level
+            # Azure Batch container settings with volume mounts
+            # Mount task-specific data directory for isolation and shared cache directory for models
+            # Note: /mnt/batch/tasks is automatically available, no special mount needed
+            # GPU allocation is handled by Azure Batch at pool level, not container level
             # Override entrypoint to /bin/bash to avoid group creation errors from default entrypoint
-            # Use taskWorkingDirectory to access Azure Batch mounts (/mnt/batch/tasks/...)
+            container_run_options = (
+                '--rm --user=root --ipc=host --shm-size=8g '
+                f'--volume /mnt/batch/tasks/workitems:/mnt/batch/tasks/workitems '
+                f'--volume /mnt/batch/tasks/cache:/mnt/batch/tasks/cache '
+                '--entrypoint=/bin/bash'
+            )
+            
             container_settings = batchmodels.TaskContainerSettings(
                 image_name=container_image,
-                container_run_options='--rm --user=root --ipc=host --shm-size=8g --entrypoint=/bin/bash',
+                container_run_options=container_run_options,
                 working_directory='taskWorkingDirectory'  # Use Azure Batch task directory to access mounts
             )
             
@@ -1247,6 +1255,12 @@ DOCKEREOF
                 constraints=task_constraints,
                 container_settings=container_settings,
                 output_files=output_files if output_files else None,
+                user_identity=batchmodels.UserIdentity(
+                    auto_user=batchmodels.AutoUserSpecification(
+                        scope=batchmodels.AutoUserScope.pool,
+                        elevation_level=batchmodels.ElevationLevel.admin
+                    )
+                )
             )
         else:
             # Use docker invocation for non-container pools
