@@ -1125,7 +1125,7 @@ DOCKEREOF
         )
         volume_mounts += " -v /mnt/batch/tasks:/mnt/batch/tasks"
 
-        task_command = f'/bin/bash -c "mkdir -p /mnt/batch/tasks/cache /mnt/batch/tasks/workitems/tmp && chmod -R 777 /mnt/batch/tasks && docker run --rm --user root --ipc host --gpus all --shm-size=8g {docker_env_args} {volume_mounts} {container_image} /bin/bash /app/scripts/azure_batch/run_tessellate_extract_features.sh"'
+        task_command = f'/bin/bash -c "mkdir -p /mnt/batch/tasks/cache /mnt/batch/tasks/workitems/tmp && chmod -R 777 /mnt/batch/tasks && docker run --rm --user root --ipc host --gpus all --shm-size=8g {docker_env_args} {volume_mounts} {container_image} /app/scripts/azure_batch/run_tessellate_extract_features.sh"'
 
         # Task constraints with retry configuration
         task_constraints = batchmodels.TaskConstraints(
@@ -1214,10 +1214,10 @@ DOCKEREOF
             
             log_container_url = f"https://{self.storage_account_name}.blob.core.windows.net/{log_container}?{sas_token}"
             
-            # Upload stdout - for containers it's in stdout.txt (no ../)
+            # Upload stdout - for containers it's in ../stdout.txt
             output_files.append(
                 batchmodels.OutputFile(
-                    file_pattern='stdout.txt',
+                    file_pattern='../stdout.txt',
                     destination=batchmodels.OutputFileDestination(
                         container=batchmodels.OutputFileBlobContainerDestination(
                             container_url=log_container_url,
@@ -1230,10 +1230,10 @@ DOCKEREOF
                 )
             )
             
-            # Upload stderr - for containers it's in stderr.txt (no ../)
+            # Upload stderr - for containers it's in ../stderr.txt
             output_files.append(
                 batchmodels.OutputFile(
-                    file_pattern='stderr.txt',
+                    file_pattern='../stderr.txt',
                     destination=batchmodels.OutputFileDestination(
                         container=batchmodels.OutputFileBlobContainerDestination(
                             container_url=log_container_url,
@@ -1250,6 +1250,7 @@ DOCKEREOF
         if use_container_prepull:
             # Use TaskContainerSettings for container-enabled pools
             # Download the latest wrapper script from Azure Blob (allows testing without rebuilding Docker image)
+            # The entrypoint is /bin/bash, so command_line should start with -c
             if hasattr(self, 'script_blob_url') and self.script_blob_url and hasattr(self, 'storage_account_name') and self.storage_account_name:
                 # Use az CLI to download (handles auth via env vars AZURE_STORAGE_ACCOUNT and AZURE_STORAGE_KEY)
                 container_name = "mussel-staging"
@@ -1262,23 +1263,17 @@ DOCKEREOF
                     f'--name {blob_name} '
                     f'--file /tmp/run_wrapper.sh '
                     f'--overwrite '
-                    f'2>&1 && chmod +x /tmp/run_wrapper.sh && /tmp/run_wrapper.sh"'
+                    f'&& chmod +x /tmp/run_wrapper.sh && /tmp/run_wrapper.sh"'
                 )
             else:
                 # Fallback to baked-in script
-                container_command = '-c "/app/scripts/azure_batch/run_tessellate_extract_features.sh"'
+                container_command = '-c /app/scripts/azure_batch/run_tessellate_extract_features.sh'
             
-            # Azure Batch container settings with volume mounts
-            # Mount batch tasks directory which includes:
-            # - /mnt/batch/tasks/workitems: task-specific working directory
-            # - /mnt/batch/tasks/cache: persistent model cache (shared across tasks)
-            # Use --rm for cleanup, --user=root for permissions, --ipc=host --shm-size for PyTorch
-            # Override entrypoint to /bin/bash to avoid entrypoint.sh issues
-            container_run_options = (
-                '--rm --user=root --ipc=host --shm-size=8g '
-                '--volume /mnt/batch/tasks:/mnt/batch/tasks '
-                '--entrypoint /bin/bash'
-            )
+            # Azure Batch container settings
+            # Note: Volume mounts are handled by Azure Batch pool configuration, not container_run_options
+            # The /mnt/batch/tasks directory is automatically available in containers
+            # Use minimal container_run_options - Azure Batch has restrictions on allowed flags
+            container_run_options = '--rm --user=root --ipc=host --shm-size=8g --entrypoint=/bin/bash'
             
             container_settings = batchmodels.TaskContainerSettings(
                 image_name=container_image,
@@ -1292,13 +1287,9 @@ DOCKEREOF
                 environment_settings=env_vars,  # Pass env vars directly to container
                 constraints=task_constraints,
                 container_settings=container_settings,
-                output_files=output_files if output_files else None,
-                user_identity=batchmodels.UserIdentity(
-                    auto_user=batchmodels.AutoUserSpecification(
-                        scope=batchmodels.AutoUserScope.pool,
-                        elevation_level=batchmodels.ElevationLevel.admin
-                    )
-                )
+                output_files=output_files if output_files else None
+                # Note: user_identity with admin elevation cannot be used with container_settings
+                # Using --user=root in container_run_options instead
             )
         else:
             # Use docker invocation for non-container pools

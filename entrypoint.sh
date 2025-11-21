@@ -25,7 +25,11 @@ if [ "$(id -u)" = "0" ] && [ "$USER_ID" != "0" ]; then
   chown -R mussel:mussel /.cache /tmp || true
   chmod -R 777 /.cache /tmp
 
-  # Ensure output directory exists and is writable
+  # Ensure output directory exists and is writable (Azure Batch expects this)
+  if [ -n "$AZ_BATCH_TASK_WORKING_DIR" ]; then
+    mkdir -p "$AZ_BATCH_TASK_WORKING_DIR/output"
+    chmod -R 777 "$AZ_BATCH_TASK_WORKING_DIR/output" || true
+  fi
   mkdir -p /tmp/output
   chmod 777 /tmp/output || true
   
