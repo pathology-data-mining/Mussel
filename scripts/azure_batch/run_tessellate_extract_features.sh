@@ -212,15 +212,11 @@ fi
 
 # Setup output directory
 # Always write to local directory - Azure Batch will handle upload via output file staging
-# Use OUTPUT_DIR from environment if set, otherwise default to working directory
-if [ -z "$OUTPUT_DIR" ]; then
-    OUTPUT_DIR="${AZ_BATCH_TASK_WORKING_DIR:-$(pwd)}/output"
-elif [[ "$OUTPUT_DIR" != /* ]]; then
-    # Convert relative path to absolute path
-    OUTPUT_DIR="$(pwd)/$OUTPUT_DIR"
-fi
+# IMPORTANT: Always use "output" as the local directory, ignoring any remote paths from config
+# Azure Batch output file staging will automatically upload files to the correct blob storage location
+OUTPUT_DIR="output"
 mkdir -p "$OUTPUT_DIR"
-log "Using local output directory: $OUTPUT_DIR"
+log "Using local output directory: $OUTPUT_DIR (relative to $(pwd))"
 log "Azure Batch will automatically upload files on task success"
 
 # Build command arguments - pass everything through to Python CLI
@@ -241,6 +237,7 @@ fi
 [ -n "$MODEL_TYPES" ] && CMD_ARGS+=("model_type=[$MODEL_TYPES]")
 [ -n "$MODEL_TYPE" ] && CMD_ARGS+=("model_type=$MODEL_TYPE")
 [ -n "$MODEL_PATH" ] && CMD_ARGS+=("model_path=$MODEL_PATH")
+[ -n "$MODEL_DIR" ] && CMD_ARGS+=("model_dir=$MODEL_DIR")
 [ -n "$SLIDE_MODEL_TYPES" ] && CMD_ARGS+=("slide_model_type=[$SLIDE_MODEL_TYPES]")
 [ -n "$SLIDE_MODEL_TYPE" ] && CMD_ARGS+=("slide_model_type=$SLIDE_MODEL_TYPE")
 [ -n "$SLIDE_MODEL_PATH" ] && CMD_ARGS+=("slide_model_path=$SLIDE_MODEL_PATH")
