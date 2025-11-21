@@ -531,8 +531,8 @@ DOCKEREOF
                 
                 # Create cache directories
                 # Persistent model cache (survives across tasks)
-                mkdir -p /mnt/batch_models
-                chmod -R 777 /mnt/batch_models
+                mkdir -p /mnt/batch/tasks/cache
+                chmod -R 777 /mnt/batch/tasks/cache
                 # Temporary working directories
                 mkdir -p /mnt/batch/tasks/workitems/tmp
                 chmod -R 777 /mnt/batch/tasks/workitems
@@ -572,8 +572,8 @@ DOCKEREOF
                 fi
                 
                 # Create cache directories
-                mkdir -p /mnt/batch_models
-                chmod -R 777 /mnt/batch_models
+                mkdir -p /mnt/batch/tasks/cache
+                chmod -R 777 /mnt/batch/tasks/cache
                 mkdir -p /mnt/batch/tasks/workitems/tmp
                 chmod -R 777 /mnt/batch/tasks/workitems
                 {model_download_cmd}
@@ -1000,22 +1000,37 @@ DOCKEREOF
                     name="SLIDE_MODEL_PATHS", value=slide_model_paths
                 )
             )
-        if model_cache_dir:
-            env_vars.extend([
-                batchmodels.EnvironmentSetting(
-                    name="MODEL_CACHE_DIR", value=model_cache_dir
-                ),
-                # Set HuggingFace cache environment variables
-                batchmodels.EnvironmentSetting(
-                    name="HF_HOME", value=model_cache_dir
-                ),
-                batchmodels.EnvironmentSetting(
-                    name="TRANSFORMERS_CACHE", value=model_cache_dir
-                ),
-                batchmodels.EnvironmentSetting(
-                    name="HF_HUB_CACHE", value=f"{model_cache_dir}/hub"
-                ),
-            ])
+        # Set model cache directory (default to /mnt/batch/tasks/cache if not provided)
+        cache_dir = model_cache_dir or "/mnt/batch/tasks/cache"
+        env_vars.extend([
+            batchmodels.EnvironmentSetting(
+                name="MODEL_CACHE_DIR", value=cache_dir
+            ),
+            # Set HuggingFace cache environment variables
+            batchmodels.EnvironmentSetting(
+                name="HF_HOME", value=cache_dir
+            ),
+            batchmodels.EnvironmentSetting(
+                name="TRANSFORMERS_CACHE", value=cache_dir
+            ),
+            batchmodels.EnvironmentSetting(
+                name="HF_HUB_CACHE", value=f"{cache_dir}/hub"
+            ),
+            batchmodels.EnvironmentSetting(
+                name="TORCH_HOME", value=cache_dir
+            ),
+            # Set temp directory to batch tasks directory (has more space)
+            batchmodels.EnvironmentSetting(
+                name="TMPDIR", value="/mnt/batch/tasks/workitems/tmp"
+            ),
+            # Other helpful environment variables
+            batchmodels.EnvironmentSetting(
+                name="PYTHONUNBUFFERED", value="1"
+            ),
+            batchmodels.EnvironmentSetting(
+                name="OMP_NUM_THREADS", value="1"
+            ),
+        ])
 
         if hf_token:
             env_vars.append(
@@ -1101,22 +1116,16 @@ DOCKEREOF
         )
 
         # Performance optimization: Use local VM storage for caching and temp files
-        # - /mnt/batch/tasks/workitems: Azure Batch task working directory (local SSD, large space)
-        # - /mnt/batch_models: Persistent model cache directory (survives across tasks)
-        # - Use /mnt/batch/tasks/workitems for temp storage instead of /tmp (limited space)
+        # - /mnt/batch/tasks: Azure Batch task directory (automatically mounted, no need for explicit mounts)
+        # - /mnt/batch/tasks/cache: Persistent model cache directory (survives across tasks)
+        # - /mnt/batch/tasks/workitems: Task working directory
+        # No explicit volume mounts needed - /mnt/batch/tasks is automatically available
         volume_mounts = (
             f"-v {azure_files_mount}:{azure_files_mount}" if azure_files_mount else ""
         )
-        volume_mounts += " -v /mnt/batch/tasks/workitems:/mnt/batch/tasks/workitems"
-        volume_mounts += " -v /mnt/batch/tasks/shared:/mnt/batch/tasks/shared"
-        volume_mounts += " -v /mnt/batch_models:/mnt/batch_models"
+        volume_mounts += " -v /mnt/batch/tasks:/mnt/batch/tasks"
 
-        # Set cache and temp directories
-        # Use persistent model cache at /mnt/batch_models (survives across tasks)
-        # TMPDIR uses task working directory (has more space than /tmp)
-        cache_env = "-e TORCH_HOME=/mnt/batch_models -e HF_HOME=/mnt/batch_models -e HF_HUB_CACHE=/mnt/batch_models/hub -e TRANSFORMERS_CACHE=/mnt/batch_models -e TMPDIR=/mnt/batch/tasks/workitems/tmp -e PYTHONUNBUFFERED=1 -e OMP_NUM_THREADS=1"
-
-        task_command = f'/bin/bash -c "mkdir -p /mnt/batch_models /mnt/batch/tasks/workitems/tmp /mnt/batch/tasks/shared && chmod -R 777 /mnt/batch_models /mnt/batch/tasks/workitems && docker run --rm --user root --ipc host --gpus all --shm-size=8g {docker_env_args} {cache_env} {volume_mounts} {container_image} /bin/bash /app/scripts/azure_batch/run_tessellate_extract_features.sh"'
+        task_command = f'/bin/bash -c "mkdir -p /mnt/batch/tasks/cache /mnt/batch/tasks/workitems/tmp /mnt/batch/tasks/shared && chmod -R 777 /mnt/batch/tasks && docker run --rm --user root --ipc host --gpus all --shm-size=8g {docker_env_args} {volume_mounts} {container_image} /bin/bash /app/scripts/azure_batch/run_tessellate_extract_features.sh"'
 
         # Task constraints with retry configuration
         task_constraints = batchmodels.TaskConstraints(
