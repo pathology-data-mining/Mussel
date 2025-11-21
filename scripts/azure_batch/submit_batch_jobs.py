@@ -1146,6 +1146,20 @@ DOCKEREOF
                 output_container = parts[0]
                 output_path_prefix = parts[1] if len(parts) > 1 else ""
                 
+                # Ensure output container exists
+                try:
+                    from azure.storage.blob import BlobServiceClient
+                    blob_service_client = BlobServiceClient(
+                        account_url=f"https://{self.storage_account_name}.blob.core.windows.net",
+                        credential=self.storage_account_key
+                    )
+                    container_client = blob_service_client.get_container_client(output_container)
+                    if not container_client.exists():
+                        print(f"Creating output container: {output_container}")
+                        container_client.create_container()
+                except Exception as e:
+                    print(f"Warning: Could not ensure output container exists: {e}")
+                
                 # Create SAS token for output container
                 sas_token = generate_container_sas(
                     account_name=self.storage_account_name,
@@ -1157,7 +1171,8 @@ DOCKEREOF
                 
                 output_container_url = f"https://{self.storage_account_name}.blob.core.windows.net/{output_container}?{sas_token}"
                 
-                # Upload all result files (h5, pt, json) on task success
+                # Upload all result files (h5, pt, json) on task completion
+                # Use $AZ_BATCH_TASK_WORKING_DIR for task working directory (where output/ is created)
                 output_files.append(
                     batchmodels.OutputFile(
                         file_pattern='$AZ_BATCH_TASK_WORKING_DIR/output/**/*',
@@ -1168,13 +1183,27 @@ DOCKEREOF
                             )
                         ),
                         upload_options=batchmodels.OutputFileUploadOptions(
-                            upload_condition=batchmodels.OutputFileUploadCondition.task_success
+                            upload_condition=batchmodels.OutputFileUploadCondition.task_completion
                         )
                     )
                 )
             
             # Upload logs to a dedicated container
             log_container = "batch-logs"
+            # Ensure log container exists
+            try:
+                from azure.storage.blob import BlobServiceClient
+                blob_service_client = BlobServiceClient(
+                    account_url=f"https://{self.storage_account_name}.blob.core.windows.net",
+                    credential=self.storage_account_key
+                )
+                container_client = blob_service_client.get_container_client(log_container)
+                if not container_client.exists():
+                    print(f"Creating log container: {log_container}")
+                    container_client.create_container()
+            except Exception as e:
+                print(f"Warning: Could not ensure log container exists: {e}")
+            
             sas_token = generate_container_sas(
                 account_name=self.storage_account_name,
                 container_name=log_container,
@@ -1185,10 +1214,10 @@ DOCKEREOF
             
             log_container_url = f"https://{self.storage_account_name}.blob.core.windows.net/{log_container}?{sas_token}"
             
-            # Upload stdout
+            # Upload stdout - for containers it's in stdout.txt (no ../)
             output_files.append(
                 batchmodels.OutputFile(
-                    file_pattern='../stdout.txt',
+                    file_pattern='stdout.txt',
                     destination=batchmodels.OutputFileDestination(
                         container=batchmodels.OutputFileBlobContainerDestination(
                             container_url=log_container_url,
@@ -1201,10 +1230,10 @@ DOCKEREOF
                 )
             )
             
-            # Upload stderr
+            # Upload stderr - for containers it's in stderr.txt (no ../)
             output_files.append(
                 batchmodels.OutputFile(
-                    file_pattern='../stderr.txt',
+                    file_pattern='stderr.txt',
                     destination=batchmodels.OutputFileDestination(
                         container=batchmodels.OutputFileBlobContainerDestination(
                             container_url=log_container_url,
@@ -1222,23 +1251,32 @@ DOCKEREOF
             # Use TaskContainerSettings for container-enabled pools
             # Download the latest wrapper script from Azure Blob (allows testing without rebuilding Docker image)
             if hasattr(self, 'script_blob_url') and self.script_blob_url and hasattr(self, 'storage_account_name') and self.storage_account_name:
-                # Use az CLI to download (handles auth via env vars)
+                # Use az CLI to download (handles auth via env vars AZURE_STORAGE_ACCOUNT and AZURE_STORAGE_KEY)
                 container_name = "mussel-staging"
                 blob_name = "scripts/azure_batch/run_tessellate_extract_features.sh"
-                container_command = f'-c "az storage blob download --account-name {self.storage_account_name} --container-name {container_name} --name {blob_name} --file /tmp/run_wrapper.sh --auth-mode key && chmod +x /tmp/run_wrapper.sh && /tmp/run_wrapper.sh"'
+                # Download script, make it executable, then run it
+                container_command = (
+                    f'-c "az storage blob download '
+                    f'--account-name {self.storage_account_name} '
+                    f'--container-name {container_name} '
+                    f'--name {blob_name} '
+                    f'--file /tmp/run_wrapper.sh '
+                    f'--overwrite '
+                    f'2>&1 && chmod +x /tmp/run_wrapper.sh && /tmp/run_wrapper.sh"'
+                )
             else:
                 # Fallback to baked-in script
                 container_command = '-c "/app/scripts/azure_batch/run_tessellate_extract_features.sh"'
             
             # Azure Batch container settings with volume mounts
-            # Mount task-specific data directory for isolation and shared cache directory for models
-            # Note: /mnt/batch/tasks is automatically available, no special mount needed
-            # GPU allocation is handled by Azure Batch at pool level, not container level
-            # Override entrypoint to /bin/bash to avoid group creation errors from default entrypoint
+            # Mount batch tasks directory which includes:
+            # - /mnt/batch/tasks/workitems: task-specific working directory
+            # - /mnt/batch/tasks/cache: persistent model cache (shared across tasks)
+            # Use --rm for cleanup, --user=root for permissions, --ipc=host --shm-size for PyTorch
+            # Override entrypoint to /bin/bash to avoid entrypoint.sh issues
             container_run_options = (
                 '--rm --user=root --ipc=host --shm-size=8g '
-                f'--volume /mnt/batch/tasks/workitems:/mnt/batch/tasks/workitems '
-                f'--volume /mnt/batch/tasks/cache:/mnt/batch/tasks/cache '
+                '--volume /mnt/batch/tasks:/mnt/batch/tasks '
                 '--entrypoint=/bin/bash'
             )
             
