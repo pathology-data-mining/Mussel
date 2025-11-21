@@ -1125,7 +1125,7 @@ DOCKEREOF
         )
         volume_mounts += " -v /mnt/batch/tasks:/mnt/batch/tasks"
 
-        task_command = f'/bin/bash -c "mkdir -p /mnt/batch/tasks/cache /mnt/batch/tasks/workitems/tmp /mnt/batch/tasks/shared && chmod -R 777 /mnt/batch/tasks && docker run --rm --user root --ipc host --gpus all --shm-size=8g {docker_env_args} {volume_mounts} {container_image} /bin/bash /app/scripts/azure_batch/run_tessellate_extract_features.sh"'
+        task_command = f'/bin/bash -c "mkdir -p /mnt/batch/tasks/cache /mnt/batch/tasks/workitems/tmp && chmod -R 777 /mnt/batch/tasks && docker run --rm --user root --ipc host --gpus all --shm-size=8g {docker_env_args} {volume_mounts} {container_image} /bin/bash /app/scripts/azure_batch/run_tessellate_extract_features.sh"'
 
         # Task constraints with retry configuration
         task_constraints = batchmodels.TaskConstraints(
@@ -1277,7 +1277,7 @@ DOCKEREOF
             container_run_options = (
                 '--rm --user=root --ipc=host --shm-size=8g '
                 '--volume /mnt/batch/tasks:/mnt/batch/tasks '
-                '--entrypoint=/bin/bash'
+                '--entrypoint /bin/bash'
             )
             
             container_settings = batchmodels.TaskContainerSettings(
@@ -1418,7 +1418,7 @@ DOCKEREOF
 
             # For multi-model, base output paths use the first model's directory
             # The bash script will handle creating model-specific subdirectories
-            base_prefix = output_s3_prefix.rstrip("/") if output_s3_prefix else "/mnt/batch/tasks/shared/output"
+            base_prefix = output_s3_prefix.rstrip("/") if output_s3_prefix else "output"
             output_h5_path = f"{base_prefix}/{model_type}/h5/{slide_id}_features.h5"
             output_pt_path = f"{base_prefix}/{model_type}/pt/{slide_id}_features.pt"
             # Only set intermediate_h5_path if aggregation method requires it
@@ -1821,7 +1821,9 @@ DOCKEREOF
                         # Convert azblob:// to az:// for fsspec compatibility
                         output_dir_for_batch = self.convert_azblob_to_fsspec_url(output_s3_prefix.rstrip('/'))
                     else:
-                        output_dir_for_batch = "/mnt/batch/tasks/shared/output"
+                        # Use relative path - output files will be in $AZ_BATCH_TASK_WORKING_DIR/output
+                        # and will be staged to blob storage via Azure Batch output file staging
+                        output_dir_for_batch = "output"
 
                     # Submit batch task
                     self.submit_task(
