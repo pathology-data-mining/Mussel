@@ -514,6 +514,7 @@ def extract_patch_features(
 
     logger.info("Step 1: Extracting patch-level features")
     logger.info("loading model checkpoint")
+    logger.info(f"Using batch_size={batch_size} for model {model_type}")
 
     model_factory = get_model_factory(model_type)
     if model_factory is None:
@@ -645,6 +646,7 @@ def extract_patch_features_batch(
 
     # Load the model once for all slides
     logger.info("Loading model checkpoint (once for all slides)")
+    logger.info(f"Using batch_size={batch_size} for model {model_type}")
     model_factory = get_model_factory(model_type)
     if model_factory is None:
         raise ValueError("model not recognized")
@@ -841,6 +843,7 @@ def aggregate_slide_features_batch(
     
     # Load the slide encoder model once
     logger.info(f"Loading slide encoder model: {model_type}")
+    logger.info(f"Using slide_batch_size={slide_batch_size} for slide model {model_type}")
     model_factory = get_model_factory(model_type)
     if model_factory is None:
         raise ValueError(f"Slide model type {model_type} not recognized")

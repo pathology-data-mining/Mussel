@@ -44,7 +44,10 @@ def model_download_lock(
     # Determine cache directory
     if cache_dir is None:
         cache_dir = (
-            os.environ.get("HF_HOME") or os.environ.get("TRANSFORMERS_CACHE") or "/tmp"
+            os.environ.get("HF_HOME") 
+            or os.environ.get("TRANSFORMERS_CACHE") 
+            or os.environ.get("TMPDIR")
+            or "/tmp"
         )
 
     # Create locks directory

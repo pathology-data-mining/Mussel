@@ -14,7 +14,7 @@ slide_model_types:
 # prefilter_model_path: /gpfs/mskmind_ess/limr/repos/TransPath/ctranspath.pth
 # classifier_pkl: /gpfs/mskmind_ess/limr/repos/Mussel/model-1727990346535.pkl
 #classifier_threshold: 0.75
-slide_batch_size: 8
+slide_batch_size: 12
 slides_per_task: 4
 
 # Patch extraction batch size (default for all models)
@@ -25,13 +25,13 @@ batch_size: 1024
 #   - 224x224 input models (OPTIMUS, UNI2): 256-512
 #   - 448x448 input models (VIRCHOW2, GIGAPATH patch encoder): 192-256
 model_batch_sizes:
-  OPTIMUS: 2048      # 224x224 input, medium model
-  VIRCHOW2: 1024     # 448x448 input (4x pixels)
-  UNI2: 2048         # 224x224 input, medium model
-  GIGAPATH: 1024     # 448x448 input for patch encoder
-  CONCH1_5: 1024     # 448x448 input for TITAN_SLIDE patch encoder
+  OPTIMUS: 3072      # 224x224 input, medium model
+  VIRCHOW2: 1536     # 448x448 input (4x pixels)
+  UNI2: 3072         # 224x224 input, medium model
+  GIGAPATH: 1536     # 448x448 input for patch encoder
+  CONCH1_5: 1536     # 448x448 input for TITAN_SLIDE patch encoder
 
-num_workers: 8
+num_workers: 16
 use_gpu: true
 seg_config:
   group: biopsy
@@ -64,7 +64,7 @@ azure:
   staging_container: "mussel-staging"
   stage_to_azure_blob: true
   cleanup_staged_files: false
-  output_prefix: "azblob://mussel-results/paper-revisions-final/"
+  output_prefix: "azblob://mussel-results/paper-revisions-test/final"
   script_blob_url: "https://mskpdmgen2.blob.core.windows.net/mussel-staging/scripts/"
   pool_id: "mussel-pool"
   job_id: "mussel-test-pr-job"

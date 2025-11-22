@@ -165,47 +165,41 @@ stage_remote_file() {
     fi
 }
 
-# Check if batch mode (SLIDE_PATHS) or single mode (SLIDE_PATH)
+# Check if SLIDE_PATHS or legacy SLIDE_PATH is set
 if [ -n "$SLIDE_PATHS" ]; then
-    # Batch mode - process multiple slides
-    log "Batch mode: Processing ${SLIDE_PATHS}"
-    
-    # Split comma-separated paths and stage each remote file
-    IFS=',' read -ra PATH_ARRAY <<< "$SLIDE_PATHS"
-    STAGED_PATHS=()
-    mkdir -p "$WORK_DIR"
-    
-    for slide_path in "${PATH_ARRAY[@]}"; do
-        # Trim whitespace
-        slide_path=$(echo "$slide_path" | xargs)
-        
-        if [[ "$slide_path" =~ ^(azfiles|s3|azblob):// ]]; then
-            # Remote path - stage it locally
-            local_path="$WORK_DIR/$(basename "$slide_path")"
-            staged_path=$(stage_remote_file "$slide_path" "$local_path")
-            STAGED_PATHS+=("$staged_path")
-        else
-            # Local path - use as-is
-            STAGED_PATHS+=("$slide_path")
-        fi
-    done
-    
-    # Join staged paths with commas and wrap in brackets for Hydra
-    EFFECTIVE_SLIDE_PATH="[$(IFS=,; echo "${STAGED_PATHS[*]}")]"
-    
+    # Batch mode - process one or more slides
+    log "Processing slides: ${SLIDE_PATHS}"
 elif [ -n "$SLIDE_PATH" ]; then
-    # Single slide mode
-    if [[ "$SLIDE_PATH" =~ ^(azfiles|s3|azblob):// ]]; then
-        mkdir -p "$WORK_DIR"
-        local_path="$WORK_DIR/$(basename "$SLIDE_PATH")"
-        EFFECTIVE_SLIDE_PATH=$(stage_remote_file "$SLIDE_PATH" "$local_path")
-    else
-        EFFECTIVE_SLIDE_PATH="$SLIDE_PATH"
-    fi
+    # Legacy single slide mode - convert to SLIDE_PATHS format for uniform processing
+    log "Converting legacy SLIDE_PATH to SLIDE_PATHS format"
+    SLIDE_PATHS="$SLIDE_PATH"
 else
     log "ERROR: Neither SLIDE_PATH nor SLIDE_PATHS is set"
     exit 1
 fi
+
+# Split comma-separated paths and stage each remote file
+IFS=',' read -ra PATH_ARRAY <<< "$SLIDE_PATHS"
+STAGED_PATHS=()
+mkdir -p "$WORK_DIR"
+
+for slide_path in "${PATH_ARRAY[@]}"; do
+    # Trim whitespace
+    slide_path=$(echo "$slide_path" | xargs)
+    
+    if [[ "$slide_path" =~ ^(azfiles|s3|azblob):// ]]; then
+        # Remote path - stage it locally
+        local_path="$WORK_DIR/$(basename "$slide_path")"
+        staged_path=$(stage_remote_file "$slide_path" "$local_path")
+        STAGED_PATHS+=("$staged_path")
+    else
+        # Local path - use as-is
+        STAGED_PATHS+=("$slide_path")
+    fi
+done
+
+# Join staged paths with commas and wrap in brackets for Hydra list format
+EFFECTIVE_SLIDE_PATH="[$(IFS=,; echo "${STAGED_PATHS[*]}")]"
 
 # Set HuggingFace token
 [ -n "$HF_TOKEN" ] && export HUGGINGFACE_TOKEN="$HF_TOKEN"
@@ -226,12 +220,8 @@ CMD_ARGS=(
     "output_dir=$OUTPUT_DIR"
 )
 
-# Slide path - use slide_paths for lists (with brackets), slide_path for single
-if [[ "$EFFECTIVE_SLIDE_PATH" == \[*\] ]]; then
-    CMD_ARGS+=("slide_paths=$EFFECTIVE_SLIDE_PATH")
-else
-    CMD_ARGS+=("slide_path=$EFFECTIVE_SLIDE_PATH")
-fi
+# Slide paths - always use slide_paths (with brackets) for consistency
+CMD_ARGS+=("slide_paths=$EFFECTIVE_SLIDE_PATH")
 
 # Model configuration - add brackets for lists (comma-separated values)
 [ -n "$MODEL_TYPES" ] && CMD_ARGS+=("model_type=[$MODEL_TYPES]")
@@ -302,7 +292,7 @@ fi
 
 # Enable multi-GPU processing if we have multiple GPUs and multiple slides
 MULTI_GPU_MODE=false
-if [ $NUM_GPUS -gt 1 ] && [[ "$EFFECTIVE_SLIDE_PATH" == \[*\] ]]; then
+if [ $NUM_GPUS -gt 1 ]; then
     # Extract slides from bracketed list and count them
     SLIDES_STR=$(echo "$EFFECTIVE_SLIDE_PATH" | sed 's/^\[//;s/\]$//')
     IFS=',' read -ra SLIDES_TEMP <<< "$SLIDES_STR"

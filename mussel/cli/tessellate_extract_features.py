@@ -531,7 +531,7 @@ def main(
             _main_single(cfg)
 
 
-@resolve_remote_paths()
+@resolve_remote_paths('model_path', 'prefilter_model_path', 'model_dir', 'slide_model_path', 'classifier_pkl', auto_detect=False)
 def _main_single(cfg: TessellateExtractFeaturesConfig):
     """Process a single slide."""
     # Check if output_dir is provided instead of output_h5_path/output_pt_path
@@ -659,7 +659,7 @@ def _main_single(cfg: TessellateExtractFeaturesConfig):
         logger.info("Cleaned up temporary files.")
 
 
-@resolve_remote_paths()
+@resolve_remote_paths('model_path', 'prefilter_model_path', 'model_dir', 'slide_model_path', 'classifier_pkl', auto_detect=False)
 def _main_batch(
     cfg: TessellateExtractFeaturesConfig, patch_output_dir: Optional[str] = None
 ):
@@ -805,6 +805,8 @@ def _main_batch(
     logger.info(
         f"\n=== Phase 2: Batch extracting patch features for {len(slide_results)} slides ==="
     )
+    logger.info(f"Model: {model_type.name}")
+    logger.info(f"Batch size: {get_batch_size_for_model(cfg, model_type)}")
 
     # Prepare paths for batch extraction
     patch_h5_paths = [r["final_coords_h5_path"] for r in slide_results]
@@ -847,10 +849,10 @@ def _main_batch(
         for r, intermediate_h5_path in zip(slide_results, intermediate_h5_paths):
             r["intermediate_h5_path"] = intermediate_h5_path
 
-        # If patch_output_dir is specified, also save aggregated patch encoder features
+        # If patch_output_dir is specified, also save patch encoder features
         if patch_output_dir:
             logger.info(
-                f"\n=== Phase 2b: Saving aggregated patch encoder features to {patch_output_dir} ==="
+                f"\n=== Phase 2b: Saving patch encoder features to {patch_output_dir} ==="
             )
 
             # Create h5 and pt subdirectories if they're local paths
@@ -860,59 +862,98 @@ def _main_batch(
                 if not _is_remote_path(subdir_path):
                     Path(subdir_path).mkdir(parents=True, exist_ok=True)
 
-            # Skip H5 output if save_features_to_h5=false mode is enabled
-            patch_encoder_h5_paths = None if not cfg.save_features_to_h5 else [
-                _safe_path_join(
+            # For tile encoders, just copy the intermediate h5 files and extract PT files
+            # No aggregation needed since they already contain tile-level features
+            for i, r in enumerate(slide_results):
+                intermediate_h5_path = intermediate_h5_paths[i]
+                
+                # Copy tile_h5 file (only if source and destination are different)
+                tile_h5_dest = _safe_path_join(
                     patch_output_dir_str,
-                    "h5",
-                    f"{r['slide_id']}.{cfg.output_h5_suffix}",
+                    "tile_h5",
+                    f"{r['slide_id']}.patch.h5",
                 )
-                for r in slide_results
-            ]
-            patch_encoder_pt_paths = [
-                _safe_path_join(
+                if not _is_remote_path(tile_h5_dest):
+                    # Only copy if source and destination are different
+                    if os.path.abspath(intermediate_h5_path) != os.path.abspath(tile_h5_dest):
+                        shutil.copy2(intermediate_h5_path, tile_h5_dest)
+                        logger.debug(f"Copied tile features to {tile_h5_dest}")
+                    else:
+                        logger.debug(f"Tile features already at destination: {tile_h5_dest}")
+                
+                # Extract and save PT file
+                pt_dest = _safe_path_join(
                     patch_output_dir_str,
                     "pt",
                     f"{r['slide_id']}.{cfg.output_pt_suffix}",
                 )
-                for r in slide_results
-            ]
+                with h5py.File(intermediate_h5_path, "r") as f:
+                    features = torch.from_numpy(f["features"][:])
+                    save_torch_tensor(pt_dest, features)
+                    logger.debug(f"Saved PT features to {pt_dest}")
+                
+                # Optionally copy/create h5 file with features
+                if cfg.save_features_to_h5:
+                    h5_dest = _safe_path_join(
+                        patch_output_dir_str,
+                        "h5",
+                        f"{r['slide_id']}.{cfg.output_h5_suffix}",
+                    )
+                    if not _is_remote_path(h5_dest):
+                        shutil.copy2(intermediate_h5_path, h5_dest)
+                        logger.debug(f"Copied h5 features to {h5_dest}")
 
-            # Aggregate patch features using simple aggregation (mean)
+        # Phase 3: Batch aggregate to slide level OR copy patch features for tile encoders
+        if patch_output_dir and cfg.slide_model_type is None:
+            # For tile encoders (GIGAPATH, CONCH1_5) without slide aggregation,
+            # just copy the patch h5 files since they're already tile-level features
+            logger.info(
+                f"\n=== Phase 3: Copying tile features to slide output (tile encoder) ==="
+            )
+            logger.info(f"Patch encoder: {model_type.name}")
+            
+            for i, r in enumerate(slide_results):
+                intermediate_h5_path = intermediate_h5_paths[i]
+                
+                # Copy h5 file if save_features_to_h5 is enabled
+                if cfg.save_features_to_h5:
+                    h5_dest = r["output_h5_path"]
+                    if not _is_remote_path(h5_dest):
+                        shutil.copy2(intermediate_h5_path, h5_dest)
+                        logger.debug(f"Copied h5 to {h5_dest}")
+                
+                # Copy PT file
+                pt_dest = r["output_pt_path"]
+                with h5py.File(intermediate_h5_path, "r") as f:
+                    features = torch.from_numpy(f["features"][:])
+                    save_torch_tensor(pt_dest, features)
+                    logger.debug(f"Saved PT to {pt_dest}")
+        else:
+            # True slide aggregation for models that aggregate patches
+            logger.info(
+                f"\n=== Phase 3: Batch aggregating {len(slide_results)} slides (aggregation_method={cfg.aggregation_method}) ==="
+            )
+            if cfg.slide_model_type:
+                logger.info(f"Slide model: {cfg.slide_model_type.name}")
+                logger.info(f"Patch encoder: {model_type.name}")
+            logger.info(f"Slide batch size: {cfg.slide_batch_size}")
+
+            # Skip H5 output if save_features_to_h5=false mode is enabled
+            output_h5_paths = None if not cfg.save_features_to_h5 else [r["output_h5_path"] for r in slide_results]
+            output_pt_paths = [r["output_pt_path"] for r in slide_results]
+
             aggregate_slide_features_batch(
                 patch_features_h5_paths=intermediate_h5_paths,
-                output_h5_paths=patch_encoder_h5_paths,
-                output_pt_paths=patch_encoder_pt_paths,
-                aggregation_method="mean",  # Simple aggregation for patch encoder
-                model_type=None,
-                model_path=None,
-                use_gpu=False,
-                gpu_device_id=None,
-                gpu_device_ids=None,
+                output_h5_paths=output_h5_paths,
+                output_pt_paths=output_pt_paths,
+                aggregation_method=cfg.aggregation_method,
+                model_type=cfg.slide_model_type,
+                model_path=slide_model_path,
+                use_gpu=cfg.use_gpu,
+                gpu_device_id=cfg.gpu_device_id,
+                gpu_device_ids=cfg.gpu_device_ids,
                 slide_batch_size=cfg.slide_batch_size,
             )
-
-        # Phase 3: Batch aggregate to slide level
-        logger.info(
-            f"\n=== Phase 3: Batch aggregating {len(slide_results)} slides (aggregation_method={cfg.aggregation_method}) ==="
-        )
-
-        # Skip H5 output if save_features_to_h5=false mode is enabled
-        output_h5_paths = None if not cfg.save_features_to_h5 else [r["output_h5_path"] for r in slide_results]
-        output_pt_paths = [r["output_pt_path"] for r in slide_results]
-
-        aggregate_slide_features_batch(
-            patch_features_h5_paths=intermediate_h5_paths,
-            output_h5_paths=output_h5_paths,
-            output_pt_paths=output_pt_paths,
-            aggregation_method=cfg.aggregation_method,
-            model_type=cfg.slide_model_type,
-            model_path=slide_model_path,
-            use_gpu=cfg.use_gpu,
-            gpu_device_id=cfg.gpu_device_id,
-            gpu_device_ids=cfg.gpu_device_ids,
-            slide_batch_size=cfg.slide_batch_size,
-        )
         
         # If save_features_to_h5=false, strip features from intermediate tile_h5 files (keep coords only)
         if not cfg.save_features_to_h5:
@@ -927,6 +968,9 @@ def _main_batch(
             logger.info(f"Converted {len(intermediate_h5_paths)} tile_h5 files to coords-only")
     else:
         # Single-step: extract directly to final output (no aggregation)
+        logger.info(f"\n=== Single-step extraction: {model_type.name} ===")
+        logger.info(f"Batch size: {get_batch_size_for_model(cfg, model_type)}")
+        
         if not cfg.save_features_to_h5:
             # save_features_to_h5=false mode: extract to temp, save PT + coords-only H5
             temp_h5_dir = tempfile.mkdtemp()
@@ -1025,7 +1069,7 @@ def _main_batch(
     logger.info(f"Output directory: {cfg.output_dir}")
 
 
-@resolve_remote_paths()
+@resolve_remote_paths('model_path', 'prefilter_model_path', 'model_dir', 'slide_model_path', 'classifier_pkl', auto_detect=False)
 def _main_batch_multi_model(cfg: TessellateExtractFeaturesConfig):
     """Process multiple slides with multiple models, optimized by grouping models with same patch size."""
     from collections import defaultdict
@@ -1123,7 +1167,11 @@ def _main_batch_multi_model(cfg: TessellateExtractFeaturesConfig):
 
         # Process patch-level models
         for model in group["patch"]:
-            logger.info(f"\n--- Patch model: {model.name} ---")
+            logger.info(f"\n{'=' * 60}")
+            logger.info(f"Processing patch model: {model.name}")
+            logger.info(f"Patch size: {patch_size}px")
+            logger.info(f"{'=' * 60}")
+            
             cfg_copy.model_type = model
             cfg_copy.slide_model_type = None
             cfg_copy.aggregation_method = "identity"
@@ -1147,11 +1195,14 @@ def _main_batch_multi_model(cfg: TessellateExtractFeaturesConfig):
 
         # Process slide-level models (with slide batching!)
         for model in group["slide"]:
-            logger.info(f"\n--- Slide model: {model.name} ---")
-
+            logger.info(f"\n{'=' * 60}")
+            logger.info(f"Processing slide model: {model.name}")
+            
             # Infer required patch encoder
             patch_encoder = get_required_patch_encoder(model)
-            logger.info(f"Using patch encoder: {patch_encoder.name}")
+            logger.info(f"Patch encoder: {patch_encoder.name}")
+            logger.info(f"Patch size: {patch_size}px")
+            logger.info(f"{'=' * 60}")
 
             cfg_copy.model_type = patch_encoder
             cfg_copy.slide_model_type = model

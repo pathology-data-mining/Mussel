@@ -536,6 +536,24 @@ DOCKEREOF
                 # Temporary working directories
                 mkdir -p /mnt/batch/tasks/workitems/tmp
                 chmod -R 777 /mnt/batch/tasks/workitems
+                
+                # Setup automatic cleanup (from scripts/azure_batch/setup_automatic_cleanup.sh)
+                echo 'Setting up automatic cleanup cron job...'
+                cat > /opt/cleanup_batch.sh << 'CLEANUP_SCRIPT_END'
+#!/bin/bash
+# Automatic cleanup - runs daily
+/usr/bin/find /mnt/batch/tasks/workitems/tmp -type f -mtime +1 -delete 2>/dev/null || true
+/usr/bin/find /mnt/batch/tasks/workitems/tmp -type d -name 'mussel_work_*' -mtime +1 -delete 2>/dev/null || true
+/usr/bin/find /mnt/batch/tasks/workitems/tmp -type d -name '*wandb*' -mtime +1 -delete 2>/dev/null || true
+/usr/bin/find /mnt/batch/tasks/workitems/tmp -type d -name 'pymp-*' -mtime +1 -delete 2>/dev/null || true
+/usr/bin/find /tmp -type f -mtime +1 -delete 2>/dev/null || true
+echo \\"[$(date)] Automatic cleanup completed\\" >> /var/log/batch-cleanup.log
+CLEANUP_SCRIPT_END
+                chmod +x /opt/cleanup_batch.sh
+                (crontab -l 2>/dev/null || true; echo \\"0 2 * * * /opt/cleanup_batch.sh\\") | crontab -
+                /opt/cleanup_batch.sh
+                echo 'Automatic cleanup configured - runs daily at 2:00 AM'
+                
                 {model_download_cmd}
                 {pull_image_cmd}
                 # Add batch user to docker group
@@ -576,6 +594,24 @@ DOCKEREOF
                 chmod -R 777 /mnt/batch/tasks/cache
                 mkdir -p /mnt/batch/tasks/workitems/tmp
                 chmod -R 777 /mnt/batch/tasks/workitems
+                
+                # Setup automatic cleanup (from scripts/azure_batch/setup_automatic_cleanup.sh)
+                echo 'Setting up automatic cleanup cron job...'
+                cat > /opt/cleanup_batch.sh << 'CLEANUP_SCRIPT_END'
+#!/bin/bash
+# Automatic cleanup - runs daily
+/usr/bin/find /mnt/batch/tasks/workitems/tmp -type f -mtime +1 -delete 2>/dev/null || true
+/usr/bin/find /mnt/batch/tasks/workitems/tmp -type d -name 'mussel_work_*' -mtime +1 -delete 2>/dev/null || true
+/usr/bin/find /mnt/batch/tasks/workitems/tmp -type d -name '*wandb*' -mtime +1 -delete 2>/dev/null || true
+/usr/bin/find /mnt/batch/tasks/workitems/tmp -type d -name 'pymp-*' -mtime +1 -delete 2>/dev/null || true
+/usr/bin/find /tmp -type f -mtime +1 -delete 2>/dev/null || true
+echo \\"[$(date)] Automatic cleanup completed\\" >> /var/log/batch-cleanup.log
+CLEANUP_SCRIPT_END
+                chmod +x /opt/cleanup_batch.sh
+                (crontab -l 2>/dev/null || true; echo \\"0 2 * * * /opt/cleanup_batch.sh\\") | crontab -
+                /opt/cleanup_batch.sh
+                echo 'Automatic cleanup configured - runs daily at 2:00 AM'
+                
                 {model_download_cmd}
                 {pull_image_cmd}
                 usermod -aG docker _azbatch
@@ -722,8 +758,6 @@ DOCKEREOF
         slide_path: str = None,
         slide_paths: Optional[List[str]] = None,
         slide_ids: Optional[List[str]] = None,
-        output_h5_path: str = None,
-        output_pt_path: str = None,
         output_dir_for_batch: Optional[str] = None,
         intermediate_h5_path: Optional[str] = None,
         aggregation_method: str = "identity",
@@ -735,6 +769,7 @@ DOCKEREOF
         prefilter_model_path: Optional[str] = None,
         model_types: Optional[str] = None,
         model_path: Optional[str] = None,
+        model_dir: Optional[str] = None,
         slide_model_paths: Optional[str] = None,
         model_cache_dir: Optional[str] = None,
         seg_config_group: Optional[str] = None,
@@ -776,24 +811,21 @@ DOCKEREOF
                 If provided, scripts will be downloaded at runtime instead of using bundled versions.
                 This allows updating scripts without rebuilding the container.
 
-        Supports both single-slide and multi-slide batch processing.
-        For batch processing, provide slide_paths and slide_ids instead of slide_path.
+        All tasks use multi-slide processing mode for consistent output staging.
+        Provide slide_paths and slide_ids (or a single slide_path for backward compatibility).
         """
         print(f"Submitting task '{task_id}' to job '{job_id}'...")
 
         # Build environment variables
         env_vars = []
 
-        # Handle batch vs single slide processing
-        if slide_paths and len(slide_paths) > 1:
-            # Batch processing mode
+        # Always use batch processing mode (even for single slides)
+        # This simplifies the code and ensures consistent output staging
+        if slide_paths:
             env_vars.extend(
                 [
                     batchmodels.EnvironmentSetting(
                         name="SLIDE_PATHS", value=",".join(slide_paths)
-                    ),
-                    batchmodels.EnvironmentSetting(
-                        name="OUTPUT_DIR", value=output_dir_for_batch
                     ),
                     batchmodels.EnvironmentSetting(
                         name="SLIDE_BATCH_SIZE", value=str(slide_batch_size)
@@ -806,29 +838,18 @@ DOCKEREOF
                         name="SLIDE_IDS", value=",".join(slide_ids)
                     )
                 )
-        else:
-            # Single slide mode (backward compatible)
-            # If slide_paths has one element, use it; otherwise use slide_path parameter
-            if slide_paths and not slide_path:
-                slide_path = slide_paths[0]
+        elif slide_path:
+            # Convert single slide_path to list for consistency
             env_vars.extend(
                 [
-                    batchmodels.EnvironmentSetting(name="SLIDE_PATH", value=slide_path),
                     batchmodels.EnvironmentSetting(
-                        name="OUTPUT_H5_PATH", value=output_h5_path
+                        name="SLIDE_PATHS", value=slide_path
                     ),
                     batchmodels.EnvironmentSetting(
-                        name="OUTPUT_PT_PATH", value=output_pt_path
+                        name="SLIDE_BATCH_SIZE", value=str(slide_batch_size)
                     ),
                 ]
             )
-            # Also set OUTPUT_DIR if remote output is requested (for upload support)
-            if output_dir_for_batch:
-                env_vars.append(
-                    batchmodels.EnvironmentSetting(
-                        name="OUTPUT_DIR", value=output_dir_for_batch
-                    )
-                )
 
         # Common environment variables
         common_env_vars = [
@@ -994,6 +1015,12 @@ DOCKEREOF
                     name="POSTFILTER_MODEL_PATH", value=model_path
                 )
             )
+        if model_dir:
+            env_vars.append(
+                batchmodels.EnvironmentSetting(
+                    name="MODEL_DIR", value=model_dir
+                )
+            )
         if slide_model_paths:
             env_vars.append(
                 batchmodels.EnvironmentSetting(
@@ -1140,12 +1167,21 @@ DOCKEREOF
             from datetime import datetime, timedelta
             from azure.storage.blob import generate_container_sas, ContainerSasPermissions
             
-            # Extract container and path from output_dir_for_batch (az://container/path format)
-            if output_dir_for_batch.startswith("az://"):
+            # Extract container and path from output_dir_for_batch (azblob://container/path or az://container/path format)
+            if output_dir_for_batch.startswith("azblob://"):
+                parts = output_dir_for_batch.replace("azblob://", "").split("/", 1)
+                output_container = parts[0]
+                output_path_prefix = parts[1] if len(parts) > 1 else ""
+            elif output_dir_for_batch.startswith("az://"):
                 parts = output_dir_for_batch.replace("az://", "").split("/", 1)
                 output_container = parts[0]
                 output_path_prefix = parts[1] if len(parts) > 1 else ""
+            else:
+                # Skip output file staging for non-Azure paths
+                output_container = None
+                output_path_prefix = None
                 
+            if output_container:
                 # Ensure output container exists
                 try:
                     from azure.storage.blob import BlobServiceClient
@@ -1304,11 +1340,11 @@ DOCKEREOF
         try:
             self.batch_client.task.add(job_id, task)
 
-            # Store task metadata for failure tracking
+            # Store task metadata for failure tracking and manifest generation
             self.task_metadata[task_id] = {
                 "slide_path": slide_path,
-                "output_h5_path": output_h5_path,
-                "output_pt_path": output_pt_path,
+                "model_types": model_types,
+                "output_dir": output_dir_for_batch,
             }
             if intermediate_h5_path:
                 self.task_metadata[task_id]["intermediate_h5_path"] = (
@@ -1407,12 +1443,8 @@ DOCKEREOF
             # Create task with staged path
             task_id = slide_id
 
-            # For multi-model, base output paths use the first model's directory
-            # The bash script will handle creating model-specific subdirectories
-            base_prefix = output_s3_prefix.rstrip("/") if output_s3_prefix else "output"
-            output_h5_path = f"{base_prefix}/{model_type}/h5/{slide_id}_features.h5"
-            output_pt_path = f"{base_prefix}/{model_type}/pt/{slide_id}_features.pt"
             # Only set intermediate_h5_path if aggregation method requires it
+            base_prefix = output_s3_prefix.rstrip("/") if output_s3_prefix else "output"
             if self._should_set_intermediate_h5_path(
                 default_params.get("aggregation_method")
             ):
@@ -1424,8 +1456,6 @@ DOCKEREOF
             merged_config = {**default_params}
             merged_config["task_id"] = task_id
             merged_config["slide_path"] = azfiles_path
-            merged_config["output_h5_path"] = output_h5_path
-            merged_config["output_pt_path"] = output_pt_path
             if intermediate_h5_path:
                 merged_config["intermediate_h5_path"] = intermediate_h5_path
 
@@ -1443,8 +1473,6 @@ DOCKEREOF
                 job_id=job_id,
                 task_id=merged_config["task_id"],
                 slide_path=merged_config["slide_path"],
-                output_h5_path=merged_config["output_h5_path"],
-                output_pt_path=merged_config["output_pt_path"],
                 intermediate_h5_path=merged_config.get("intermediate_h5_path"),
                 aggregation_method=merged_config.get("aggregation_method", "identity"),
                 classifier_pkl=merged_config.get("classifier_pkl"),
@@ -1455,6 +1483,7 @@ DOCKEREOF
                 prefilter_model_path=merged_config.get("prefilter_model_path"),
                 model_types=merged_config.get("model_types"),
                 model_path=merged_config.get("model_path"),
+                model_dir=merged_config.get("model_dir"),
                 slide_model_types=merged_config.get("slide_model_types"),
                 slide_model_paths=merged_config.get("slide_model_paths"),
                 model_cache_dir=merged_config.get("model_cache_dir"),
@@ -1807,22 +1836,15 @@ DOCKEREOF
                     print(f"  Models: {', '.join(models_to_process)}")
                     print(f"  Slides: {', '.join(slide_ids)}")
 
-                    # Use output prefix as-is (CLI will add model subdirectory)
-                    if output_s3_prefix:
-                        # Convert azblob:// to az:// for fsspec compatibility
-                        output_dir_for_batch = self.convert_azblob_to_fsspec_url(output_s3_prefix.rstrip('/'))
-                    else:
-                        # Use relative path - output files will be in $AZ_BATCH_TASK_WORKING_DIR/output
-                        # and will be staged to blob storage via Azure Batch output file staging
-                        output_dir_for_batch = "output"
-
                     # Submit batch task
+                    # output_dir_for_batch should be the remote Azure blob path for output file staging
+                    # The local path is always hardcoded to "output" in the CLI command
                     self.submit_task(
                     job_id=job_id,
                     task_id=batch_id,
                     slide_paths=slide_paths_batch,
                     slide_ids=slide_ids,
-                    output_dir_for_batch=output_dir_for_batch,
+                    output_dir_for_batch=output_s3_prefix,
                     slide_batch_size=model_params.get("slide_batch_size", 8),
                     aggregation_method=model_params.get(
                         "aggregation_method", "identity"
@@ -1837,6 +1859,7 @@ DOCKEREOF
                     prefilter_model_path=model_params.get("prefilter_model_path"),
                     model_types=model_params.get("model_types"),
                     model_path=model_params.get("model_path"),
+                    model_dir=model_params.get("model_dir"),
                     slide_model_types=model_params.get("slide_model_types"),
                     slide_model_paths=model_params.get("slide_model_paths"),
                     model_cache_dir=model_params.get("model_cache_dir"),
@@ -2048,8 +2071,34 @@ DOCKEREOF
             if task_metadata and task_id in task_metadata:
                 metadata = task_metadata[task_id]
                 task_info["slide_path"] = metadata.get("slide_path", "")
-                task_info["output_h5_path"] = metadata.get("output_h5_path", "")
-                task_info["output_pt_path"] = metadata.get("output_pt_path", "")
+                
+                # Extract slide_id from slide_path
+                slide_path = metadata.get("slide_path", "")
+                if slide_path:
+                    # Get filename from path (handles azblob:// and s3:// URLs)
+                    filename = slide_path.split('/')[-1]
+                    slide_id = filename.rsplit('.', 1)[0]  # Remove extension
+                    task_info["slide_id"] = slide_id
+                    
+                    # Generate expected output paths for each model
+                    output_dir = metadata.get("output_dir", "")
+                    model_types = metadata.get("model_types", "")
+                    
+                    if output_dir and model_types:
+                        # Parse model_types (can be comma-separated string or already a list)
+                        if isinstance(model_types, str):
+                            models = [m.strip() for m in model_types.split(',')]
+                        else:
+                            models = model_types if isinstance(model_types, list) else [model_types]
+                        
+                        # Generate output paths for each model
+                        task_info["model_types"] = ','.join(models)
+                        output_paths = []
+                        for model in models:
+                            # Expected output format: {output_dir}/{model}/h5/{slide_id}.h5
+                            h5_path = f"{output_dir}/{model}/h5/{slide_id}.h5"
+                            output_paths.append(h5_path)
+                        task_info["output_h5_paths"] = ';'.join(output_paths)
 
                 # Add intermediate path if present
                 if "intermediate_h5_path" in metadata:
@@ -2067,36 +2116,12 @@ DOCKEREOF
                         if not isinstance(value, (dict, list)):
                             task_info[f"config_{key}"] = value
 
-                # Extract model type from output path
-                output_h5 = metadata.get("output_h5_path", "")
-                if "/" in output_h5:
-                    parts = output_h5.split("/")
-                    # Look for model type in path (e.g., /CTRANSPATH/h5/)
-                    for i, part in enumerate(parts):
-                        if i < len(parts) - 1 and parts[i + 1] in [
-                            "h5",
-                            "pt",
-                            "tile_h5",
-                        ]:
-                            task_info["model_type"] = part
-                            break
-
-                # Extract file type from path
-                if output_h5.endswith(".h5"):
-                    if "tile" in output_h5:
-                        task_info["file_type"] = "tile_h5"
-                    else:
-                        task_info["file_type"] = "h5"
             else:
                 # Extract from environment variables if available
                 if task.environment_settings:
                     for env_var in task.environment_settings:
                         if env_var.name == "SLIDE_PATH":
                             task_info["slide_path"] = env_var.value
-                        elif env_var.name == "OUTPUT_H5_PATH":
-                            task_info["output_h5_path"] = env_var.value
-                        elif env_var.name == "OUTPUT_PT_PATH":
-                            task_info["output_pt_path"] = env_var.value
                         elif env_var.name == "INTERMEDIATE_H5_PATH":
                             task_info["intermediate_h5_path"] = env_var.value
                         elif env_var.name == "PREFILTER_MODEL_TYPE":
@@ -3368,8 +3393,6 @@ def main():
             job_id=args.job_id,
             task_id=args.task_id,
             slide_path=args.slide_path,
-            output_h5_path=args.output_h5_path,
-            output_pt_path=args.output_pt_path,
             aws_access_key_id=args.aws_access_key_id,
             aws_secret_access_key=args.aws_secret_access_key,
             aws_region=args.aws_region,
