@@ -3103,6 +3103,12 @@ def main():
                     slides = list(reader)
                 
                 print(f"[Azure Blob] Staging {len(slides)} slides...")
+                
+                # Batch-load all existing blobs for efficient checking
+                print(f"[Azure Blob] Loading existing blob list for fast lookup...")
+                existing_blobs = submitter.azure_blob_staging.get_blob_set()
+                print(f"[Azure Blob] Found {len(existing_blobs)} existing blobs in storage")
+                
                 for slide in slides:
                     # Handle different column names flexibly
                     slide_id = slide.get("slide_id") or slide.get("sample_id") or slide.get("image_id")
@@ -3114,13 +3120,14 @@ def main():
                     slide_filename = os.path.basename(slide_path)
                     
                     # Check if already staged to blob (in slides/ or revision_slides/)
+                    # Use the pre-loaded set for O(1) lookup instead of API calls
                     possible_blob_names = [
                         f"slides/{slide_filename}",
                         f"revision_slides/{slide_filename}",
                     ]
                     already_staged_name = None
                     for blob_name in possible_blob_names:
-                        if submitter.azure_blob_staging.blob_exists(blob_name):
+                        if blob_name in existing_blobs:
                             already_staged_name = blob_name
                             break
                     
