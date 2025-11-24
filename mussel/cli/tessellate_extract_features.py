@@ -72,49 +72,9 @@ def _safe_path_join(base_path, *parts):
 defaults = ["_self_", {"seg_config": "default"}]
 
 
-def resolve_model_path(model_path: Optional[str], model_dir: Optional[str], model_type: ModelType) -> Optional[str]:
-    """
-    Resolve model path, handling both direct model_path and model_dir.
-
-    Supports both local and remote paths (az://, s3://, etc.). Remote paths
-    will be downloaded to a cache directory.
-
-    Priority:
-    1. If model_path is provided, use it (download if remote)
-    2. Otherwise, try to find model in model_dir (download model_dir if remote)
-
-    Args:
-        model_path: Direct path to model weights (local or remote)
-        model_dir: Directory containing pre-downloaded models (local or remote)
-        model_type: ModelType enum
-
-    Returns:
-        Local path to model if found, None otherwise
-    """
-    # If model_path is directly provided, download if remote
-    if model_path is not None:
-        if _is_remote_path(model_path):
-            logger.info(f"Downloading remote model_path: {model_path}")
-            try:
-                return download_model_path(model_path)
-            except Exception as e:
-                logger.error(f"Failed to download remote model_path {model_path}: {e}")
-                return None
-        return model_path
-
-    # Otherwise, try to find model in model_dir
-    if model_dir is not None:
-        return get_model_path_from_dir(model_dir, model_type)
-
-    return None
-
-
 def get_model_path_from_dir(model_dir: Optional[str], model_type: ModelType) -> Optional[str]:
     """
     Get model path from model_dir if available.
-
-    Note: Remote paths should be resolved via @resolve_remote_paths decorator before calling this.
-    This function expects local paths.
 
     Args:
         model_dir: Directory containing pre-downloaded models (should be local)
@@ -169,6 +129,38 @@ def get_model_path_from_dir(model_dir: Optional[str], model_type: ModelType) -> 
     return None
 
 
+def get_classifier_pkl_from_model_dir(model_dir: Optional[str], classifier_pkl: Optional[str]) -> Optional[str]:
+    """
+    Get classifier pkl path. If classifier_pkl is None and model_dir is provided,
+    look for classifier.pkl in model_dir.
+
+    Args:
+        model_dir: Directory containing pre-downloaded models
+        classifier_pkl: Direct path to classifier pkl file
+
+    Returns:
+        Path to classifier pkl if found, None otherwise
+    """
+    if classifier_pkl is not None:
+        return classifier_pkl
+    
+    if model_dir is None:
+        return None
+    
+    model_dir_path = Path(model_dir)
+    if not model_dir_path.exists():
+        return None
+    
+    # Check for classifier.pkl in model_dir
+    classifier_file = model_dir_path / "classifier.pkl"
+    if classifier_file.exists() and classifier_file.is_file():
+        logger.info(f"Found classifier.pkl in model_dir: {classifier_file}")
+        return str(classifier_file)
+    
+    return None
+
+
+
 def get_batch_size_for_model(cfg, model_type) -> int:
     """
     Get the appropriate batch size for a given model type.
@@ -220,23 +212,15 @@ class TessellateExtractFeaturesConfig:
         classifier_pkl (Optional[str]): Path to the classifier model in pickle format for filtering. If None, filtering is skipped.
         classifier_threshold (float): Threshold for the classifier to filter features.
 
-    Model Parameters (Pre-Filter Extraction):
+    Model Parameters:
         prefilter_model_type (ModelType): Type of model for pre-filtering feature extraction.
             This is a PATCH-LEVEL encoder. Use a single value (e.g., CTRANSPATH).
-        prefilter_model_path (Optional[str]): Path to pre-filtering model weights, if applicable.
-
-    Model Parameters (Post-Filter Patch-Level Extraction):
         model_type (Optional[ModelType] or List[ModelType]): Type of model(s) for PATCH-LEVEL feature extraction.
             - Single mode: Accepts a single ModelType (e.g., model_type=OPTIMUS)
             - Batch mode: Accepts a list of ModelTypes for multi-model extraction
                          (e.g., model_type=[OPTIMUS,VIRCHOW,UNI])
             - Command line usage: model_type=[OPTIMUS,VIRCHOW] (no quotes around the list)
             - When using slide encoders, the appropriate patch encoder is automatically selected
-        model_path (Optional[str]): Path to model weights, if applicable.
-        intermediate_h5_path (Optional[str]): Path for intermediate patch features (single mode, two-step).
-        aggregation_method (str): Aggregation method for post-filtering: identity (single-step), mean/max/model (two-step).
-
-    Model Parameters (Slide-Level Aggregation):
         slide_model_type (Optional[ModelType] or List[ModelType]): Type of model(s) for SLIDE-LEVEL encoding.
             - Single mode: Accepts a single ModelType (e.g., slide_model_type=GIGAPATH_SLIDE)
             - Batch mode: Accepts a list of ModelTypes for multi-model slide encoding
@@ -246,12 +230,15 @@ class TessellateExtractFeaturesConfig:
                 * GIGAPATH_SLIDE requires GIGAPATH patch encoder
                 * TITAN_SLIDE requires CONCH1_5 patch encoder
             - The required patch encoder is automatically paired and run as needed
-        slide_model_path (Optional[str]): Path to slide encoder model weights for post-filtering.
-        model_dir (Optional[str]): Directory containing pre-downloaded models (used in multi-model mode).
+        model_dir (Optional[str]): Directory containing pre-downloaded models.
             - When specified, the system looks for model subdirectories named after each model type
             - For example: /mnt/batch_models/GIGAPATH_SLIDE, /mnt/batch_models/CONCH1_5
+            - Can also contain classifier_pkl file for filtering
             - This allows using cached/staged models instead of downloading from HuggingFace Hub
             - Particularly useful in batch processing environments (e.g., Azure Batch)
+        pre_download_models (bool): Whether to pre-download models to model_dir before processing.
+        intermediate_h5_path (Optional[str]): Path for intermediate patch features (single mode, two-step).
+        aggregation_method (str): Aggregation method for post-filtering: identity (single-step), mean/max/model (two-step).
 
     Visualization Parameters (Single Mode):
         output_png_dir (Optional[str]): Directory to save patches as PNG files (post-filtering).
@@ -296,9 +283,9 @@ class TessellateExtractFeaturesConfig:
     classifier_pkl: Optional[str] = None
     classifier_threshold: float = 0.75
     prefilter_model_type: ModelType = ModelType.CTRANSPATH
-    prefilter_model_path: Optional[str] = None
     model_type: Any = None  # Can be ModelType or List[ModelType]
-    model_path: Optional[str] = None
+    model_dir: Optional[str] = None  # Directory containing pre-downloaded models
+    pre_download_models: bool = False  # Whether to pre-download models to model_dir
     # Single mode visualization
     output_png_dir: Optional[str] = None
     output_mask_path: Optional[str] = None
@@ -327,8 +314,6 @@ class TessellateExtractFeaturesConfig:
     intermediate_h5_path: Optional[str] = None
     aggregation_method: str = "identity"
     slide_model_type: Any = None  # Can be ModelType or List[ModelType]
-    slide_model_path: Optional[str] = None
-    model_dir: Optional[str] = None  # Directory containing pre-downloaded models (used in multi-model mode)
 
     def __post_init__(self):
         """Set default patch size based on model type if not explicitly set."""
@@ -531,7 +516,7 @@ def main(
             _main_single(cfg)
 
 
-@resolve_remote_paths('model_path', 'prefilter_model_path', 'model_dir', 'slide_model_path', 'classifier_pkl', auto_detect=False)
+@resolve_remote_paths('model_dir', 'classifier_pkl', auto_detect=False)
 def _main_single(cfg: TessellateExtractFeaturesConfig):
     """Process a single slide."""
     # Check if output_dir is provided instead of output_h5_path/output_pt_path
@@ -572,8 +557,11 @@ def _main_single(cfg: TessellateExtractFeaturesConfig):
         temp_dir = tempfile.mkdtemp()
         logger.info(f"Using temporary directory for intermediate files: {temp_dir}")
 
+    # Resolve classifier_pkl from model_dir if not explicitly provided
+    classifier_pkl = get_classifier_pkl_from_model_dir(cfg.model_dir, cfg.classifier_pkl)
+    
     # Determine if filtering is enabled
-    use_filtering = cfg.classifier_pkl is not None
+    use_filtering = classifier_pkl is not None
 
     # Determine models for each extraction step
     model_type = cfg.model_type
@@ -599,19 +587,19 @@ def _main_single(cfg: TessellateExtractFeaturesConfig):
         else:
             model_type = cfg.prefilter_model_type
 
-    # Resolve model paths (handles both direct model_path and model_dir)
-    model_path_base = cfg.model_path if cfg.model_path is not None else cfg.prefilter_model_path
-    model_path = resolve_model_path(model_path_base, cfg.model_dir, model_type)
+    # Resolve model paths from model_dir
+    model_path = get_model_path_from_dir(cfg.model_dir, model_type)
+    prefilter_model_path = get_model_path_from_dir(cfg.model_dir, cfg.prefilter_model_type)
 
     # Resolve slide model path if using model aggregation
     slide_model_path = None
     if cfg.slide_model_type:
-        slide_model_path = resolve_model_path(cfg.slide_model_path, cfg.model_dir, cfg.slide_model_type)
+        slide_model_path = get_model_path_from_dir(cfg.model_dir, cfg.slide_model_type)
 
     # Optimization: If filtering is enabled and models are the same, skip second extraction
     models_are_same = (
         model_type == cfg.prefilter_model_type
-        and model_path == cfg.prefilter_model_path
+        and model_path == prefilter_model_path
     )
     skip_second_extraction = use_filtering and models_are_same
 
@@ -626,7 +614,7 @@ def _main_single(cfg: TessellateExtractFeaturesConfig):
         base_path=base_path,
         use_filtering=use_filtering,
         prefilter_model_type=cfg.prefilter_model_type,
-        prefilter_model_path=cfg.prefilter_model_path,
+        prefilter_model_path=prefilter_model_path,
         model_type=model_type,
         model_path=model_path,
         skip_second_extraction=skip_second_extraction,
@@ -659,7 +647,7 @@ def _main_single(cfg: TessellateExtractFeaturesConfig):
         logger.info("Cleaned up temporary files.")
 
 
-@resolve_remote_paths('model_path', 'prefilter_model_path', 'model_dir', 'slide_model_path', 'classifier_pkl', auto_detect=False)
+@resolve_remote_paths('model_dir', 'classifier_pkl', auto_detect=False)
 def _main_batch(
     cfg: TessellateExtractFeaturesConfig, patch_output_dir: Optional[str] = None
 ):
@@ -696,8 +684,11 @@ def _main_batch(
         temp_dir = tempfile.mkdtemp()
         logger.info(f"Using temporary directory for intermediate files: {temp_dir}")
 
+    # Resolve classifier_pkl from model_dir if not explicitly provided
+    classifier_pkl = get_classifier_pkl_from_model_dir(cfg.model_dir, cfg.classifier_pkl)
+    
     # Determine if filtering is enabled
-    use_filtering = cfg.classifier_pkl is not None
+    use_filtering = classifier_pkl is not None
 
     # Determine models for each extraction step
     model_type = cfg.model_type
@@ -723,19 +714,19 @@ def _main_batch(
         else:
             model_type = cfg.prefilter_model_type
 
-    # Resolve model paths (handles both direct model_path and model_dir)
-    model_path_base = cfg.model_path if cfg.model_path is not None else cfg.prefilter_model_path
-    model_path = resolve_model_path(model_path_base, cfg.model_dir, model_type)
+    # Resolve model paths from model_dir
+    model_path = get_model_path_from_dir(cfg.model_dir, model_type)
+    prefilter_model_path = get_model_path_from_dir(cfg.model_dir, cfg.prefilter_model_type)
 
     # Resolve slide model path if using model aggregation
     slide_model_path = None
     if cfg.slide_model_type:
-        slide_model_path = resolve_model_path(cfg.slide_model_path, cfg.model_dir, cfg.slide_model_type)
+        slide_model_path = get_model_path_from_dir(cfg.model_dir, cfg.slide_model_type)
 
     # Optimization: If filtering is enabled and models are the same, skip second extraction
     models_are_same = (
         model_type == cfg.prefilter_model_type
-        and model_path == cfg.prefilter_model_path
+        and model_path == prefilter_model_path
     )
     skip_second_extraction = use_filtering and models_are_same
 
@@ -767,7 +758,7 @@ def _main_batch(
             base_path=output_dir_str,
             use_filtering=use_filtering,
             prefilter_model_type=cfg.prefilter_model_type,
-            prefilter_model_path=cfg.prefilter_model_path,
+            prefilter_model_path=prefilter_model_path,
             skip_second_extraction=skip_second_extraction,
             output_mask_path=output_mask_path,
         )
@@ -812,6 +803,9 @@ def _main_batch(
     patch_h5_paths = [r["final_coords_h5_path"] for r in slide_results]
     slide_paths = [r["slide_path"] for r in slide_results]
 
+    # Track all h5 files created for potential feature stripping
+    h5_files_to_strip = []
+
     # Determine if we need two-step processing (patch features + slide aggregation)
     use_two_step = cfg.aggregation_method != "identity"
 
@@ -845,9 +839,11 @@ def _main_batch(
             is_test_run=False,
         )
 
-        # Add intermediate paths to results
+        # Add intermediate paths to results and track for feature stripping
         for r, intermediate_h5_path in zip(slide_results, intermediate_h5_paths):
             r["intermediate_h5_path"] = intermediate_h5_path
+            if not cfg.save_features_to_h5:
+                h5_files_to_strip.append(intermediate_h5_path)
 
         # If patch_output_dir is specified, also save patch encoder features
         if patch_output_dir:
@@ -889,8 +885,8 @@ def _main_batch(
                 )
                 with h5py.File(intermediate_h5_path, "r") as f:
                     features = torch.from_numpy(f["features"][:])
-                    save_torch_tensor(pt_dest, features)
-                    logger.debug(f"Saved PT features to {pt_dest}")
+                save_torch_tensor(pt_dest, features)
+                logger.debug(f"Saved PT features to {pt_dest}")
                 
                 # Optionally copy/create h5 file with features
                 if cfg.save_features_to_h5:
@@ -902,6 +898,15 @@ def _main_batch(
                     if not _is_remote_path(h5_dest):
                         shutil.copy2(intermediate_h5_path, h5_dest)
                         logger.debug(f"Copied h5 features to {h5_dest}")
+                else:
+                    # Track the tile_h5 destination for stripping
+                    tile_h5_dest = _safe_path_join(
+                        patch_output_dir_str,
+                        "tile_h5",
+                        f"{r['slide_id']}.patch.h5",
+                    )
+                    if tile_h5_dest not in h5_files_to_strip and not _is_remote_path(tile_h5_dest):
+                        h5_files_to_strip.append(tile_h5_dest)
 
         # Phase 3: Batch aggregate to slide level OR copy patch features for tile encoders
         if patch_output_dir and cfg.slide_model_type is None:
@@ -926,8 +931,8 @@ def _main_batch(
                 pt_dest = r["output_pt_path"]
                 with h5py.File(intermediate_h5_path, "r") as f:
                     features = torch.from_numpy(f["features"][:])
-                    save_torch_tensor(pt_dest, features)
-                    logger.debug(f"Saved PT to {pt_dest}")
+                save_torch_tensor(pt_dest, features)
+                logger.debug(f"Saved PT to {pt_dest}")
         else:
             # True slide aggregation for models that aggregate patches
             logger.info(
@@ -955,17 +960,33 @@ def _main_batch(
                 slide_batch_size=cfg.slide_batch_size,
             )
         
-        # If save_features_to_h5=false, strip features from intermediate tile_h5 files (keep coords only)
-        if not cfg.save_features_to_h5:
-            logger.info("Converting tile_h5 files to coords-only (save_features_to_h5=false)")
-            for intermediate_h5_path in intermediate_h5_paths:
-                # Read coords, delete file, recreate with coords only
-                with h5py.File(intermediate_h5_path, "r") as f:
-                    coords = f["coords"][:]
-                os.remove(intermediate_h5_path)
-                with h5py.File(intermediate_h5_path, "w") as f:
-                    f.create_dataset("coords", data=coords, compression="gzip")
-            logger.info(f"Converted {len(intermediate_h5_paths)} tile_h5 files to coords-only")
+        # If save_features_to_h5=false, strip features from all tracked h5 files (keep coords only)
+        # This must be done AFTER aggregation since aggregation needs the features
+        if not cfg.save_features_to_h5 and h5_files_to_strip:
+            logger.info(f"Converting {len(h5_files_to_strip)} h5 files to coords-only (save_features_to_h5=false)")
+            for h5_path in h5_files_to_strip:
+                # Check if file still has features before stripping
+                try:
+                    if not os.path.exists(h5_path):
+                        logger.debug(f"Skipping non-existent file: {h5_path}")
+                        continue
+                    
+                    with h5py.File(h5_path, "r") as f:
+                        if "features" in f:
+                            coords = f["coords"][:]
+                            has_features = True
+                        else:
+                            has_features = False
+                    
+                    if has_features:
+                        # Delete file and recreate with coords only
+                        os.remove(h5_path)
+                        with h5py.File(h5_path, "w") as f:
+                            f.create_dataset("coords", data=coords, compression="gzip")
+                        logger.debug(f"Stripped features from {h5_path}")
+                except Exception as e:
+                    logger.warning(f"Could not strip features from {h5_path}: {e}")
+            logger.info("Feature stripping complete")
     else:
         # Single-step: extract directly to final output (no aggregation)
         logger.info(f"\n=== Single-step extraction: {model_type.name} ===")
@@ -1069,7 +1090,7 @@ def _main_batch(
     logger.info(f"Output directory: {cfg.output_dir}")
 
 
-@resolve_remote_paths('model_path', 'prefilter_model_path', 'model_dir', 'slide_model_path', 'classifier_pkl', auto_detect=False)
+@resolve_remote_paths('model_dir', 'classifier_pkl', auto_detect=False)
 def _main_batch_multi_model(cfg: TessellateExtractFeaturesConfig):
     """Process multiple slides with multiple models, optimized by grouping models with same patch size."""
     from collections import defaultdict
@@ -1176,8 +1197,8 @@ def _main_batch_multi_model(cfg: TessellateExtractFeaturesConfig):
             cfg_copy.slide_model_type = None
             cfg_copy.aggregation_method = "identity"
 
-            # Resolve model path from model_dir
-            cfg_copy.model_path = resolve_model_path(cfg.model_path, cfg.model_dir, model)
+            # Model path will be resolved from model_dir in _main_batch
+            # No need to set model_path here
 
             # Set output paths with model subdirectory
             model_output_dir = _safe_path_join(output_dir_str, model.name)
@@ -1208,9 +1229,8 @@ def _main_batch_multi_model(cfg: TessellateExtractFeaturesConfig):
             cfg_copy.slide_model_type = model
             cfg_copy.aggregation_method = "model"
 
-            # Resolve model paths from model_dir
-            cfg_copy.model_path = resolve_model_path(cfg.model_path, cfg.model_dir, patch_encoder)
-            cfg_copy.slide_model_path = resolve_model_path(cfg.slide_model_path, cfg.model_dir, model)
+            # Model paths will be resolved from model_dir in _main_batch
+            # No need to set model_path or slide_model_path here
 
             # Separate output directories: patch encoder features and slide encoder features
             slide_output_dir = _safe_path_join(output_dir_str, model.name)
