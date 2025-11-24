@@ -354,11 +354,22 @@ def stage_models_to_azure_files(
         if not local_path:
             continue
         
-        filename = os.path.basename(local_path)
-        remote_path = f"{remote_dir}/{filename}"
+        # Use model type as the directory name in Azure Files
+        # This preserves the model structure and makes it easy to copy to cache
+        model_name = model_type.replace("/", "_").replace(":", "_")
+        remote_model_dir = f"{remote_dir}/{model_name}"
         
-        staging.upload_file(local_path, remote_path)
-        staged_models[model_type] = remote_path
+        if os.path.isdir(local_path):
+            # Upload entire directory
+            print(f"[Azure Files] Staging directory {model_type}: {local_path}")
+            staging.upload_directory(local_path, remote_model_dir)
+        else:
+            # Upload single file
+            filename = os.path.basename(local_path)
+            remote_path = f"{remote_model_dir}/{filename}"
+            staging.upload_file(local_path, remote_path)
+        
+        staged_models[model_type] = remote_model_dir
     
     print(f"[Azure Files] Staged {len(staged_models)} models")
     return staged_models
