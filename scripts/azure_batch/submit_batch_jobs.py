@@ -82,7 +82,7 @@ try:
     from azure_files_staging import AzureFilesStaging, stage_models_to_azure_files
 except ImportError:
     print(
-        "WARNING: Could not import azure_files_staging module. Azure Files staging features will be unavailable."
+        "WARNING: Could not import azure_files_staging module. Azure Files model staging features will be unavailable."
     )
     AzureFilesStaging = None
     stage_models_to_azure_files = None
@@ -649,11 +649,12 @@ CLEANUP_SCRIPT_END
             max_task_retry_count=2,
         )
 
-        # Add Azure Files mount configuration if requested
+        # Add Azure Files mount configuration if Azure Files share is specified
+        # Azure Files is used for model staging only (not slides)
         mount_config = None
-        if mount_azure_files and self.azure_files_staging:
+        if self.azure_files_share_name:
             print(
-                f"  Configuring Azure Files mount: share '{self.azure_files_share_name}'"
+                f"  Configuring Azure Files mount: share '{self.azure_files_share_name}' (for models)"
             )
             mount_config = [
                 batchmodels.MountConfiguration(
@@ -803,12 +804,8 @@ CLEANUP_SCRIPT_END
         classifier_pkl: Optional[str] = None,
         classifier_threshold: float = 0.75,
         prefilter_model_types: Optional[str] = None,
-        prefilter_model_path: Optional[str] = None,
         model_types: Optional[str] = None,
-        model_path: Optional[str] = None,
         model_dir: Optional[str] = None,
-        slide_model_paths: Optional[str] = None,
-        model_cache_dir: Optional[str] = None,
         seg_config_group: Optional[str] = None,
         segment_threshold: Optional[int] = None,
         patch_size: Optional[int] = None,
@@ -1031,37 +1028,18 @@ CLEANUP_SCRIPT_END
                 )
             )
 
-        # Add model paths if provided
-        if prefilter_model_path:
-            env_vars.append(
-                batchmodels.EnvironmentSetting(
-                    name="PREFILTER_MODEL_PATH", value=prefilter_model_path
-                )
-            )
-        if model_path:
-            env_vars.append(
-                batchmodels.EnvironmentSetting(
-                    name="POSTFILTER_MODEL_PATH", value=model_path
-                )
-            )
+        # Add model_dir if provided
         if model_dir:
             env_vars.append(
                 batchmodels.EnvironmentSetting(
                     name="MODEL_DIR", value=model_dir
                 )
             )
-        if slide_model_paths:
-            env_vars.append(
-                batchmodels.EnvironmentSetting(
-                    name="SLIDE_MODEL_PATHS", value=slide_model_paths
-                )
-            )
-        # Set model cache directory (default to /mnt/batch/tasks/cache if not provided)
-        cache_dir = model_cache_dir or "/mnt/batch/tasks/cache"
+        
+        # Define cache directory
+        cache_dir = "/mnt/batch/tasks/cache"
+        
         env_vars.extend([
-            batchmodels.EnvironmentSetting(
-                name="MODEL_CACHE_DIR", value=cache_dir
-            ),
             # Set HuggingFace cache environment variables
             batchmodels.EnvironmentSetting(
                 name="HF_HOME", value=cache_dir
@@ -1205,11 +1183,11 @@ CLEANUP_SCRIPT_END
             if output_dir_for_batch.startswith("azblob://"):
                 parts = output_dir_for_batch.replace("azblob://", "").split("/", 1)
                 output_container = parts[0]
-                output_path_prefix = parts[1] if len(parts) > 1 else ""
+                output_path_prefix = parts[1].rstrip("/") if len(parts) > 1 else ""
             elif output_dir_for_batch.startswith("az://"):
                 parts = output_dir_for_batch.replace("az://", "").split("/", 1)
                 output_container = parts[0]
-                output_path_prefix = parts[1] if len(parts) > 1 else ""
+                output_path_prefix = parts[1].rstrip("/") if len(parts) > 1 else ""
             else:
                 # Skip output file staging for non-Azure paths
                 output_container = None
@@ -1398,12 +1376,8 @@ CLEANUP_SCRIPT_END
         classifier_pkl: Optional[str] = None,
         classifier_threshold: float = 0.75,
         prefilter_model_types: Optional[str] = None,
-        prefilter_model_path: Optional[str] = None,
         model_types: Optional[str] = None,
-        model_path: Optional[str] = None,
         model_dir: Optional[str] = None,
-        slide_model_paths: Optional[str] = None,
-        model_cache_dir: Optional[str] = None,
         seg_config_group: Optional[str] = None,
         segment_threshold: Optional[int] = None,
         patch_size: Optional[int] = None,
@@ -1456,12 +1430,8 @@ CLEANUP_SCRIPT_END
             classifier_pkl=classifier_pkl,
             classifier_threshold=classifier_threshold,
             prefilter_model_types=prefilter_model_types,
-            prefilter_model_path=prefilter_model_path,
             model_types=model_types,
-            model_path=model_path,
             model_dir=model_dir,
-            slide_model_paths=slide_model_paths,
-            model_cache_dir=model_cache_dir,
             seg_config_group=seg_config_group,
             segment_threshold=segment_threshold,
             patch_size=patch_size,
@@ -1514,167 +1484,6 @@ CLEANUP_SCRIPT_END
             print(f"Error submitting task: {e}")
             raise
 
-    def stage_and_submit_tasks_from_csv(
-        self,
-        job_id: str,
-        csv_file: str,
-        output_s3_prefix: Optional[str] = None,
-        container_image: str = "mskmind/mussel:latest-torch-gpu",
-        models: Optional[List[str]] = None,
-        slide_models: Optional[List[str]] = None,
-        remote_dir: str = "slides",
-        use_container_prepull: bool = False,
-        **default_params,
-    ) -> None:
-        """
-        Stage slides to Azure Files and submit tasks incrementally.
-
-        This method stages each slide to Azure Files and immediately submits
-        the corresponding task, allowing processing to start as soon as the
-        first slide is staged rather than waiting for all slides to be staged.
-
-        CSV format:
-            slide_id,slide_path
-            slide_001,s3://bucket/slides/slide_001.svs
-            slide_002,/local/path/slide_002.svs
-
-        Args:
-            job_id: Azure Batch job ID
-            csv_file: Path to CSV manifest file
-            output_s3_prefix: Output prefix for results (supports s3://, azblob://, azfiles://, https://, or local paths)
-            container_image: Docker image to use
-            models: List of model types to run sequentially in same task
-            remote_dir: Remote directory for slides in Azure Files
-            **default_params: Default parameters for all tasks (e.g., prefilter_model_type, batch_size)
-        """
-        if not self.azure_files_staging:
-            raise ValueError(
-                "Azure Files staging not configured. Provide storage account details and share name."
-            )
-
-        print(f"Loading task manifest from '{csv_file}'...")
-
-        # Get prefilter model type (used for directory organization when single model)
-        prefilter_model = default_params.get("prefilter_model_type", None)
-
-        # Determine model type for directory structure
-        if models and len(models) > 1:
-            # Multiple models - use first model for base directory, but actual paths will be model-specific
-            model_type = models[0]
-            print(
-                f"Will process each slide with {len(models)} models sequentially: {', '.join(models)}"
-            )
-        elif models and len(models) == 1:
-            model_type = models[0]
-        else:
-            # Single model from default_params or prefilter
-            model_type = default_params.get("model_type", prefilter_model)
-
-        # Read CSV and process slides one by one
-        tasks_submitted = 0
-        with open(csv_file, "r") as f:
-            reader = csv.DictReader(f)
-            slides = list(reader)
-
-        print(f"[Azure Files] Staging and submitting {len(slides)} slides...")
-        print(f"[Azure Files] Tasks will start processing as slides are staged")
-
-        for idx, row in enumerate(slides, 1):
-            slide_id = row["slide_id"]
-            slide_path = row["slide_path"]
-
-            # Stage slide to Azure Files
-            filename = os.path.basename(slide_path)
-            remote_path = f"{remote_dir}/{filename}"
-
-            print(f"[{idx}/{len(slides)}] Staging {slide_id}...")
-            self.azure_files_staging.upload_file(slide_path, remote_path)
-
-            # Create azfiles:// path
-            azfiles_path = f"azfiles://{self.storage_account_name}/{self.azure_files_share_name}/{remote_path}"
-
-            # Track for cleanup
-            self.staged_files.append(remote_path)
-
-            # Create task with staged path
-            task_id = slide_id
-
-            # Only set intermediate_h5_path if aggregation method requires it
-            base_prefix = output_s3_prefix.rstrip("/") if output_s3_prefix else "output"
-            if self._should_set_intermediate_h5_path(
-                default_params.get("aggregation_method")
-            ):
-                intermediate_h5_path = f"{base_prefix}/{model_type}/tile_h5/{slide_id}_tile_features.h5"
-            else:
-                intermediate_h5_path = None
-
-            # Merge with default parameters
-            merged_config = {**default_params}
-            merged_config["task_id"] = task_id
-            merged_config["slide_path"] = azfiles_path
-            if intermediate_h5_path:
-                merged_config["intermediate_h5_path"] = intermediate_h5_path
-
-            # Add model types as comma-separated list
-            if models:
-                merged_config["model_types"] = ",".join(models)
-            
-            # Add slide models as comma-separated list
-            if slide_models:
-                merged_config["slide_model_types"] = ",".join(slide_models)
-
-            # Submit task immediately
-            print(f"[{idx}/{len(slides)}] Submitting task for {slide_id}...")
-            self.submit_task(
-                job_id=job_id,
-                task_id=merged_config["task_id"],
-                slide_path=merged_config["slide_path"],
-                intermediate_h5_path=merged_config.get("intermediate_h5_path"),
-                aggregation_method=merged_config.get("aggregation_method", "identity"),
-                classifier_pkl=merged_config.get("classifier_pkl"),
-                classifier_threshold=merged_config.get("classifier_threshold", 0.75),
-                prefilter_model_types=merged_config.get(
-                    "prefilter_model_types", None
-                ),
-                prefilter_model_path=merged_config.get("prefilter_model_path"),
-                model_types=merged_config.get("model_types"),
-                model_path=merged_config.get("model_path"),
-                model_dir=merged_config.get("model_dir"),
-                slide_model_types=merged_config.get("slide_model_types"),
-                slide_model_paths=merged_config.get("slide_model_paths"),
-                model_cache_dir=merged_config.get("model_cache_dir"),
-                seg_config_group=merged_config.get("seg_config_group"),
-                segment_threshold=merged_config.get("segment_threshold"),
-                patch_size=merged_config.get("patch_size"),
-                step_size=merged_config.get("step_size"),
-                mpp=merged_config.get("mpp"),
-                seg_level=merged_config.get("seg_level"),
-                segment_max_value=merged_config.get("segment_max_value"),
-                median_blur_ksize=merged_config.get("median_blur_ksize"),
-                morphology_ex_kernel=merged_config.get("morphology_ex_kernel"),
-                ref_patch_size=merged_config.get("ref_patch_size"),
-                use_otsu=merged_config.get("use_otsu"),
-                tissue_area_threshold=merged_config.get("tissue_area_threshold"),
-                hole_area_threshold=merged_config.get("hole_area_threshold"),
-                max_num_holes=merged_config.get("max_num_holes"),
-                num_workers=merged_config.get("num_workers", 4),
-                batch_size=merged_config.get("batch_size", 64),
-                use_gpu=merged_config.get("use_gpu", True),
-                keep_intermediate_files=merged_config.get(
-                    "keep_intermediate_files", False
-                ),
-                hf_token=merged_config.get("hf_token"),
-                aws_access_key_id=merged_config.get("aws_access_key_id"),
-                aws_secret_access_key=merged_config.get("aws_secret_access_key"),
-                aws_region=merged_config.get("aws_region"),
-                max_retry_count=merged_config.get("max_retry_count", 3),
-                container_image=container_image,
-                cleanup_staged_file=True,  # Enable per-task cleanup for staged files
-                use_container_prepull=use_container_prepull,
-            )
-            tasks_submitted += 1
-
-        print(f"\n[Azure Files] Staged and submitted {tasks_submitted} tasks")
 
     def submit_tasks_from_csv(
         self,
@@ -1749,6 +1558,9 @@ CLEANUP_SCRIPT_END
         print(f"Will create separate tasks for {len(models_to_process)} models: {', '.join(models_to_process)}")
         print(f"  Patch-level models: {', '.join(all_models) if all_models else 'None'}")
         print(f"  Slide-level models: {', '.join(all_slide_models) if all_slide_models else 'None'}")
+
+        # Extract model_dir from default_params if provided
+        model_dir = default_params.get("model_dir", None)
 
         # Read all slides from CSV
         slides = []
@@ -1829,11 +1641,90 @@ CLEANUP_SCRIPT_END
             print(f"\n[Batch Encoding Optimization] Enabled")
             print(f"  Grouping slides into batches of {slides_per_task}")
         
-            # Stage model files to Azure Files if enabled
-            if self.azure_files_staging:
-                # Stage classifier model
+            # Stage model directory to Azure Files if enabled and model_dir is specified
+            local_model_dir = default_params.get("model_dir")
+            if self.azure_files_staging and local_model_dir:
+                self.log(f"\n[Azure Files] Staging models from: {local_model_dir}")
+                
+                # Check if model_dir is a local path
+                if not local_model_dir.startswith(("s3://", "azfiles://", "azblob://", "http://", "https://")):
+                    if os.path.exists(local_model_dir) and os.path.isdir(local_model_dir):
+                        # Upload entire model directory to Azure Files
+                        self.log(f"  Uploading model directory contents...")
+                        
+                        # Upload both files and subdirectories
+                        for item_name in os.listdir(local_model_dir):
+                            item_path = os.path.join(local_model_dir, item_name)
+                            
+                            if os.path.isdir(item_path):
+                                # Upload subdirectory
+                                self.log(f"    Uploading model dir: {item_name}")
+                                remote_model_dir = f"models/{item_name}"
+                                
+                                # Check if already uploaded
+                                try:
+                                    self.azure_files_staging.file_service.get_directory_properties(
+                                        share_name=self.azure_files_share_name,
+                                        directory_name=remote_model_dir
+                                    )
+                                    self.log(f"      Already uploaded, skipping")
+                                    continue
+                                except:
+                                    pass
+                                
+                                # Upload the model directory
+                                self.azure_files_staging.upload_directory(
+                                    local_dir=item_path,
+                                    remote_dir=remote_model_dir
+                                )
+                                self.log(f"      ✓ Uploaded to: {remote_model_dir}")
+                            
+                            elif os.path.isfile(item_path):
+                                # Upload individual model file
+                                self.log(f"    Uploading model file: {item_name}")
+                                remote_file_path = f"models/{item_name}"
+                                
+                                # Check if already uploaded
+                                try:
+                                    self.azure_files_staging.file_service.get_file_properties(
+                                        share_name=self.azure_files_share_name,
+                                        directory_name="models",
+                                        file_name=item_name
+                                    )
+                                    self.log(f"      Already uploaded, skipping")
+                                    continue
+                                except:
+                                    pass
+                                
+                                # Upload the model file
+                                with open(item_path, 'rb') as f:
+                                    self.azure_files_staging.file_service.create_file_from_stream(
+                                        share_name=self.azure_files_share_name,
+                                        directory_name="models",
+                                        file_name=item_name,
+                                        stream=f,
+                                        max_connections=4
+                                    )
+                                self.log(f"      ✓ Uploaded to: {remote_file_path}")
+                        
+                        # Set model_dir parameter to azfiles:// URL for tasks
+                        azfiles_model_dir = f"azfiles://{self.storage_account_name}/{self.azure_files_share_name}/models"
+                        default_params["model_dir"] = azfiles_model_dir
+                        self.log(f"\n[Azure Files] Model directory URL: {azfiles_model_dir}")
+                    else:
+                        self.log(f"  Warning: Model directory not found: {model_dir}")
+                else:
+                    # Remote path, use as-is
+                    default_params["model_dir"] = model_dir
+                    self.log(f"  Using remote model directory: {model_dir}")
+            elif model_dir:
+                # No Azure Files, pass model_dir as-is
+                default_params["model_dir"] = model_dir
+                self.log(f"[Model Directory] Using: {model_dir}")
+                
+                # Stage classifier model to Azure Files if enabled
                 classifier_pkl = default_params.get("classifier_pkl")
-                if classifier_pkl and not classifier_pkl.startswith(
+                if self.azure_files_staging and classifier_pkl and not classifier_pkl.startswith(
                     ("s3://", "azfiles://", "http://", "https://")
                 ):
                     if os.path.exists(classifier_pkl):
@@ -1848,46 +1739,6 @@ CLEANUP_SCRIPT_END
                         )
                         azfiles_url = f"azfiles://{self.storage_account_name}/{self.azure_files_share_name}/{remote_path}"
                         default_params["classifier_pkl"] = azfiles_url
-                        self.log(f"  Staged to: {remote_path}")
-
-                # Stage prefilter model
-                prefilter_model_path = default_params.get("prefilter_model_path")
-                if prefilter_model_path and not prefilter_model_path.startswith(
-                    ("s3://", "azfiles://", "http://", "https://")
-                ):
-                    if os.path.exists(prefilter_model_path):
-                        self.log(
-                            f"Staging prefilter model: {os.path.basename(prefilter_model_path)}"
-                        )
-                        remote_path = f"models/{os.path.basename(prefilter_model_path)}"
-                        self.azure_files_staging.upload_file(
-                            local_path=prefilter_model_path,
-                            remote_path=remote_path,
-                            show_progress=False,
-                        )
-                        azfiles_url = f"azfiles://{self.storage_account_name}/{self.azure_files_share_name}/{remote_path}"
-                        default_params["prefilter_model_path"] = azfiles_url
-                        self.log(f"  Staged to: {remote_path}")
-
-                # Stage model
-                model_path = default_params.get("model_path")
-                if model_path and not model_path.startswith(
-                    ("s3://", "azfiles://", "http://", "https://")
-                ):
-                    if os.path.exists(model_path):
-                        self.log(
-                            f"Staging model: {os.path.basename(model_path)}"
-                        )
-                        remote_path = (
-                            f"models/{os.path.basename(model_path)}"
-                        )
-                        self.azure_files_staging.upload_file(
-                            local_path=model_path,
-                            remote_path=remote_path,
-                            show_progress=False,
-                        )
-                        azfiles_url = f"azfiles://{self.storage_account_name}/{self.azure_files_share_name}/{remote_path}"
-                        default_params["model_path"] = azfiles_url
                         self.log(f"  Staged to: {remote_path}")
 
             # Group slides into batches and submit in streaming fashion
@@ -1923,42 +1774,30 @@ CLEANUP_SCRIPT_END
                     slide_ids = [s["slide_id"] for s in batch_slides]
                     slide_paths_batch = [s["slide_path"] for s in batch_slides]
 
-                    # For pre-staged slides (azblob://, azfiles://), skip file checks
-                    # Only process local files that need staging
-                    if not all_slides_remote and (self.azure_files_staging or self.azure_blob_staging):
+                    # For pre-staged slides (azblob://), skip file checks
+                    # Only process local files that need staging to blob
+                    if not all_slides_remote and self.azure_blob_staging:
                         staged_paths = []
                         for slide_path in slide_paths_batch:
-                            # Already a remote path (azfiles://, azblob://, or http://) - use as-is
-                            if slide_path.startswith(("azfiles://", "azblob://", "http://", "https://", "s3://")):
+                            # Already a remote path (azblob://, or http://) - use as-is
+                            if slide_path.startswith(("azblob://", "http://", "https://", "s3://")):
                                 staged_paths.append(slide_path)
-                            # Local file - needs staging
+                            # Local file - needs staging to blob
                             else:
                                 # Only check file existence for local files
                                 if os.path.exists(slide_path):
                                     slide_filename = os.path.basename(slide_path)
                             
-                                    # Stage to Azure Blob if available
-                                    if self.azure_blob_staging:
-                                        blob_name = f"slides/{slide_filename}"
-                                        self.azure_blob_staging.upload_file(
-                                            local_path=slide_path,
-                                            blob_name=blob_name,
-                                            show_progress=False,
-                                        )
-                                        # Convert to azblob:// URL
-                                        azblob_url = f"azblob://{self.storage_account_name}/{self.staging_container}/{blob_name}"
-                                        staged_paths.append(azblob_url)
-                                    # Otherwise stage to Azure Files if available
-                                    elif self.azure_files_staging:
-                                        remote_path = f"slides/{slide_filename}"
-                                        self.azure_files_staging.upload_file(
-                                            local_path=slide_path,
-                                            remote_path=remote_path,
-                                            show_progress=False,
-                                        )
-                                        # Convert to azfiles:// URL
-                                        azfiles_url = f"azfiles://{self.storage_account_name}/{self.azure_files_share_name}/{remote_path}"
-                                        staged_paths.append(azfiles_url)
+                                    # Stage to Azure Blob
+                                    blob_name = f"slides/{slide_filename}"
+                                    self.azure_blob_staging.upload_file(
+                                        local_path=slide_path,
+                                        blob_name=blob_name,
+                                        show_progress=False,
+                                    )
+                                    # Convert to azblob:// URL
+                                    azblob_url = f"azblob://{self.storage_account_name}/{self.staging_container}/{blob_name}"
+                                    staged_paths.append(azblob_url)
                                 else:
                                     self.log(f"WARNING: Local file not found: {slide_path}")
                                     staged_paths.append(slide_path)
@@ -1988,13 +1827,9 @@ CLEANUP_SCRIPT_END
                         prefilter_model_types=model_params.get(
                             "prefilter_model_types", None
                         ),
-                        prefilter_model_path=model_params.get("prefilter_model_path"),
                         model_types=model_params.get("model_types"),
-                        model_path=model_params.get("model_path"),
                         model_dir=model_params.get("model_dir"),
                         slide_model_types=model_params.get("slide_model_types"),
-                        slide_model_paths=model_params.get("slide_model_paths"),
-                        model_cache_dir=model_params.get("model_cache_dir"),
                         seg_config_group=model_params.get("seg_config_group"),
                         segment_threshold=model_params.get("segment_threshold"),
                         patch_size=model_params.get("patch_size"),
@@ -2348,83 +2183,6 @@ CLEANUP_SCRIPT_END
 
         return len(manifest_data)
 
-    def stage_slides_to_azure_files(
-        self,
-        slides: List[Dict[str, str]],
-        remote_dir: str = "slides",
-    ) -> Dict[str, str]:
-        """
-        Stage slides to Azure Files before processing.
-
-        Args:
-            slides: List of dicts with 'slide_id' and 'slide_path' keys
-            remote_dir: Remote directory for slides in Azure Files
-
-        Returns:
-            Dict mapping slide_id to Azure Files path (azfiles://...)
-        """
-        if not self.azure_files_staging:
-            raise ValueError(
-                "Azure Files staging not configured. Provide storage account details and share name."
-            )
-
-        staged_paths = {}
-        print(
-            f"[Azure Files] Staging {len(slides)} slides to Azure Files share '{self.azure_files_share_name}'..."
-        )
-
-        for slide in slides:
-            # Handle different column names flexibly
-            slide_id = slide.get("slide_id") or slide.get("sample_id") or slide.get("image_id")
-            slide_path = slide.get("slide_path") or slide.get("svs_path") or slide.get("path")
-            
-            if not slide_id or not slide_path:
-                raise ValueError(f"Could not find slide ID or path in CSV row: {slide}")
-
-            # Determine filename from path
-            filename = os.path.basename(slide_path)
-
-            # Upload to Azure Files
-            remote_path = f"{remote_dir}/{filename}"
-            self.azure_files_staging.upload_file(slide_path, remote_path)
-
-            # Store mapping with azfiles:// URL format
-            azfiles_path = f"azfiles://{self.storage_account_name}/{self.azure_files_share_name}/{remote_path}"
-            staged_paths[slide_id] = azfiles_path
-
-            # Track for cleanup
-            self.staged_files.append(remote_path)
-
-        print(f"[Azure Files] Staged {len(staged_paths)} slides")
-        return staged_paths
-
-    def cleanup_staged_files(self) -> None:
-        """
-        Clean up all staged files from Azure Files.
-
-        Note: When using incremental staging (stage_and_submit_tasks_from_csv),
-        files are automatically cleaned up after each task completes. This method
-        is primarily for cleaning up files staged using stage_slides_to_azure_files
-        or for manual cleanup operations.
-        """
-        if not self.azure_files_staging or not self.staged_files:
-            return
-
-        print(f"[Azure Files] Cleaning up {len(self.staged_files)} staged files...")
-
-        # Group files by directory for efficient cleanup
-        directories = set()
-        for file_path in self.staged_files:
-            directory = os.path.dirname(file_path)
-            if directory:
-                directories.add(directory)
-
-        # Delete directories (which will delete all files within)
-        if directories:
-            self.azure_files_staging.cleanup_staging(list(directories))
-
-        self.staged_files = []
-        print("[Azure Files] Cleanup complete")
 
     def delete_job(self, job_id: str) -> None:
         """Delete a job."""
@@ -2473,30 +2231,20 @@ def main():
         help="Azure Storage account key (optional, or set AZURE_STORAGE_KEY env var)",
     )
 
-    # Azure Files staging configuration
+    # Azure Files staging configuration (for models only)
     parser.add_argument(
-        "--azure-files-share-name", help="Azure Files share name for staging files"
-    )
-    parser.add_argument(
-        "--stage-to-azure-files",
-        action="store_true",
-        help="Stage input files to Azure Files before processing",
+        "--azure-files-share-name", help="Azure Files share name for staging model files"
     )
     parser.add_argument(
         "--mount-azure-files",
         action="store_true",
-        help="Mount Azure Files share to batch pool nodes",
-    )
-    parser.add_argument(
-        "--cleanup-staged-files",
-        action="store_true",
-        help="Clean up staged files from Azure Files after processing",
+        help="Mount Azure Files share to batch pool nodes. When combined with --model-dir, models will be uploaded to Azure Files and mounted for faster access.",
     )
 
     # Azure Blob staging configuration
     parser.add_argument(
         "--staging-container",
-        help="Azure Blob container name for staging slides and models (default: uses output_prefix for models)",
+        help="Azure Blob container name for staging slides (default: uses output_prefix). Models should be staged to Azure Files using --azure-files-share-name and --model-dir.",
     )
     parser.add_argument(
         "--azure-blob-container",
@@ -2654,7 +2402,7 @@ def main():
         "Groups slides together to load models once instead of N times. Beneficial for all multi-slide processing, "
         "especially with slide-level model aggregation. Recommended: 8-16 for better efficiency. "
         "Auto-enabled (batch_size=8) when processing multiple slides; use 1 to disable. "
-        "Note: Not applicable when using --stage-to-azure-files (incremental staging). "
+        "Note: Not applicable when using --stage-to-azure-blob (incremental staging). "
         "This is different from 'slide_batch_size' which controls internal batching within a task.",
     )
     parser.add_argument(
@@ -2716,29 +2464,9 @@ def main():
         help="Disable model pre-download",
     )
     parser.add_argument(
-        "--model-cache-dir",
-        default="./model_cache",
-        help="Local directory to cache models (default: ./model_cache)",
-    )
-    parser.add_argument(
-        "--model-s3-prefix",
-        help="S3 prefix for uploaded models (default: use output-s3-prefix/models/)",
-    )
-    parser.add_argument(
         "--model-dir",
-        help="Path to directory containing pre-downloaded models (azblob://, s3://, or local path). When specified, disables automatic model download and uses this directory instead.",
-    )
-    parser.add_argument(
-        "--prefilter-model-path",
-        help="Path to prefilter model weights (local or s3://)",
-    )
-    parser.add_argument(
-        "--model-path",
-        help="Path to model weights (local or s3://)",
-    )
-    parser.add_argument(
-        "--slide-model-path",
-        help="Path to slide encoder model weights (local or s3://)",
+        default="./model_cache",
+        help="Local directory containing models. Models will be downloaded here if pre-download-models is enabled, then uploaded to Azure Files if specified (default: ./model_cache)",
     )
 
     # Retry configuration
@@ -2773,6 +2501,11 @@ def main():
         action="store_true",
         help="Configure Azure Batch to automatically delete the pool when the job completes. "
         "This uses Azure Batch's native pool lifetime management.",
+    )
+    parser.add_argument(
+        "--cleanup-staged-files",
+        action="store_true",
+        help="Clean up staged files in Azure Blob after job submission",
     )
 
     args = parser.parse_args()
@@ -2938,20 +2671,12 @@ def main():
         if not args.mount_azure_files and config_defaults.get("mount_azure_files"):
             args.mount_azure_files = config_defaults["mount_azure_files"]
 
-        if not args.stage_to_azure_files and config_defaults.get(
-            "stage_to_azure_files"
-        ):
-            args.stage_to_azure_files = config_defaults["stage_to_azure_files"]
-
-        if not args.stage_to_azure_blob and config_defaults.get(
-            "stage_to_azure_blob"
-        ):
-            args.stage_to_azure_blob = config_defaults["stage_to_azure_blob"]
-
-        if not args.cleanup_staged_files and config_defaults.get(
-            "cleanup_staged_files"
-        ):
-            args.cleanup_staged_files = config_defaults["cleanup_staged_files"]
+        # stage_to_azure_blob and cleanup_staged_files were removed - these are handled differently now
+        # Set defaults for removed args to avoid AttributeError
+        if not hasattr(args, 'stage_to_azure_files'):
+            args.stage_to_azure_files = False
+        if not hasattr(args, 'cleanup_staged_files'):
+            args.cleanup_staged_files = False
 
         # Container image - only override if the default value is still being used
         if (
@@ -3057,67 +2782,56 @@ def main():
             args.job_id = f"mussel-job-{timestamp}"
             print(f"Auto-generated job ID: {args.job_id}")
 
-    # Pre-download models removed - using persistent cache instead
-    # Models will be downloaded on-demand from Hugging Face to /mnt/batch/tasks/cache
-    model_paths = {}
-    model_dir = None
-
-    # Apply user-provided model paths if specified
-    if args.prefilter_model_path:
-        # Use the actual prefilter model type
-        prefilter_model_type = getattr(
-            args, "prefilter_model_type", None
-        ) or config_defaults.get("prefilter_model_type", None)
-        if prefilter_model_type:
-            model_paths[prefilter_model_type] = args.prefilter_model_path
-    if args.model_path:
-        # Apply to all models if multiple
+    # Handle model staging
+    # If pre_download_models is enabled, download models to model_dir first
+    # Then upload to Azure Files if azure_files_share_name is specified
+    model_dir = args.model_dir
+    
+    if args.pre_download_models and pre_download_models:
+        print(f"\n[Model Download] Downloading models to: {model_dir}")
+        
+        # Get list of models to download
+        models_to_download = []
         if args.models:
-            for model in args.models.split(","):
-                model_paths[model.strip()] = args.model_path
-    if args.slide_model_path:
-        # Store slide model path with actual model type name
-        slide_model_type = getattr(
-            args, "slide_model_type", None
-        ) or config_defaults.get("slide_model_type")
-        if slide_model_type:
-            model_paths[slide_model_type] = args.slide_model_path
+            models_to_download.extend([m.strip() for m in args.models.split(",")])
+        if config_defaults.get("models"):
+            config_models = config_defaults.get("models")
+            if isinstance(config_models, str):
+                models_to_download.extend([m.strip() for m in config_models.split(",")])
+            elif isinstance(config_models, list):
+                models_to_download.extend(config_models)
+        
+        # Get prefilter model
+        prefilter_model = (getattr(args, "prefilter_model_type", None) or 
+                          config_defaults.get("prefilter_model_type"))
+        if prefilter_model:
+            models_to_download.append(prefilter_model)
+        
+        # Get slide model
+        slide_model = (getattr(args, "slide_model_type", None) or 
+                      config_defaults.get("slide_model_type"))
+        if slide_model:
+            models_to_download.append(slide_model)
+        
+        # Remove duplicates
+        models_to_download = list(set(models_to_download))
+        
+        if models_to_download:
+            print(f"[Model Download] Models to download: {', '.join(models_to_download)}")
+            try:
+                pre_download_models(
+                    model_types=models_to_download,
+                    output_dir=model_dir,
+                    hf_token=args.hf_token
+                )
+                print(f"✓ Models downloaded to: {model_dir}")
+            except Exception as e:
+                print(f"⚠️  Warning: Model download failed: {e}")
+                print("   Tasks will attempt to download models on-demand")
         else:
-            # Fallback to generic "slide" key if no type specified
-            model_paths["slide"] = args.slide_model_path
-
-    # Validate CTRANSPATH configuration
-    # CTRANSPATH requires a model_path to be provided via configuration
-    if args.csv_manifest or args.config_file:
-        # Determine the prefilter model type from config or default
-        # config_defaults is already loaded above
-        prefilter_model = config_defaults.get("prefilter_model_type", None)
-
-        # Check if CTRANSPATH is being used without a model_path
-        # Check command-line, config file, and pre-downloaded paths
-        has_prefilter_path = (
-            args.prefilter_model_path
-            or config_defaults.get("prefilter_model_path")
-            or model_paths.get("CTRANSPATH")
-        )
-
-        if prefilter_model and prefilter_model.upper() == "CTRANSPATH" and not has_prefilter_path:
-            print(
-                "\n⚠️  WARNING: CTRANSPATH model requires a model_path to be provided via configuration"
-            )
-            print(
-                "   CTRANSPATH does not have a default HuggingFace path and cannot be automatically downloaded."
-            )
-            print(
-                "   Please provide the model path using one of the following methods:"
-            )
-            print(
-                "     1. Command line: --prefilter-model-path /path/to/ctranspath.pth"
-            )
-            print(
-                "     2. Configuration file: prefilter_model_path: /path/to/ctranspath.pth"
-            )
-            print("   Tasks will fail if CTRANSPATH model path is not provided.\n")
+            print("[Model Download] No models specified, skipping pre-download")
+    else:
+        print(f"[Model Download] Skipping pre-download (using model-dir: {model_dir})")
 
     # Initialize submitter
     submitter = AzureBatchJobSubmitter(
@@ -3203,30 +2917,10 @@ def main():
         # Add model paths from pre-download or user-provided
         # Command-line args override config and pre-download
         
-        # Use persistent model cache directory - models downloaded on-demand from Hugging Face
-        # The persistent cache at /mnt/batch/tasks/cache survives across tasks and reduces redundant downloads
-        default_params["model_cache_dir"] = "/mnt/batch/tasks/cache"
-        print(f"[Model Cache] Using persistent cache at: /mnt/batch/tasks/cache")
-        print(f"[Model Cache] Models will be downloaded on-demand from Hugging Face")
-        
-        # Individual model paths can still override the cache if provided
-        if model_paths.get("CTRANSPATH"):
-            default_params["prefilter_model_path"] = model_paths["CTRANSPATH"]
-            if args.prefilter_model_path:
-                default_params["prefilter_model_path"] = args.prefilter_model_path
-            # For postfilter, we'll pass the path that applies to all models
-            # The model_path will be used for all models in the list
-            if args.models and model_paths:
-                # Use the first model's path if available
-                first_model = args.models.split(",")[0].strip()
-                if first_model in model_paths:
-                    default_params["model_path"] = model_paths[first_model]
-            if args.model_path:
-                default_params["model_path"] = args.model_path
-            if model_paths.get("slide"):
-                default_params["slide_model_path"] = model_paths["slide"]
-            if args.slide_model_path:
-                default_params["slide_model_path"] = args.slide_model_path
+        # Set model_dir if provided
+        if model_dir:
+            default_params["model_dir"] = model_dir
+            print(f"[Model Directory] Using: {model_dir}")
 
         # Parse models if provided
         models_list = None
@@ -3254,14 +2948,8 @@ def main():
         ]:
             task_default_params.pop(key, None)
 
-        # Use incremental staging and submission if Azure Files or Blob staging is enabled
-        if args.stage_to_azure_files or args.stage_to_azure_blob:
-            if args.stage_to_azure_files and not args.azure_files_share_name:
-                print(
-                    "ERROR: --azure-files-share-name required when using --stage-to-azure-files"
-                )
-                sys.exit(1)
-            
+        # Use incremental staging and submission if Azure Blob staging is enabled
+        if hasattr(args, 'stage_to_azure_blob') and args.stage_to_azure_blob:
             if args.stage_to_azure_blob and not args.staging_container:
                 print(
                     "ERROR: --staging-container required when using --stage-to-azure-blob"
@@ -3284,30 +2972,7 @@ def main():
                         container_name=args.staging_container,
                     )
                 
-                # Apply pre-downloaded model paths to task_default_params if not already set
-                if model_paths:
-                    # Apply prefilter model path
-                    prefilter_model_type = task_default_params.get("prefilter_model_type")
-                    if prefilter_model_type and prefilter_model_type in model_paths:
-                        if not task_default_params.get("prefilter_model_path"):
-                            task_default_params["prefilter_model_path"] = model_paths[prefilter_model_type]
-                            print(f"[Pre-download] Applied {prefilter_model_type} path: {model_paths[prefilter_model_type]}")
-                    
-                    # Apply model path
-                    model_type = task_default_params.get("model_type")
-                    if model_type and model_type in model_paths:
-                        if not task_default_params.get("model_path"):
-                            task_default_params["model_path"] = model_paths[model_type]
-                            print(f"[Pre-download] Applied {model_type} path: {model_paths[model_type]}")
-                    
-                    # Apply slide model path
-                    slide_model_type = task_default_params.get("slide_model_type")
-                    if slide_model_type and slide_model_type in model_paths:
-                        if not task_default_params.get("slide_model_path"):
-                            task_default_params["slide_model_path"] = model_paths[slide_model_type]
-                            print(f"[Pre-download] Applied {slide_model_type} path: {model_paths[slide_model_type]}")
-                
-                # Model staging removed - using persistent cache at /mnt/batch/tasks/cache instead
+                # Model staging removed - using persistent cache or model_dir
                 # Models will be downloaded on-demand from Hugging Face with file locking to prevent clashes
                 print(f"\n[Model Cache] Using persistent cache at /mnt/batch/tasks/cache")
                 print(f"[Model Cache] Models will be downloaded on-demand from Hugging Face")
@@ -3432,7 +3097,7 @@ def main():
                 )
                 
                 # Cleanup staged slides if requested
-                if args.cleanup_staged_files:
+                if hasattr(args, 'cleanup_staged_files') and args.cleanup_staged_files:
                     print(f"\n[Azure Blob] Cleaning up staged slides...")
                     for slide_id, blob_url in staged_slide_paths.items():
                         if blob_url.startswith("https://"):
@@ -3447,106 +3112,20 @@ def main():
                 return  # Exit early, blob staging workflow is complete
             
             # Azure Files staging workflow (existing code)
-            if args.stage_to_azure_files:
-                # Stage models to Azure Files if we have any
-                if (
-                    model_paths
-                    and stage_models_to_azure_files
-                    and args.storage_account_name
-                    and args.storage_account_key
-                    and args.azure_files_share_name  # Only stage if Azure Files is configured
-                ):
-                    print("\n[Model Staging] Staging models to Azure Files...")
-                    staged_model_paths = stage_models_to_azure_files(
-                        model_paths=model_paths,
-                        account_name=args.storage_account_name,
-                        account_key=args.storage_account_key,
-                        share_name=args.azure_files_share_name,
-                        remote_dir="models",
-                    )
-                    # Models will be copied to persistent cache during start task
-                    # They will then be auto-discovered from /mnt/batch/tasks/cache
-                    print(f"[Model Staging] Models staged to Azure Files")
-                    print(f"[Model Staging] Models will be copied to persistent cache during start task")
-                    for model_type, remote_path in staged_model_paths.items():
-                        azfiles_model_path = f"/mnt/batch/tasks/fsmounts/azfiles/{remote_path}"
-                        print(f"[Model Staging] Staged {model_type}: {azfiles_model_path} -> /mnt/batch/tasks/cache/")
+            # Model directory is staged in submit_tasks_from_csv if Azure Files is configured
 
-                # Also stage local model paths from config if not already staged
-                if submitter.azure_files_staging:
-                    # Stage prefilter model if it's a local path
-                    prefilter_model_path = task_default_params.get("prefilter_model_path")
-                    if prefilter_model_path and not prefilter_model_path.startswith(
-                        ("s3://", "azfiles://", "http://", "https://", "/mnt/batch")
-                    ):
-                        if os.path.exists(prefilter_model_path):
-                            print(
-                                f"[Model Staging] Staging local prefilter model: {os.path.basename(prefilter_model_path)}"
-                            )
-                            remote_path = f"models/{os.path.basename(prefilter_model_path)}"
-                            submitter.azure_files_staging.upload_file(
-                                local_path=prefilter_model_path,
-                                remote_path=remote_path,
-                                show_progress=False,
-                            )
-                            print(
-                                f"[Model Staging] Staged prefilter model to Azure Files, will be copied to cache"
-                            )
+            # Submit tasks using batch processing (not incremental staging)
+            submitter.submit_tasks_from_csv(
+                job_id=args.job_id,
+                csv_file=args.csv_manifest,
+                output_s3_prefix=args.output_prefix,
+                container_image=args.container_image,
+                models=models_list,
+                slide_models=slide_models_list,
+                use_container_prepull=args.use_container_prepull,
+                **task_default_params,
+            )
 
-                    # Stage model if it's a local path
-                    model_path = task_default_params.get("model_path")
-                    if model_path and not model_path.startswith(
-                        ("s3://", "azfiles://", "http://", "https://", "/mnt/batch")
-                    ):
-                        if os.path.exists(model_path):
-                            print(
-                                f"[Model Staging] Staging local model: {os.path.basename(model_path)}"
-                            )
-                            remote_path = (
-                                f"models/{os.path.basename(model_path)}"
-                            )
-                            submitter.azure_files_staging.upload_file(
-                                local_path=model_path,
-                                remote_path=remote_path,
-                                show_progress=False,
-                            )
-                            print(
-                                f"[Model Staging] Staged model to Azure Files, will be copied to cache"
-                            )
-
-                    # Stage slide model if it's a local path
-                    slide_model_path = task_default_params.get("slide_model_path")
-                    if slide_model_path and not slide_model_path.startswith(
-                        ("s3://", "azfiles://", "http://", "https://", "/mnt/batch")
-                    ):
-                        if os.path.exists(slide_model_path):
-                            print(
-                                f"[Model Staging] Staging local slide model: {os.path.basename(slide_model_path)}"
-                            )
-                            remote_path = (
-                                f"models/{os.path.basename(slide_model_path)}"
-                            )
-                            submitter.azure_files_staging.upload_file(
-                                local_path=slide_model_path,
-                                remote_path=remote_path,
-                                show_progress=False,
-                            )
-                            print(
-                                f"[Model Staging] Staged slide model to Azure Files, will be copied to cache"
-                            )
-
-                # Stage and submit tasks incrementally
-                submitter.stage_and_submit_tasks_from_csv(
-                    job_id=args.job_id,
-                    csv_file=args.csv_manifest,
-                    output_s3_prefix=args.output_prefix,
-                    container_image=args.container_image,
-                    models=models_list,
-                    slide_models=slide_models_list,
-                    remote_dir="slides",
-                    use_container_prepull=args.use_container_prepull,
-                    **task_default_params,
-                )
         else:
             # Standard workflow without staging
             submitter.submit_tasks_from_csv(
@@ -3562,23 +3141,10 @@ def main():
             )
     elif args.task_id and args.slide_path:
         # Single task submission
-        # Prepare model paths for single task
-        task_model_paths = {}
-        if model_paths.get("CTRANSPATH"):
-            task_model_paths["prefilter_model_path"] = model_paths["CTRANSPATH"]
-        if model_paths:
-            # Try to find a model path
-            for key, path in model_paths.items():
-                if key != "CTRANSPATH" and not key.endswith("_SLIDE"):
-                    task_model_paths["model_path"] = path
-                    break
-        # Look for slide model path by model type or fallback to "slide"
-        slide_model_type = getattr(args, "slide_model_type", None) or config_defaults.get("slide_model_type")
-        if slide_model_type and model_paths.get(slide_model_type):
-            task_model_paths["slide_model_path"] = model_paths[slide_model_type]
-        elif model_paths.get("slide"):
-            # Fallback to generic "slide" key
-            task_model_paths["slide_model_path"] = model_paths["slide"]
+        # Pass model_dir if specified
+        task_params = {}
+        if model_dir:
+            task_params["model_dir"] = model_dir
 
         submitter.submit_task(
             job_id=args.job_id,
@@ -3590,7 +3156,7 @@ def main():
             hf_token=args.hf_token,
             max_retry_count=args.max_retry_count,
             container_image=args.container_image,
-            **task_model_paths,
+            **task_params,
         )
     else:
         print(
@@ -3624,7 +3190,7 @@ def main():
         )
 
     # Cleanup if requested
-    if args.cleanup_staged_files:
+    if hasattr(args, 'cleanup_staged_files') and args.cleanup_staged_files:
         submitter.cleanup_staged_files()
 
     if args.delete_job:
