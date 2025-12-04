@@ -100,13 +100,14 @@ def save_model(cfg: SaveModelConfig):
             try:
                 # Ensure cache directories exist before loading models
                 # This prevents "File exists" errors from libraries that don't use exist_ok=True
+                # Use Path.mkdir() which handles symlinks correctly
                 cache_dirs = [
                     os.path.expanduser("~/.cache"),
                     os.path.expanduser("~/.cache/huggingface"),
                     os.path.expanduser("~/.cache/torch"),
                 ]
                 for cache_dir in cache_dirs:
-                    os.makedirs(cache_dir, exist_ok=True)
+                    Path(cache_dir).mkdir(parents=True, exist_ok=True)
                 
                 model_factory = get_model_factory(model_type)
                 model = model_factory.get_model(None, use_gpu=False)

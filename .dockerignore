@@ -86,6 +86,7 @@ output/
 *output/
 docker-example-output/
 model_cache/
+new_model_cache/
 .cache/
 .torch/
 .huggingface/

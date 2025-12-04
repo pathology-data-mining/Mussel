@@ -1,4 +1,4 @@
-.PHONY: help build build-cpu build-tf build-tf-cpu push push-cpu push-tf push-tf-cpu push-fastattn shell test clean az-login apptainer-build apptainer-build-torch-gpu apptainer-build-torch-cpu apptainer-build-tensorflow-gpu apptainer-build-tensorflow-cpu apptainer-build-fastattn apptainer-shell apptainer-run apptainer-save-models apptainer-tessellate apptainer-extract-features apptainer-clean apptainer-examples
+.PHONY: help build build-cpu build-tf build-tf-cpu push push-cpu push-tf push-tf-cpu push-fastattn shell test clean az-login apptainer-build apptainer-build-torch-gpu apptainer-build-torch-cpu apptainer-build-tensorflow-gpu apptainer-build-tensorflow-cpu apptainer-build-fastattn apptainer-shell apptainer-run apptainer-save-models apptainer-save-all-models apptainer-save-patch-models apptainer-save-slide-models apptainer-tessellate apptainer-extract-features apptainer-clean apptainer-examples
 
 # Default Docker image name
 IMAGE_NAME ?= mskocracontainerregister-cfbfchg8dgfbedan.azurecr.io/mussel
@@ -131,20 +131,65 @@ apptainer-run: ## Run command in Apptainer container (usage: make apptainer-run 
 	fi
 	apptainer exec --nv --bind $(PWD):/workspace --pwd /workspace $(APPTAINER_IMAGE) $(CMD)
 
-apptainer-save-models: ## Save models using Apptainer (usage: make apptainer-save-models MODELS="UNI2,VIRCHOW2")
+apptainer-save-models: ## Save specific models (usage: make apptainer-save-models MODELS="UNI2,VIRCHOW2")
 	@if [ -z "$(MODELS)" ]; then \
 		echo "Error: MODELS variable not set. Usage: make apptainer-save-models MODELS=\"UNI2,VIRCHOW2\""; \
 		exit 1; \
 	fi
 	@echo "Saving models: $(MODELS) to $(MODEL_DIR)"
 	mkdir -p $(MODEL_DIR)
+	mkdir -p .cache/huggingface
 	apptainer exec --nv \
 		--bind $(PWD):/workspace \
 		--pwd /workspace \
+		--env HF_HOME=/workspace/.cache/huggingface \
+		--env TRANSFORMERS_CACHE=/workspace/.cache/huggingface \
 		$(APPTAINER_IMAGE) \
-		uv run save_models \
-		--models $(MODELS) \
-		--output-dir $(MODEL_DIR)
+		save_model \
+		model_types=[$(MODELS)] \
+		model_dir=$(MODEL_DIR)
+
+apptainer-save-all-models: ## Save all supported models to model_cache directory
+	@echo "Saving all models to $(MODEL_DIR)"
+	mkdir -p $(MODEL_DIR)
+	mkdir -p .cache/huggingface
+	apptainer exec --nv \
+		--bind $(PWD):/workspace \
+		--pwd /workspace \
+		--env HF_HOME=/workspace/.cache/huggingface \
+		--env TRANSFORMERS_CACHE=/workspace/.cache/huggingface \
+		$(APPTAINER_IMAGE) \
+		save_model \
+		model_types=[CLIP,CTRANSPATH,GIGAPATH,GIGAPATH_SLIDE,GOOGLEPATH,OPTIMUS,TITAN_SLIDE,UNI,UNI2,VIRCHOW,VIRCHOW2] \
+		model_dir=$(MODEL_DIR)
+
+apptainer-save-patch-models: ## Save all patch-level encoder models
+	@echo "Saving patch encoder models to $(MODEL_DIR)"
+	mkdir -p $(MODEL_DIR)
+	mkdir -p .cache/huggingface
+	apptainer exec --nv \
+		--bind $(PWD):/workspace \
+		--pwd /workspace \
+		--env HF_HOME=/workspace/.cache/huggingface \
+		--env TRANSFORMERS_CACHE=/workspace/.cache/huggingface \
+		$(APPTAINER_IMAGE) \
+		save_model \
+		model_types=[CTRANSPATH,GIGAPATH,OPTIMUS,UNI,UNI2,VIRCHOW,VIRCHOW2,CLIP] \
+		model_dir=$(MODEL_DIR)
+
+apptainer-save-slide-models: ## Save all slide-level encoder models
+	@echo "Saving slide encoder models to $(MODEL_DIR)"
+	mkdir -p $(MODEL_DIR)
+	mkdir -p .cache/huggingface
+	apptainer exec --nv \
+		--bind $(PWD):/workspace \
+		--pwd /workspace \
+		--env HF_HOME=/workspace/.cache/huggingface \
+		--env TRANSFORMERS_CACHE=/workspace/.cache/huggingface \
+		$(APPTAINER_IMAGE) \
+		save_model \
+		model_types=[GIGAPATH_SLIDE,TITAN_SLIDE] \
+		model_dir=$(MODEL_DIR)
 
 apptainer-tessellate: ## Run tessellate with Apptainer (usage: make apptainer-tessellate SLIDE=slide.svs)
 	@if [ -z "$(SLIDE)" ]; then \
@@ -210,8 +255,12 @@ apptainer-examples: ## Show example Apptainer commands
 	@echo "  make apptainer-build-tensorflow-cpu  # TensorFlow CPU only"
 	@echo "  make apptainer-build-fastattn        # PyTorch with flash-attention"
 	@echo ""
-	@echo "  # Save models"
-	@echo "  make apptainer-save-models MODELS=\"UNI2,VIRCHOW2,GIGAPATH\""
+	@echo "  # Save models to model_cache directory"
+	@echo "  make apptainer-save-all-models                          # Save all 11 models"
+	@echo "  make apptainer-save-patch-models                        # Save patch encoders only"
+	@echo "  make apptainer-save-slide-models                        # Save slide encoders only"
+	@echo "  make apptainer-save-models MODELS=\"UNI2,VIRCHOW2\"       # Save specific models"
+	@echo "  make apptainer-save-models MODELS=\"GIGAPATH_SLIDE\" MODEL_DIR=/path/to/models"
 	@echo ""
 	@echo "  # Start interactive shell"
 	@echo "  make apptainer-shell"
@@ -223,7 +272,7 @@ apptainer-examples: ## Show example Apptainer commands
 	@echo "  make apptainer-extract-features SLIDE=slide.svs MODEL=UNI2"
 	@echo ""
 	@echo "  # Run custom command"
-	@echo "  make apptainer-run CMD=\"uv run tessellate --help\""
+	@echo "  make apptainer-run CMD=\"save_model --help\""
 	@echo ""
 	@echo "  # Clean up images"
 	@echo "  make apptainer-clean"
