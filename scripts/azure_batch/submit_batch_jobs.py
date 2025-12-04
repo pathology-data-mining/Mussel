@@ -1528,6 +1528,8 @@ CLEANUP_SCRIPT_END
         staged_slide_paths: Optional[Dict[str, str]] = None,
         slides_per_task: int = 1,
         use_container_prepull: bool = False,
+        batch_offset: int = 0,  # For incremental submission: starting batch number
+        total_batches_global: Optional[int] = None,  # For incremental submission: total batches across all submissions
         **default_params,
     ) -> None:
         """
@@ -1778,7 +1780,7 @@ CLEANUP_SCRIPT_END
             # This allows tasks to start running before all tasks are prepared
             tasks_buffer = []
             api_batch_size = 100  # Azure Batch API supports up to 100 tasks per collection
-            total_batches = (len(slides) + slides_per_task - 1) // slides_per_task
+            total_batches = total_batches_global if total_batches_global else (len(slides) + slides_per_task - 1) // slides_per_task
             
             print(f"\n[Streaming Submission] Preparing and submitting {total_batches} tasks...")
             print(f"  Note: Tasks will start running as they are submitted")
@@ -1789,7 +1791,8 @@ CLEANUP_SCRIPT_END
                     ]
 
                     # Create batch task ID
-                    batch_num = batch_idx // slides_per_task + 1
+                    # Use global batch number for incremental submission
+                    batch_num = batch_offset + (batch_idx // slides_per_task + 1)
                     
                     # Create concise model identifier for task ID
                     # Use first model + count if multiple models
@@ -3078,6 +3081,8 @@ def main():
                 submission_batch = []
                 total_staged = 0
                 total_submitted = 0
+                total_batches_expected = (len(slides) + batch_size - 1) // batch_size  # Total batches across all slides
+                current_batch_num = 0  # Track which batch we're on
                 
                 def stage_slide(slide_info):
                     """Stage a single slide (used by thread pool)."""
@@ -3157,9 +3162,12 @@ def main():
                 
                 def submit_batch_incrementally():
                     """Submit accumulated batch of slides as tasks."""
-                    nonlocal total_submitted, submission_batch
+                    nonlocal total_submitted, submission_batch, current_batch_num
                     if not submission_batch:
                         return
+                    
+                    # Increment batch number
+                    current_batch_num += 1
                     
                     # Check job state before attempting submission
                     try:
@@ -3181,7 +3189,7 @@ def main():
                     batch_csv.close()
                     
                     try:
-                        # Submit this batch of tasks
+                        # Submit this batch of tasks with global batch tracking
                         submitter.submit_tasks_from_csv(
                             job_id=args.job_id,
                             csv_file=batch_csv.name,
@@ -3192,10 +3200,12 @@ def main():
                             slides_per_task=args.slides_per_task,
                             staged_slide_paths=staged_slide_paths,
                             use_container_prepull=args.use_container_prepull,
+                            batch_offset=current_batch_num - 1,  # Zero-indexed offset
+                            total_batches_global=total_batches_expected,
                             **task_default_params,
                         )
                         total_submitted += len(submission_batch)
-                        print(f"[Incremental Submit] Submitted {len(submission_batch)} slides ({total_submitted}/{len(slides)} total)")
+                        print(f"[Incremental Submit] Submitted batch {current_batch_num}/{total_batches_expected}: {len(submission_batch)} slides ({total_submitted}/{len(slides)} total)")
                     except Exception as e:
                         if 'JobCompleted' in str(e) or 'already in a completed state' in str(e):
                             print(f"[Incremental Submit] Job {args.job_id} completed during staging - {len(submission_batch)} slides not submitted")
@@ -3231,7 +3241,8 @@ def main():
                                     print(f"  Staged {total_staged}/{len(slides)} slides...")
                                 
                                 # Submit batch when we have enough slides
-                                if len(submission_batch) >= batch_size * 5:  # Submit in larger batches for efficiency
+                                # Submit every batch_size slides to ensure steady task creation
+                                if len(submission_batch) >= batch_size:
                                     submit_batch_incrementally()
                     
                     # Submit any remaining slides
