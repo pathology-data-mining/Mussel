@@ -1,14 +1,16 @@
 #!/usr/bin/env python3
 """
-Azure Files staging module for preprocessing slides and models.
+Azure Files staging module for preprocessing models.
 
 This module handles:
-- Uploading slides from local/S3 to Azure Files
 - Uploading models to Azure Files
 - Cleaning up staged files after processing
 
-Azure Files can be mounted to Azure Batch containers for direct access,
-eliminating download overhead during task execution.
+Azure Files can be mounted to Azure Batch containers for direct access.
+Models are staged to Azure Files and then copied to persistent cache on nodes.
+
+Note: Slide staging to Azure Files has been removed. Slides should only be
+staged to Azure Blob Storage.
 """
 
 import os
@@ -277,52 +279,6 @@ class AzureFilesStaging:
             "relative_mount_path": "azfiles",
             "mount_options": "-o vers=3.0,dir_mode=0777,file_mode=0777,sec=ntlmssp",
         }
-
-
-def stage_slides_to_azure_files(
-    slides: List[Dict[str, str]],
-    account_name: str,
-    account_key: str,
-    share_name: str = "mussel-staging",
-    remote_dir: str = "slides",
-) -> tuple:
-    """
-    Stage slides to Azure Files before processing.
-    
-    Args:
-        slides: List of dicts with 'slide_id' and 'slide_path' keys
-        account_name: Azure Storage account name
-        account_key: Azure Storage account key
-        share_name: File share name
-        remote_dir: Remote directory for slides
-        
-    Returns:
-        (staging_client, staged_paths) tuple
-    """
-    staging = AzureFilesStaging(account_name, account_key, share_name)
-    
-    staged_paths = {}
-    print(f"[Azure Files] Staging {len(slides)} slides...")
-    
-    for slide in slides:
-        slide_id = slide['slide_id']
-        slide_path = slide['slide_path']
-        
-        # Determine filename
-        if slide_path.startswith("s3://") or slide_path.startswith("http"):
-            filename = os.path.basename(slide_path)
-        else:
-            filename = os.path.basename(slide_path)
-        
-        # Upload to Azure Files
-        remote_path = f"{remote_dir}/{filename}"
-        staging.upload_file(slide_path, remote_path)
-        
-        # Store mapping
-        staged_paths[slide_id] = remote_path
-    
-    print(f"[Azure Files] Staged {len(staged_paths)} slides to share '{share_name}'")
-    return staging, staged_paths
 
 
 def stage_models_to_azure_files(

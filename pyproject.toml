@@ -23,6 +23,7 @@ dependencies = [
   "einops>=0.8.1",
   "einops-exts>=0.0.4",
   "setuptools",
+  "configargparse>=1.7.1",
 ]
 
 [dependency-groups]

@@ -23,6 +23,13 @@ try:
 except ImportError:
     AZURE_SDK_AVAILABLE = False
 
+try:
+    from azure.storage.fileshare import ShareServiceClient
+
+    AZURE_FILES_SDK_AVAILABLE = True
+except ImportError:
+    AZURE_FILES_SDK_AVAILABLE = False
+
 
 def _is_remote_path(path):
     """Check if a path is a remote path (starts with az://, azblob://, s3://, etc.)."""
@@ -407,6 +414,84 @@ def _download_azure_directory_with_sdk(container_name, prefix, local_path):
     logger.info(f"Download complete: {downloaded_count} files downloaded, {skipped_count} skipped")
 
 
+def _download_azure_files_directory(share_name, prefix, local_path):
+    """Download a directory from Azure Files using the Azure SDK.
+
+    Args:
+        share_name: Azure Files share name
+        prefix: Directory prefix within the share
+        local_path: Local destination directory
+    """
+    from loguru import logger
+    import logging
+    import warnings
+
+    if not AZURE_FILES_SDK_AVAILABLE:
+        raise ImportError("azure-storage-file-share is required for Azure Files downloads")
+
+    # Suppress Azure SDK logging
+    logging.getLogger("azure.core.pipeline.policies.http_logging_policy").setLevel(logging.WARNING)
+    logging.getLogger("azure.storage.fileshare").setLevel(logging.WARNING)
+    warnings.filterwarnings("ignore", category=Warning, module="urllib3")
+
+    # Get credentials
+    account_name = os.environ.get("AZURE_STORAGE_ACCOUNT_NAME")
+    account_key = os.environ.get("AZURE_STORAGE_ACCOUNT_KEY")
+
+    if not account_name or not account_key:
+        raise ValueError(
+            "AZURE_STORAGE_ACCOUNT_NAME and AZURE_STORAGE_ACCOUNT_KEY must be set"
+        )
+
+    account_url = f"https://{account_name}.file.core.windows.net"
+    share_service_client = ShareServiceClient(
+        account_url=account_url, credential=account_key
+    )
+
+    share_client = share_service_client.get_share_client(share_name)
+    
+    logger.info(f"Listing files in {share_name}/{prefix}")
+    downloaded_count = 0
+    skipped_count = 0
+
+    # Recursively download directory contents
+    def download_directory(dir_path, local_dir):
+        nonlocal downloaded_count, skipped_count
+        
+        dir_client = share_client.get_directory_client(dir_path)
+        
+        for item in dir_client.list_directories_and_files():
+            item_name = item['name']
+            remote_item_path = f"{dir_path}/{item_name}" if dir_path else item_name
+            local_item_path = os.path.join(local_dir, item_name)
+            
+            if item.get('is_directory', False):
+                # Recursively download subdirectory
+                os.makedirs(local_item_path, exist_ok=True)
+                download_directory(remote_item_path, local_item_path)
+            else:
+                # Download file
+                file_size = item.get('content_length', 0)
+                
+                # Skip if file already exists with same size
+                if os.path.exists(local_item_path) and os.path.getsize(local_item_path) == file_size:
+                    skipped_count += 1
+                    continue
+                
+                # Only log every 10th download to reduce noise
+                if downloaded_count % 10 == 0:
+                    logger.info(f"Downloading {remote_item_path} ({file_size} bytes)...")
+                
+                file_client = share_client.get_file_client(remote_item_path)
+                with open(local_item_path, "wb") as f:
+                    data = file_client.download_file()
+                    f.write(data.readall())
+                downloaded_count += 1
+
+    download_directory(prefix.rstrip("/"), local_path)
+    logger.info(f"Download complete: {downloaded_count} files downloaded, {skipped_count} skipped")
+
+
 def download_model_path(model_path, cache_dir=None):
     """Download a remote model path to a local cache directory.
 
@@ -454,8 +539,29 @@ def download_model_path(model_path, cache_dir=None):
     # Download remote model
     logger.info(f"Downloading remote model {model_path} to {local_path}")
     try:
-        # For Azure paths, use direct Azure SDK (more reliable than fsspec)
-        if model_path.startswith(("az://", "azblob://", "abfs://")) and AZURE_SDK_AVAILABLE:
+        # For Azure Files paths (azfiles://), use Azure Files SDK
+        if model_path.startswith("azfiles://") and AZURE_FILES_SDK_AVAILABLE:
+            logger.info("Using Azure Files SDK for download")
+            # Parse share name and path: azfiles://share/path/to/model
+            path_parts = model_path.split("://", 1)[1]
+            parts = path_parts.split("/", 1)
+            
+            share_name = parts[0]
+            prefix = parts[1] if len(parts) > 1 else ""
+            
+            # Azure Files paths ending with / are directories
+            if model_path.endswith("/") or not prefix or "/" in prefix:
+                os.makedirs(local_path, exist_ok=True)
+                _download_azure_files_directory(share_name, prefix, local_path)
+            else:
+                # Single file download
+                logger.warning(
+                    f"Single file download from Azure Files not implemented, downloading as directory"
+                )
+                os.makedirs(local_path, exist_ok=True)
+                _download_azure_files_directory(share_name, prefix, local_path)
+        # For Azure Blob paths, use direct Azure SDK (more reliable than fsspec)
+        elif model_path.startswith(("az://", "azblob://", "abfs://")) and AZURE_SDK_AVAILABLE:
             logger.info("Using Azure SDK for download (more reliable than fsspec)")
             # Parse container and prefix, handling both azblob formats:
             # 1. azblob://container/prefix/path

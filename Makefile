@@ -1,7 +1,7 @@
-.PHONY: help build build-cpu build-tf build-tf-cpu push push-cpu push-tf push-tf-cpu push-fastattn shell test clean az-login
+.PHONY: help build build-cpu build-tf build-tf-cpu push push-cpu push-tf push-tf-cpu push-fastattn shell test clean az-login apptainer-build apptainer-build-torch-gpu apptainer-build-torch-cpu apptainer-build-tensorflow-gpu apptainer-build-tensorflow-cpu apptainer-build-fastattn apptainer-shell apptainer-run apptainer-save-models apptainer-tessellate apptainer-extract-features apptainer-clean apptainer-examples
 
 # Default Docker image name
-IMAGE_NAME ?= mskocracontainerregister-cfbfchg8dgfbedan.azurecr.io/mussel
+IMAGE_NAME ?= mskmind/mussel
 IMAGE_TAG ?= latest
 FULL_IMAGE = $(IMAGE_NAME):$(IMAGE_TAG)
 
@@ -28,7 +28,7 @@ build-tf-cpu: ## Build Docker image with TensorFlow CPU support
 	$(MAKE) build BACKEND=tensorflow-cpu IMAGE_TAG=tf-cpu
 
 build-fastattn: ## Build Docker image with flash-attention support
-	$(MAKE) build BACKEND=fastattn IMAGE_TAG=fastattn
+	$(MAKE) build BACKEND=fastattn IMAGE_TAG=fastattn-dev
 
 push: az-login ## Push Docker image to registry
 	@echo "Pushing Docker image: $(FULL_IMAGE)"
@@ -44,7 +44,7 @@ push-tf-cpu: az-login ## Push Docker image with TensorFlow CPU support to regist
 	$(MAKE) push IMAGE_TAG=tf-cpu
 
 push-fastattn: az-login ## Push Docker image with flash-attention support to registry
-	$(MAKE) push IMAGE_TAG=fastattn
+	$(MAKE) push IMAGE_TAG=fastattn-dev
 
 az-login:
 	az acr login -n mskOcraContainerRegister
@@ -80,6 +80,106 @@ clean: ## Remove Docker images
 	docker rmi $(IMAGE_NAME):tf-gpu || true
 	docker rmi $(IMAGE_NAME):tf-cpu || true
 
+# Apptainer/Singularity commands
+APPTAINER_IMAGE ?= mussel_$(IMAGE_TAG).sif
+DOCKER_URI ?= docker://$(FULL_IMAGE)
+APPTAINER_CACHE_DIR ?= $(HOME)/.apptainer/cache
+MODEL_DIR ?= ./model_cache
+
+apptainer-build: ## Build Apptainer/Singularity image from Docker image
+	@echo "Building Apptainer image: $(APPTAINER_IMAGE) from $(DOCKER_URI)"
+	apptainer build $(APPTAINER_IMAGE) $(DOCKER_URI)
+
+apptainer-build-torch-gpu: ## Build Apptainer image with PyTorch GPU backend (via Docker)
+	@echo "Building Docker image with torch-gpu backend"
+	docker build --build-arg BACKEND=torch-gpu -t $(IMAGE_NAME):torch-gpu .
+	@echo "Converting Docker image to Apptainer SIF"
+	apptainer build mussel_torch-gpu.sif docker-daemon://$(IMAGE_NAME):torch-gpu
+
+apptainer-build-torch-cpu: ## Build Apptainer image with PyTorch CPU backend (via Docker)
+	@echo "Building Docker image with torch-cpu backend"
+	docker build --build-arg BACKEND=torch-cpu -t $(IMAGE_NAME):torch-cpu .
+	@echo "Converting Docker image to Apptainer SIF"
+	apptainer build mussel_torch-cpu.sif docker-daemon://$(IMAGE_NAME):torch-cpu
+
+apptainer-build-tensorflow-gpu: ## Build Apptainer image with TensorFlow GPU backend (via Docker)
+	@echo "Building Docker image with tensorflow-gpu backend"
+	docker build --build-arg BACKEND=tensorflow-gpu -t $(IMAGE_NAME):tensorflow-gpu .
+	@echo "Converting Docker image to Apptainer SIF"
+	apptainer build mussel_tensorflow-gpu.sif docker-daemon://$(IMAGE_NAME):tensorflow-gpu
+
+apptainer-build-tensorflow-cpu: ## Build Apptainer image with TensorFlow CPU backend (via Docker)
+	@echo "Building Docker image with tensorflow-cpu backend"
+	docker build --build-arg BACKEND=tensorflow-cpu -t $(IMAGE_NAME):tensorflow-cpu .
+	@echo "Converting Docker image to Apptainer SIF"
+	apptainer build mussel_tensorflow-cpu.sif docker-daemon://$(IMAGE_NAME):tensorflow-cpu
+
+apptainer-build-fastattn: ## Build Apptainer image with flash-attention backend (via Docker)
+	@echo "Building Docker image with fastattn backend"
+	docker build --build-arg BACKEND=fastattn -t $(IMAGE_NAME):fastattn .
+	@echo "Converting Docker image to Apptainer SIF"
+	apptainer build mussel_fastattn.sif docker-daemon://$(IMAGE_NAME):fastattn
+
+apptainer-shell: ## Start interactive shell in Apptainer container
+	@echo "Starting Apptainer shell with GPU support"
+	apptainer shell --nv --bind $(PWD):/workspace $(APPTAINER_IMAGE)
+
+apptainer-run: ## Run command in Apptainer container (usage: make apptainer-run CMD="your command")
+	@if [ -z "$(CMD)" ]; then \
+		echo "Error: CMD variable not set. Usage: make apptainer-run CMD=\"your command\""; \
+		exit 1; \
+	fi
+	apptainer exec --nv --bind $(PWD):/workspace --pwd /workspace $(APPTAINER_IMAGE) $(CMD)
+
+apptainer-save-models: ## Save models using Apptainer (usage: make apptainer-save-models MODELS="UNI2,VIRCHOW2")
+	@if [ -z "$(MODELS)" ]; then \
+		echo "Error: MODELS variable not set. Usage: make apptainer-save-models MODELS=\"UNI2,VIRCHOW2\""; \
+		exit 1; \
+	fi
+	@echo "Saving models: $(MODELS) to $(MODEL_DIR)"
+	mkdir -p $(MODEL_DIR)
+	apptainer exec --nv \
+		--bind $(PWD):/workspace \
+		--pwd /workspace \
+		$(APPTAINER_IMAGE) \
+		uv run save_models \
+		--models $(MODELS) \
+		--output-dir $(MODEL_DIR)
+
+apptainer-tessellate: ## Run tessellate with Apptainer (usage: make apptainer-tessellate SLIDE=slide.svs)
+	@if [ -z "$(SLIDE)" ]; then \
+		echo "Error: SLIDE variable not set. Usage: make apptainer-tessellate SLIDE=slide.svs"; \
+		exit 1; \
+	fi
+	apptainer exec --nv \
+		--bind $(PWD):/workspace \
+		--pwd /workspace \
+		$(APPTAINER_IMAGE) \
+		uv run tessellate slide_path=$(SLIDE) output_h5_path=$(basename $(SLIDE)).h5
+
+apptainer-extract-features: ## Run extract features with Apptainer (usage: make apptainer-extract-features SLIDE=slide.svs MODEL=UNI2)
+	@if [ -z "$(SLIDE)" ] || [ -z "$(MODEL)" ]; then \
+		echo "Error: SLIDE and MODEL variables required"; \
+		echo "Usage: make apptainer-extract-features SLIDE=slide.svs MODEL=UNI2"; \
+		exit 1; \
+	fi
+	mkdir -p $(MODEL_DIR)
+	apptainer exec --nv \
+		--bind $(PWD):/workspace \
+		--bind $(MODEL_DIR):/models \
+		--pwd /workspace \
+		--env MODEL_DIR=/models \
+		$(APPTAINER_IMAGE) \
+		uv run tessellate_extract_features \
+		slide_paths=[$(SLIDE)] \
+		model_type=$(MODEL) \
+		output_dir=output \
+		model_dir=/models
+
+apptainer-clean: ## Remove Apptainer images and cache
+	rm -f *.sif
+	rm -rf $(APPTAINER_CACHE_DIR)
+
 # Example commands
 examples: ## Show example Docker commands
 	@echo "Example commands:"
@@ -96,3 +196,34 @@ examples: ## Show example Docker commands
 	@echo ""
 	@echo "  # Or use the mussel-docker wrapper:"
 	@echo "  ./mussel-docker tessellate slide_path=slide.svs output_h5_path=tiles.h5"
+
+apptainer-examples: ## Show example Apptainer commands
+	@echo "Apptainer Example commands:"
+	@echo ""
+	@echo "  # Build Apptainer image from Docker registry"
+	@echo "  make apptainer-build"
+	@echo ""
+	@echo "  # Build Apptainer image directly from Dockerfile (backend-specific)"
+	@echo "  make apptainer-build-torch-gpu       # PyTorch with GPU support"
+	@echo "  make apptainer-build-torch-cpu       # PyTorch CPU only"
+	@echo "  make apptainer-build-tensorflow-gpu  # TensorFlow with GPU"
+	@echo "  make apptainer-build-tensorflow-cpu  # TensorFlow CPU only"
+	@echo "  make apptainer-build-fastattn        # PyTorch with flash-attention"
+	@echo ""
+	@echo "  # Save models"
+	@echo "  make apptainer-save-models MODELS=\"UNI2,VIRCHOW2,GIGAPATH\""
+	@echo ""
+	@echo "  # Start interactive shell"
+	@echo "  make apptainer-shell"
+	@echo ""
+	@echo "  # Run tessellate"
+	@echo "  make apptainer-tessellate SLIDE=slide.svs"
+	@echo ""
+	@echo "  # Extract features"
+	@echo "  make apptainer-extract-features SLIDE=slide.svs MODEL=UNI2"
+	@echo ""
+	@echo "  # Run custom command"
+	@echo "  make apptainer-run CMD=\"uv run tessellate --help\""
+	@echo ""
+	@echo "  # Clean up images"
+	@echo "  make apptainer-clean"

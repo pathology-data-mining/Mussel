@@ -26,33 +26,26 @@ log() {
     echo "[$(date +'%Y-%m-%d %H:%M:%S')] $1" >&2
 }
 
-# Cleanup function - only cleanup work directory, NOT cache or output directories
+# Cleanup function - handles cleanup on error/interrupt
+# Note: On successful completion, cleanup is done immediately after processing
 cleanup() {
     local exit_code=$?
     
-    # Only cleanup temporary work directory (staged slides)
-    # DO NOT cleanup output directory - Azure Batch needs it for output file staging
-    if [ -n "$WORK_DIR" ] && [ -d "$WORK_DIR" ]; then
-        log "Cleanup: Removing work directory: $WORK_DIR"
-        rm -rf "$WORK_DIR" || log "Warning: Failed to remove work directory"
-    fi
-    
-    # Cleanup staged Azure Files file if requested and task succeeded
-    if [ "$CLEANUP_STAGED_FILE" = "true" ] && [ $exit_code -eq 0 ] && [ -n "$STAGED_FILE_PATH" ]; then
-        log "Cleanup: Removing staged file from Azure Files: $STAGED_FILE_PATH"
-        if [ -n "$AZURE_STORAGE_ACCOUNT" ] && [ -n "$AZURE_STORAGE_KEY" ] && [ -n "$AZURE_FILES_SHARE" ]; then
-            if command -v az &> /dev/null; then
-                az storage file delete \
-                    --account-name "$AZURE_STORAGE_ACCOUNT" \
-                    --account-key "$AZURE_STORAGE_KEY" \
-                    --share-name "$AZURE_FILES_SHARE" \
-                    --path "$STAGED_FILE_PATH" 2>&1 | grep -v "^$" || log "Warning: Failed to delete staged file"
-                log "Cleanup: Staged file deleted successfully"
-            fi
+    # Only run cleanup trap if script is exiting due to error or interrupt
+    # For successful completion (exit_code=0), cleanup is already done inline
+    if [ $exit_code -ne 0 ]; then
+        log "Cleanup trap: Script exiting with error code $exit_code"
+        
+        # Only cleanup temporary work directory (staged slides)
+        # DO NOT cleanup output directory - Azure Batch needs it for output file staging
+        if [ -n "$WORK_DIR" ] && [ -d "$WORK_DIR" ]; then
+            log "Cleanup trap: Removing work directory: $WORK_DIR"
+            rm -rf "$WORK_DIR" || log "Warning: Failed to remove work directory"
         fi
+        
+        # Note: We don't cleanup staged files on error in case debugging is needed
+        log "Cleanup trap: Model cache directories preserved for reuse across tasks"
     fi
-    
-    log "Cleanup: Model cache directories preserved for reuse across tasks"
 }
 
 trap cleanup EXIT INT TERM
@@ -227,7 +220,16 @@ CMD_ARGS+=("slide_paths=$EFFECTIVE_SLIDE_PATH")
 [ -n "$MODEL_TYPES" ] && CMD_ARGS+=("model_type=[$MODEL_TYPES]")
 [ -n "$MODEL_TYPE" ] && CMD_ARGS+=("model_type=$MODEL_TYPE")
 [ -n "$MODEL_PATH" ] && CMD_ARGS+=("model_path=$MODEL_PATH")
-[ -n "$MODEL_DIR" ] && CMD_ARGS+=("model_dir=$MODEL_DIR")
+
+# Handle MODEL_DIR - always use persistent cache when MODEL_DIR is set
+if [ -n "$MODEL_DIR" ]; then
+    # When MODEL_DIR is set, models are staged to persistent cache in start task
+    # Always use the persistent cache location for tessellate-extract-features
+    PERSISTENT_CACHE_DIR="/mnt/batch/tasks/cache"
+    log "Using local model files from persistent cache: $PERSISTENT_CACHE_DIR"
+    log "  (Models staged from: $MODEL_DIR)"
+    CMD_ARGS+=("model_dir=$PERSISTENT_CACHE_DIR")
+fi
 [ -n "$SLIDE_MODEL_TYPES" ] && CMD_ARGS+=("slide_model_type=[$SLIDE_MODEL_TYPES]")
 [ -n "$SLIDE_MODEL_TYPE" ] && CMD_ARGS+=("slide_model_type=$SLIDE_MODEL_TYPE")
 [ -n "$SLIDE_MODEL_PATH" ] && CMD_ARGS+=("slide_model_path=$SLIDE_MODEL_PATH")
@@ -401,6 +403,50 @@ fi
 
 log "SUCCESS: Processing completed in $DURATION seconds"
 log "Output files will be automatically uploaded by Azure Batch"
+
+# Immediate cleanup after processing completes
+# Remove work directory and staged slides to free disk space
+if [ -n "$WORK_DIR" ] && [ -d "$WORK_DIR" ]; then
+    log "Immediate cleanup: Removing work directory: $WORK_DIR"
+    rm -rf "$WORK_DIR" || log "Warning: Failed to remove work directory"
+fi
+
+# If we staged slides from Azure Files, delete them from Azure Files after successful processing
+if [ "$CLEANUP_STAGED_FILE" = "true" ] && [ -n "$STAGED_FILE_PATH" ]; then
+    log "Immediate cleanup: Removing staged file from Azure Files: $STAGED_FILE_PATH"
+    if [ -n "$AZURE_STORAGE_ACCOUNT" ] && [ -n "$AZURE_STORAGE_KEY" ] && [ -n "$AZURE_FILES_SHARE" ]; then
+        if command -v az &> /dev/null; then
+            az storage file delete \
+                --account-name "$AZURE_STORAGE_ACCOUNT" \
+                --account-key "$AZURE_STORAGE_KEY" \
+                --share-name "$AZURE_FILES_SHARE" \
+                --path "$STAGED_FILE_PATH" 2>&1 | grep -v "^$" || log "Warning: Failed to delete staged file"
+            log "Immediate cleanup: Staged file deleted successfully"
+        fi
+    fi
+fi
+
+log "Immediate cleanup completed - disk space freed"
+
+# NOTE: We do NOT cleanup the output directory here because:
+# 1. Azure Batch uploads files AFTER the script exits (with upload_condition=task_completion)
+# 2. The upload is asynchronous - Azure Batch agent handles it AFTER this process terminates
+# 3. Azure Batch considers the task "complete" when script exits, THEN starts the upload
+# 4. Any cleanup we do here (even in background) races with the upload
+#
+# According to Azure Batch documentation:
+# - Task completion triggers when the process exits
+# - Output file upload happens AFTER task completion
+# - There's no reliable way to know when upload finishes from within the task
+#
+# The output files will persist until:
+# - The task retention period expires (configured in pool/job settings)
+# - The node is explicitly cleaned up (via cleanup_batch_node.sh script)
+# - The pool is deleted
+#
+# This is the CORRECT and SAFE approach per Azure Batch behavior
+
+log "Task complete - Azure Batch will now upload output files from: $OUTPUT_DIR"
 
 echo "============================================"
 echo "End time: $(date)"

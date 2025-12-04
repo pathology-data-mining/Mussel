@@ -24,6 +24,68 @@ Image.MAX_IMAGE_PIXELS = None
 logger = logging.getLogger(__name__)
 
 
+def get_slide_mpp(wsi, slide_path: Optional[str] = None, default_mpp: float = 0.5) -> float:
+    """
+    Get MPP (microns per pixel) from slide metadata with fallback handling.
+    
+    Args:
+        wsi: TiffSlide object
+        slide_path: Optional path to slide for logging
+        default_mpp: Default MPP to use if metadata not found (default: 0.5 for 20x TCGA slides)
+        
+    Returns:
+        MPP value as float
+    """
+    try:
+        # Try standard tiffslide property first
+        slide_mpp_value = wsi.properties.get(tiffslide.PROPERTY_NAME_MPP_X)
+        
+        # If not found, try alternative property names
+        if slide_mpp_value is None:
+            # Try common alternative property names
+            for key in ['tiffslide.mpp-x', 'aperio.MPP', 'openslide.mpp-x']:
+                slide_mpp_value = wsi.properties.get(key)
+                if slide_mpp_value is not None:
+                    logger.info(f"Found MPP in alternate property: {key}")
+                    break
+        
+        if slide_mpp_value is None:
+            # Try to estimate MPP from magnification if available
+            magnification = None
+            for key in ['aperio.AppMag', 'openslide.objective-power', 'tiffslide.objective-power']:
+                mag_value = wsi.properties.get(key)
+                if mag_value is not None:
+                    try:
+                        magnification = float(mag_value)
+                        logger.info(f"Found magnification: {magnification}x from {key}")
+                        break
+                    except (ValueError, TypeError):
+                        continue
+            
+            if magnification is not None:
+                # Estimate MPP from magnification using standard conversion
+                # Typical values: 40x -> 0.25 MPP, 20x -> 0.5 MPP, 10x -> 1.0 MPP
+                slide_mpp = 10.0 / magnification
+                slide_name = slide_path if slide_path else "slide"
+                logger.warning(f"MPP metadata not found for {slide_name}, estimated from magnification ({magnification}x): {slide_mpp:.3f}")
+            else:
+                # Use default MPP (common for TCGA slides at 20x magnification)
+                slide_mpp = default_mpp
+                slide_name = slide_path if slide_path else "slide"
+                logger.warning(f"MPP metadata not found for {slide_name}, using default MPP: {slide_mpp}")
+        else:
+            slide_mpp = float(slide_mpp_value)
+            logger.info(f"slide_mpp: {slide_mpp}")
+            
+        return slide_mpp
+        
+    except (KeyError, TypeError, ValueError) as e:
+        # Fallback to default MPP if property is missing or invalid
+        slide_name = slide_path if slide_path else "slide"
+        logger.warning(f"Failed to read MPP metadata for {slide_name}: {e}, using default MPP: {default_mpp}")
+        return default_mpp
+
+
 def is_white_patch(patch, saturation_threshold=5):
     """
     Determine if patch is white based on HSV saturation threshold.
@@ -370,9 +432,8 @@ def segment_tissue(
     if step_size is None:
         step_size = patch_size
 
-    # get mpp of WSI
-    slide_mpp = float(wsi.properties[tiffslide.PROPERTY_NAME_MPP_X])
-    logger.info(f"slide_mpp: {slide_mpp}")
+    # Get MPP with fallback handling
+    slide_mpp = get_slide_mpp(wsi, slide_path)
 
     native_step_size = get_native_size(step_size, mpp, slide_mpp)
     native_patch_size = get_native_size(patch_size, mpp, slide_mpp)
@@ -592,7 +653,9 @@ def save_patches_png(
     """
     wsi = tiffslide.open_slide(slide_path)
 
-    slide_mpp = float(wsi.properties[tiffslide.PROPERTY_NAME_MPP_X])
+    # Get MPP with fallback handling
+    slide_mpp = get_slide_mpp(wsi, slide_path)
+    
     native_patch_size = get_native_size(patch_size, mpp, slide_mpp)
 
     save_dir = Path(save_dir)

@@ -920,13 +920,15 @@ def aggregate_slide_features_batch(
                         if coords is None:
                             raise ValueError("GIGAPATH_SLIDE requires coordinates")
                         
-                        features_tensor = torch.from_numpy(features).unsqueeze(0)
-                        coords_tensor = torch.from_numpy(coords).unsqueeze(0)
-                        agg_features = model_fun(features_tensor, coords_tensor).numpy()
+                        features_tensor = torch.from_numpy(features).unsqueeze(0)  # (1, N, D)
+                        coords_tensor = torch.from_numpy(coords).unsqueeze(0)  # (1, N, 2)
+                        agg_features = model_fun(features_tensor, coords_tensor).cpu().numpy()
                         aggregated_batch.append(agg_features)
                         successful_slides.append(slide_name)
                     except Exception as e:
+                        import traceback
                         logger.error(f"Failed to process slide {slide_name}: {str(e)}")
+                        logger.error(f"Traceback: {traceback.format_exc()}")
                         aggregated_batch.append(None)
                         failed_slides.append(slide_name)
                         # Continue with next slide

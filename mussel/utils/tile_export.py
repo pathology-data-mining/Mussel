@@ -8,7 +8,7 @@ import numpy as np
 import tiffslide
 from tqdm import tqdm
 
-from mussel.utils.segment import is_black_patch, is_white_patch, get_native_size
+from mussel.utils.segment import is_black_patch, is_white_patch, get_native_size, get_slide_mpp
 from mussel.utils.timer import timed
 
 log = logging.getLogger(__name__)
@@ -57,7 +57,9 @@ def export_tiles(
 
     # Init whole slide image
     wsi = tiffslide.TiffSlide(slide_path)
-    slide_mpp = float(wsi.properties[tiffslide.PROPERTY_NAME_MPP_X])
+    
+    # Get MPP with fallback handling
+    slide_mpp = get_slide_mpp(wsi, slide_path)
 
     native_patch_size = get_native_size(patch_size, mpp, slide_mpp)
     log.info(

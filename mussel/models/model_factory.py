@@ -18,6 +18,12 @@ from timm.layers import SwiGLUPacked
 from torchvision import transforms
 from transformers import AutoModel
 
+# Import gigapath.slide_encoder early to register models with timm
+try:
+    import gigapath.slide_encoder
+except ImportError:
+    pass  # GigaPath not installed
+
 # Import model cache utilities for file locking
 try:
     from mussel.utils.model_cache import model_download_lock
@@ -678,6 +684,32 @@ class GigapathModel(TorchModel):
         )
         return preprocessing
 
+    def get_model_fun(self) -> Callable:
+        """Get model inference function for GigaPath tile encoder.
+
+        GigaPath ViT returns (batch, num_tokens, embed_dim). We extract the CLS token.
+
+        Returns:
+            Callable that processes a batch and returns embeddings.
+        """
+
+        def model_fun(batch):
+            """Run inference and extract CLS token."""
+            with (
+                torch.no_grad(),
+                torch.inference_mode(),
+                torch.autocast(device_type=self.device.type, dtype=torch.float16),
+            ):
+                batch = batch.to(self.device, non_blocking=True)
+                output = self.obj(batch)
+                # GigaPath ViT output is (batch, num_tokens, embed_dim)
+                # Extract CLS token (first token)
+                if len(output.shape) == 3:
+                    output = output[:, 0, :]  # Take CLS token
+                return output.cpu()
+
+        return model_fun
+
 
 class GigapathSlideEncoderModel(TorchModel):
     def __init__(
@@ -703,17 +735,25 @@ class GigapathSlideEncoderModel(TorchModel):
             # Load GigaPath slide encoder using their official API
             # See: https://github.com/prov-gigapath/prov-gigapath#inference-with-the-slide-encoder
             import gigapath.slide_encoder
+            import os
+            import tempfile
             
             # gigapath expects "hf_hub:" format (underscore, not hyphen)
             model_path_fixed = model_path.replace("hf-hub:", "hf_hub:")
+            
+            # Use a writable local_dir for downloading
+            # Try HF_HOME first, then fall back to temp directory
+            local_dir = os.environ.get('HF_HOME', os.environ.get('TRANSFORMERS_CACHE', tempfile.gettempdir()))
+            
             # Use locking when downloading from HuggingFace
             with model_download_lock(model_path) as should_download:
-                # create_model(repo_id, model_name, in_chans)
+                # create_model(repo_id, model_name, in_chans, local_dir)
                 # in_chans=1536 for GigaPath tile embeddings
                 model_obj = gigapath.slide_encoder.create_model(
                     model_path_fixed, 
                     "gigapath_slide_enc12l768d", 
-                    1536
+                    1536,
+                    local_dir=local_dir
                 )
         super().__init__(model_path, model_obj, use_gpu, gpu_device_id)
 

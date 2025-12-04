@@ -128,6 +128,9 @@ class AzureBlobStaging:
         
         # Handle S3 download
         temp_file = None
+        # Default to using azcopy if available (much faster than SDK)
+        use_azcopy = os.environ.get("USE_AZCOPY", "true").lower() == "true"
+        
         if local_path.startswith("s3://"):
             if show_progress:
                 print(f"    [S3] Downloading from S3: {local_path}")
@@ -171,20 +174,65 @@ class AzureBlobStaging:
         
         # Upload to Azure Blob Storage
         try:
+            file_size_mb = os.path.getsize(local_path) / (1024 * 1024)
+            
             if show_progress:
-                file_size_mb = os.path.getsize(local_path) / (1024 * 1024)
                 print(f"    [UPLOAD] Uploading {file_size_mb:.1f} MB to Azure Blob...")
             
-            blob_client = self.service_client.get_blob_client(
-                container=self.container_name,
-                blob=blob_name
-            )
+            # Try using azcopy for better performance if available
+            if use_azcopy and shutil.which("azcopy"):
+                if show_progress:
+                    print(f"    [AZCOPY] Using azcopy for faster upload")
+                else:
+                    # Always log when using azcopy, even if show_progress=False
+                    print(f"    [INFO] Using azcopy for {os.path.basename(local_path)} ({file_size_mb:.1f} MB)")
+                
+                dest_url = f"https://{self.account_name}.blob.core.windows.net/{self.container_name}/{blob_name}"
+                
+                # Set AZCOPY_AUTO_LOGIN_TYPE to prevent interactive prompts
+                env = os.environ.copy()
+                env["AZCOPY_AUTO_LOGIN_TYPE"] = "SPN"  # Service Principal
+                env["AZCOPY_SPA_APPLICATION_ID"] = ""  # Not used with account key
+                env["AZCOPY_SPA_CLIENT_SECRET"] = self.account_key
+                
+                # azcopy uses account key via URL with SAS token or env var
+                # For account key auth, we need to generate a SAS token or use env var
+                cmd = [
+                    "azcopy", "copy",
+                    local_path,
+                    dest_url,
+                    "--overwrite=true",
+                    "--blob-type=BlockBlob"
+                ]
+                
+                # Add account key via environment variable
+                env["AZCOPY_ACCOUNT_KEY"] = self.account_key
+                
+                try:
+                    result = subprocess.run(cmd, check=True, capture_output=True, text=True, env=env)
+                    if show_progress:
+                        print(f"    [DONE] azcopy upload complete")
+                except subprocess.CalledProcessError as e:
+                    if show_progress:
+                        print(f"    [WARN] azcopy failed, falling back to SDK: {e.stderr}")
+                    # Fall back to SDK upload
+                    use_azcopy = False
             
-            with open(local_path, "rb") as data:
-                blob_client.upload_blob(data, overwrite=True)
-            
-            if show_progress:
-                print(f"    [DONE] Upload complete")
+            # Fall back to SDK upload if azcopy not used or failed
+            if not use_azcopy or not shutil.which("azcopy"):
+                if not shutil.which("azcopy") and use_azcopy:
+                    print(f"    [INFO] azcopy not found in PATH, using Python SDK")
+                
+                blob_client = self.service_client.get_blob_client(
+                    container=self.container_name,
+                    blob=blob_name
+                )
+                
+                with open(local_path, "rb") as data:
+                    blob_client.upload_blob(data, overwrite=True)
+                
+                if show_progress:
+                    print(f"    [DONE] Upload complete")
             
         finally:
             # Clean up temp file if we downloaded from S3

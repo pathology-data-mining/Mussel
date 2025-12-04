@@ -480,24 +480,30 @@ class AzureBatchJobSubmitter:
         # For ubuntu-server-container images, drivers are pre-installed
         # Stage models from Azure Files to persistent cache if Azure Files is configured
         if self.azure_files_staging:
-            model_download_cmd = f"""
-                # Copy models from Azure Files to persistent cache
-                echo 'Copying models from Azure Files to persistent cache...'
+            model_download_cmd = """# Copy models from Azure Files to persistent cache
+                echo '[MODEL_CACHE] Staging models from Azure Files to persistent cache...'
                 if [ -d /mnt/batch/tasks/fsmounts/azfiles/models ]; then
-                    # Copy each model directory, preserving structure
-                    for model_dir in /mnt/batch/tasks/fsmounts/azfiles/models/*; do
-                        if [ -d "$$model_dir" ]; then
-                            model_name=$$(basename "$$model_dir")
-                            echo "  Copying $$model_name..."
-                            cp -r "$$model_dir" /mnt/batch/tasks/cache/
-                        fi
-                    done
-                    echo 'Models copied successfully'
-                    ls -la /mnt/batch/tasks/cache/
+                    echo '[MODEL_CACHE] Source: /mnt/batch/tasks/fsmounts/azfiles/models/'
+                    echo '[MODEL_CACHE] Destination: /mnt/batch/tasks/cache/'
+                    echo '[MODEL_CACHE] Source size:'
+                    du -sh /mnt/batch/tasks/fsmounts/azfiles/models/
+                    echo '[MODEL_CACHE] Available models in Azure Files:'
+                    ls -1 /mnt/batch/tasks/fsmounts/azfiles/models/ | sed 's/^/[MODEL_CACHE]   - /'
+                    echo '[MODEL_CACHE] Starting rsync...'
+                    if rsync -av --progress /mnt/batch/tasks/fsmounts/azfiles/models/ /mnt/batch/tasks/cache/ 2>&1 | while read line; do echo "[MODEL_CACHE] $line"; done; then
+                        echo '[MODEL_CACHE] ✓ Models copied successfully'
+                        echo '[MODEL_CACHE] Cache directory contents:'
+                        ls -lh /mnt/batch/tasks/cache/ | sed 's/^/[MODEL_CACHE]   /'
+                        echo '[MODEL_CACHE] Total cache size:'
+                        du -sh /mnt/batch/tasks/cache/
+                    else
+                        echo '[MODEL_CACHE] ✗ ERROR: rsync failed'
+                        exit 1
+                    fi
                 else
-                    echo 'No models found in Azure Files, will download on-demand'
+                    echo '[MODEL_CACHE] No models found in Azure Files mount, will download on-demand'
                 fi
-            """
+                """
         else:
             # Models will be downloaded on-demand from Hugging Face to /mnt/batch/tasks/cache
             model_download_cmd = ""
@@ -511,11 +517,24 @@ class AzureBatchJobSubmitter:
                 set -e
                 echo 'Setting up Docker for GPU support...'
                 
-                # Move Docker data directory to temporary disk (has more space)
-                echo 'Configuring Docker to use temporary disk...'
-                mkdir -p /mnt/docker
-                systemctl stop docker || true
-                cat > /etc/docker/daemon.json << 'DOCKEREOF'
+                # Check if Docker is already configured correctly
+                NEEDS_CONFIG=false
+                if [ ! -f /etc/docker/daemon.json ]; then
+                    echo 'Docker daemon.json does not exist'
+                    NEEDS_CONFIG=true
+                elif ! grep -q \\"/mnt/docker\\" /etc/docker/daemon.json; then
+                    echo 'Docker data-root not set to /mnt/docker'
+                    NEEDS_CONFIG=true
+                elif ! grep -q \\"nvidia\\" /etc/docker/daemon.json; then
+                    echo 'Docker nvidia runtime not configured'
+                    NEEDS_CONFIG=true
+                fi
+                
+                if [ "$$NEEDS_CONFIG" = "true" ]; then
+                    echo 'Configuring Docker to use temporary disk...'
+                    mkdir -p /mnt/docker
+                    systemctl stop docker || true
+                    cat > /etc/docker/daemon.json << 'DOCKEREOF'
 {{
   \\"data-root\\": \\"/mnt/docker\\",
   \\"default-runtime\\": \\"nvidia\\",
@@ -527,8 +546,17 @@ class AzureBatchJobSubmitter:
   }}
 }}
 DOCKEREOF
-                # Restart Docker - may show error but will recover
-                systemctl start docker || systemctl restart docker || true
+                    systemctl daemon-reload
+                    systemctl start docker || true
+                else
+                    echo 'Docker already configured correctly'
+                    # Reset failed state if Docker is in a failed state
+                    if ! systemctl is-active --quiet docker; then
+                        echo 'Docker not running, resetting and starting...'
+                        systemctl reset-failed docker || true
+                        systemctl start docker || true
+                    fi
+                fi
                 
                 # Wait for Docker to be ready
                 echo 'Waiting for Docker to be ready...'
@@ -1481,8 +1509,12 @@ CLEANUP_SCRIPT_END
                 f"Task '{task_id}' submitted successfully (max retries: {max_retry_count})"
             )
         except batchmodels.BatchErrorException as e:
-            print(f"Error submitting task: {e}")
-            raise
+            # Handle task already exists (can happen with incremental submission retries)
+            if 'TaskExists' in str(e):
+                print(f"Task '{task_id}' already exists, skipping")
+            else:
+                print(f"Error submitting task: {e}")
+                raise
 
 
     def submit_tasks_from_csv(
@@ -1646,31 +1678,46 @@ CLEANUP_SCRIPT_END
             if self.azure_files_staging and local_model_dir:
                 self.log(f"\n[Azure Files] Staging models from: {local_model_dir}")
                 
+                # Create mapping of model names to expected file/directory names
+                model_file_map = {
+                    "CONCH1_5": ["conch1_5.pth", "conch.pth"],
+                    "UNI": ["uni.pth"],
+                    "UNI2": ["uni2.pth"],
+                    "VIRCHOW": ["virchow.pth"],
+                    "VIRCHOW2": ["virchow2.pth"],
+                    "GIGAPATH": ["gigapath.pth"],
+                    "OPTIMUS": ["optimus.pth"],
+                    "TITAN_SLIDE": ["titan_slide", "gigapath_slide.pth"],
+                    "CTRANSPATH": ["ctranspath.pth"],
+                    "RESNET50": ["resnet50.pth"],
+                }
+                
+                # Determine which models need to be uploaded
+                models_to_upload = set()
+                for model in all_models + all_slide_models:
+                    if model in model_file_map:
+                        models_to_upload.update(model_file_map[model])
+                
+                self.log(f"  Models to upload: {', '.join(models_to_upload)}")
+                
                 # Check if model_dir is a local path
                 if not local_model_dir.startswith(("s3://", "azfiles://", "azblob://", "http://", "https://")):
                     if os.path.exists(local_model_dir) and os.path.isdir(local_model_dir):
-                        # Upload entire model directory to Azure Files
-                        self.log(f"  Uploading model directory contents...")
+                        # Upload only the required model files/directories
+                        self.log(f"  Uploading required model files...")
                         
-                        # Upload both files and subdirectories
+                        # Upload both files and subdirectories that are needed
                         for item_name in os.listdir(local_model_dir):
+                            # Skip files/dirs not in models_to_upload
+                            if item_name not in models_to_upload and item_name not in ["version.txt", "classifier.pkl"]:
+                                continue
+                                
                             item_path = os.path.join(local_model_dir, item_name)
                             
                             if os.path.isdir(item_path):
                                 # Upload subdirectory
                                 self.log(f"    Uploading model dir: {item_name}")
                                 remote_model_dir = f"models/{item_name}"
-                                
-                                # Check if already uploaded
-                                try:
-                                    self.azure_files_staging.file_service.get_directory_properties(
-                                        share_name=self.azure_files_share_name,
-                                        directory_name=remote_model_dir
-                                    )
-                                    self.log(f"      Already uploaded, skipping")
-                                    continue
-                                except:
-                                    pass
                                 
                                 # Upload the model directory
                                 self.azure_files_staging.upload_directory(
@@ -1684,27 +1731,13 @@ CLEANUP_SCRIPT_END
                                 self.log(f"    Uploading model file: {item_name}")
                                 remote_file_path = f"models/{item_name}"
                                 
-                                # Check if already uploaded
-                                try:
-                                    self.azure_files_staging.file_service.get_file_properties(
-                                        share_name=self.azure_files_share_name,
-                                        directory_name="models",
-                                        file_name=item_name
-                                    )
-                                    self.log(f"      Already uploaded, skipping")
-                                    continue
-                                except:
-                                    pass
-                                
                                 # Upload the model file
-                                with open(item_path, 'rb') as f:
-                                    self.azure_files_staging.file_service.create_file_from_stream(
-                                        share_name=self.azure_files_share_name,
-                                        directory_name="models",
-                                        file_name=item_name,
-                                        stream=f,
-                                        max_connections=4
-                                    )
+                                self.azure_files_staging.upload_file(
+                                    local_path=item_path,
+                                    remote_path=remote_file_path,
+                                    show_progress=False,
+                                    skip_if_exists=True
+                                )
                                 self.log(f"      ✓ Uploaded to: {remote_file_path}")
                         
                         # Set model_dir parameter to azfiles:// URL for tasks
@@ -1881,6 +1914,9 @@ CLEANUP_SCRIPT_END
                             if hasattr(result, 'value') and result.value:
                                 for task_result in result.value:
                                     if task_result.status != batchmodels.TaskAddStatus.success:
+                                        # Suppress TaskExists warnings (expected with incremental submission)
+                                        if task_result.error and 'TaskExists' in str(task_result.error.code):
+                                            continue  # Skip TaskExists warnings
                                         print(f"    WARNING: Task {task_result.task_id} failed to add: {task_result.error}")
                             
                             print(f"    ✓ Submitted {len(tasks_buffer)} tasks (tasks can now start running)")
@@ -1892,7 +1928,9 @@ CLEANUP_SCRIPT_END
                                 try:
                                     self.batch_client.task.add(job_id, task)
                                 except Exception as task_error:
-                                    print(f"      ERROR: Failed to submit task {task.id}: {task_error}")
+                                    # Skip TaskExists errors (expected with retries)
+                                    if 'TaskExists' not in str(task_error):
+                                        print(f"      ERROR: Failed to submit task {task.id}: {task_error}")
                             tasks_buffer = []
 
             # Submit remaining tasks in buffer
@@ -1905,6 +1943,9 @@ CLEANUP_SCRIPT_END
                     if hasattr(result, 'value') and result.value:
                         for task_result in result.value:
                             if task_result.status != batchmodels.TaskAddStatus.success:
+                                # Suppress TaskExists warnings (expected with incremental submission)
+                                if task_result.error and 'TaskExists' in str(task_result.error.code):
+                                    continue  # Skip TaskExists warnings
                                 print(f"    WARNING: Task {task_result.task_id} failed to add: {task_result.error}")
                     
                     print(f"    ✓ Submitted {len(tasks_buffer)} tasks (tasks can now start running)")
@@ -1915,7 +1956,9 @@ CLEANUP_SCRIPT_END
                         try:
                             self.batch_client.task.add(job_id, task)
                         except Exception as task_error:
-                            print(f"      ERROR: Failed to submit task {task.id}: {task_error}")
+                            # Skip TaskExists errors (expected with retries)
+                            if 'TaskExists' not in str(task_error):
+                                print(f"      ERROR: Failed to submit task {task.id}: {task_error}")
             
             print(f"[Streaming Submission] Complete - {total_tasks_submitted} tasks submitted")
             # End of batch loop
@@ -2254,7 +2297,13 @@ def main():
     parser.add_argument(
         "--stage-to-azure-blob",
         action="store_true",
-        help="Stage input files to Azure Blob Storage before processing",
+        help="Stage input files to Azure Blob Storage before processing (uses incremental submission with parallel workers)",
+    )
+    parser.add_argument(
+        "--staging-workers",
+        type=int,
+        default=20,
+        help="Number of parallel workers for slide staging (default: 20, max: 50). Higher values speed up staging but may hit rate limits.",
     )
 
     # Pool configuration
@@ -2977,35 +3026,71 @@ def main():
                 print(f"\n[Model Cache] Using persistent cache at /mnt/batch/tasks/cache")
                 print(f"[Model Cache] Models will be downloaded on-demand from Hugging Face")
                 
-                # Read CSV and stage slides to blob
-                print(f"\n[Azure Blob] Staging slides...")
+                # Read CSV and use incremental staging with parallel submission
+                print(f"\n[Azure Blob] Incremental staging and submission enabled")
                 import csv
                 import subprocess
                 import tempfile
-                staged_slide_paths = {}
+                from concurrent.futures import ThreadPoolExecutor, as_completed
+                from threading import Lock
+                
                 with open(args.csv_manifest, "r") as f:
                     reader = csv.DictReader(f)
                     slides = list(reader)
                 
-                print(f"[Azure Blob] Staging {len(slides)} slides...")
+                print(f"[Azure Blob] Staging {len(slides)} slides with parallel workers...")
                 
                 # Batch-load all existing blobs for efficient checking
                 print(f"[Azure Blob] Loading existing blob list for fast lookup...")
                 existing_blobs = submitter.azure_blob_staging.get_blob_set()
                 print(f"[Azure Blob] Found {len(existing_blobs)} existing blobs in storage")
                 
-                for slide in slides:
-                    # Handle different column names flexibly
+                # Prepare default parameters for task submission
+                task_default_params = default_params.copy()
+                for key in [
+                    "container_image",
+                    "job_id",
+                    "pool_id",
+                    "output_prefix",
+                    "slides_per_task",
+                ]:
+                    task_default_params.pop(key, None)
+                
+                # Parse models if provided
+                models_list = None
+                if args.models:
+                    models_list = [m.strip() for m in args.models.split(",")]
+                
+                # Parse slide models if provided via config
+                slide_models_list = None
+                slide_model_types_str = config_defaults.get("slide_model_types")
+                if slide_model_types_str:
+                    slide_models_list = [m.strip() for m in slide_model_types_str.split(",")]
+                
+                # Ensure output container exists if remote output is specified
+                if args.output_prefix:
+                    submitter._ensure_output_container(args.output_prefix)
+                
+                # Shared state for incremental submission
+                staged_slide_paths = {}
+                staged_lock = Lock()
+                batch_size = args.slides_per_task  # Submit tasks in batches
+                submission_batch = []
+                total_staged = 0
+                total_submitted = 0
+                
+                def stage_slide(slide_info):
+                    """Stage a single slide (used by thread pool)."""
+                    slide = slide_info
                     slide_id = slide.get("slide_id") or slide.get("sample_id") or slide.get("image_id")
                     slide_path = slide.get("slide_path") or slide.get("svs_path") or slide.get("path")
                     
                     if not slide_id or not slide_path:
-                        raise ValueError(f"Could not find slide ID or path in CSV row: {slide}")
+                        return None, f"Could not find slide ID or path in CSV row: {slide}"
                     
                     slide_filename = os.path.basename(slide_path)
                     
                     # Check if already staged to blob (in slides/ or revision_slides/)
-                    # Use the pre-loaded set for O(1) lookup instead of API calls
                     possible_blob_names = [
                         f"slides/{slide_filename}",
                         f"revision_slides/{slide_filename}",
@@ -3019,17 +3104,15 @@ def main():
                     if already_staged_name:
                         # File already staged to Blob - use it
                         blob_url = f"azblob://{args.storage_account_name}.blob.core.windows.net/{args.staging_container}/{already_staged_name}"
-                        print(f"  [{slide_id}] Using already-staged: {slide_filename} (from {already_staged_name})")
-                        staged_slide_paths[slide_id] = blob_url
+                        return (slide_id, blob_url), None
                     elif slide_path.startswith("azblob://"):
                         # Already an azblob:// URL - use it directly
-                        staged_slide_paths[slide_id] = slide_path
+                        return (slide_id, slide_path), None
                     elif slide_path.startswith("azfiles://"):
                         # Already an azfiles:// URL - use it directly
-                        staged_slide_paths[slide_id] = slide_path
+                        return (slide_id, slide_path), None
                     elif slide_path.startswith("s3://"):
                         # S3 file - download and upload to blob
-                        print(f"  [{slide_id}] Staging from S3: {slide_filename}...")
                         with tempfile.NamedTemporaryFile(suffix=os.path.splitext(slide_filename)[1], delete=False) as tmp:
                             tmp_path = tmp.name
                         try:
@@ -3041,8 +3124,7 @@ def main():
                                 env=os.environ.copy()
                             )
                             if result.returncode != 0:
-                                print(f"  [{slide_id}] WARNING: Failed to download from S3: {result.stderr}")
-                                staged_slide_paths[slide_id] = slide_path  # Fall back to S3 path
+                                return (slide_id, slide_path), f"Failed to download from S3: {result.stderr}"
                             else:
                                 # Upload to blob
                                 blob_name = f"slides/{slide_filename}"
@@ -3052,49 +3134,118 @@ def main():
                                     show_progress=False,
                                 )
                                 blob_url = f"azblob://{args.storage_account_name}.blob.core.windows.net/{args.staging_container}/{blob_name}"
-                                staged_slide_paths[slide_id] = blob_url
-                                print(f"  [{slide_id}] Staged to blob: {blob_name}")
+                                return (slide_id, blob_url), None
                         finally:
                             if os.path.exists(tmp_path):
                                 os.remove(tmp_path)
                     elif slide_path.startswith(("http://", "https://")):
                         # HTTP URL - let the batch script handle it
-                        staged_slide_paths[slide_id] = slide_path
+                        return (slide_id, slide_path), None
                     else:
                         # Local path
                         if os.path.exists(slide_path):
                             blob_name = f"slides/{slide_filename}"
-                            print(f"  [{slide_id}] Staging {slide_filename}...")
                             submitter.azure_blob_staging.upload_file(
                                 local_path=slide_path,
                                 blob_name=blob_name,
                                 show_progress=False,
                             )
                             blob_url = f"azblob://{args.storage_account_name}.blob.core.windows.net/{args.staging_container}/{blob_name}"
-                            staged_slide_paths[slide_id] = blob_url
+                            return (slide_id, blob_url), None
                         else:
-                            print(f"  [{slide_id}] WARNING: File not found: {slide_path}")
-                            staged_slide_paths[slide_id] = slide_path
+                            return (slide_id, slide_path), f"File not found: {slide_path}"
                 
-                print(f"[Azure Blob] Staged {len(staged_slide_paths)} slides")
+                def submit_batch_incrementally():
+                    """Submit accumulated batch of slides as tasks."""
+                    nonlocal total_submitted, submission_batch
+                    if not submission_batch:
+                        return
+                    
+                    # Check job state before attempting submission
+                    try:
+                        job = submitter.batch_client.job.get(args.job_id)
+                        if job.state in ['completed', 'deleting', 'disabled']:
+                            print(f"[Incremental Submit] WARNING: Job {args.job_id} is {job.state}, skipping batch submission")
+                            submission_batch = []
+                            return
+                    except Exception as e:
+                        print(f"[Incremental Submit] WARNING: Could not check job state: {e}")
+                        # Continue anyway, let the submit attempt fail with proper error
+                    
+                    # Create temporary CSV for this batch
+                    batch_csv = tempfile.NamedTemporaryFile(mode='w', suffix='.csv', delete=False)
+                    writer = csv.DictWriter(batch_csv, fieldnames=['slide_id', 'slide_path'])
+                    writer.writeheader()
+                    for slide_id in submission_batch:
+                        writer.writerow({'slide_id': slide_id, 'slide_path': staged_slide_paths[slide_id]})
+                    batch_csv.close()
+                    
+                    try:
+                        # Submit this batch of tasks
+                        submitter.submit_tasks_from_csv(
+                            job_id=args.job_id,
+                            csv_file=batch_csv.name,
+                            output_s3_prefix=args.output_prefix,
+                            container_image=args.container_image,
+                            models=models_list,
+                            slide_models=slide_models_list,
+                            slides_per_task=args.slides_per_task,
+                            staged_slide_paths=staged_slide_paths,
+                            use_container_prepull=args.use_container_prepull,
+                            **task_default_params,
+                        )
+                        total_submitted += len(submission_batch)
+                        print(f"[Incremental Submit] Submitted {len(submission_batch)} slides ({total_submitted}/{len(slides)} total)")
+                    except Exception as e:
+                        if 'JobCompleted' in str(e) or 'already in a completed state' in str(e):
+                            print(f"[Incremental Submit] Job {args.job_id} completed during staging - {len(submission_batch)} slides not submitted")
+                        else:
+                            print(f"[Incremental Submit] ERROR: Failed to submit batch: {e}")
+                            raise
+                    finally:
+                        os.unlink(batch_csv.name)
+                        submission_batch = []
                 
-                # Ensure output container exists if remote output is specified
-                if args.output_prefix:
-                    submitter._ensure_output_container(args.output_prefix)
+                # Use ThreadPoolExecutor for parallel staging
+                max_workers = min(args.staging_workers, len(slides))  # Up to configured parallel workers
+                print(f"[Azure Blob] Using {max_workers} parallel workers for staging")
                 
-                # Now submit tasks with blob URLs (no incremental staging)
-                submitter.submit_tasks_from_csv(
-                    job_id=args.job_id,
-                    csv_file=args.csv_manifest,
-                    output_s3_prefix=args.output_prefix,
-                    container_image=args.container_image,
-                    models=models_list,
-                    slide_models=slide_models_list,
-                    slides_per_task=args.slides_per_task,
-                    staged_slide_paths=staged_slide_paths,
-                    use_container_prepull=args.use_container_prepull,
-                    **task_default_params,
-                )
+                with ThreadPoolExecutor(max_workers=max_workers) as executor:
+                    # Submit all staging tasks
+                    future_to_slide = {executor.submit(stage_slide, slide): slide for slide in slides}
+                    
+                    # Process completed staging tasks as they finish
+                    for future in as_completed(future_to_slide):
+                        result, error = future.result()
+                        if result:
+                            slide_id, blob_url = result
+                            with staged_lock:
+                                staged_slide_paths[slide_id] = blob_url
+                                submission_batch.append(slide_id)
+                                total_staged += 1
+                                
+                                # Print progress
+                                if error:
+                                    print(f"  [{slide_id}] Staged with warning: {error}")
+                                elif total_staged % 10 == 0:
+                                    print(f"  Staged {total_staged}/{len(slides)} slides...")
+                                
+                                # Submit batch when we have enough slides
+                                if len(submission_batch) >= batch_size * 5:  # Submit in larger batches for efficiency
+                                    submit_batch_incrementally()
+                    
+                    # Submit any remaining slides
+                    with staged_lock:
+                        if submission_batch:
+                            submit_batch_incrementally()
+                
+                print(f"[Azure Blob] Incremental staging complete: {total_staged} slides staged, {total_submitted} slides submitted")
+                
+                # Check if some slides were not submitted due to job completion
+                if total_staged > total_submitted:
+                    unsubmitted = total_staged - total_submitted
+                    print(f"\n[INFO] {unsubmitted} slides were staged but not submitted (job completed during staging)")
+                    print(f"       These slides are available in blob storage for future jobs")
                 
                 # Cleanup staged slides if requested
                 if hasattr(args, 'cleanup_staged_files') and args.cleanup_staged_files:
@@ -3104,7 +3255,6 @@ def main():
                             blob_name = blob_url.split(f"{args.staging_container}/")[1]
                             try:
                                 submitter.azure_blob_staging.delete_file(blob_name)
-                                print(f"  Deleted: {blob_name}")
                             except Exception as e:
                                 print(f"  Warning: Failed to delete {blob_name}: {e}")
                     print(f"[Azure Blob] Cleanup complete")

@@ -17,7 +17,8 @@
 #   PREFILTER_MODEL_PATH - (Optional) Path to prefilter model weights (can be s3://)
 #   MODEL_TYPE - (Optional) Model type for post-filter extraction (deprecated)
 #   MODEL_PATH - (Optional) Path to model weights (can be s3://)
-#   MODEL_TYPES - (Optional) Comma-separated list of models to run sequentially
+#   MODEL_TYPES - (Optional) Comma-separated list of tile encoder models for multi-model extraction
+#   SLIDE_MODEL_TYPES - (Optional) Comma-separated list of slide encoder models for aggregation
 #   SLIDE_MODEL_PATH - (Optional) Path to slide encoder model weights (can be s3://)
 #   SEGMENT_THRESHOLD - Tissue segmentation threshold (default: 0)
 #   PATCH_SIZE - Patch size in pixels (default: 256)
@@ -73,17 +74,25 @@ if command -v uv >/dev/null 2>&1; then
 fi
 
 # Cleanup function to remove temporary files
-cleanup() {
-    local exit_code=$?
+cleanup_staging() {
     if [ -n "$WORK_DIR" ] && [ -d "$WORK_DIR" ]; then
         log "Cleanup: Removing work directory: $WORK_DIR"
-        rm -rf "$WORK_DIR" || log "Warning: Failed to remove work directory"
+        # Wait a bit to allow NFS locks to clear
+        sleep 2
+        # Try to remove, but don't fail if NFS locks remain
+        rm -rf "$WORK_DIR" 2>/dev/null || {
+            log "Warning: Failed to remove work directory cleanly (likely NFS locks)"
+            log "Attempting background cleanup..."
+            # Try async cleanup in background to not block
+            (sleep 5 && rm -rf "$WORK_DIR" 2>/dev/null) &
+        }
     fi
-    # Don't exit here, let the script continue to its natural exit
 }
 
-# Set trap to ensure cleanup runs on exit (success, failure, or interruption)
-trap cleanup EXIT INT TERM
+# NOTE: We do NOT set a trap for cleanup here because in Docker/Apptainer
+# batch mode, child processes (multiprocessing workers) can exit before
+# the main process is done, which would trigger premature cleanup of staged
+# files. Instead, cleanup is called manually after processing completes.
 
 # Check required environment variables
 # Support both single-slide (SLIDE_PATH) and batch (SLIDE_PATHS) modes
@@ -208,7 +217,7 @@ if [ "$BATCH_MODE" = false ]; then
     ORIGINAL_SLIDE_PATH="$SLIDE_PATH"
     if is_s3_path "$SLIDE_PATH"; then
         log "Slide is in S3, staging locally..."
-        WORK_DIR="${TMPDIR:-/tmp}/mussel_work_$$"
+        WORK_DIR="${TMPDIR:-$HOME/tmp}/mussel_work_$$"
         mkdir -p "$WORK_DIR"
         LOCAL_SLIDE_PATH="$WORK_DIR/$(basename "$SLIDE_PATH")"
         download_from_s3 "$SLIDE_PATH" "$LOCAL_SLIDE_PATH"
@@ -219,6 +228,7 @@ if [ "$BATCH_MODE" = false ]; then
     # Check if slide file exists
     if [ ! -f "$SLIDE_PATH" ]; then
         log "ERROR: Slide file not found: $SLIDE_PATH"
+        cleanup_staging
         exit 1
     fi
 
@@ -228,7 +238,7 @@ fi
 # Stage model files from S3 if needed
 if [ -n "$PREFILTER_MODEL_PATH" ] && is_s3_path "$PREFILTER_MODEL_PATH"; then
     log "Prefilter model is in S3, staging locally..."
-    WORK_DIR="${WORK_DIR:-${TMPDIR:-/tmp}/mussel_work_$$}"
+    WORK_DIR="${WORK_DIR:-${TMPDIR:-$HOME/tmp}/mussel_work_$$}"
     mkdir -p "$WORK_DIR"
     LOCAL_PREFILTER_MODEL_PATH="$WORK_DIR/$(basename "$PREFILTER_MODEL_PATH")"
     download_from_s3 "$PREFILTER_MODEL_PATH" "$LOCAL_PREFILTER_MODEL_PATH"
@@ -238,7 +248,7 @@ fi
 
 if [ -n "$MODEL_PATH" ] && is_s3_path "$MODEL_PATH"; then
     log "Postfilter model is in S3, staging locally..."
-    WORK_DIR="${WORK_DIR:-${TMPDIR:-/tmp}/mussel_work_$$}"
+    WORK_DIR="${WORK_DIR:-${TMPDIR:-$HOME/tmp}/mussel_work_$$}"
     mkdir -p "$WORK_DIR"
     LOCAL_MODEL_PATH="$WORK_DIR/$(basename "$MODEL_PATH")"
     download_from_s3 "$MODEL_PATH" "$LOCAL_MODEL_PATH"
@@ -248,7 +258,7 @@ fi
 
 if [ -n "$SLIDE_MODEL_PATH" ] && is_s3_path "$SLIDE_MODEL_PATH"; then
     log "Slide model is in S3, staging locally..."
-    WORK_DIR="${WORK_DIR:-${TMPDIR:-/tmp}/mussel_work_$$}"
+    WORK_DIR="${WORK_DIR:-${TMPDIR:-$HOME/tmp}/mussel_work_$$}"
     mkdir -p "$WORK_DIR"
     LOCAL_SLIDE_MODEL_PATH="$WORK_DIR/$(basename "$SLIDE_MODEL_PATH")"
     download_from_s3 "$SLIDE_MODEL_PATH" "$LOCAL_SLIDE_MODEL_PATH"
@@ -260,39 +270,6 @@ fi
 if [ -n "$HF_TOKEN" ]; then
     export HUGGINGFACE_TOKEN="$HF_TOKEN"
     log "HuggingFace token set"
-fi
-
-# Pre-save slide models if SLIDE_MODEL_TYPES is specified
-if [ -n "$SLIDE_MODEL_TYPES" ] && [ "$AGGREGATION_METHOD" = "model" ]; then
-    log "Pre-saving slide models for batch processing..."
-    IFS=',' read -ra SLIDE_MODELS_TO_SAVE <<< "$SLIDE_MODEL_TYPES"
-    
-    WORK_DIR="${WORK_DIR:-${TMPDIR:-/tmp}/mussel_work_$$}"
-    mkdir -p "$WORK_DIR/models"
-    
-    # Store model save directory for later use
-    SLIDE_MODELS_DIR="$WORK_DIR/models"
-    
-    for SLIDE_MODEL_TYPE in "${SLIDE_MODELS_TO_SAVE[@]}"; do
-        SLIDE_MODEL_TYPE=$(echo "$SLIDE_MODEL_TYPE" | xargs)  # Trim whitespace
-        MODEL_SAVE_PATH="$SLIDE_MODELS_DIR/${SLIDE_MODEL_TYPE}.pth"
-        
-        log "  Saving slide model: $SLIDE_MODEL_TYPE to $MODEL_SAVE_PATH"
-        
-        # Use save_model CLI to download and save the model
-        ${UV_PREFIX} save_model \
-            "model_type=$SLIDE_MODEL_TYPE" \
-            "output_path=$MODEL_SAVE_PATH"
-        
-        if [ $? -eq 0 ]; then
-            log "  ✓ Successfully saved $SLIDE_MODEL_TYPE"
-        else
-            log "  ERROR: Failed to save $SLIDE_MODEL_TYPE"
-            exit 1
-        fi
-    done
-    
-    log "All slide models pre-saved successfully"
 fi
 
 # Check if GPU is available when USE_GPU=true
@@ -311,7 +288,7 @@ ORIGINAL_OUTPUT_PT_PATH="$OUTPUT_PT_PATH"
 ORIGINAL_INTERMEDIATE_H5_PATH="$INTERMEDIATE_H5_PATH"
 
 if is_s3_path "$OUTPUT_H5_PATH" || is_s3_path "$OUTPUT_PT_PATH" || is_s3_path "$INTERMEDIATE_H5_PATH"; then
-    WORK_DIR="${WORK_DIR:-${TMPDIR:-/tmp}/mussel_work_$$}"
+    WORK_DIR="${WORK_DIR:-${TMPDIR:-$HOME/tmp}/mussel_work_$$}"
     mkdir -p "$WORK_DIR"
     
     if is_s3_path "$OUTPUT_H5_PATH"; then
@@ -369,7 +346,7 @@ if [ "$BATCH_MODE" = true ]; then
     
     if [ "$NEEDS_STAGING" = true ]; then
         log "One or more slides are in S3, staging locally..."
-        WORK_DIR="${TMPDIR:-/tmp}/mussel_work_$$"
+        WORK_DIR="${TMPDIR:-$HOME/tmp}/mussel_work_$$"
         mkdir -p "$WORK_DIR"
         
         for slide_path in "${SLIDE_PATH_ARRAY[@]}"; do
@@ -388,148 +365,136 @@ if [ "$BATCH_MODE" = true ]; then
         log "Updated slide paths after staging: $SLIDE_PATHS"
     fi
     
-    # Check if multi-model mode is enabled
-    if [ -n "$MODEL_TYPES" ]; then
-        # Multi-model batch mode: Run full pipeline for each model
-        IFS=',' read -ra MODELS <<< "$MODEL_TYPES"
-        log "Multi-model batch mode: Will process ${#MODELS[@]} models: ${MODEL_TYPES}"
+    # Multi-model batch mode: Pass all models directly to CLI
+    # The tessellate_extract_features CLI handles multi-model processing efficiently
+    if [ -n "$MODEL_TYPES" ] || [ -n "$SLIDE_MODEL_TYPES" ]; then
+        log "Multi-model batch mode: Passing all models to tessellate_extract_features CLI"
         log ""
         
-        MODEL_INDEX=0
-        for MODEL in "${MODELS[@]}"; do
-            MODEL_INDEX=$((MODEL_INDEX + 1))
-            MODEL=$(echo "$MODEL" | xargs)  # Trim whitespace
-            
-            log ""
-            log "=========================================="
-            log "Processing model $MODEL_INDEX/${#MODELS[@]}: $MODEL"
-            log "=========================================="
-            log ""
-            
-            # Determine patch size for this specific model
-            # Priority: 1) Explicit PATCH_SIZE env var, 2) Model-specific default
-            if [ -n "$PATCH_SIZE" ]; then
-                MODEL_PATCH_SIZE="$PATCH_SIZE"
-            else
-                # Get model-specific default patch size
-                MODEL_PATCH_SIZE=$(get_model_patch_size "$MODEL")
-                log "Using model-specific patch size for $MODEL: $MODEL_PATCH_SIZE"
-            fi
-            
-            MODEL_CMD_ARGS=(
-                "tessellate_extract_features"
-                "slide_paths=[${SLIDE_PATHS}]"
-                "output_dir=${OUTPUT_DIR}/${MODEL}"
-                "prefilter_model_type=${PREFILTER_MODEL_TYPE}"
-                "model_type=${MODEL}"
-                "num_workers=${NUM_WORKERS}"
-                "batch_size=${BATCH_SIZE}"
-                "slide_batch_size=${SLIDE_BATCH_SIZE}"
-                "use_gpu=${USE_GPU}"
-            )
-            
-            # Add seg_config group if specified
-            if [ -n "$SEG_CONFIG_GROUP" ]; then
-                MODEL_CMD_ARGS+=("seg_config=${SEG_CONFIG_GROUP}")
-            fi
-            
-            # Add seg_config with model-specific patch size
-            MODEL_CMD_ARGS+=("seg_config.patch_size=${MODEL_PATCH_SIZE}")
-            
-            # Add other seg_config parameters
-            if [ -n "$SEGMENT_THRESHOLD" ]; then
-                MODEL_CMD_ARGS+=("seg_config.segment_threshold=${SEGMENT_THRESHOLD}")
-            fi
-            if [ -n "$STEP_SIZE" ]; then
-                MODEL_CMD_ARGS+=("seg_config.step_size=${STEP_SIZE}")
-            fi
-            if [ -n "$MPP" ]; then
-                MODEL_CMD_ARGS+=("seg_config.mpp=${MPP}")
-            fi
-            if [ -n "$SEG_LEVEL" ]; then
-                MODEL_CMD_ARGS+=("seg_config.seg_level=${SEG_LEVEL}")
-            fi
-            if [ -n "$SEGMENT_MAX_VALUE" ]; then
-                MODEL_CMD_ARGS+=("seg_config.segment_max_value=${SEGMENT_MAX_VALUE}")
-            fi
-            if [ -n "$MEDIAN_BLUR_KSIZE" ]; then
-                MODEL_CMD_ARGS+=("seg_config.median_blur_ksize=${MEDIAN_BLUR_KSIZE}")
-            fi
-            if [ -n "$MORPHOLOGY_EX_KERNEL" ]; then
-                MODEL_CMD_ARGS+=("seg_config.morphology_ex_kernel=${MORPHOLOGY_EX_KERNEL}")
-            fi
-            if [ -n "$REF_PATCH_SIZE" ]; then
-                MODEL_CMD_ARGS+=("seg_config.ref_patch_size=${REF_PATCH_SIZE}")
-            fi
-            if [ -n "$USE_OTSU" ]; then
-                MODEL_CMD_ARGS+=("seg_config.use_otsu=${USE_OTSU}")
-            fi
-            if [ -n "$TISSUE_AREA_THRESHOLD" ]; then
-                MODEL_CMD_ARGS+=("seg_config.tissue_area_threshold=${TISSUE_AREA_THRESHOLD}")
-            fi
-            if [ -n "$HOLE_AREA_THRESHOLD" ]; then
-                MODEL_CMD_ARGS+=("seg_config.hole_area_threshold=${HOLE_AREA_THRESHOLD}")
-            fi
-            if [ -n "$MAX_NUM_HOLES" ]; then
-                MODEL_CMD_ARGS+=("seg_config.max_num_holes=${MAX_NUM_HOLES}")
-            fi
-            
-            # Add slide IDs if provided
-            if [ -n "$SLIDE_IDS" ]; then
-                MODEL_CMD_ARGS+=("slide_ids=[${SLIDE_IDS}]")
-            fi
-            
-            # Add prefilter model path if specified
-            if [ -n "$PREFILTER_MODEL_PATH" ]; then
-                MODEL_CMD_ARGS+=("prefilter_model_path=$PREFILTER_MODEL_PATH")
-            fi
-            
-            # Add model path if specified
-            if [ -n "$MODEL_PATH" ]; then
-                MODEL_CMD_ARGS+=("model_path=$MODEL_PATH")
-            fi
-            
-            # Add classifier if specified
-            if [ -n "$CLASSIFIER_PKL" ]; then
-                MODEL_CMD_ARGS+=("classifier_pkl=$CLASSIFIER_PKL")
-                MODEL_CMD_ARGS+=("classifier_threshold=$CLASSIFIER_THRESHOLD")
-            fi
-            
-            # Add aggregation parameters if specified
-            if [ "$AGGREGATION_METHOD" != "identity" ]; then
-                MODEL_CMD_ARGS+=("aggregation_method=$AGGREGATION_METHOD")
-            fi
-            
-            if [ -n "$SLIDE_MODEL_TYPE" ]; then
-                MODEL_CMD_ARGS+=("slide_model_type=$SLIDE_MODEL_TYPE")
-            fi
-            
-            if [ -n "$SLIDE_MODEL_PATH" ]; then
-                MODEL_CMD_ARGS+=("slide_model_path=$SLIDE_MODEL_PATH")
-            fi
-            
-            log "Executing command for $MODEL:"
-            log "${MODEL_CMD_ARGS[*]}"
-            echo ""
-            
-            START_TIME=$(date +%s)
-            ${UV_PREFIX} "${MODEL_CMD_ARGS[@]}"
+        MODEL_CMD_ARGS=(
+            "tessellate_extract_features"
+            "slide_paths=[${SLIDE_PATHS}]"
+            "output_dir=${OUTPUT_DIR}"
+            "num_workers=${NUM_WORKERS}"
+            "batch_size=${BATCH_SIZE}"
+            "slide_batch_size=${SLIDE_BATCH_SIZE}"
+            "use_gpu=${USE_GPU}"
+            "hydra.run.dir=${TMPDIR:-$HOME/tmp}/hydra_$$"
+            "hydra.output_subdir=null"
+        )
+        
+        # Add model_dir if specified
+        if [ -n "$MODEL_DIR" ]; then
+            MODEL_CMD_ARGS+=("model_dir=${MODEL_DIR}")
+        fi
+        
+        # Add model types as a list
+        if [ -n "$MODEL_TYPES" ]; then
+            MODEL_CMD_ARGS+=("model_type=[${MODEL_TYPES}]")
+        fi
+        
+        # Add slide model types as a list
+        if [ -n "$SLIDE_MODEL_TYPES" ]; then
+            MODEL_CMD_ARGS+=("slide_model_type=[${SLIDE_MODEL_TYPES}]")
+        fi
+        
+        # Add aggregation method
+        if [ "$AGGREGATION_METHOD" != "identity" ]; then
+            MODEL_CMD_ARGS+=("aggregation_method=${AGGREGATION_METHOD}")
+        fi
+        
+        # Add prefilter model type if specified
+        if [ -n "$PREFILTER_MODEL_TYPE" ]; then
+            MODEL_CMD_ARGS+=("prefilter_model_type=${PREFILTER_MODEL_TYPE}")
+        fi
+        
+        # Add seg_config group if specified
+        if [ -n "$SEG_CONFIG_GROUP" ]; then
+            MODEL_CMD_ARGS+=("seg_config=${SEG_CONFIG_GROUP}")
+        fi
+        
+        # Add seg_config parameters
+        if [ -n "$PATCH_SIZE" ]; then
+            MODEL_CMD_ARGS+=("seg_config.patch_size=${PATCH_SIZE}")
+        fi
+        if [ -n "$SEGMENT_THRESHOLD" ]; then
+            MODEL_CMD_ARGS+=("seg_config.segment_threshold=${SEGMENT_THRESHOLD}")
+        fi
+        if [ -n "$STEP_SIZE" ]; then
+            MODEL_CMD_ARGS+=("seg_config.step_size=${STEP_SIZE}")
+        fi
+        if [ -n "$MPP" ]; then
+            MODEL_CMD_ARGS+=("seg_config.mpp=${MPP}")
+        fi
+        if [ -n "$SEG_LEVEL" ]; then
+            MODEL_CMD_ARGS+=("seg_config.seg_level=${SEG_LEVEL}")
+        fi
+        if [ -n "$SEGMENT_MAX_VALUE" ]; then
+            MODEL_CMD_ARGS+=("seg_config.segment_max_value=${SEGMENT_MAX_VALUE}")
+        fi
+        if [ -n "$MEDIAN_BLUR_KSIZE" ]; then
+            MODEL_CMD_ARGS+=("seg_config.median_blur_ksize=${MEDIAN_BLUR_KSIZE}")
+        fi
+        if [ -n "$MORPHOLOGY_EX_KERNEL" ]; then
+            MODEL_CMD_ARGS+=("seg_config.morphology_ex_kernel=${MORPHOLOGY_EX_KERNEL}")
+        fi
+        if [ -n "$REF_PATCH_SIZE" ]; then
+            MODEL_CMD_ARGS+=("seg_config.ref_patch_size=${REF_PATCH_SIZE}")
+        fi
+        if [ -n "$USE_OTSU" ]; then
+            MODEL_CMD_ARGS+=("seg_config.use_otsu=${USE_OTSU}")
+        fi
+        if [ -n "$TISSUE_AREA_THRESHOLD" ]; then
+            MODEL_CMD_ARGS+=("seg_config.tissue_area_threshold=${TISSUE_AREA_THRESHOLD}")
+        fi
+        if [ -n "$HOLE_AREA_THRESHOLD" ]; then
+            MODEL_CMD_ARGS+=("seg_config.hole_area_threshold=${HOLE_AREA_THRESHOLD}")
+        fi
+        if [ -n "$MAX_NUM_HOLES" ]; then
+            MODEL_CMD_ARGS+=("seg_config.max_num_holes=${MAX_NUM_HOLES}")
+        fi
+        
+        # Add slide IDs if provided
+        if [ -n "$SLIDE_IDS" ]; then
+            MODEL_CMD_ARGS+=("slide_ids=[${SLIDE_IDS}]")
+        fi
+        
+        # Add model paths if specified
+        if [ -n "$PREFILTER_MODEL_PATH" ]; then
+            MODEL_CMD_ARGS+=("prefilter_model_path=$PREFILTER_MODEL_PATH")
+        fi
+        if [ -n "$MODEL_PATH" ]; then
+            MODEL_CMD_ARGS+=("model_path=$MODEL_PATH")
+        fi
+        if [ -n "$SLIDE_MODEL_PATH" ]; then
+            MODEL_CMD_ARGS+=("slide_model_path=$SLIDE_MODEL_PATH")
+        fi
+        
+        # Add classifier if specified
+        if [ -n "$CLASSIFIER_PKL" ]; then
+            MODEL_CMD_ARGS+=("classifier_pkl=$CLASSIFIER_PKL")
+            MODEL_CMD_ARGS+=("classifier_threshold=$CLASSIFIER_THRESHOLD")
+        fi
+        
+        log "Executing multi-model command:"
+        log "${MODEL_CMD_ARGS[*]}"
+        echo ""
+        
+        START_TIME=$(date +%s)
+        EXIT_CODE=0
+        ${UV_PREFIX} "${MODEL_CMD_ARGS[@]}" || {
             EXIT_CODE=$?
             END_TIME=$(date +%s)
             DURATION=$((END_TIME - START_TIME))
-            
-            if [ $EXIT_CODE -ne 0 ]; then
-                log "ERROR: Model $MODEL processing failed with exit code $EXIT_CODE (duration: $DURATION seconds)"
-                exit $EXIT_CODE
-            fi
-            
-            log "SUCCESS: Model $MODEL processing completed in $DURATION seconds"
-        done
+            log "WARNING: Multi-model processing failed with exit code $EXIT_CODE (duration: $DURATION seconds)"
+            log "Continuing with remaining processing..."
+        }
+        END_TIME=$(date +%s)
+        DURATION=$((END_TIME - START_TIME))
         
-        log ""
-        log "=========================================="
-        log "Multi-model batch processing completed successfully"
-        log "All ${#MODELS[@]} models processed"
+        if [ $EXIT_CODE -eq 0 ]; then
+            log "SUCCESS: Multi-model processing completed in $DURATION seconds"
+        fi
         log "=========================================="
         
         echo "============================================"
@@ -539,156 +504,130 @@ if [ "$BATCH_MODE" = true ]; then
         exit 0
     fi
     
-    # Check if multiple slide models are specified
-    if [ -n "$SLIDE_MODEL_TYPES" ] && [ "$AGGREGATION_METHOD" = "model" ]; then
-        # Multi-slide-model batch mode: Run pipeline for each slide model
-        IFS=',' read -ra SLIDE_MODELS <<< "$SLIDE_MODEL_TYPES"
-        log "Multi-slide-model batch mode: Will process ${#SLIDE_MODELS[@]} slide models: ${SLIDE_MODEL_TYPES}"
+    # Single model mode (legacy)
+    if [ -n "$MODEL_TYPE" ] || [ -n "$SLIDE_MODEL_TYPE" ]; then
+        log "Single model mode: Processing one model at a time"
         log ""
         
-        MODEL_INDEX=0
-        for SLIDE_MODEL in "${SLIDE_MODELS[@]}"; do
-            MODEL_INDEX=$((MODEL_INDEX + 1))
-            SLIDE_MODEL=$(echo "$SLIDE_MODEL" | xargs)  # Trim whitespace
-            
-            log ""
-            log "=========================================="
-            log "Processing slide model $MODEL_INDEX/${#SLIDE_MODELS[@]}: $SLIDE_MODEL"
-            log "=========================================="
-            log ""
-            
-            # Set slide model path for this specific model (from pre-saved models)
-            CURRENT_SLIDE_MODEL_PATH=""
-            if [ -n "$SLIDE_MODELS_DIR" ]; then
-                POTENTIAL_PATH="$SLIDE_MODELS_DIR/${SLIDE_MODEL}.pth"
-                log "Checking for pre-saved model at: $POTENTIAL_PATH"
-                log "SLIDE_MODELS_DIR=$SLIDE_MODELS_DIR"
-                log "Contents of SLIDE_MODELS_DIR:"
-                ls -la "$SLIDE_MODELS_DIR" || log "  Directory does not exist or is not accessible"
-                if [ -f "$POTENTIAL_PATH" ]; then
-                    CURRENT_SLIDE_MODEL_PATH="$POTENTIAL_PATH"
-                    log "Using pre-saved slide model: $CURRENT_SLIDE_MODEL_PATH"
-                else
-                    log "WARNING: Pre-saved model not found at $POTENTIAL_PATH, will attempt to download"
-                fi
-            else
-                log "SLIDE_MODELS_DIR not set, skipping pre-saved model check"
-            fi
-            
-            # Build command for this slide model
-            MODEL_CMD_ARGS=(
-                "tessellate_extract_features"
-                "slide_paths=[${SLIDE_PATHS}]"
-                "output_dir=${OUTPUT_DIR}/${SLIDE_MODEL}"
-                "prefilter_model_type=${PREFILTER_MODEL_TYPE}"
-                "num_workers=${NUM_WORKERS}"
-                "batch_size=${BATCH_SIZE}"
-                "slide_batch_size=${SLIDE_BATCH_SIZE}"
-                "use_gpu=${USE_GPU}"
-                "aggregation_method=${AGGREGATION_METHOD}"
-                "slide_model_type=${SLIDE_MODEL}"
-            )
-            
-            # Add seg_config group if specified
-            if [ -n "$SEG_CONFIG_GROUP" ]; then
-                MODEL_CMD_ARGS+=("seg_config=${SEG_CONFIG_GROUP}")
-            fi
-            
-            # Add individual SegConfig parameters
-            if [ -n "$SEGMENT_THRESHOLD" ]; then
-                MODEL_CMD_ARGS+=("seg_config.segment_threshold=${SEGMENT_THRESHOLD}")
-            fi
-            if [ -n "$PATCH_SIZE" ]; then
-                MODEL_CMD_ARGS+=("seg_config.patch_size=${PATCH_SIZE}")
-            fi
-            if [ -n "$STEP_SIZE" ]; then
-                MODEL_CMD_ARGS+=("seg_config.step_size=${STEP_SIZE}")
-            fi
-            if [ -n "$MPP" ]; then
-                MODEL_CMD_ARGS+=("seg_config.mpp=${MPP}")
-            fi
-            if [ -n "$SEG_LEVEL" ]; then
-                MODEL_CMD_ARGS+=("seg_config.seg_level=${SEG_LEVEL}")
-            fi
-            if [ -n "$SEGMENT_MAX_VALUE" ]; then
-                MODEL_CMD_ARGS+=("seg_config.segment_max_value=${SEGMENT_MAX_VALUE}")
-            fi
-            if [ -n "$MEDIAN_BLUR_KSIZE" ]; then
-                MODEL_CMD_ARGS+=("seg_config.median_blur_ksize=${MEDIAN_BLUR_KSIZE}")
-            fi
-            if [ -n "$MORPHOLOGY_EX_KERNEL" ]; then
-                MODEL_CMD_ARGS+=("seg_config.morphology_ex_kernel=${MORPHOLOGY_EX_KERNEL}")
-            fi
-            if [ -n "$REF_PATCH_SIZE" ]; then
-                MODEL_CMD_ARGS+=("seg_config.ref_patch_size=${REF_PATCH_SIZE}")
-            fi
-            if [ -n "$USE_OTSU" ]; then
-                MODEL_CMD_ARGS+=("seg_config.use_otsu=${USE_OTSU}")
-            fi
-            if [ -n "$TISSUE_AREA_THRESHOLD" ]; then
-                MODEL_CMD_ARGS+=("seg_config.tissue_area_threshold=${TISSUE_AREA_THRESHOLD}")
-            fi
-            if [ -n "$HOLE_AREA_THRESHOLD" ]; then
-                MODEL_CMD_ARGS+=("seg_config.hole_area_threshold=${HOLE_AREA_THRESHOLD}")
-            fi
-            if [ -n "$MAX_NUM_HOLES" ]; then
-                MODEL_CMD_ARGS+=("seg_config.max_num_holes=${MAX_NUM_HOLES}")
-            fi
-            
-            # Add slide IDs if provided
-            if [ -n "$SLIDE_IDS" ]; then
-                MODEL_CMD_ARGS+=("slide_ids=[${SLIDE_IDS}]")
-            fi
-            
-            # Add prefilter model path if specified
-            if [ -n "$PREFILTER_MODEL_PATH" ]; then
-                MODEL_CMD_ARGS+=("prefilter_model_path=$PREFILTER_MODEL_PATH")
-            fi
-            
-            # Add classifier if specified
-            if [ -n "$CLASSIFIER_PKL" ]; then
-                MODEL_CMD_ARGS+=("classifier_pkl=$CLASSIFIER_PKL")
-                MODEL_CMD_ARGS+=("classifier_threshold=$CLASSIFIER_THRESHOLD")
-            fi
-            
-            # Add model if specified
-            if [ -n "$MODEL_TYPE" ]; then
-                MODEL_CMD_ARGS+=("model_type=$MODEL_TYPE")
-            fi
-            
-            if [ -n "$MODEL_PATH" ]; then
-                MODEL_CMD_ARGS+=("model_path=$MODEL_PATH")
-            fi
-            
-            # Add slide model path if specified or pre-saved
-            if [ -n "$CURRENT_SLIDE_MODEL_PATH" ]; then
-                MODEL_CMD_ARGS+=("slide_model_path=$CURRENT_SLIDE_MODEL_PATH")
-            elif [ -n "$SLIDE_MODEL_PATH" ]; then
-                MODEL_CMD_ARGS+=("slide_model_path=$SLIDE_MODEL_PATH")
-            fi
-            
-            log "Executing command for slide model $SLIDE_MODEL:"
-            log "${MODEL_CMD_ARGS[*]}"
-            echo ""
-            
-            START_TIME=$(date +%s)
-            ${UV_PREFIX} "${MODEL_CMD_ARGS[@]}"
+        MODEL_CMD_ARGS=(
+            "tessellate_extract_features"
+            "slide_paths=[${SLIDE_PATHS}]"
+            "output_dir=${OUTPUT_DIR}"
+            "num_workers=${NUM_WORKERS}"
+            "batch_size=${BATCH_SIZE}"
+            "slide_batch_size=${SLIDE_BATCH_SIZE}"
+            "use_gpu=${USE_GPU}"
+        )
+        
+        # Add model_dir if specified
+        if [ -n "$MODEL_DIR" ]; then
+            MODEL_CMD_ARGS+=("model_dir=${MODEL_DIR}")
+        fi
+        
+        if [ -n "$MODEL_TYPE" ]; then
+            MODEL_CMD_ARGS+=("model_type=${MODEL_TYPE}")
+        fi
+        if [ -n "$SLIDE_MODEL_TYPE" ]; then
+            MODEL_CMD_ARGS+=("slide_model_type=${SLIDE_MODEL_TYPE}")
+        fi
+        
+        # Add aggregation method
+        if [ "$AGGREGATION_METHOD" != "identity" ]; then
+            MODEL_CMD_ARGS+=("aggregation_method=${AGGREGATION_METHOD}")
+        fi
+        
+        # Add prefilter model type if specified
+        if [ -n "$PREFILTER_MODEL_TYPE" ]; then
+            MODEL_CMD_ARGS+=("prefilter_model_type=${PREFILTER_MODEL_TYPE}")
+        fi
+        
+        # Add seg_config group if specified
+        if [ -n "$SEG_CONFIG_GROUP" ]; then
+            MODEL_CMD_ARGS+=("seg_config=${SEG_CONFIG_GROUP}")
+        fi
+        
+        # Add seg_config parameters
+        if [ -n "$PATCH_SIZE" ]; then
+            MODEL_CMD_ARGS+=("seg_config.patch_size=${PATCH_SIZE}")
+        fi
+        if [ -n "$SEGMENT_THRESHOLD" ]; then
+            MODEL_CMD_ARGS+=("seg_config.segment_threshold=${SEGMENT_THRESHOLD}")
+        fi
+        if [ -n "$STEP_SIZE" ]; then
+            MODEL_CMD_ARGS+=("seg_config.step_size=${STEP_SIZE}")
+        fi
+        if [ -n "$MPP" ]; then
+            MODEL_CMD_ARGS+=("seg_config.mpp=${MPP}")
+        fi
+        if [ -n "$SEG_LEVEL" ]; then
+            MODEL_CMD_ARGS+=("seg_config.seg_level=${SEG_LEVEL}")
+        fi
+        if [ -n "$SEGMENT_MAX_VALUE" ]; then
+            MODEL_CMD_ARGS+=("seg_config.segment_max_value=${SEGMENT_MAX_VALUE}")
+        fi
+        if [ -n "$MEDIAN_BLUR_KSIZE" ]; then
+            MODEL_CMD_ARGS+=("seg_config.median_blur_ksize=${MEDIAN_BLUR_KSIZE}")
+        fi
+        if [ -n "$MORPHOLOGY_EX_KERNEL" ]; then
+            MODEL_CMD_ARGS+=("seg_config.morphology_ex_kernel=${MORPHOLOGY_EX_KERNEL}")
+        fi
+        if [ -n "$REF_PATCH_SIZE" ]; then
+            MODEL_CMD_ARGS+=("seg_config.ref_patch_size=${REF_PATCH_SIZE}")
+        fi
+        if [ -n "$USE_OTSU" ]; then
+            MODEL_CMD_ARGS+=("seg_config.use_otsu=${USE_OTSU}")
+        fi
+        if [ -n "$TISSUE_AREA_THRESHOLD" ]; then
+            MODEL_CMD_ARGS+=("seg_config.tissue_area_threshold=${TISSUE_AREA_THRESHOLD}")
+        fi
+        if [ -n "$HOLE_AREA_THRESHOLD" ]; then
+            MODEL_CMD_ARGS+=("seg_config.hole_area_threshold=${HOLE_AREA_THRESHOLD}")
+        fi
+        if [ -n "$MAX_NUM_HOLES" ]; then
+            MODEL_CMD_ARGS+=("seg_config.max_num_holes=${MAX_NUM_HOLES}")
+        fi
+        
+        # Add slide IDs if provided
+        if [ -n "$SLIDE_IDS" ]; then
+            MODEL_CMD_ARGS+=("slide_ids=[${SLIDE_IDS}]")
+        fi
+        
+        # Add model paths if specified
+        if [ -n "$PREFILTER_MODEL_PATH" ]; then
+            MODEL_CMD_ARGS+=("prefilter_model_path=$PREFILTER_MODEL_PATH")
+        fi
+        if [ -n "$MODEL_PATH" ]; then
+            MODEL_CMD_ARGS+=("model_path=$MODEL_PATH")
+        fi
+        if [ -n "$SLIDE_MODEL_PATH" ]; then
+            MODEL_CMD_ARGS+=("slide_model_path=$SLIDE_MODEL_PATH")
+        fi
+        
+        # Add classifier if specified
+        if [ -n "$CLASSIFIER_PKL" ]; then
+            MODEL_CMD_ARGS+=("classifier_pkl=$CLASSIFIER_PKL")
+            MODEL_CMD_ARGS+=("classifier_threshold=$CLASSIFIER_THRESHOLD")
+        fi
+        
+        log "Executing single model command:"
+        log "${MODEL_CMD_ARGS[*]}"
+        echo ""
+        
+        START_TIME=$(date +%s)
+        EXIT_CODE=0
+        ${UV_PREFIX} "${MODEL_CMD_ARGS[@]}" || {
             EXIT_CODE=$?
             END_TIME=$(date +%s)
             DURATION=$((END_TIME - START_TIME))
-            
-            if [ $EXIT_CODE -ne 0 ]; then
-                log "ERROR: Slide model $SLIDE_MODEL processing failed with exit code $EXIT_CODE (duration: $DURATION seconds)"
-                exit $EXIT_CODE
-            fi
-            
-            log "SUCCESS: Slide model $SLIDE_MODEL processing completed in $DURATION seconds"
-        done
+            log "WARNING: Processing failed with exit code $EXIT_CODE (duration: $DURATION seconds)"
+            log "Continuing with remaining processing..."
+        }
+        END_TIME=$(date +%s)
+        DURATION=$((END_TIME - START_TIME))
         
-        log ""
-        log "=========================================="
-        log "Multi-slide-model batch processing completed successfully"
-        log "All ${#SLIDE_MODELS[@]} slide models processed"
+        if [ $EXIT_CODE -eq 0 ]; then
+            log "SUCCESS: Processing completed in $DURATION seconds"
+        fi
         log "=========================================="
         
         echo "============================================"
@@ -698,19 +637,28 @@ if [ "$BATCH_MODE" = true ]; then
         exit 0
     fi
     
-    # Single model / single slide model batch processing (original behavior)
+    # Default batch processing (no model specified)
     # Build command for batch processing
     # Note: slide_paths parameter uses Hydra list syntax: slide_paths=[item1,item2,...]
     CMD_ARGS=(
         "tessellate_extract_features"
         "slide_paths=[${SLIDE_PATHS}]"
         "output_dir=${OUTPUT_DIR}"
-        "prefilter_model_type=${PREFILTER_MODEL_TYPE}"
         "num_workers=${NUM_WORKERS}"
         "batch_size=${BATCH_SIZE}"
         "slide_batch_size=${SLIDE_BATCH_SIZE}"
         "use_gpu=${USE_GPU}"
     )
+    
+    # Add model_dir if specified
+    if [ -n "$MODEL_DIR" ]; then
+        CMD_ARGS+=("model_dir=${MODEL_DIR}")
+    fi
+    
+    # Add prefilter model type if specified
+    if [ -n "$PREFILTER_MODEL_TYPE" ]; then
+        CMD_ARGS+=("prefilter_model_type=${PREFILTER_MODEL_TYPE}")
+    fi
     
     # Add seg_config group if specified
     if [ -n "$SEG_CONFIG_GROUP" ]; then
@@ -810,6 +758,7 @@ if [ "$BATCH_MODE" = true ]; then
     echo ""
     if [ $EXIT_CODE -ne 0 ]; then
         log "ERROR: Batch processing failed with exit code $EXIT_CODE (duration: $DURATION seconds)"
+        cleanup_staging
         exit $EXIT_CODE
     fi
     
@@ -826,6 +775,9 @@ if [ "$BATCH_MODE" = true ]; then
     echo "============================================"
     echo "End time: $(date)"
     echo "============================================"
+    
+    # Clean up staged files after successful processing
+    cleanup_staging
     
     exit 0
 fi
@@ -950,6 +902,7 @@ if [ -n "$MODEL_TYPES" ]; then
     
     if [ $EXIT_CODE -ne 0 ]; then
         log "ERROR: filter-tessellate failed with exit code $EXIT_CODE (duration: $DURATION seconds)"
+        cleanup_staging
         exit $EXIT_CODE
     fi
     
@@ -1072,6 +1025,7 @@ if [ -n "$MODEL_TYPES" ]; then
         
         if [ $MODEL_EXIT_CODE -ne 0 ]; then
             log "ERROR: extract-features failed for model $MODEL with exit code $MODEL_EXIT_CODE (duration: $MODEL_DURATION seconds)"
+            cleanup_staging
             exit $MODEL_EXIT_CODE
         fi
         
@@ -1134,12 +1088,21 @@ if [ -z "$MODEL_TYPES" ]; then
         "slide_path=$SLIDE_PATH"
         "output_h5_path=$MODEL_H5_PATH"
         "output_pt_path=$MODEL_PT_PATH"
-        "prefilter_model_type=$PREFILTER_MODEL_TYPE"
         "num_workers=$NUM_WORKERS"
         "batch_size=$BATCH_SIZE"
         "use_gpu=$USE_GPU"
         "keep_intermediate_files=$KEEP_INTERMEDIATE_FILES"
     )
+    
+    # Add model_dir if specified
+    if [ -n "$MODEL_DIR" ]; then
+        CMD_ARGS+=("model_dir=$MODEL_DIR")
+    fi
+    
+    # Add prefilter model type if specified
+    if [ -n "$PREFILTER_MODEL_TYPE" ]; then
+        CMD_ARGS+=("prefilter_model_type=$PREFILTER_MODEL_TYPE")
+    fi
     
     # Add seg_config group if specified
     if [ -n "$SEG_CONFIG_GROUP" ]; then
@@ -1245,6 +1208,7 @@ if [ -z "$MODEL_TYPES" ]; then
     echo ""
     if [ $EXIT_CODE -ne 0 ]; then
         log "ERROR: Processing failed with exit code $EXIT_CODE (duration: $DURATION seconds)"
+        cleanup_staging
         exit $EXIT_CODE
     fi
     
@@ -1292,5 +1256,6 @@ echo "============================================"
 echo "End time: $(date)"
 echo "============================================"
 
-# Final cleanup happens via trap
+# Clean up staged files after successful processing
+cleanup_staging
 exit 0

@@ -43,11 +43,14 @@ condor_logs/
 
 # Test files and scripts
 tests/
+mytest/
 test_*
 *_test.py
 test-*.sh
 *.sub
 test_paladin
+*.sif.*
+*.sif
 
 # Documentation (keep only README.md)
 docs/
@@ -103,6 +106,7 @@ pr_models/
 pr_models*/
 test_cache/
 test_docker_cache/
+*_run/
 
 # Configuration (secrets should not be in image)
 *.env

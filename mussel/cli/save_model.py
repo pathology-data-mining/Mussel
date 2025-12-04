@@ -1,6 +1,7 @@
 from dataclasses import dataclass
 from typing import Optional, List
 from pathlib import Path
+import os
 
 import hydra
 from hydra.conf import HelpConf, HydraConf
@@ -20,7 +21,7 @@ class SaveModelConfig:
     
     Multi-Model Mode:
         model_types (List[ModelType]): List of model types to save.
-        output_dir (str): Directory to save all models (each in subdirectory named after model type).
+        model_dir (str): Directory to save all models (each in subdirectory named after model type).
     """
 
     model_type: Optional[ModelType] = None
@@ -29,7 +30,7 @@ class SaveModelConfig:
     
     # Multi-model mode
     model_types: Optional[List[ModelType]] = None
-    output_dir: Optional[str] = None
+    model_dir: Optional[str] = None
 
 
 desc_doc = """== ${hydra.help.app_name} ==
@@ -59,10 +60,10 @@ def save_model(cfg: SaveModelConfig):
     """
     # Multi-model mode
     if cfg.model_types is not None:
-        if not cfg.output_dir:
-            raise ValueError("output_dir is required when using model_types")
+        if not cfg.model_dir:
+            raise ValueError("model_dir is required when using model_types")
         
-        output_dir = Path(cfg.output_dir)
+        output_dir = Path(cfg.model_dir)
         output_dir.mkdir(parents=True, exist_ok=True)
         
         print(f"Saving {len(cfg.model_types)} models to {output_dir}")
@@ -97,6 +98,16 @@ def save_model(cfg: SaveModelConfig):
             
             print(f"\nDownloading {model_type.name}...")
             try:
+                # Ensure cache directories exist before loading models
+                # This prevents "File exists" errors from libraries that don't use exist_ok=True
+                cache_dirs = [
+                    os.path.expanduser("~/.cache"),
+                    os.path.expanduser("~/.cache/huggingface"),
+                    os.path.expanduser("~/.cache/torch"),
+                ]
+                for cache_dir in cache_dirs:
+                    os.makedirs(cache_dir, exist_ok=True)
+                
                 model_factory = get_model_factory(model_type)
                 model = model_factory.get_model(None, use_gpu=False)
                 

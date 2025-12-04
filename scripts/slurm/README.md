@@ -7,6 +7,7 @@ This directory contains scripts for running `tessellate-extract-features` on SLU
 SLURM support enables distributed processing of whole-slide images on HPC clusters using the SLURM workload manager.
 
 **Key Features:**
+- **Docker support** for containerized execution
 - **Slide batch feature extraction** for optimized slide encoder loading (7-8x speedup)
 - Job arrays for efficient batch processing
 - CSV manifest processing
@@ -49,6 +50,30 @@ python scripts/slurm/submit_slurm_jobs.py \
   --gres gpu:1 \
   --submit
 ```
+
+### Using Docker Container
+
+Run tessellate-extract-features in a Docker container for reproducible environments:
+
+```bash
+python scripts/slurm/submit_slurm_jobs.py \
+  --csv-manifest manifest.csv \
+  --output-dir /output/results/ \
+  --use-docker \
+  --docker-image ghcr.io/biomedia-mira/mussel:latest \
+  --docker-runtime nvidia \
+  --model-cache-dir ./model_cache \
+  --partition gpu \
+  --gres gpu:1 \
+  --submit
+```
+
+**Docker support includes:**
+- NVIDIA runtime for GPU access
+- Automatic volume mounting for slides, models, and outputs
+- All environment variables passed through
+- Compatible with S3/MinIO storage
+- Supports both local and remote paths
 
 ### Multi-Model Processing
 
@@ -130,6 +155,37 @@ python scripts/slurm/submit_slurm_jobs.py --csv-manifest manifest.csv --no-array
 --gres gpu:1             # Request 1 GPU
 --gres gpu:v100:2        # Request 2 V100 GPUs
 ```
+
+### Docker Support
+
+```bash
+--use-docker                                    # Enable Docker execution
+--docker-image ghcr.io/biomedia-mira/mussel:latest  # Docker image to use
+--docker-runtime nvidia                         # Runtime (default: nvidia for GPU)
+--model-cache-dir ./model_cache                # Model cache directory to mount
+```
+
+**Benefits of using Docker:**
+- Consistent, reproducible environment across different compute nodes
+- Eliminates Python environment setup on compute nodes
+- Simplified dependency management
+- Works with existing SLURM GPU allocation (--gres)
+- Automatically mounts necessary directories (slides, models, outputs)
+
+**Example Docker submission:**
+```bash
+python scripts/slurm/submit_slurm_jobs.py \
+  --csv-manifest slides.csv \
+  --output-dir /scratch/results/ \
+  --models UNI2,VIRCHOW2 \
+  --use-docker \
+  --model-cache-dir /shared/models \
+  --partition gpu \
+  --gres gpu:a100:1 \
+  --mem 64G \
+  --submit
+```
+
 
 ## CSV Manifest Format
 
