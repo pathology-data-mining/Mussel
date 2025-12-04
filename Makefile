@@ -1,7 +1,7 @@
 .PHONY: help build build-cpu build-tf build-tf-cpu push push-cpu push-tf push-tf-cpu push-fastattn shell test clean az-login apptainer-build apptainer-build-torch-gpu apptainer-build-torch-cpu apptainer-build-tensorflow-gpu apptainer-build-tensorflow-cpu apptainer-build-fastattn apptainer-shell apptainer-run apptainer-save-models apptainer-tessellate apptainer-extract-features apptainer-clean apptainer-examples
 
 # Default Docker image name
-IMAGE_NAME ?= mskmind/mussel
+IMAGE_NAME ?= mskocracontainerregister-cfbfchg8dgfbedan.azurecr.io/mussel
 IMAGE_TAG ?= latest
 FULL_IMAGE = $(IMAGE_NAME):$(IMAGE_TAG)
 

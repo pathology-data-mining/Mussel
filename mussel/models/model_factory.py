@@ -755,6 +755,16 @@ class GigapathSlideEncoderModel(TorchModel):
                     1536,
                     local_dir=local_dir
                 )
+        elif Path(model_path).is_file() and model_path.endswith('.pth'):
+            # Load from a saved state_dict file
+            import gigapath.slide_encoder
+            
+            # Create model architecture without pretrained weights
+            model_obj = gigapath.slide_encoder.create_model(
+                model_path,  # Will be treated as local path
+                "gigapath_slide_enc12l768d",
+                1536,
+            )
         super().__init__(model_path, model_obj, use_gpu, gpu_device_id)
 
     def get_model_fun(self) -> Callable:
@@ -795,6 +805,41 @@ class GigapathSlideEncoderModel(TorchModel):
             None, as slide encoders don't preprocess images.
         """
         return None
+
+    def save(self, save_path: str):
+        """Save GigaPath slide encoder model to disk.
+
+        The GigaPath slide encoder is a timm model that can be saved using torch.save().
+        We save the state_dict in the same format that gigapath.slide_encoder expects:
+        a dictionary with a "model" key containing the state_dict.
+
+        Args:
+            save_path: Path to save the model weights (should end with .pth).
+            
+        Raises:
+            ValueError: If save_path doesn't end with .pth extension.
+        """
+        # Ensure save_path has .pth extension
+        if not save_path.endswith('.pth'):
+            raise ValueError(
+                f"GIGAPATH_SLIDE model must be saved with .pth extension. "
+                f"Got: {save_path}\n"
+                f"Hint: Use save_path='path/to/slide_encoder.pth'"
+            )
+        
+        # Create parent directory if it doesn't exist
+        Path(save_path).parent.mkdir(parents=True, exist_ok=True)
+        
+        # Get the base model (unwrap DataParallel if needed)
+        model_to_save = self.obj.module if hasattr(self.obj, 'module') else self.obj
+        
+        # Save state_dict in the format expected by gigapath.slide_encoder.create_model
+        # The create_model function expects: torch.load(path)["model"]
+        torch.save(
+            {"model": model_to_save.state_dict()},
+            save_path
+        )
+        logger.info(f"Saved GigaPath slide encoder to {save_path}")
 
 
 class OptimusModel(TorchModel):
