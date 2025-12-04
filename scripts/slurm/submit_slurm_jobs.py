@@ -246,7 +246,7 @@ class SlurmJobSubmitter:
         hole_area_threshold: Optional[int] = None,
         max_num_holes: Optional[int] = None,
         num_workers: int = 4,
-        batch_size: int = 64,
+        batch_size: int = 256,  # Conservative default to avoid OOM
         use_gpu: bool = True,
         partition: Optional[str] = None,
         cpus_per_task: int = 4,
@@ -1104,7 +1104,7 @@ def main():
     )
 
     parser.add_argument("--num-workers", type=int, default=4)
-    parser.add_argument("--batch-size", type=int, default=64)
+    parser.add_argument("--batch-size", type=int, default=256, help="Tile batch size for feature extraction (default: 256). Lower this if you get OOM errors.")
     parser.add_argument(
         "--slide-batch-size",
         type=int,
