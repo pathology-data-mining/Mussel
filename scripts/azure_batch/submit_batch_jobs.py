@@ -482,28 +482,42 @@ class AzureBatchJobSubmitter:
         if self.azure_files_staging:
             model_download_cmd = """# Copy models from Azure Files to persistent cache
                 echo '[MODEL_CACHE] Staging models from Azure Files to persistent cache...'
+                # Wait for Azure Files mount to be ready
+                echo '[MODEL_CACHE] Waiting for Azure Files mount...'
+                for i in $(seq 1 30); do
+                    if [ -d /mnt/batch/tasks/fsmounts/azfiles ]; then
+                        echo '[MODEL_CACHE] Azure Files mount is ready'
+                        break
+                    fi
+                    echo "[MODEL_CACHE] Waiting for mount... attempt $$i/30"
+                    sleep 2
+                done
+                
                 if [ -d /mnt/batch/tasks/fsmounts/azfiles/models ]; then
                     echo '[MODEL_CACHE] Source: /mnt/batch/tasks/fsmounts/azfiles/models/'
                     echo '[MODEL_CACHE] Destination: /mnt/batch/tasks/cache/'
                     echo '[MODEL_CACHE] Source size:'
-                    du -sh /mnt/batch/tasks/fsmounts/azfiles/models/
+                    du -sh /mnt/batch/tasks/fsmounts/azfiles/models/ || echo '[MODEL_CACHE] Cannot determine size'
                     echo '[MODEL_CACHE] Available models in Azure Files:'
-                    ls -1 /mnt/batch/tasks/fsmounts/azfiles/models/ | sed 's/^/[MODEL_CACHE]   - /'
+                    ls -1 /mnt/batch/tasks/fsmounts/azfiles/models/ 2>/dev/null | sed 's/^/[MODEL_CACHE]   - /' || echo '[MODEL_CACHE] No files visible yet'
                     echo '[MODEL_CACHE] Starting rsync...'
-                    if rsync -av --progress /mnt/batch/tasks/fsmounts/azfiles/models/ /mnt/batch/tasks/cache/ 2>&1 | while read line; do echo "[MODEL_CACHE] $line"; done; then
+                    if rsync -av /mnt/batch/tasks/fsmounts/azfiles/models/ /mnt/batch/tasks/cache/ > /tmp/rsync.log 2>&1; then
                         echo '[MODEL_CACHE] ✓ Models copied successfully'
                         echo '[MODEL_CACHE] Cache directory contents:'
                         ls -lh /mnt/batch/tasks/cache/ | sed 's/^/[MODEL_CACHE]   /'
                         echo '[MODEL_CACHE] Total cache size:'
                         du -sh /mnt/batch/tasks/cache/
                     else
-                        echo '[MODEL_CACHE] ✗ ERROR: rsync failed'
-                        exit 1
+                        echo '[MODEL_CACHE] ✗ ERROR: rsync failed, check /tmp/rsync.log'
+                        cat /tmp/rsync.log
+                        # Don't exit 1, allow tasks to download models on-demand
+                        echo '[MODEL_CACHE] Continuing anyway, models will be downloaded on-demand'
                     fi
                 else
-                    echo '[MODEL_CACHE] No models found in Azure Files mount, will download on-demand'
+                    echo '[MODEL_CACHE] No models directory found in Azure Files mount (/mnt/batch/tasks/fsmounts/azfiles/models)'
+                    echo '[MODEL_CACHE] Models will be downloaded on-demand'
                 fi
-                """
+"""
         else:
             # Models will be downloaded on-demand from Hugging Face to /mnt/batch/tasks/cache
             model_download_cmd = ""
@@ -608,7 +622,7 @@ CLEANUP_SCRIPT_END
                 usermod -aG docker _azbatch
                 
                 echo 'Docker GPU setup complete!'
-            "'''
+"'''
         else:
             # For images with pre-installed drivers, conditionally pull image
             pull_image_cmd = "" if use_container_prepull else f"docker pull {container_image}\n                "
@@ -663,7 +677,7 @@ CLEANUP_SCRIPT_END
                 {model_download_cmd}
                 {pull_image_cmd}
                 usermod -aG docker _azbatch
-            "'''
+"'''
 
         start_task = batchmodels.StartTask(
             command_line=start_task_cmd,
@@ -831,7 +845,7 @@ CLEANUP_SCRIPT_END
         slide_batch_size: int = 8,
         classifier_pkl: Optional[str] = None,
         classifier_threshold: float = 0.75,
-        prefilter_model_types: Optional[str] = None,
+        prefilter_model_type: Optional[str] = None,
         model_types: Optional[str] = None,
         model_dir: Optional[str] = None,
         seg_config_group: Optional[str] = None,
@@ -933,11 +947,11 @@ CLEANUP_SCRIPT_END
                 )
             )
         
-        # Only set prefilter model types if provided
-        if prefilter_model_types:
+        # Only set prefilter model type if provided (singular - only one prefilter model)
+        if prefilter_model_type:
             common_env_vars.append(
                 batchmodels.EnvironmentSetting(
-                    name="PREFILTER_MODEL_TYPES", value=prefilter_model_types
+                    name="PREFILTER_MODEL_TYPE", value=prefilter_model_type
                 )
             )
         
@@ -1056,16 +1070,24 @@ CLEANUP_SCRIPT_END
                 )
             )
 
-        # Add model_dir if provided
-        if model_dir:
+        # Define persistent cache directory
+        cache_dir = "/mnt/batch/tasks/cache"
+        
+        # Always set MODEL_DIR to the persistent cache directory
+        env_vars.append(
+            batchmodels.EnvironmentSetting(
+                name="MODEL_DIR", value=cache_dir
+            )
+        )
+        
+        # If model_dir is provided and Azure Files is configured, set flag to rsync from Azure Files
+        # Otherwise, models will be downloaded on-demand from Hugging Face
+        if model_dir and self.azure_files_staging:
             env_vars.append(
                 batchmodels.EnvironmentSetting(
-                    name="MODEL_DIR", value=model_dir
+                    name="RSYNC_MODELS_FROM_AZURE_FILES", value="true"
                 )
             )
-        
-        # Define cache directory
-        cache_dir = "/mnt/batch/tasks/cache"
         
         env_vars.extend([
             # Set HuggingFace cache environment variables
@@ -1403,7 +1425,7 @@ CLEANUP_SCRIPT_END
         slide_batch_size: int = 8,
         classifier_pkl: Optional[str] = None,
         classifier_threshold: float = 0.75,
-        prefilter_model_types: Optional[str] = None,
+        prefilter_model_type: Optional[str] = None,
         model_types: Optional[str] = None,
         model_dir: Optional[str] = None,
         seg_config_group: Optional[str] = None,
@@ -1457,7 +1479,7 @@ CLEANUP_SCRIPT_END
             slide_batch_size=slide_batch_size,
             classifier_pkl=classifier_pkl,
             classifier_threshold=classifier_threshold,
-            prefilter_model_types=prefilter_model_types,
+            prefilter_model_type=prefilter_model_type,
             model_types=model_types,
             model_dir=model_dir,
             seg_config_group=seg_config_group,
@@ -1557,9 +1579,7 @@ CLEANUP_SCRIPT_END
         print(f"Loading task manifest from '{csv_file}'...")
 
         # Get prefilter model types (used for directory organization when single model)
-        prefilter_models_str = default_params.get("prefilter_model_types", None)
-        prefilter_models = [m.strip() for m in prefilter_models_str.split(",")] if prefilter_models_str else []
-        prefilter_model = prefilter_models[0] if prefilter_models else None
+        prefilter_model = default_params.get("prefilter_model_type", None)
 
         # Determine which models to process - create separate tasks per model
         # to avoid staging multiple models per task
@@ -1696,7 +1716,13 @@ CLEANUP_SCRIPT_END
                 
                 # Determine which models need to be uploaded
                 models_to_upload = set()
-                for model in all_models + all_slide_models:
+                # Include prefilter model if specified
+                prefilter_model = default_params.get("prefilter_model_type", None)
+                models_for_upload = all_models + all_slide_models
+                if prefilter_model:
+                    models_for_upload.append(prefilter_model)
+                
+                for model in models_for_upload:
                     if model in model_file_map:
                         models_to_upload.update(model_file_map[model])
                 
@@ -1709,9 +1735,11 @@ CLEANUP_SCRIPT_END
                         self.log(f"  Uploading required model files...")
                         
                         # Upload both files and subdirectories that are needed
+                        additional_files = ["version.txt"]
+                        
                         for item_name in os.listdir(local_model_dir):
                             # Skip files/dirs not in models_to_upload
-                            if item_name not in models_to_upload and item_name not in ["version.txt", "classifier.pkl"]:
+                            if item_name not in models_to_upload and item_name not in additional_files:
                                 continue
                                 
                             item_path = os.path.join(local_model_dir, item_name)
@@ -1742,6 +1770,30 @@ CLEANUP_SCRIPT_END
                                 )
                                 self.log(f"      ✓ Uploaded to: {remote_file_path}")
                         
+                        # Upload classifier_pkl if it exists in model_dir
+                        classifier_pkl = default_params.get("classifier_pkl")
+                        if classifier_pkl and not classifier_pkl.startswith(
+                            ("s3://", "azfiles://", "azblob://", "http://", "https://")
+                        ):
+                            # If classifier_pkl is just a filename, look for it in model_dir
+                            if not os.path.isabs(classifier_pkl) and "/" not in classifier_pkl:
+                                classifier_pkl_path = os.path.join(local_model_dir, classifier_pkl)
+                            else:
+                                classifier_pkl_path = classifier_pkl
+                            
+                            if os.path.exists(classifier_pkl_path):
+                                self.log(f"    Uploading classifier: {os.path.basename(classifier_pkl_path)}")
+                                remote_path = f"models/{os.path.basename(classifier_pkl_path)}"
+                                self.azure_files_staging.upload_file(
+                                    local_path=classifier_pkl_path,
+                                    remote_path=remote_path,
+                                    show_progress=False,
+                                    skip_if_exists=True
+                                )
+                                # Update classifier_pkl to just the filename (will be resolved in persistent cache)
+                                default_params["classifier_pkl"] = os.path.basename(classifier_pkl_path)
+                                self.log(f"      ✓ Uploaded to: {remote_path}")
+                        
                         # Set model_dir parameter to azfiles:// URL for tasks
                         azfiles_model_dir = f"azfiles://{self.storage_account_name}/{self.azure_files_share_name}/models"
                         default_params["model_dir"] = azfiles_model_dir
@@ -1756,25 +1808,6 @@ CLEANUP_SCRIPT_END
                 # No Azure Files, pass model_dir as-is
                 default_params["model_dir"] = model_dir
                 self.log(f"[Model Directory] Using: {model_dir}")
-                
-                # Stage classifier model to Azure Files if enabled
-                classifier_pkl = default_params.get("classifier_pkl")
-                if self.azure_files_staging and classifier_pkl and not classifier_pkl.startswith(
-                    ("s3://", "azfiles://", "http://", "https://")
-                ):
-                    if os.path.exists(classifier_pkl):
-                        self.log(
-                            f"Staging classifier model: {os.path.basename(classifier_pkl)}"
-                        )
-                        remote_path = f"models/{os.path.basename(classifier_pkl)}"
-                        self.azure_files_staging.upload_file(
-                            local_path=classifier_pkl,
-                            remote_path=remote_path,
-                            show_progress=False,
-                        )
-                        azfiles_url = f"azfiles://{self.storage_account_name}/{self.azure_files_share_name}/{remote_path}"
-                        default_params["classifier_pkl"] = azfiles_url
-                        self.log(f"  Staged to: {remote_path}")
 
             # Group slides into batches and submit in streaming fashion
             # This allows tasks to start running before all tasks are prepared
@@ -1860,8 +1893,8 @@ CLEANUP_SCRIPT_END
                         classifier_threshold=model_params.get(
                             "classifier_threshold", 0.75
                         ),
-                        prefilter_model_types=model_params.get(
-                            "prefilter_model_types", None
+                        prefilter_model_type=model_params.get(
+                            "prefilter_model_type", None
                         ),
                         model_types=model_params.get("model_types"),
                         model_dir=model_params.get("model_dir"),
@@ -2059,8 +2092,6 @@ CLEANUP_SCRIPT_END
                 # Get execution info to check exit code
                 if task.execution_info and task.execution_info.exit_code != 0:
                     failed_tasks.append(task)
-            elif task.state in [batchmodels.TaskState.failed]:
-                failed_tasks.append(task)
 
         if not failed_tasks:
             print("No failed tasks found")
@@ -2951,6 +2982,10 @@ def main():
             print(f"Loading default parameters from config file: {args.config_file}")
             default_params.update(config_defaults)
             print(f"Loaded {len(config_defaults)} default parameters from config file")
+            
+            # prefilter_model_type is always singular (only one prefilter model)
+            if "prefilter_model_type" in default_params:
+                print(f"[Config] Using prefilter_model_type: {default_params['prefilter_model_type']}")
 
         # Command-line arguments override config file defaults
         if args.aws_access_key_id:
