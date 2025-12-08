@@ -73,6 +73,7 @@ RUN apt-get update && apt-get install -y \
   libxext6 \
   sudo \
   unzip \
+  rsync \
   && rm -rf /var/lib/apt/lists/*
 
 # Set Python 3.11 as default

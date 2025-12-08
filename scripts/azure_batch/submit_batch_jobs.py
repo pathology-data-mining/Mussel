@@ -354,7 +354,6 @@ class AzureBatchJobSubmitter:
         container_registry_server: Optional[str] = None,
         container_registry_username: Optional[str] = None,
         container_registry_password: Optional[str] = None,
-        use_container_prepull: bool = False,
         use_spot_nodes: bool = False,
         spot_node_count: Optional[int] = None,
         model_cache_blob_prefix: Optional[str] = None,
@@ -379,7 +378,7 @@ class AzureBatchJobSubmitter:
             container_registry_server: Container registry server (e.g., myregistry.azurecr.io)
             container_registry_username: Container registry username
             container_registry_password: Container registry password
-            use_container_prepull: Whether to use container pre-pull with registry (default: False)
+            Container pre-pull is always enabled
             use_spot_nodes: Whether to use low-priority/spot nodes instead of dedicated nodes (default: False)
             spot_node_count: Number of low-priority/spot nodes (defaults to node_count if use_spot_nodes=True)
         """
@@ -435,31 +434,27 @@ class AzureBatchJobSubmitter:
         else:
             print(f"  GPU support: Disabled (VM size: {vm_size})")
 
-        # Container configuration for pre-pulling from ACR
-        container_config = None
-        if use_container_prepull:
-            print(f"  Container pre-pull: Enabled (image: {container_image})")
-            
-            # Configure container registries if credentials provided
-            container_registries = []
-            if container_registry_server and container_registry_username and container_registry_password:
-                print(f"  Container registry: {container_registry_server}")
-                container_registries.append(
-                    batchmodels.ContainerRegistry(
-                        registry_server=container_registry_server,
-                        user_name=container_registry_username,
-                        password=container_registry_password,
-                    )
+        # Container configuration - always pre-pull from ACR
+        print(f"  Container pre-pull: Enabled (image: {container_image})")
+        
+        # Configure container registries if credentials provided
+        container_registries = []
+        if container_registry_server and container_registry_username and container_registry_password:
+            print(f"  Container registry: {container_registry_server}")
+            container_registries.append(
+                batchmodels.ContainerRegistry(
+                    registry_server=container_registry_server,
+                    user_name=container_registry_username,
+                    password=container_registry_password,
                 )
-            
-            # Pre-fetch the container image at pool creation time
-            container_config = batchmodels.ContainerConfiguration(
-                type='dockerCompatible',
-                container_image_names=[container_image],
-                container_registries=container_registries if container_registries else None,
             )
-        else:
-            print(f"  Container pre-pull: Disabled (image pulled in start task)")
+        
+        # Pre-fetch the container image at pool creation time
+        container_config = batchmodels.ContainerConfiguration(
+            type='dockerCompatible',
+            container_image_names=[container_image],
+            container_registries=container_registries if container_registries else None,
+        )
 
         # VM configuration
         image_ref = batchmodels.ImageReference(
@@ -477,55 +472,14 @@ class AzureBatchJobSubmitter:
 
         # Start task to configure node for docker GPU access
         # For ubuntu-hpc images (needed for A100 Gen2 support), install NVIDIA drivers
-        # For ubuntu-server-container images, drivers are pre-installed
-        # Stage models from Azure Files to persistent cache if Azure Files is configured
-        if self.azure_files_staging:
-            model_download_cmd = """# Copy models from Azure Files to persistent cache
-                echo '[MODEL_CACHE] Staging models from Azure Files to persistent cache...'
-                # Wait for Azure Files mount to be ready
-                echo '[MODEL_CACHE] Waiting for Azure Files mount...'
-                for i in $(seq 1 30); do
-                    if [ -d /mnt/batch/tasks/fsmounts/azfiles ]; then
-                        echo '[MODEL_CACHE] Azure Files mount is ready'
-                        break
-                    fi
-                    echo "[MODEL_CACHE] Waiting for mount... attempt $$i/30"
-                    sleep 2
-                done
-                
-                if [ -d /mnt/batch/tasks/fsmounts/azfiles/models ]; then
-                    echo '[MODEL_CACHE] Source: /mnt/batch/tasks/fsmounts/azfiles/models/'
-                    echo '[MODEL_CACHE] Destination: /mnt/batch/tasks/cache/'
-                    echo '[MODEL_CACHE] Source size:'
-                    du -sh /mnt/batch/tasks/fsmounts/azfiles/models/ || echo '[MODEL_CACHE] Cannot determine size'
-                    echo '[MODEL_CACHE] Available models in Azure Files:'
-                    ls -1 /mnt/batch/tasks/fsmounts/azfiles/models/ 2>/dev/null | sed 's/^/[MODEL_CACHE]   - /' || echo '[MODEL_CACHE] No files visible yet'
-                    echo '[MODEL_CACHE] Starting rsync...'
-                    if rsync -av /mnt/batch/tasks/fsmounts/azfiles/models/ /mnt/batch/tasks/cache/ > /tmp/rsync.log 2>&1; then
-                        echo '[MODEL_CACHE] ✓ Models copied successfully'
-                        echo '[MODEL_CACHE] Cache directory contents:'
-                        ls -lh /mnt/batch/tasks/cache/ | sed 's/^/[MODEL_CACHE]   /'
-                        echo '[MODEL_CACHE] Total cache size:'
-                        du -sh /mnt/batch/tasks/cache/
-                    else
-                        echo '[MODEL_CACHE] ✗ ERROR: rsync failed, check /tmp/rsync.log'
-                        cat /tmp/rsync.log
-                        # Don't exit 1, allow tasks to download models on-demand
-                        echo '[MODEL_CACHE] Continuing anyway, models will be downloaded on-demand'
-                    fi
-                else
-                    echo '[MODEL_CACHE] No models directory found in Azure Files mount (/mnt/batch/tasks/fsmounts/azfiles/models)'
-                    echo '[MODEL_CACHE] Models will be downloaded on-demand'
-                fi
-"""
-        else:
-            # Models will be downloaded on-demand from Hugging Face to /mnt/batch/tasks/cache
-            model_download_cmd = ""
+        # Models will be handled by tasks (not start task) to avoid race conditions
+        # Tasks will rsync from Azure Files mount to persistent cache if configured
+        model_download_cmd = ""
         
         if "ubuntu-hpc" in offer:
             # ubuntu-hpc images come with NVIDIA drivers and nvidia-docker2 pre-installed
-            # Conditionally pull the image if not using pre-pull
-            pull_image_cmd = "" if use_container_prepull else f"echo 'Pulling container image to /mnt/docker...'\n                docker pull {container_image}\n                "
+            # Image is pre-pulled via container configuration, no need to pull in start task
+            pull_image_cmd = ""
             
             start_task_cmd = f'''/bin/bash -c "
                 set -e
@@ -624,8 +578,8 @@ CLEANUP_SCRIPT_END
                 echo 'Docker GPU setup complete!'
 "'''
         else:
-            # For images with pre-installed drivers, conditionally pull image
-            pull_image_cmd = "" if use_container_prepull else f"docker pull {container_image}\n                "
+            # For images with pre-installed drivers, image is pre-pulled via container configuration
+            pull_image_cmd = ""
             
             start_task_cmd = f'''/bin/bash -c "
                 mkdir -p /mnt/docker
@@ -875,7 +829,6 @@ CLEANUP_SCRIPT_END
         max_retry_count: int = 3,
         container_image: str = "mskmind/mussel:latest-torch-gpu",
         cleanup_staged_file: bool = False,
-        use_container_prepull: bool = False,
         script_blob_url: Optional[str] = None,
     ) -> batchmodels.TaskAddParameter:
         """
@@ -1082,7 +1035,7 @@ CLEANUP_SCRIPT_END
         
         # If model_dir is provided and Azure Files is configured, set flag to rsync from Azure Files
         # Otherwise, models will be downloaded on-demand from Hugging Face
-        if model_dir and self.azure_files_staging:
+        if model_dir and self.azure_files_share_name:
             env_vars.append(
                 batchmodels.EnvironmentSetting(
                     name="RSYNC_MODELS_FROM_AZURE_FILES", value="true"
@@ -1344,69 +1297,58 @@ CLEANUP_SCRIPT_END
                 )
             )
 
-        # Create task with container settings if prepull is enabled
-        if use_container_prepull:
-            # Use TaskContainerSettings for container-enabled pools
-            # Download the latest wrapper script from Azure Blob (allows testing without rebuilding Docker image)
-            # The entrypoint is /bin/bash, so command_line should start with -c
-            if hasattr(self, 'script_blob_url') and self.script_blob_url:
-                # Parse storage account and container from script_blob_url
-                # Format: https://<account>.blob.core.windows.net/<container>/scripts/...
-                import re
-                match = re.match(r'https://([^.]+)\.blob\.core\.windows\.net/([^/]+)/', self.script_blob_url)
-                if match:
-                    script_storage_account = match.group(1)
-                    script_container = match.group(2)
-                    blob_name = "scripts/azure_batch/run_tessellate_extract_features.sh"
-                    # Download script using credentials from the parsed storage account
-                    # Use az CLI to download (handles auth via env vars AZURE_STORAGE_ACCOUNT and AZURE_STORAGE_KEY)
-                    container_command = (
-                        f'-c "az storage blob download '
-                        f'--account-name {script_storage_account} '
-                        f'--container-name {script_container} '
-                        f'--name {blob_name} '
-                        f'--file /tmp/run_wrapper.sh '
-                        f'--overwrite '
-                        f'&& chmod +x /tmp/run_wrapper.sh && /tmp/run_wrapper.sh"'
-                    )
-                else:
-                    # Fallback to baked-in script if URL parsing fails
-                    container_command = '-c /app/scripts/azure_batch/run_tessellate_extract_features.sh'
+        # Use TaskContainerSettings for container-enabled pools
+        # Download the latest wrapper script from Azure Blob (allows testing without rebuilding Docker image)
+        # The entrypoint is /bin/bash, so command_line should start with -c
+        if script_blob_url:
+            # Parse storage account and container from script_blob_url
+            # Format: https://<account>.blob.core.windows.net/<container>/scripts/...
+            import re
+            match = re.match(r'https://([^.]+)\.blob\.core\.windows\.net/([^/]+)/', script_blob_url)
+            if match:
+                script_storage_account = match.group(1)
+                script_container = match.group(2)
+                blob_name = "scripts/azure_batch/run_tessellate_extract_features.sh"
+                # Download script using credentials from the parsed storage account
+                # Use az CLI to download (handles auth via env vars AZURE_STORAGE_ACCOUNT and AZURE_STORAGE_KEY)
+                container_command = (
+                    f'-c "az storage blob download '
+                    f'--account-name {script_storage_account} '
+                    f'--container-name {script_container} '
+                    f'--name {blob_name} '
+                    f'--file /tmp/run_wrapper.sh '
+                    f'--overwrite '
+                    f'&& chmod +x /tmp/run_wrapper.sh && /tmp/run_wrapper.sh"'
+                )
             else:
-                # Fallback to baked-in script
+                # Fallback to baked-in script if URL parsing fails
                 container_command = '-c /app/scripts/azure_batch/run_tessellate_extract_features.sh'
-            
-            # Azure Batch container settings
-            # Note: Volume mounts are handled by Azure Batch pool configuration, not container_run_options
-            # The /mnt/batch/tasks directory is automatically available in containers
-            # Use minimal container_run_options - Azure Batch has restrictions on allowed flags
-            container_run_options = '--rm --user=root --ipc=host --shm-size=8g --entrypoint=/bin/bash'
-            
-            container_settings = batchmodels.TaskContainerSettings(
-                image_name=container_image,
-                container_run_options=container_run_options,
-                working_directory='taskWorkingDirectory'  # Use Azure Batch task directory to access mounts
-            )
-            
-            task = batchmodels.TaskAddParameter(
-                id=task_id,
-                command_line=container_command,
-                environment_settings=env_vars,  # Pass env vars directly to container
-                constraints=task_constraints,
-                container_settings=container_settings,
-                output_files=output_files if output_files else None
-                # Note: user_identity with admin elevation cannot be used with container_settings
-                # Using --user=root in container_run_options instead
-            )
         else:
-            # Use docker invocation for non-container pools
-            task = batchmodels.TaskAddParameter(
-                id=task_id,
-                command_line=task_command,
-                environment_settings=[],  # Env vars passed via docker -e
-                constraints=task_constraints,
-                output_files=output_files if output_files else None,
-            )
+            # Fallback to baked-in script
+            container_command = '-c /app/scripts/azure_batch/run_tessellate_extract_features.sh'
+        
+        # Azure Batch container settings
+        # Note: Volume mounts are handled by Azure Batch pool configuration, not container_run_options
+        # The /mnt/batch/tasks directory is automatically available in containers
+        # Use minimal container_run_options - Azure Batch has restrictions on allowed flags
+        container_run_options = '--rm --user=root --ipc=host --shm-size=8g --entrypoint=/bin/bash'
+        
+        container_settings = batchmodels.TaskContainerSettings(
+            image_name=container_image,
+            container_run_options=container_run_options,
+            working_directory='taskWorkingDirectory'  # Use Azure Batch task directory to access mounts
+        )
+        
+        task = batchmodels.TaskAddParameter(
+            id=task_id,
+            command_line=container_command,
+            environment_settings=env_vars,  # Pass env vars directly to container
+            constraints=task_constraints,
+            container_settings=container_settings,
+            output_files=output_files if output_files else None
+            # Note: user_identity with admin elevation cannot be used with container_settings
+            # Using --user=root in container_run_options instead
+        )
 
         # Return the task object (caller decides whether to submit via add or add_collection)
         return task
@@ -1455,7 +1397,6 @@ CLEANUP_SCRIPT_END
         max_retry_count: int = 3,
         container_image: str = "mskmind/mussel:latest-torch-gpu",
         cleanup_staged_file: bool = False,
-        use_container_prepull: bool = False,
         script_blob_url: Optional[str] = None,
     ) -> None:
         """
@@ -1509,7 +1450,6 @@ CLEANUP_SCRIPT_END
             max_retry_count=max_retry_count,
             container_image=container_image,
             cleanup_staged_file=cleanup_staged_file,
-            use_container_prepull=use_container_prepull,
             script_blob_url=script_blob_url,
         )
 
@@ -1549,7 +1489,6 @@ CLEANUP_SCRIPT_END
         slide_models: Optional[List[str]] = None,
         staged_slide_paths: Optional[Dict[str, str]] = None,
         slides_per_task: int = 1,
-        use_container_prepull: bool = False,
         batch_offset: int = 0,  # For incremental submission: starting batch number
         total_batches_global: Optional[int] = None,  # For incremental submission: total batches across all submissions
         **default_params,
@@ -1927,7 +1866,6 @@ CLEANUP_SCRIPT_END
                         aws_endpoint_url=model_params.get("aws_endpoint_url"),
                         max_retry_count=model_params.get("max_retry_count", 3),
                         container_image=container_image,
-                        use_container_prepull=use_container_prepull,
                         script_blob_url=model_params.get("script_blob_url"),
                     )
                     
@@ -2692,7 +2630,6 @@ def main():
         ) or config_defaults.get("container_registry_password")
     
     # Container prepull is always enabled
-    args.use_container_prepull = True
 
     # Validate required credentials
     if not args.batch_account_name:
@@ -2826,7 +2763,6 @@ def main():
             args.container_registry_password = config_defaults["container_registry_password"]
         
         # Container prepull is always enabled
-        args.use_container_prepull = True
         
         # Spot node configuration from config
         if not args.use_spot_nodes and "use_spot_nodes" in config_defaults:
@@ -2951,7 +2887,6 @@ def main():
             container_registry_server=args.container_registry_server,
             container_registry_username=args.container_registry_username,
             container_registry_password=args.container_registry_password,
-            use_container_prepull=args.use_container_prepull,
             use_spot_nodes=args.use_spot_nodes,
             spot_node_count=args.spot_node_count,
             model_cache_blob_prefix=pool_model_cache_prefix,
@@ -3234,7 +3169,6 @@ def main():
                             slide_models=slide_models_list,
                             slides_per_task=args.slides_per_task,
                             staged_slide_paths=staged_slide_paths,
-                            use_container_prepull=args.use_container_prepull,
                             batch_offset=current_batch_num - 1,  # Zero-indexed offset
                             total_batches_global=total_batches_expected,
                             **task_default_params,
@@ -3318,7 +3252,6 @@ def main():
                 container_image=args.container_image,
                 models=models_list,
                 slide_models=slide_models_list,
-                use_container_prepull=args.use_container_prepull,
                 **task_default_params,
             )
 
@@ -3332,7 +3265,6 @@ def main():
                 models=models_list,
                 slide_models=slide_models_list,
                 slides_per_task=args.slides_per_task,
-                use_container_prepull=args.use_container_prepull,
                 **task_default_params,
             )
     elif args.task_id and args.slide_path:

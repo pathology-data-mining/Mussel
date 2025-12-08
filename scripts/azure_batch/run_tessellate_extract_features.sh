@@ -50,6 +50,76 @@ cleanup() {
 
 trap cleanup EXIT INT TERM
 
+# Persistent cache directory for models
+PERSISTENT_CACHE_DIR="/mnt/batch/tasks/cache"
+
+# Rsync models from Azure Files to persistent cache if configured
+# Use a lock file to prevent race conditions when multiple tasks start simultaneously
+if [ -n "$RSYNC_MODELS_FROM_AZURE_FILES" ] && [ "$RSYNC_MODELS_FROM_AZURE_FILES" = "true" ]; then
+    LOCK_FILE="/mnt/batch/tasks/cache/.rsync_lock"
+    RSYNC_DONE_FILE="/mnt/batch/tasks/cache/.rsync_done"
+    
+    # Check if rsync already completed AND models actually exist
+    if [ -f "$RSYNC_DONE_FILE" ] && [ -n "$(ls -A $PERSISTENT_CACHE_DIR/*.pth 2>/dev/null)" ]; then
+        log "Models already staged from Azure Files to persistent cache"
+    else
+        log "Attempting to acquire lock for model rsync..."
+        # Use flock for atomic locking (create lock file and acquire exclusive lock)
+        (
+            flock -x -w 300 200 || {
+                log "ERROR: Failed to acquire lock after 300 seconds"
+                exit 1
+            }
+            
+            # Check again after acquiring lock (another task may have completed rsync)
+            if [ -f "$RSYNC_DONE_FILE" ]; then
+                log "Models already staged by another task"
+            else
+                log "Lock acquired, starting model rsync from Azure Files..."
+                
+                # Wait for Azure Files mount to be ready
+                log "Waiting for Azure Files mount..."
+                for i in $(seq 1 30); do
+                    if [ -d /mnt/batch/tasks/fsmounts/azfiles ]; then
+                        log "Azure Files mount is ready"
+                        break
+                    fi
+                    log "Waiting for mount... attempt $i/30"
+                    sleep 2
+                done
+                
+                if [ -d /mnt/batch/tasks/fsmounts/azfiles/models ]; then
+                    log "Source: /mnt/batch/tasks/fsmounts/azfiles/models/"
+                    log "Destination: $PERSISTENT_CACHE_DIR/"
+                    log "Available models in Azure Files:"
+                    ls -1 /mnt/batch/tasks/fsmounts/azfiles/models/ 2>/dev/null | while read f; do log "  - $f"; done || log "No files visible yet"
+                    log "Starting rsync..."
+                    
+                    # Run rsync with verbose output, logging each line
+                    RSYNC_LOG="/mnt/batch/tasks/cache/rsync_models.log"
+                    if rsync -av /mnt/batch/tasks/fsmounts/azfiles/models/ "$PERSISTENT_CACHE_DIR/" 2>&1 | tee "$RSYNC_LOG" | while read line; do log "[RSYNC] $line"; done && [ ${PIPESTATUS[0]} -eq 0 ]; then
+                        log "✓ Models copied successfully"
+                        log "Cache directory contents:"
+                        ls -lh "$PERSISTENT_CACHE_DIR/" | while read line; do log "  $line"; done
+                        log "Total cache size: $(du -sh $PERSISTENT_CACHE_DIR/ | cut -f1)"
+                        # Mark rsync as complete
+                        touch "$RSYNC_DONE_FILE"
+                    else
+                        log "✗ ERROR: rsync failed with exit code: ${PIPESTATUS[0]}"
+                        log "Full rsync log:"
+                        cat "$RSYNC_LOG" | while read line; do log "[RSYNC_ERROR] $line"; done
+                        # Don't exit 1, allow models to be downloaded on-demand
+                        log "Continuing anyway, models will be downloaded on-demand"
+                    fi
+                else
+                    log "No models directory found in Azure Files mount"
+                    log "Models will be downloaded on-demand"
+                fi
+            fi
+        ) 200>"$LOCK_FILE"
+    fi
+fi
+
 # Stage slide from Azure Files/S3/Azure Blob to local SSD if needed
 # Use batch task working directory instead of root filesystem
 WORK_DIR="${TMPDIR:-/mnt/batch/tasks/workitems/tmp}/mussel_work_$$"
@@ -221,18 +291,42 @@ CMD_ARGS+=("slide_paths=$EFFECTIVE_SLIDE_PATH")
 [ -n "$MODEL_TYPE" ] && CMD_ARGS+=("model_type=$MODEL_TYPE")
 [ -n "$MODEL_PATH" ] && CMD_ARGS+=("model_path=$MODEL_PATH")
 
-# Handle MODEL_DIR - always use persistent cache when MODEL_DIR is set
-if [ -n "$MODEL_DIR" ]; then
-    # When MODEL_DIR is set, models are staged to persistent cache in start task
-    # Always use the persistent cache location for tessellate-extract-features
-    PERSISTENT_CACHE_DIR="/mnt/batch/tasks/cache"
-    log "Using local model files from persistent cache: $PERSISTENT_CACHE_DIR"
-    log "  (Models staged from: $MODEL_DIR)"
-    CMD_ARGS+=("model_dir=$PERSISTENT_CACHE_DIR")
+# Handle MODEL_DIR - always use persistent cache location
+# The persistent cache is populated by rsync from Azure Files if RSYNC_MODELS_FROM_AZURE_FILES=true
+# or by on-demand downloads from Hugging Face
+if [ -n "$RSYNC_MODELS_FROM_AZURE_FILES" ] && [ "$RSYNC_MODELS_FROM_AZURE_FILES" = "true" ]; then
+    log "Models should be staged from Azure Files to persistent cache"
 fi
+
+log "Using persistent cache directory: $PERSISTENT_CACHE_DIR"
+CMD_ARGS+=("model_dir=$PERSISTENT_CACHE_DIR")
 [ -n "$SLIDE_MODEL_TYPES" ] && CMD_ARGS+=("slide_model_type=[$SLIDE_MODEL_TYPES]")
 [ -n "$SLIDE_MODEL_TYPE" ] && CMD_ARGS+=("slide_model_type=$SLIDE_MODEL_TYPE")
 [ -n "$SLIDE_MODEL_PATH" ] && CMD_ARGS+=("slide_model_path=$SLIDE_MODEL_PATH")
+
+# Prefilter and classifier configuration
+log "DEBUG: PREFILTER_MODEL_TYPE='$PREFILTER_MODEL_TYPE'"
+log "DEBUG: CLASSIFIER_PKL='$CLASSIFIER_PKL'"
+log "DEBUG: CLASSIFIER_THRESHOLD='$CLASSIFIER_THRESHOLD'"
+if [ -n "$PREFILTER_MODEL_TYPE" ]; then
+    log "Adding prefilter_model_type=$PREFILTER_MODEL_TYPE"
+    CMD_ARGS+=("prefilter_model_type=$PREFILTER_MODEL_TYPE")
+fi
+if [ -n "$CLASSIFIER_PKL" ]; then
+    # If CLASSIFIER_PKL is just a filename (no path separators), construct full path using persistent cache
+    if [[ "$CLASSIFIER_PKL" != */* ]]; then
+        CLASSIFIER_PKL_PATH="$PERSISTENT_CACHE_DIR/$CLASSIFIER_PKL"
+        log "Resolved classifier_pkl from persistent cache: $CLASSIFIER_PKL_PATH"
+        CMD_ARGS+=("classifier_pkl=$CLASSIFIER_PKL_PATH")
+    else
+        log "Using classifier_pkl as provided: $CLASSIFIER_PKL"
+        CMD_ARGS+=("classifier_pkl=$CLASSIFIER_PKL")
+    fi
+fi
+if [ -n "$CLASSIFIER_THRESHOLD" ]; then
+    log "Adding classifier_threshold=$CLASSIFIER_THRESHOLD"
+    CMD_ARGS+=("classifier_threshold=$CLASSIFIER_THRESHOLD")
+fi
 
 # Processing parameters
 [ -n "$NUM_WORKERS" ] && CMD_ARGS+=("num_workers=$NUM_WORKERS")
