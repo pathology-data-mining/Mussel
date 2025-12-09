@@ -1,10 +1,29 @@
 # SLURM Backend for Mussel Feature Extraction
 
-This directory contains scripts for running `tessellate-extract-features` on SLURM clusters.
+This directory contains scripts for running Mussel feature extraction workflows on SLURM clusters.
 
 ## Overview
 
 SLURM support enables distributed processing of whole-slide images on HPC clusters using the SLURM workload manager.
+
+## Scripts
+
+### `submit_slurm_jobs.py`
+Main script for submitting **tessellate-extract-features** jobs (full pipeline: tessellation + feature extraction from whole slides).
+
+- **Use for:** Processing whole-slide images (.svs, .ndpi, .tiff, etc.)
+- **Pipeline:** Tessellation → Feature extraction → Optional slide-level aggregation
+- **Input:** Whole slide images
+- **Output:** Patch features (.h5, .pt) and optional slide features
+
+### `submit_patch_extract_jobs.py`
+Script for submitting **extract-features** jobs from pre-extracted patch directories (feature extraction only, no tessellation).
+
+- **Use for:** Extracting features from pre-extracted image patches
+- **Pipeline:** Feature extraction only (no tessellation)
+- **Input:** Directories containing image patches (.png, .jpg, etc.)
+- **Output:** Feature files (.pt) for each patch image
+- **Supports:** S3 patch directories, environment file loading
 
 **Key Features:**
 - **Docker support** for containerized execution
@@ -27,7 +46,11 @@ SLURM support enables distributed processing of whole-slide images on HPC cluste
 
 ## Quick Start
 
-### Single Slide
+### Tessellate-Extract-Features (Full Pipeline)
+
+Use `submit_slurm_jobs.py` to process whole slides:
+
+#### Single Slide
 
 ```bash
 python scripts/slurm/submit_slurm_jobs.py \
@@ -40,7 +63,30 @@ python scripts/slurm/submit_slurm_jobs.py \
   --submit
 ```
 
+### Extract-Features Only (From Patch Directories)
+
+Use `submit_patch_extract_jobs.py` to extract features from pre-extracted patch directories:
+
+```bash
+python scripts/slurm/submit_patch_extract_jobs.py \
+  --csv-manifest lc25000_patch_dirs_manifest.csv \
+  --output-dir /output/lc25000_features/ \
+  --model-type OPTIMUS \
+  --partition gpu \
+  --gpus 1 \
+  --submit
+```
+
+**CSV Format for patch extraction:**
+```csv
+slide_id,patch_dir
+lung_aca001,/data/patches/lung_aca001
+lung_aca002,s3://bucket/patches/lung_aca002
+```
+
 ### Batch Processing with Job Array
+
+For tessellate-extract-features:
 
 ```bash
 python scripts/slurm/submit_slurm_jobs.py \

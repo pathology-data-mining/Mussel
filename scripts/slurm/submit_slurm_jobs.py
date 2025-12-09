@@ -431,7 +431,7 @@ class SlurmJobSubmitter:
 {chr(10).join(directives)}
 
 # Environment setup
-{chr(10).join([f"export {k}={v}" for k, v in env_vars.items()])}
+{chr(10).join([f'export {k}="{v}"' for k, v in env_vars.items()])}
 
 # Set up tmp directory for Singularity/Apptainer and Python
 export TMPDIR=$HOME/tmp

@@ -105,11 +105,25 @@ tessellate \
 
 **Purpose**: Extract feature embeddings from slide tiles using a pathology foundation model.
 
-This command processes the tiles identified by `tessellate` and generates feature vectors (embeddings) for each tile using a pre-trained foundation model. These embeddings can be used for downstream classification, clustering, or analysis tasks.
+This command has **three operating modes**:
+
+1. **Single Slide Mode**: Process a single whole-slide image with pre-computed tile coordinates
+   - Requires: `slide_path` + `patch_h5_path`
+   - Use case: Extract features from tiles identified by the `tessellate` command
+
+2. **Batch Slide Mode**: Process multiple whole-slide images
+   - Requires: `slide_paths` (list of slide paths)
+   - Use case: Process many slides in one command
+
+3. **Patch Directory Mode**: Process a directory of pre-extracted tile images
+   - Requires: `patch_path` (directory containing tile images)
+   - Use case: Extract features from existing tile images (.png, .jpg, .tif, etc.)
 
 **Key Parameters:**
-- `slide_path`: Path to your whole-slide image
-- `patch_h5_path`: Tile coordinates from tessellate command
+- `slide_path`: Path to your whole-slide image (Mode 1: single slide)
+- `patch_h5_path`: Tile coordinates from tessellate command (Mode 1: single slide)
+- `slide_paths`: List of slide paths (Mode 2: batch processing)
+- `patch_path`: Directory containing tile images (Mode 3: pre-extracted tiles)
 - `model_type`: Which foundation model to use (see table below)
 - `output_h5_path`: Where to save features (HDF5 format)
 - `output_pt_path`: Where to save features (PyTorch format)
@@ -144,7 +158,7 @@ This command processes the tiles identified by `tessellate` and generates featur
 
 You can override these defaults by explicitly setting `seg_config.patch_size` to a different value. The model will automatically resize patches to its expected input size during inference.
 
-**Example - Using the default CLIP model:**
+**Example - Mode 1: Single slide with pre-computed coordinates:**
 ```bash
 extract_features \
     slide_path=tests/testdata/948176.svs \
@@ -153,7 +167,7 @@ extract_features \
     output_pt_path=948176_embed.pt
 ```
 
-**Example - Using H-Optimus-0 model:**
+**Example - Mode 1: Single slide with H-Optimus-0 model:**
 ```bash
 extract_features \
     slide_path=tests/testdata/948176.svs \
@@ -163,15 +177,22 @@ extract_features \
     output_pt_path=948176_embed.pt
 ```
 
-**Example - Processing pre-tiled images:**
-**Example - Processing pre-tiled images:**
+**Example - Mode 2: Batch processing multiple slides:**
+```bash
+extract_features \
+    slide_paths=[slide1.svs,slide2.svs,slide3.svs] \
+    output_dir=features_output/ \
+    model_type=OPTIMUS
+```
+
+**Example - Mode 3: Processing pre-extracted tile images:**
 If you have a folder of pre-extracted tile images, you can process them directly:
 ```bash
 extract_features \
     slide_path=None \
     patch_h5_path=None \
-    patch_path=<path to folder w/ tiles in image format (.tif, .png, .jpg, etc.)> \
-    output_h5_path=<path to output h5 file> \
+    patch_path=/path/to/tiles/ \
+    output_h5_path=tiles_features.h5 \
     output_pt_path=None
 ```
 
