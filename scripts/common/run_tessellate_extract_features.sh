@@ -113,13 +113,14 @@ if [ -n "$SLIDE_PATHS" ]; then
 else
     BATCH_MODE=false
     
-    if [ -z "$OUTPUT_H5_PATH" ]; then
-        log "ERROR: OUTPUT_H5_PATH environment variable is required"
+    # Support OUTPUT_DIR as alternative to OUTPUT_H5_PATH/OUTPUT_PT_PATH
+    if [ -z "$OUTPUT_H5_PATH" ] && [ -z "$OUTPUT_DIR" ]; then
+        log "ERROR: OUTPUT_H5_PATH or OUTPUT_DIR environment variable is required"
         exit 1
     fi
     
-    if [ -z "$OUTPUT_PT_PATH" ]; then
-        log "ERROR: OUTPUT_PT_PATH environment variable is required"
+    if [ -z "$OUTPUT_PT_PATH" ] && [ -z "$OUTPUT_DIR" ]; then
+        log "ERROR: OUTPUT_PT_PATH or OUTPUT_DIR environment variable is required"
         exit 1
     fi
 fi
@@ -1095,8 +1096,17 @@ if [ -z "$MODEL_TYPES" ]; then
     CMD_ARGS=(
         "tessellate_extract_features"
         "slide_path=$SLIDE_PATH"
-        "output_h5_path=$MODEL_H5_PATH"
-        "output_pt_path=$MODEL_PT_PATH"
+    )
+    
+    # Use output_dir if available, otherwise use explicit paths
+    if [ -n "$OUTPUT_DIR" ] && [ -z "$OUTPUT_H5_PATH" ]; then
+        CMD_ARGS+=("output_dir=$OUTPUT_DIR")
+    else
+        CMD_ARGS+=("output_h5_path=$MODEL_H5_PATH")
+        CMD_ARGS+=("output_pt_path=$MODEL_PT_PATH")
+    fi
+    
+    CMD_ARGS+=(
         "num_workers=$NUM_WORKERS"
         "batch_size=$BATCH_SIZE"
         "use_gpu=$USE_GPU"
