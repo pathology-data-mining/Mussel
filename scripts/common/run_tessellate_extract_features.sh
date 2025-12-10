@@ -332,8 +332,8 @@ if [ "$BATCH_MODE" = true ]; then
     log ""
     
     # Stage slides from S3 if needed
-    # Parse comma-separated slide paths
-    IFS=',' read -ra SLIDE_PATH_ARRAY <<< "$SLIDE_PATHS"
+    # Parse pipe-separated slide paths (pipe delimiter used to avoid conflicts with commas in paths)
+    IFS='|' read -ra SLIDE_PATH_ARRAY <<< "$SLIDE_PATHS"
     LOCAL_SLIDE_PATHS=()
     NEEDS_STAGING=false
     
@@ -361,7 +361,7 @@ if [ "$BATCH_MODE" = true ]; then
         done
         
         # Reconstruct slide paths string
-        SLIDE_PATHS=$(IFS=,; echo "${LOCAL_SLIDE_PATHS[*]}")
+        SLIDE_PATHS=$(IFS='|'; echo "${LOCAL_SLIDE_PATHS[*]}")
         log "Updated slide paths after staging: $SLIDE_PATHS"
     fi
     
@@ -371,9 +371,12 @@ if [ "$BATCH_MODE" = true ]; then
         log "Multi-model batch mode: Passing all models to tessellate_extract_features CLI"
         log ""
         
+        # Convert pipe-delimited SLIDE_PATHS to comma-delimited for Hydra list syntax
+        SLIDE_PATHS_COMMA="${SLIDE_PATHS//|/,}"
+        
         MODEL_CMD_ARGS=(
             "tessellate_extract_features"
-            "slide_paths=[${SLIDE_PATHS}]"
+            "slide_paths=[${SLIDE_PATHS_COMMA}]"
             "output_dir=${OUTPUT_DIR}"
             "num_workers=${NUM_WORKERS}"
             "batch_size=${BATCH_SIZE}"
@@ -509,9 +512,12 @@ if [ "$BATCH_MODE" = true ]; then
         log "Single model mode: Processing one model at a time"
         log ""
         
+        # Convert pipe-delimited SLIDE_PATHS to comma-delimited for Hydra list syntax
+        SLIDE_PATHS_COMMA="${SLIDE_PATHS//|/,}"
+        
         MODEL_CMD_ARGS=(
             "tessellate_extract_features"
-            "slide_paths=[${SLIDE_PATHS}]"
+            "slide_paths=[${SLIDE_PATHS_COMMA}]"
             "output_dir=${OUTPUT_DIR}"
             "num_workers=${NUM_WORKERS}"
             "batch_size=${BATCH_SIZE}"
@@ -640,9 +646,12 @@ if [ "$BATCH_MODE" = true ]; then
     # Default batch processing (no model specified)
     # Build command for batch processing
     # Note: slide_paths parameter uses Hydra list syntax: slide_paths=[item1,item2,...]
+    # Convert pipe-delimited SLIDE_PATHS to comma-delimited for Hydra list syntax
+    SLIDE_PATHS_COMMA="${SLIDE_PATHS//|/,}"
+    
     CMD_ARGS=(
         "tessellate_extract_features"
-        "slide_paths=[${SLIDE_PATHS}]"
+        "slide_paths=[${SLIDE_PATHS_COMMA}]"
         "output_dir=${OUTPUT_DIR}"
         "num_workers=${NUM_WORKERS}"
         "batch_size=${BATCH_SIZE}"
@@ -793,7 +802,7 @@ fi
 # Determine which models to run
 if [ -n "$MODEL_TYPES" ]; then
     # Multiple models specified
-    IFS=',' read -ra MODELS <<< "$MODEL_TYPES"
+    IFS='|' read -ra MODELS <<< "$MODEL_TYPES"
     log "Multi-model mode: Will process ${#MODELS[@]} models: ${MODEL_TYPES}"
     
     # Check if we need to run filter-tessellate first (only if prefilter is specified)
