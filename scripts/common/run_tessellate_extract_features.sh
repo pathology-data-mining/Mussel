@@ -65,10 +65,10 @@ get_model_patch_size() {
 }
 
 # Detect uv virtual environment
-UV_PREFIX=""
+UV_PREFIX=()
 if command -v uv >/dev/null 2>&1; then
     if [ -d ".venv" ] || [ -n "$VIRTUAL_ENV" ]; then
-        UV_PREFIX="uv run"
+        UV_PREFIX=(uv run)
         log "Detected uv environment - using 'uv run' for CLI commands"
     fi
 fi
@@ -486,7 +486,7 @@ if [ "$BATCH_MODE" = true ]; then
         
         START_TIME=$(date +%s)
         EXIT_CODE=0
-        ${UV_PREFIX} "${MODEL_CMD_ARGS[@]}" || {
+        "${UV_PREFIX[@]}" "${MODEL_CMD_ARGS[@]}" || {
             EXIT_CODE=$?
             END_TIME=$(date +%s)
             DURATION=$((END_TIME - START_TIME))
@@ -622,7 +622,7 @@ if [ "$BATCH_MODE" = true ]; then
         
         START_TIME=$(date +%s)
         EXIT_CODE=0
-        ${UV_PREFIX} "${MODEL_CMD_ARGS[@]}" || {
+        "${UV_PREFIX[@]}" "${MODEL_CMD_ARGS[@]}" || {
             EXIT_CODE=$?
             END_TIME=$(date +%s)
             DURATION=$((END_TIME - START_TIME))
@@ -760,7 +760,7 @@ if [ "$BATCH_MODE" = true ]; then
     
     # Execute the command
     START_TIME=$(date +%s)
-    ${UV_PREFIX} "${CMD_ARGS[@]}"
+    "${UV_PREFIX[@]}" "${CMD_ARGS[@]}"
     EXIT_CODE=$?
     END_TIME=$(date +%s)
     DURATION=$((END_TIME - START_TIME))
@@ -905,7 +905,7 @@ if [ -n "$MODEL_TYPES" ]; then
     echo ""
     
     START_TIME=$(date +%s)
-    ${UV_PREFIX} "${FILTER_CMD_ARGS[@]}"
+    "${UV_PREFIX[@]}" "${FILTER_CMD_ARGS[@]}"
     EXIT_CODE=$?
     END_TIME=$(date +%s)
     DURATION=$((END_TIME - START_TIME))
@@ -1028,7 +1028,7 @@ if [ -n "$MODEL_TYPES" ]; then
         echo ""
         
         MODEL_START_TIME=$(date +%s)
-        ${UV_PREFIX} "${EXTRACT_CMD_ARGS[@]}"
+        "${UV_PREFIX[@]}" "${EXTRACT_CMD_ARGS[@]}"
         MODEL_EXIT_CODE=$?
         MODEL_END_TIME=$(date +%s)
         MODEL_DURATION=$((MODEL_END_TIME - MODEL_START_TIME))
@@ -1219,7 +1219,7 @@ if [ -z "$MODEL_TYPES" ]; then
 
     # Execute the command
     START_TIME=$(date +%s)
-    ${UV_PREFIX} "${CMD_ARGS[@]}"
+    "${UV_PREFIX[@]}" "${CMD_ARGS[@]}"
     EXIT_CODE=$?
     END_TIME=$(date +%s)
     DURATION=$((END_TIME - START_TIME))
