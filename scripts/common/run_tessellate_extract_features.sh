@@ -73,6 +73,18 @@ if command -v uv >/dev/null 2>&1; then
     fi
 fi
 
+# If UV_PREFIX is still empty, commands should be available as installed console scripts
+# No prefix needed - filter_tessellate, tessellate_extract_features, etc. should be in PATH
+if [ ${#UV_PREFIX[@]} -eq 0 ]; then
+    log "Using installed console scripts (no uv prefix)"
+fi
+
+# If UV_PREFIX is empty, use python -m mussel.cli directly
+if [ ${#UV_PREFIX[@]} -eq 0 ]; then
+    UV_PREFIX=(python -m mussel.cli)
+    log "No uv environment - using 'python -m mussel.cli' for CLI commands"
+fi
+
 # Cleanup function to remove temporary files
 cleanup_staging() {
     if [ -n "$WORK_DIR" ] && [ -d "$WORK_DIR" ]; then
