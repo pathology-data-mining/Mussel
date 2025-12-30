@@ -93,12 +93,20 @@ class WholeSlideImageH5Dataset(Dataset):
 
         with h5py.File(self.h5_path, "r") as hdf5_file:
             coord = hdf5_file["coords"][idx]
-            img = self.wsi.read_region(
-                coord, self.patch_level, (self.patch_size, self.patch_size)
-            ).convert("RGB")
-
-        img = self.roi_transforms(img).unsqueeze(0)
-        return img, coord
+            try:
+                img = self.wsi.read_region(
+                    coord, self.patch_level, (self.patch_size, self.patch_size)
+                ).convert("RGB")
+                img = self.roi_transforms(img).unsqueeze(0)
+                return img, coord
+            except Exception as e:
+                # Handle JPEG decoding errors (e.g., unsupported JPEG markers in NDPI files)
+                # Return None to indicate this tile should be skipped
+                if "Jpeg8Error" in str(type(e).__name__) or "imagecodecs" in str(e):
+                    logger.warning(f"Skipping corrupted tile at {coord} due to JPEG decode error: {e}")
+                else:
+                    logger.error(f"Error reading tile at {coord}: {e}")
+                return None, coord
 
     def worker_init(self, *args):
         """

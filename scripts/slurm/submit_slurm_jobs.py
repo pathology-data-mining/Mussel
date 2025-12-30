@@ -308,7 +308,8 @@ class SlurmJobSubmitter:
         # Handle batch vs single slide processing
         if slide_paths and len(slide_paths) >= 1:
             # Batch processing mode (including single-slide batches)
-            env_vars["SLIDE_PATHS"] = ",".join(slide_paths)
+            # Use pipe delimiter to avoid conflicts with commas in S3 paths (e.g., paths with spaces)
+            env_vars["SLIDE_PATHS"] = "|".join(slide_paths)
             if slide_ids:
                 env_vars["SLIDE_IDS"] = ",".join(slide_ids)
             if output_dir_for_batch:
@@ -848,8 +849,7 @@ exit $EXIT_CODE
         self,
         csv_file: str,
         output_dir: Optional[str] = None,
-        use_array: bool = True,
-        distributed_slide_batch_size: int = 1,
+        distributed_slide_batch_size: Optional[int] = None,
         **kwargs,
     ) -> List[Optional[str]]:
         """
@@ -860,10 +860,10 @@ exit $EXIT_CODE
         Args:
             csv_file: Path to CSV manifest file
             output_dir: Output directory for results (can be local path or S3 path)
-            use_array: If True, use SLURM job array. If False, submit individual jobs.
-            distributed_slide_batch_size: Number of slides to group per task for batch encoding (default: 1).
-                When > 1 and using slide-level model aggregation, slides are grouped into batches
-                to optimize slide encoder loading. Recommended: 8-16 for GIGAPATH_SLIDE/TITAN_SLIDE.
+            distributed_slide_batch_size: Number of slides to group per task for batch encoding (default: auto).
+                When None (auto), automatically enables batching with size=8 for multi-slide processing.
+                Set to 1 to explicitly disable batching (process one slide per task).
+                Recommended: 8-16 for GIGAPATH_SLIDE/TITAN_SLIDE.
             **kwargs: Additional task parameters
 
         Returns:
@@ -889,17 +889,20 @@ exit $EXIT_CODE
 
                 slides.append({"slide_id": slide_id, "slide_path": slide_path})
 
-        # Auto-adjust distributed_slide_batch_size if using default value (1)
+        # Auto-adjust distributed_slide_batch_size if not explicitly set (None)
         # and slide-level model aggregation is enabled
-        if distributed_slide_batch_size == 1 and self._should_use_batch_encoding(
+        if distributed_slide_batch_size is None and self._should_use_batch_encoding(
             **kwargs
         ):
             distributed_slide_batch_size = 8  # Recommended default for batch encoding
-            print(f"\n[Auto-Batching] Detected slide-level model aggregation")
+            print(f"\n[Auto-Batching] Detected multi-slide processing")
             print(
                 f"  Automatically enabling batch processing with batch_size={distributed_slide_batch_size}"
             )
-            print(f"  (Use --distributed-slide-batch-size to override)")
+            print(f"  (Use --distributed-slide-batch-size 1 to disable, or --distributed-slide-batch-size N to customize)")
+        elif distributed_slide_batch_size is None:
+            # No batching conditions met, default to 1 (no batching)
+            distributed_slide_batch_size = 1
 
         # Determine if we should use batch encoding
         use_batch_encoding = (
@@ -972,28 +975,24 @@ exit $EXIT_CODE
             print(f"\nSubmitted {len(job_ids)} batch tasks")
             return job_ids
 
-        # Original behavior: job array or individual jobs
-        if use_array and len(slides) > 1:
-            # Use job array
-            return self._submit_job_array(slides, output_dir, **kwargs)
-        else:
-            # Submit individual jobs
-            job_ids = []
-            for slide in slides:
-                slide_id = slide["slide_id"]
-                slide_path = slide["slide_path"]
+        # Individual job submission (when distributed_slide_batch_size == 1 or batch encoding disabled)
+        # Note: Job array submission is deprecated and removed
+        job_ids = []
+        for slide in slides:
+            slide_id = slide["slide_id"]
+            slide_path = slide["slide_path"]
 
-                # Submit task
-                job_id = self.submit_task(
-                    job_name=slide_id,
-                    slide_path=slide_path,
-                    output_dir=output_dir,
-                    **kwargs,
-                )
-                job_ids.append(job_id)
+            # Submit task
+            job_id = self.submit_task(
+                job_name=slide_id,
+                slide_path=slide_path,
+                output_dir=output_dir,
+                **kwargs,
+            )
+            job_ids.append(job_id)
 
-            print(f"\nSubmitted {len(job_ids)} individual jobs")
-            return job_ids
+        print(f"\nSubmitted {len(job_ids)} individual jobs")
+        return job_ids
 
     def _submit_job_array(self, slides, output_dir, **kwargs):
         """Job array submission removed - only individual job submission supported."""
@@ -1114,11 +1113,12 @@ def main():
     parser.add_argument(
         "--distributed-slide-batch-size",
         type=int,
-        default=1,
-        help="Number of slides to group per distributed task for batch processing optimization (default: 1, auto-adjusted to 8). "
-        "Groups slides together to load models once instead of N times. Beneficial for all multi-slide processing, "
-        "especially with slide-level model aggregation. Recommended: 8-16 for better efficiency. "
-        "Auto-enabled (batch_size=8) when processing multiple slides; use 1 to disable.",
+        default=None,
+        help="Number of slides to group per distributed task for batch processing optimization (default: auto). "
+        "When not specified (auto), automatically groups slides into batches of 8 for efficiency. "
+        "Set to 1 to explicitly disable batching (one slide per task). "
+        "Groups slides together to load models once instead of N times. "
+        "Recommended: 8-16 for better efficiency with multi-slide processing.",
     )
     parser.add_argument("--use-gpu", action="store_true", default=True)
     parser.add_argument("--no-gpu", action="store_false", dest="use_gpu")
@@ -1137,11 +1137,11 @@ def main():
     parser.add_argument("--gres", help="Generic resources (e.g., gpu:1)")
     parser.add_argument("--qos", help="Quality of service")
 
-    # Array job options
+    # Array job options (deprecated)
     parser.add_argument(
         "--no-array",
         action="store_true",
-        help="Submit individual jobs instead of array",
+        help="(Deprecated - job arrays removed) This flag is ignored. Individual job submission is now the default.",
     )
 
     # AWS S3 credentials
@@ -1585,7 +1585,6 @@ def main():
         submitter.submit_tasks_from_csv(
             csv_file=args.csv_manifest,
             output_dir=args.output_dir,
-            use_array=not args.no_array,
             distributed_slide_batch_size=args.distributed_slide_batch_size,
             **csv_kwargs,
         )

@@ -79,12 +79,6 @@ if [ ${#UV_PREFIX[@]} -eq 0 ]; then
     log "Using installed console scripts (no uv prefix)"
 fi
 
-# If UV_PREFIX is empty, use python -m mussel.cli directly
-if [ ${#UV_PREFIX[@]} -eq 0 ]; then
-    UV_PREFIX=(python -m mussel.cli)
-    log "No uv environment - using 'python -m mussel.cli' for CLI commands"
-fi
-
 # Cleanup function to remove temporary files
 cleanup_staging() {
     if [ -n "$WORK_DIR" ] && [ -d "$WORK_DIR" ]; then

@@ -86,6 +86,13 @@ def get_model_path_from_dir(model_dir: Optional[str], model_type: Optional[Model
     if model_dir is None or model_type is None:
         return None
 
+    # Special case for GIGAPATH_SLIDE: return "hf-hub:" format to trigger HF caching
+    # The GigapathSlideEncoderModel only accepts hf-hub: format
+    # Must check this BEFORE checking for directories to avoid returning directory paths
+    if model_type == ModelType.GIGAPATH_SLIDE:
+        # Always use the default HF hub path, which will be cached automatically
+        return ModelType.GIGAPATH_SLIDE.path
+    
     model_dir_path = Path(model_dir)
     if not model_dir_path.exists():
         return None
@@ -105,12 +112,38 @@ def get_model_path_from_dir(model_dir: Optional[str], model_type: Optional[Model
     # Check for model directory named after the model type
     model_subdir = model_dir_path / model_type.name
     if model_subdir.exists() and model_subdir.is_dir():
+        # For slide encoders, look for slide_encoder.pth inside the directory
+        # If it doesn't exist but pytorch_model.bin does, return the directory path
+        # The GigapathSlideEncoderModel can handle directories with pytorch_model.bin
+        if model_type in [ModelType.GIGAPATH_SLIDE, ModelType.TITAN_SLIDE]:
+            slide_encoder_pth = model_subdir / "slide_encoder.pth"
+            if slide_encoder_pth.exists():
+                logger.info(f"✓ Using local model file: {model_type.name} -> {slide_encoder_pth}")
+                return str(slide_encoder_pth)
+            # Check if directory has pytorch_model.bin (HuggingFace cache format)
+            pytorch_model_bin = model_subdir / "pytorch_model.bin"
+            if pytorch_model_bin.exists():
+                logger.info(f"✓ Using local model directory: {model_type.name} -> {model_subdir}")
+                return str(model_subdir)
         logger.info(f"✓ Using local model file: {model_type.name} -> {model_subdir}")
         return str(model_subdir)
     
     # Check for model directory named with lowercase
     model_subdir_lower = model_dir_path / model_type.name.lower()
     if model_subdir_lower.exists() and model_subdir_lower.is_dir():
+        # For slide encoders, look for slide_encoder.pth inside the directory
+        # If it doesn't exist but pytorch_model.bin does, return the directory path
+        # The GigapathSlideEncoderModel can handle directories with pytorch_model.bin
+        if model_type in [ModelType.GIGAPATH_SLIDE, ModelType.TITAN_SLIDE]:
+            slide_encoder_pth = model_subdir_lower / "slide_encoder.pth"
+            if slide_encoder_pth.exists():
+                logger.info(f"✓ Using local model file: {model_type.name} -> {slide_encoder_pth}")
+                return str(slide_encoder_pth)
+            # Check if directory has pytorch_model.bin (HuggingFace cache format)
+            pytorch_model_bin = model_subdir_lower / "pytorch_model.bin"
+            if pytorch_model_bin.exists():
+                logger.info(f"✓ Using local model directory: {model_type.name} -> {model_subdir_lower}")
+                return str(model_subdir_lower)
         logger.info(f"✓ Using local model file: {model_type.name} -> {model_subdir_lower}")
         return str(model_subdir_lower)
     
@@ -566,7 +599,7 @@ def _main_single(cfg: TessellateExtractFeaturesConfig):
     # Determine models for each extraction step
     model_type = cfg.model_type
     if model_type is None:
-        if cfg.aggregation_method == "model" and cfg.slide_model_type is not None:
+        if cfg.slide_model_type is not None:
             model_type = get_required_patch_encoder(cfg.slide_model_type)
             logger.info(
                 f"Auto-inferring model_type={model_type.name} "
@@ -588,13 +621,13 @@ def _main_single(cfg: TessellateExtractFeaturesConfig):
             model_type = cfg.prefilter_model_type
 
     # Resolve model paths from model_dir
-    model_path = get_model_path_from_dir(cfg.model_dir, model_type)
-    if model_path is None and cfg.model_dir:
+    model_path = get_model_path_from_dir(cfg.model_dir, model_type) if model_type else None
+    if model_path is None and cfg.model_dir and model_type:
         logger.info(f"Model {model_type.name} not found in model_dir, will download from HuggingFace")
-    elif model_path is None:
+    elif model_path is None and model_type:
         logger.info(f"No model_dir configured, will download {model_type.name} from HuggingFace")
     
-    prefilter_model_path = get_model_path_from_dir(cfg.model_dir, cfg.prefilter_model_type)
+    prefilter_model_path = get_model_path_from_dir(cfg.model_dir, cfg.prefilter_model_type) if cfg.prefilter_model_type else None
     if prefilter_model_path is None and cfg.prefilter_model_type and cfg.model_dir:
         logger.info(f"Model {cfg.prefilter_model_type.name} not found in model_dir, will download from HuggingFace")
     elif prefilter_model_path is None and cfg.prefilter_model_type and not cfg.model_dir:
@@ -606,8 +639,10 @@ def _main_single(cfg: TessellateExtractFeaturesConfig):
         slide_model_path = get_model_path_from_dir(cfg.model_dir, cfg.slide_model_type)
         if slide_model_path is None and cfg.model_dir:
             logger.info(f"Model {cfg.slide_model_type.name} not found in model_dir, will download from HuggingFace")
+            slide_model_path = cfg.slide_model_type.path
         elif slide_model_path is None:
             logger.info(f"No model_dir configured, will download {cfg.slide_model_type.name} from HuggingFace")
+            slide_model_path = cfg.slide_model_type.path
 
     # Optimization: If filtering is enabled and models are the same, skip second extraction
     models_are_same = (
@@ -706,7 +741,7 @@ def _main_batch(
     # Determine models for each extraction step
     model_type = cfg.model_type
     if model_type is None:
-        if cfg.aggregation_method == "model" and cfg.slide_model_type is not None:
+        if cfg.slide_model_type is not None:
             model_type = get_required_patch_encoder(cfg.slide_model_type)
             logger.info(
                 f"Auto-inferring model_type={model_type.name} "
@@ -728,13 +763,13 @@ def _main_batch(
             model_type = cfg.prefilter_model_type
 
     # Resolve model paths from model_dir
-    model_path = get_model_path_from_dir(cfg.model_dir, model_type)
-    if model_path is None and cfg.model_dir:
+    model_path = get_model_path_from_dir(cfg.model_dir, model_type) if model_type else None
+    if model_path is None and cfg.model_dir and model_type:
         logger.info(f"Model {model_type.name} not found in model_dir, will download from HuggingFace")
-    elif model_path is None:
+    elif model_path is None and model_type:
         logger.info(f"No model_dir configured, will download {model_type.name} from HuggingFace")
     
-    prefilter_model_path = get_model_path_from_dir(cfg.model_dir, cfg.prefilter_model_type)
+    prefilter_model_path = get_model_path_from_dir(cfg.model_dir, cfg.prefilter_model_type) if cfg.prefilter_model_type else None
     if prefilter_model_path is None and cfg.prefilter_model_type and cfg.model_dir:
         logger.info(f"Model {cfg.prefilter_model_type.name} not found in model_dir, will download from HuggingFace")
     elif prefilter_model_path is None and cfg.prefilter_model_type and not cfg.model_dir:
@@ -746,8 +781,10 @@ def _main_batch(
         slide_model_path = get_model_path_from_dir(cfg.model_dir, cfg.slide_model_type)
         if slide_model_path is None and cfg.model_dir:
             logger.info(f"Model {cfg.slide_model_type.name} not found in model_dir, will download from HuggingFace")
+            slide_model_path = cfg.slide_model_type.path
         elif slide_model_path is None:
             logger.info(f"No model_dir configured, will download {cfg.slide_model_type.name} from HuggingFace")
+            slide_model_path = cfg.slide_model_type.path
 
     # Optimization: If filtering is enabled and models are the same, skip second extraction
     models_are_same = (
@@ -838,6 +875,11 @@ def _main_batch(
     h5_files_to_strip = []
 
     # Determine if we need two-step processing (patch features + slide aggregation)
+    # If a slide model is specified, force two-step processing with model aggregation
+    if cfg.slide_model_type is not None and cfg.aggregation_method == "identity":
+        logger.info(f"Auto-enabling two-step processing with aggregation_method='model' for slide_model_type={cfg.slide_model_type.name}")
+        cfg.aggregation_method = "model"
+    
     use_two_step = cfg.aggregation_method != "identity"
 
     if use_two_step:

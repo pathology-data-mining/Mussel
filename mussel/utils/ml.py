@@ -60,6 +60,13 @@ def collate_features(batch):
     Returns:
         List containing [concatenated features, stacked coordinates].
     """
+    # Filter out None values (corrupted/failed tiles)
+    batch = [item for item in batch if item[0] is not None]
+    
+    # If all tiles in batch failed, return empty tensors
+    if len(batch) == 0:
+        return [torch.empty(0), np.empty((0, 2))]
+    
     img = torch.cat([item[0] for item in batch], dim=0)
     coords = np.vstack([item[1] for item in batch])
     return [img, coords]

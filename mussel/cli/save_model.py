@@ -99,41 +99,80 @@ def save_model(cfg: SaveModelConfig):
             print(f"\nDownloading {model_type.name}...")
             try:
                 # Ensure cache directories exist before loading models
-                # This prevents "File exists" errors from libraries that don't use exist_ok=True
-                # Use Path.mkdir() which handles symlinks correctly
-                cache_dirs = [
-                    os.path.expanduser("~/.cache"),
-                    os.path.expanduser("~/.cache/huggingface"),
-                    os.path.expanduser("~/.cache/torch"),
-                ]
-                for cache_dir in cache_dirs:
-                    Path(cache_dir).mkdir(parents=True, exist_ok=True)
+                # Skip if using custom cache directories via environment variables
+                if not (os.environ.get('HF_HOME') or os.environ.get('TRANSFORMERS_CACHE')):
+                    # This prevents "File exists" errors from libraries that don't use exist_ok=True
+                    # Handle symlinks properly by checking if target exists
+                    cache_dirs = [
+                        os.path.expanduser("~/.cache"),
+                        os.path.expanduser("~/.cache/huggingface"),
+                        os.path.expanduser("~/.cache/torch"),
+                    ]
+                    for cache_dir in cache_dirs:
+                        cache_path = Path(cache_dir)
+                        # If it's a symlink, ensure the target directory exists
+                        if cache_path.is_symlink():
+                            target = cache_path.resolve()
+                            target.mkdir(parents=True, exist_ok=True)
+                        else:
+                            cache_path.mkdir(parents=True, exist_ok=True)
                 
                 model_factory = get_model_factory(model_type)
                 model = model_factory.get_model(None, use_gpu=False)
                 
-                # Check if model saves as directory (HuggingFace models) or file (pickled models)
-                # Try to call save_pretrained if it exists (HuggingFace models)
-                if hasattr(model.obj, 'save_pretrained') or hasattr(model, 'save_pretrained'):
-                    # HuggingFace model - saves to directory
+                # Special handling for GIGAPATH_SLIDE: just cache from HuggingFace
+                if model_type == ModelType.GIGAPATH_SLIDE:
+                    # Loading the model already triggered HuggingFace caching
+                    # Just call save to trigger the logging and mark as cached
                     model_output_dir.mkdir(parents=True, exist_ok=True)
+                    model.save(str(model_output_dir))  # This logs the caching message
+                    # Create .ready marker to indicate model is cached
+                    (model_output_dir / ".ready").write_text(f"cached_from_hf_hub\n")
+                    print(f"✓ {model_type.name} cached from HuggingFace hub (no local copy needed)")
+                    continue
+                
+                # Determine save path based on model type
+                # For TITAN_SLIDE, save to directory with slide_encoder.pth
+                # This matches the HuggingFace cache format and makes loading easier
+                if model_type == ModelType.TITAN_SLIDE:
+                    model_output_dir.mkdir(parents=True, exist_ok=True)
+                    slide_encoder_path = model_output_dir / "slide_encoder.pth"
                     try:
-                        model.save(str(model_output_dir))
+                        model.save(str(slide_encoder_path))
                         # Create .ready marker
                         (model_output_dir / ".ready").write_text(f"cached_at={Path(model_output_dir).stat().st_mtime}\n")
-                        print(f"✓ {model_type.name} saved to {model_output_dir}/ (directory)")
+                        print(f"✓ {model_type.name} saved to {model_output_dir}/slide_encoder.pth (directory)")
                     except (NotImplementedError, ValueError) as e:
                         print(f"⊙ {model_type.name} cannot be saved: {e}")
-                        print(f"  → Skipping (can be loaded from HuggingFace or extracted from another model)")
+                        print(f"  → Skipping (can be loaded from HuggingFace)")
                         continue
                 else:
-                    # Pickled model - saves to file
+                    # Other models: try saving to .pth file first, fall back to directory
                     model_output_dir.parent.mkdir(parents=True, exist_ok=True)
-                    # Add .pth extension for pickled models
                     try:
+                        # Try saving to .pth file first
                         model.save(model_output_file)
                         print(f"✓ {model_type.name} saved to {model_output_file} (file)")
-                    except (NotImplementedError, ValueError) as e:
+                    except ValueError as e:
+                        # If it fails due to path requirements, try directory
+                        if "extension" in str(e).lower() or ".pth" in str(e).lower():
+                            # Model requires different format, skip
+                            print(f"⊙ {model_type.name} cannot be saved: {e}")
+                            print(f"  → Skipping (can be loaded from HuggingFace or extracted from another model)")
+                            continue
+                        else:
+                            # Try saving to directory instead
+                            model_output_dir.mkdir(parents=True, exist_ok=True)
+                            try:
+                                model.save(str(model_output_dir))
+                                # Create .ready marker
+                                (model_output_dir / ".ready").write_text(f"cached_at={Path(model_output_dir).stat().st_mtime}\n")
+                                print(f"✓ {model_type.name} saved to {model_output_dir}/ (directory)")
+                            except (NotImplementedError, ValueError) as e2:
+                                print(f"⊙ {model_type.name} cannot be saved: {e2}")
+                                print(f"  → Skipping (can be loaded from HuggingFace or extracted from another model)")
+                                continue
+                    except NotImplementedError as e:
                         print(f"⊙ {model_type.name} cannot be saved: {e}")
                         print(f"  → Skipping (can be loaded from HuggingFace or extracted from another model)")
                         continue

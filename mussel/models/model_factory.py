@@ -7,6 +7,7 @@ from functools import partial
 from pathlib import Path
 from typing import Callable, List
 
+from loguru import logger
 import open_clip
 import timm
 import torch
@@ -755,15 +756,11 @@ class GigapathSlideEncoderModel(TorchModel):
                     1536,
                     local_dir=local_dir
                 )
-        elif Path(model_path).is_file() and model_path.endswith('.pth'):
-            # Load from a saved state_dict file
-            import gigapath.slide_encoder
-            
-            # Create model architecture without pretrained weights
-            model_obj = gigapath.slide_encoder.create_model(
-                model_path,  # Will be treated as local path
-                "gigapath_slide_enc12l768d",
-                1536,
+        else:
+            raise ValueError(
+                f"GIGAPATH_SLIDE only supports loading from HuggingFace hub. "
+                f"Got model_path: {model_path}. "
+                f"Expected format: 'hf-hub:prov-gigapath/prov-gigapath'"
             )
         super().__init__(model_path, model_obj, use_gpu, gpu_device_id)
 
@@ -807,39 +804,21 @@ class GigapathSlideEncoderModel(TorchModel):
         return None
 
     def save(self, save_path: str):
-        """Save GigaPath slide encoder model to disk.
-
-        The GigaPath slide encoder is a timm model that can be saved using torch.save().
-        We save the state_dict in the same format that gigapath.slide_encoder expects:
-        a dictionary with a "model" key containing the state_dict.
-
+        """Cache GigaPath slide encoder from HuggingFace hub.
+        
+        This triggers the model to be downloaded and cached in the HuggingFace cache directory.
+        The model cannot be saved to a local file, but this ensures it's available in the cache
+        for future use.
+        
         Args:
-            save_path: Path to save the model weights (should end with .pth).
-            
-        Raises:
-            ValueError: If save_path doesn't end with .pth extension.
+            save_path: Ignored. Model is cached in HuggingFace cache directory.
         """
-        # Ensure save_path has .pth extension
-        if not save_path.endswith('.pth'):
-            raise ValueError(
-                f"GIGAPATH_SLIDE model must be saved with .pth extension. "
-                f"Got: {save_path}\n"
-                f"Hint: Use save_path='path/to/slide_encoder.pth'"
-            )
-        
-        # Create parent directory if it doesn't exist
-        Path(save_path).parent.mkdir(parents=True, exist_ok=True)
-        
-        # Get the base model (unwrap DataParallel if needed)
-        model_to_save = self.obj.module if hasattr(self.obj, 'module') else self.obj
-        
-        # Save state_dict in the format expected by gigapath.slide_encoder.create_model
-        # The create_model function expects: torch.load(path)["model"]
-        torch.save(
-            {"model": model_to_save.state_dict()},
-            save_path
+        # Simply instantiating the model triggers HuggingFace caching
+        # The model is already loaded in self.obj
+        logger.info(
+            f"GIGAPATH_SLIDE model cached from HuggingFace hub. "
+            f"The model is stored in HuggingFace cache and will be reused automatically."
         )
-        logger.info(f"Saved GigaPath slide encoder to {save_path}")
 
 
 class OptimusModel(TorchModel):
