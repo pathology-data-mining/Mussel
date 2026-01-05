@@ -316,6 +316,7 @@ class TessellateExtractFeaturesConfig:
     classifier_pkl: Optional[str] = None
     classifier_threshold: float = 0.75
     prefilter_model_type: Optional[ModelType] = None  # No prefilter by default
+    prefilter_model_path: Optional[str] = None  # Path to prefilter model file
     model_type: Any = None  # Can be ModelType or List[ModelType]
     model_dir: Optional[str] = None  # Directory containing pre-downloaded models
     pre_download_models: bool = False  # Whether to pre-download models to model_dir
@@ -627,7 +628,9 @@ def _main_single(cfg: TessellateExtractFeaturesConfig):
     elif model_path is None and model_type:
         logger.info(f"No model_dir configured, will download {model_type.name} from HuggingFace")
     
-    prefilter_model_path = get_model_path_from_dir(cfg.model_dir, cfg.prefilter_model_type) if cfg.prefilter_model_type else None
+    prefilter_model_path = cfg.prefilter_model_path if cfg.prefilter_model_path else (
+        get_model_path_from_dir(cfg.model_dir, cfg.prefilter_model_type) if cfg.prefilter_model_type else None
+    )
     if prefilter_model_path is None and cfg.prefilter_model_type and cfg.model_dir:
         logger.info(f"Model {cfg.prefilter_model_type.name} not found in model_dir, will download from HuggingFace")
     elif prefilter_model_path is None and cfg.prefilter_model_type and not cfg.model_dir:
@@ -769,7 +772,9 @@ def _main_batch(
     elif model_path is None and model_type:
         logger.info(f"No model_dir configured, will download {model_type.name} from HuggingFace")
     
-    prefilter_model_path = get_model_path_from_dir(cfg.model_dir, cfg.prefilter_model_type) if cfg.prefilter_model_type else None
+    prefilter_model_path = cfg.prefilter_model_path if cfg.prefilter_model_path else (
+        get_model_path_from_dir(cfg.model_dir, cfg.prefilter_model_type) if cfg.prefilter_model_type else None
+    )
     if prefilter_model_path is None and cfg.prefilter_model_type and cfg.model_dir:
         logger.info(f"Model {cfg.prefilter_model_type.name} not found in model_dir, will download from HuggingFace")
     elif prefilter_model_path is None and cfg.prefilter_model_type and not cfg.model_dir:
