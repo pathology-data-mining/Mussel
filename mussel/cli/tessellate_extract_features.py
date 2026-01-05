@@ -1106,8 +1106,18 @@ def _main_batch(
                 for r in slide_results
             ]
         else:
+            # save_features_to_h5=true mode: save features H5 + coords-only H5 for batch mode
             temp_output_h5_paths = [r["output_h5_path"] for r in slide_results]
-            coords_h5_paths = None
+
+            # Also create coords-only H5 files (patch.h5) in batch mode for downstream processes
+            tile_h5_dir = _safe_path_join(output_dir_str, "tile_h5")
+            if not _is_remote_path(tile_h5_dir):
+                Path(tile_h5_dir).mkdir(parents=True, exist_ok=True)
+
+            coords_h5_paths = [
+                _safe_path_join(output_dir_str, "tile_h5", f"{r['slide_id']}.patch.h5")
+                for r in slide_results
+            ]
 
         extract_patch_features_batch(
             patch_h5_paths=patch_h5_paths,
@@ -1124,18 +1134,17 @@ def _main_batch(
             is_test_run=False,
         )
 
-        # Save PT files and optionally coords-only H5
+        # Save PT files and coords-only H5
         for i, r in enumerate(slide_results):
             with h5py.File(temp_output_h5_paths[i], "r") as f:
                 features = torch.from_numpy(f["features"][:])
                 save_torch_tensor(r["output_pt_path"], features)
-                
-                # If save_features_to_h5=false, create coords-only H5
-                if not cfg.save_features_to_h5:
-                    coords = f["coords"][:]
-                    with h5py.File(coords_h5_paths[i], "w") as f_out:
-                        f_out.create_dataset("coords", data=coords, compression="gzip")
-                        logger.debug(f"Saved coords-only H5 to {coords_h5_paths[i]}")
+
+                # Always create coords-only H5 in batch mode for downstream processes
+                coords = f["coords"][:]
+                with h5py.File(coords_h5_paths[i], "w") as f_out:
+                    f_out.create_dataset("coords", data=coords, compression="gzip")
+                    logger.debug(f"Saved coords-only H5 to {coords_h5_paths[i]}")
         
         # Clean up temp H5 files if save_features_to_h5=false
         if not cfg.save_features_to_h5:
