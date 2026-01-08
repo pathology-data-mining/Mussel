@@ -115,6 +115,7 @@ def get_features(
     attrs,
     model_type=ModelType.CLIP,
     model_path=None,
+    model=None,
     batch_size=64,
     use_gpu=True,
     gpu_device_id=None,
@@ -124,15 +125,19 @@ def get_features(
     print_every=20,
     is_test_run=False,
 ):
-    logger.info("loading model checkpoint")
+    if model is None:
+        logger.info("loading model checkpoint")
 
-    if gpu_device_ids:
-        gpu_device_id = gpu_device_ids
+        if gpu_device_ids:
+            gpu_device_id = gpu_device_ids
 
-    model_factory = get_model_factory(model_type)
-    if model_factory is None:
-        raise ValueError("model not recognized")
-    model = model_factory.get_model(model_path, use_gpu, gpu_device_id)
+        model_factory = get_model_factory(model_type)
+        if model_factory is None:
+            raise ValueError("model not recognized")
+        model = model_factory.get_model(model_path, use_gpu, gpu_device_id)
+    else:
+        logger.info("using pre-loaded model")
+
     preprocessing = model.get_preprocessing_fun()
 
     dataset = WholeSlideImageTileCoordDataset(
