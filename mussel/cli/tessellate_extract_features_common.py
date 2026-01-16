@@ -61,6 +61,7 @@ def process_slide_tessellation_and_filtering(
     skip_second_extraction: bool,
     output_mask_path: Optional[str] = None,
     two_step_mode: bool = False,
+    slide_model_path: Optional[str] = None,
 ) -> Optional[dict]:
     """
     Process a single slide through tessellation, feature extraction, and optional filtering.
@@ -83,6 +84,7 @@ def process_slide_tessellation_and_filtering(
         skip_second_extraction: Whether to skip second extraction (when models are same)
         output_mask_path: Optional path to save mask visualization
         two_step_mode: Whether using two-step aggregation (for batch processing)
+        slide_model_path: Path to slide encoder model weights (for slide-level aggregation)
         
     Returns:
         Dict with intermediate paths for batch aggregation if needed, None otherwise
@@ -249,7 +251,7 @@ def process_slide_tessellation_and_filtering(
             intermediate_h5_path=getattr(cfg, 'intermediate_h5_path', None),
             aggregation_method=cfg.aggregation_method,
             slide_model_type=getattr(cfg, 'slide_model_type', None),
-            slide_model_path=getattr(cfg, 'slide_model_path', None),
+            slide_model_path=slide_model_path,
         )
         
         return {

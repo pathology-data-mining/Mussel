@@ -671,6 +671,7 @@ def _main_single(cfg: TessellateExtractFeaturesConfig):
         skip_second_extraction=skip_second_extraction,
         output_mask_path=cfg.output_mask_path,
         two_step_mode=False,  # Single-slide mode doesn't use two-step
+        slide_model_path=slide_model_path,
     )
 
     if result is None:
