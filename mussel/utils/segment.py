@@ -1,14 +1,15 @@
 import functools
+import logging
 import multiprocessing as mp
 from dataclasses import dataclass
 from pathlib import Path
 from typing import List, Optional
+import time
 
 import cv2
 import numpy as np
 import shapely
 import tiffslide
-from loguru import logger
 from PIL import Image, ImageDraw
 from shapely.geometry import MultiPolygon, Polygon
 from shapely.ops import transform
@@ -16,47 +17,140 @@ from shapely.prepared import prep
 
 from mussel.utils.file import save_hdf5
 from mussel.utils.timer import timed
+from mussel.datasets import WholeSlideImageTileCoordDataset
 
 Image.MAX_IMAGE_PIXELS = None
 
+logger = logging.getLogger(__name__)
 
-def is_white_patch(patch, satThresh=5):
+
+def get_slide_mpp(wsi, slide_path: Optional[str] = None, default_mpp: float = 0.5) -> float:
     """
-    Determine if patch is white
+    Get MPP (microns per pixel) from slide metadata with fallback handling.
+    
+    Args:
+        wsi: TiffSlide object
+        slide_path: Optional path to slide for logging
+        default_mpp: Default MPP to use if metadata not found (default: 0.5 for 20x TCGA slides)
+        
+    Returns:
+        MPP value as float
+    """
+    try:
+        # Try standard tiffslide property first
+        slide_mpp_value = wsi.properties.get(tiffslide.PROPERTY_NAME_MPP_X)
+        
+        # If not found, try alternative property names
+        if slide_mpp_value is None:
+            # Try common alternative property names
+            for key in ['tiffslide.mpp-x', 'aperio.MPP', 'openslide.mpp-x']:
+                slide_mpp_value = wsi.properties.get(key)
+                if slide_mpp_value is not None:
+                    logger.info(f"Found MPP in alternate property: {key}")
+                    break
+        
+        if slide_mpp_value is None:
+            # Try to estimate MPP from magnification if available
+            magnification = None
+            for key in ['aperio.AppMag', 'openslide.objective-power', 'tiffslide.objective-power']:
+                mag_value = wsi.properties.get(key)
+                if mag_value is not None:
+                    try:
+                        magnification = float(mag_value)
+                        logger.info(f"Found magnification: {magnification}x from {key}")
+                        break
+                    except (ValueError, TypeError):
+                        continue
+            
+            if magnification is not None:
+                # Estimate MPP from magnification using standard conversion
+                # Typical values: 40x -> 0.25 MPP, 20x -> 0.5 MPP, 10x -> 1.0 MPP
+                slide_mpp = 10.0 / magnification
+                slide_name = slide_path if slide_path else "slide"
+                logger.warning(f"MPP metadata not found for {slide_name}, estimated from magnification ({magnification}x): {slide_mpp:.3f}")
+            else:
+                # Use default MPP (common for TCGA slides at 20x magnification)
+                slide_mpp = default_mpp
+                slide_name = slide_path if slide_path else "slide"
+                logger.warning(f"MPP metadata not found for {slide_name}, using default MPP: {slide_mpp}")
+        else:
+            slide_mpp = float(slide_mpp_value)
+            logger.info(f"slide_mpp: {slide_mpp}")
+            
+        return slide_mpp
+        
+    except (KeyError, TypeError, ValueError) as e:
+        # Fallback to default MPP if property is missing or invalid
+        slide_name = slide_path if slide_path else "slide"
+        logger.warning(f"Failed to read MPP metadata for {slide_name}: {e}, using default MPP: {default_mpp}")
+        return default_mpp
+
+
+def is_white_patch(patch, saturation_threshold=5):
+    """
+    Determine if patch is white based on HSV saturation threshold.
+
+    Args:
+        patch: RGB patch array
+        saturation_threshold: Saturation threshold for white detection
+
+    Returns:
+        True if patch is white, False otherwise
     """
     patch_hsv = cv2.cvtColor(patch, cv2.COLOR_RGB2HSV)
-    return True if np.mean(patch_hsv[:, :, 1]) < satThresh else False
+    mean_saturation = np.mean(patch_hsv[:, :, 1])
+    return mean_saturation < saturation_threshold
 
 
-def is_black_patch(patch, rgbThresh=40):
+def is_black_patch(patch, rgb_threshold=40):
     """
-    Determine if patch is black
+    Determine if patch is black based on RGB threshold.
+
+    Args:
+        patch: RGB patch array
+        rgb_threshold: RGB threshold for black detection
+
+    Returns:
+        True if patch is black, False otherwise
     """
-    return True if np.all(np.mean(patch, axis=(0, 1)) < rgbThresh) else False
+    mean_rgb = np.mean(patch, axis=(0, 1))
+    return np.all(mean_rgb < rgb_threshold)
 
 
-def is_black_patch_S(patch, rgbThresh=20, percentage=0.05):
+def is_black_patch_S(patch, rgb_threshold=20, percentage=0.05):
     """
-    Determine if percentage of patch is black
+    Determine if percentage of patch is black.
+
+    Args:
+        patch: PIL Image patch
+        rgb_threshold: RGB threshold for black detection
+        percentage: Minimum percentage of black pixels required
+
+    Returns:
+        True if percentage of patch is black, False otherwise
     """
     num_pixels = patch.size[0] * patch.size[1]
-    return (
-        True
-        if np.all(np.array(patch) < rgbThresh, axis=(2)).sum() > num_pixels * percentage
-        else False
-    )
+    patch_array = np.array(patch)
+    black_pixels = np.all(patch_array < rgb_threshold, axis=2).sum()
+    return black_pixels > num_pixels * percentage
 
 
-def is_white_patch_S(patch, rgbThresh=220, percentage=0.2):
+def is_white_patch_S(patch, rgb_threshold=220, percentage=0.2):
     """
-    Determine if percentage of patch is white
+    Determine if percentage of patch is white.
+
+    Args:
+        patch: PIL Image patch
+        rgb_threshold: RGB threshold for white detection
+        percentage: Minimum percentage of white pixels required
+
+    Returns:
+        True if percentage of patch is white, False otherwise
     """
     num_pixels = patch.size[0] * patch.size[1]
-    return (
-        True
-        if np.all(np.array(patch) > rgbThresh, axis=(2)).sum() > num_pixels * percentage
-        else False
-    )
+    patch_array = np.array(patch)
+    white_pixels = np.all(patch_array > rgb_threshold, axis=2).sum()
+    return white_pixels > num_pixels * percentage
 
 
 def scale_geometry(geometry: shapely.Geometry, scale_factor: float):
@@ -65,6 +159,15 @@ def scale_geometry(geometry: shapely.Geometry, scale_factor: float):
     """
 
     def scale_coords(x, y):
+        """Apply scaling to coordinates.
+
+        Args:
+            x: X coordinate.
+            y: Y coordinate.
+
+        Returns:
+            Tuple of scaled (x, y) coordinates.
+        """
         return x * scale_factor, y * scale_factor
 
     return transform(scale_coords, geometry)
@@ -77,6 +180,14 @@ def contours_to_polygon(foreground_contours, hole_contours=None) -> MultiPolygon
     polygon = MultiPolygon()
 
     def create_polygon(contour):
+        """Create a valid shapely polygon from a contour.
+
+        Args:
+            contour: Contour array.
+
+        Returns:
+            Valid shapely Polygon or None if contour is too small.
+        """
         contour = np.squeeze(contour)
         if len(contour) < 4:  # Need at least 4 coordinates
             return None
@@ -117,19 +228,17 @@ def grid_bounds(geometry: shapely.Geometry, step_size: int, patch_size: int):
     Create grid encompassing geometry
     """
     minx, miny, maxx, maxy = geometry.bounds
-    gx = np.arange(minx, maxx, step=step_size)
-    gy = np.arange(miny, maxy, step=step_size)
-    # x_coords, y_coords = np.meshgrid(x_range, y_range, indexing="ij")
-    # gx, gy = np.linspace(minx,maxx,nx), np.linspace(miny,maxy,ny)
+    grid_x_coords = np.arange(minx, maxx, step=step_size)
+    grid_y_coords = np.arange(miny, maxy, step=step_size)
     grid = []
-    for i in range(len(gx) - 1):
-        for j in range(len(gy) - 1):
+    for i in range(len(grid_x_coords) - 1):
+        for j in range(len(grid_y_coords) - 1):
             poly_ij = Polygon(
                 [
-                    [gx[i], gy[j]],
-                    [gx[i], gy[j] + patch_size],
-                    [gx[i] + patch_size, gy[j] + patch_size],
-                    [gx[i] + patch_size, gy[j]],
+                    [grid_x_coords[i], grid_y_coords[j]],
+                    [grid_x_coords[i], grid_y_coords[j] + patch_size],
+                    [grid_x_coords[i] + patch_size, grid_y_coords[j] + patch_size],
+                    [grid_x_coords[i] + patch_size, grid_y_coords[j]],
                 ]
             )
             grid.append(poly_ij)
@@ -148,16 +257,42 @@ def partition(geometry: shapely.Geometry, step_size: int, patch_size: int):
 
 
 def scale_contour_dim(contours, scale):
+    """Scale contour dimensions by a scale factor.
+
+    Args:
+        contours: List of contour arrays.
+        scale: Scale factor to apply.
+
+    Returns:
+        List of scaled contour arrays.
+    """
     return [np.array(cont * scale, dtype="int32") for cont in contours]
 
 
 def scale_holes_dim(contours, scale):
+    """Scale hole contour dimensions by a scale factor.
+
+    Args:
+        contours: List of hole contour lists.
+        scale: Scale factor to apply.
+
+    Returns:
+        List of scaled hole contour lists.
+    """
     return [
         [np.array(hole * scale, dtype="int32") for hole in holes] for holes in contours
     ]
 
 
 def _assert_level_downsamples(wsi):
+    """Calculate level downsamples from WSI dimensions.
+
+    Args:
+        wsi: Whole slide image object.
+
+    Returns:
+        List of downsampling factors as tuples for each level.
+    """
     level_downsamples = []
     dim_0 = wsi.level_dimensions[0]
 
@@ -177,6 +312,16 @@ def _assert_level_downsamples(wsi):
 
 
 def get_native_size(size, mpp, slide_mpp):
+    """Calculate native pixel size for a desired microns-per-pixel resolution.
+
+    Args:
+        size: Desired size in pixels.
+        mpp: Desired microns per pixel.
+        slide_mpp: Native slide microns per pixel.
+
+    Returns:
+        Native pixel size as integer.
+    """
     assert mpp >= slide_mpp - 0.01, "mpp must be greater than or equal to mpp_wsi"
     scale_factor = mpp / slide_mpp
     logger.debug(
@@ -193,7 +338,7 @@ def _filter_contours(
     max_num_holes: int,
 ):
     """
-    Filter contours by: area.
+    Filter contours by area.
     """
     filtered = []
 
@@ -204,18 +349,18 @@ def _filter_contours(
     # loop through foreground contour indices
     for cont_idx in hierarchy_1:
         # actual contour
-        cont = contours[cont_idx]
+        contour = contours[cont_idx]
         # indices of holes contained in this contour (children of parent contour)
         holes = np.flatnonzero(hierarchy[:, 1] == cont_idx)
         # take contour area (includes holes)
-        a = cv2.contourArea(cont)
+        contour_area = cv2.contourArea(contour)
         # calculate the contour area of each hole
         hole_areas = [cv2.contourArea(contours[hole_idx]) for hole_idx in holes]
         # actual area of foreground contour region
-        a = a - np.array(hole_areas).sum()
-        if a == 0:
+        contour_area = contour_area - np.array(hole_areas).sum()
+        if contour_area == 0:
             continue
-        if tuple((tissue_area_threshold,)) < tuple((a,)):
+        if tuple((tissue_area_threshold,)) < tuple((contour_area,)):
             filtered.append(cont_idx)
             all_holes.append(holes)
 
@@ -225,13 +370,13 @@ def _filter_contours(
 
     for hole_ids in all_holes:
         unfiltered_holes = [contours[idx] for idx in hole_ids]
-        unfilered_holes = sorted(unfiltered_holes, key=cv2.contourArea, reverse=True)
+        unfiltered_holes = sorted(unfiltered_holes, key=cv2.contourArea, reverse=True)
         # take max_n_holes largest holes by area
-        unfilered_holes = unfilered_holes[:max_num_holes]
+        unfiltered_holes = unfiltered_holes[:max_num_holes]
         filtered_holes = []
 
         # filter these holes
-        for hole in unfilered_holes:
+        for hole in unfiltered_holes:
             if cv2.contourArea(hole) > hole_area_threshold:
                 filtered_holes.append(hole)
 
@@ -242,9 +387,9 @@ def _filter_contours(
 
 @timed
 def segment_tissue(
-    wsi: tiffslide.TiffSlide,
-    slide_id: str,
-    seg_level: int = 0,
+    slide_path: str,
+    slide_id: Optional[str] = None,
+    seg_level: int = -1,
     segment_threshold: int = 20,
     segment_max_value: int = 255,
     median_blur_ksize: int = 7,
@@ -264,13 +409,31 @@ def segment_tissue(
     """
     Segment the tissue via HSV -> Median thresholding -> Binary threshold
     """
+    wsi = tiffslide.open_slide(slide_path)
+    if slide_id is None:
+        slide_id = Path(slide_path).stem
+
+    if seg_level < 0:
+        if len(wsi.level_dimensions) == 1:
+            seg_level = 0
+        else:
+            seg_level = wsi.get_best_level_for_downsample(64)
+
+    logger.info(f"Using level {seg_level} for segmentation")
+    width, height = wsi.level_dimensions[seg_level]
+    if width * height > 1e12:
+        logger.error(
+            "level_dim {} x {} is likely too large for successful segmentation, aborting".format(
+                width, height
+            )
+        )
+        return
 
     if step_size is None:
         step_size = patch_size
 
-    # get mpp of WSI
-    slide_mpp = float(wsi.properties[tiffslide.PROPERTY_NAME_MPP_X])
-    logger.info(f"slide_mpp: {slide_mpp}")
+    # Get MPP with fallback handling
+    slide_mpp = get_slide_mpp(wsi, slide_path)
 
     native_step_size = get_native_size(step_size, mpp, slide_mpp)
     native_patch_size = get_native_size(patch_size, mpp, slide_mpp)
@@ -344,38 +507,39 @@ def segment_tissue(
     coords = [g.exterior.coords[0] for g in grid]
     logger.info(f"Total number of patches: {len(coords)}")
 
+    attrs = {
+        "seg_level": seg_level,
+        "segment_threshold": segment_threshold,
+        "segment_max_value": segment_max_value,
+        "median_blur_ksize": median_blur_ksize,
+        "morphology_ex_kernel": morphology_ex_kernel,
+        "use_otsu": use_otsu,
+        "tissue_area_threshold": tissue_area_threshold,
+        "hole_area_threshold": hole_area_threshold,
+        "max_num_holes": max_num_holes,
+        "ref_patch_size": ref_patch_size,
+        "patch_size": native_patch_size,
+        "step_size": native_step_size,
+        "patch_size_to_resize_to_for_desired_mpp": patch_size,
+        "patch_level": 0,
+        "mpp": mpp,
+        "native_mpp": slide_mpp,
+        "level_dim": wsi.level_dimensions[0],
+        "name": slide_id,
+    }
     if output_h5_path:
-        attrs = {
-            "seg_level": seg_level,
-            "segment_threshold": segment_threshold,
-            "segment_max_value": segment_max_value,
-            "median_blur_ksize": median_blur_ksize,
-            "morphology_ex_kernel": morphology_ex_kernel,
-            "use_otsu": use_otsu,
-            "tissue_area_threshold": tissue_area_threshold,
-            "hole_area_threshold": hole_area_threshold,
-            "max_num_holes": max_num_holes,
-            "ref_patch_size": ref_patch_size,
-            "patch_size": native_patch_size,
-            "step_size": native_step_size,
-            "patch_size_to_resize_to_for_desired_mpp": patch_size,
-            "patch_level": 0,
-            "mpp": mpp,
-            "native_mpp": slide_mpp,
-            "level_dim": wsi.level_dimensions[0],
-            "name": slide_id,
-        }
-
         asset_dict = {"coords": np.array(coords)}
         attr_dict = {"coords": attrs}
         save_hdf5(output_h5_path, asset_dict, attr_dict, mode="w")
         logger.info(f"Writing to {output_h5_path}")
 
-    return polygon, grid, coords
+    wsi.close()
+
+    return polygon, grid, coords, attrs
 
 
 def draw_slide_mask(
-    wsi,
+    slide_path: str,
     polygons: shapely.Geometry | List[shapely.Geometry],
     vis_level=0,
     outline="black",
@@ -386,6 +550,13 @@ def draw_slide_mask(
     """
     Draw slide mask with polygon contours or list of grid polygons
     """
+    wsi = tiffslide.open_slide(slide_path)
+
+    if vis_level < 0:
+        if len(wsi.level_dimensions) == 1:
+            vis_level = 0
+        else:
+            vis_level = wsi.get_best_level_for_downsample(64)
 
     if type(polygons) != list:
         polygons = [polygons]
@@ -405,17 +576,30 @@ def draw_slide_mask(
         scaled_polygon = scale_geometry(polygon, scale[0])
         if isinstance(polygon, MultiPolygon):
             for geom in scaled_polygon.geoms:
-                draw.polygon(geom.exterior.coords, outline="black", fill=fill)
+                draw.polygon(geom.exterior.coords, outline=outline, fill=fill)
         else:
-            draw.polygon(scaled_polygon.exterior.coords, outline="black", fill=fill)
+            draw.polygon(scaled_polygon.exterior.coords, outline=outline, fill=fill)
 
-    w, h = img.size
+    image_width, image_height = img.size
     if custom_downsample and custom_downsample > 1:
-        img = img.resize((int(w / custom_downsample), int(h / custom_downsample)))
+        img = img.resize(
+            (
+                int(image_width / custom_downsample),
+                int(image_height / custom_downsample),
+            )
+        )
 
-    if max_size is not None and (w > max_size or h > max_size):
-        resizeFactor = max_size / w if w > h else max_size / h
-        img = img.resize((int(w * resizeFactor), int(h * resizeFactor)))
+    if max_size is not None and (image_width > max_size or image_height > max_size):
+        resize_factor = (
+            max_size / image_width
+            if image_width > image_height
+            else max_size / image_height
+        )
+        img = img.resize(
+            (int(image_width * resize_factor), int(image_height * resize_factor))
+        )
+
+    wsi.close()
 
     return img
 
@@ -454,7 +638,7 @@ def get_patch_generator(
 
 
 def save_patches_png(
-    wsi: tiffslide.TiffSlide,
+    slide_path: str,
     coords: list,
     save_dir: str,
     mpp=0.5,
@@ -467,8 +651,11 @@ def save_patches_png(
     """
     Save patches as png
     """
+    wsi = tiffslide.open_slide(slide_path)
 
-    slide_mpp = float(wsi.properties[tiffslide.PROPERTY_NAME_MPP_X])
+    # Get MPP with fallback handling
+    slide_mpp = get_slide_mpp(wsi, slide_path)
+    
     native_patch_size = get_native_size(patch_size, mpp, slide_mpp)
 
     save_dir = Path(save_dir)
@@ -492,3 +679,4 @@ def save_patches_png(
         patch_gen,
     )
     pool.close()
+    wsi.close()

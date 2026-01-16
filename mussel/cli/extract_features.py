@@ -1,4 +1,3 @@
-import logging
 import os
 import ssl
 from dataclasses import dataclass
@@ -6,22 +5,15 @@ from pathlib import Path
 from typing import List, Optional
 
 import h5py
-import hydra
-import numpy as np
-import tiffslide as openslide
 import torch
+import hydra
 from hydra.conf import HelpConf, HydraConf
 from hydra.core.config_store import ConfigStore
 from loguru import logger
 from omegaconf import MISSING
-from torch.utils.data import DataLoader
-from torchvision.datasets import ImageFolder
 
-from mussel.datasets.h5 import Whole_Slide_Bag_FP
-from mussel.models.model_factory import ModelType, get_model_factory
-from mussel.utils.file import save_hdf5
-from mussel.utils.ml import collate_features
-from mussel.utils.timer import timed
+from mussel.models import ModelType
+from mussel.utils import save_features, extract_patch_features_batch, aggregate_slide_features_batch, aggregate_slide_features, resolve_remote_paths
 
 ssl._create_default_https_context = ssl._create_unverified_context
 
@@ -29,169 +21,100 @@ ssl._create_default_https_context = ssl._create_unverified_context
 @dataclass
 class ExtractFeaturesConfig:
     """
-    patch_h5_path (str): Path to the HDF5 file containing patches.
-    slide_path (str): Path to the whole slide image.
-    output_h5_path (str): Path to save the computed features in HDF5 format.
-    output_pt_path (str): Path to save the computed features in PyTorch format.
-    model_type (ModelType): Type of model to use for feature extraction.
-    model_path (Optional[str]): Path to the model weights, if applicable.
-    patch_path (Optional[str]): Directory containing pre-tiled images, if applicable.
-    batch_size (int): Batch size for processing patches or tiles.
-    use_gpu (bool): Whether to use GPU for computation.
-    gpu_device_id (Optional[int]): Specific GPU device ID to use, if applicable.
-    gpu_device_ids (Optional[List[int]]): List of GPU device IDs to use, if applicable.
-    num_workers (int): Number of worker threads for data loading.
+    Configuration for extract-features command.
+    
+    Supports both single-slide and batch processing modes:
+    - Single mode: Provide patch_h5_path, slide_path, output_h5_path
+    - Batch mode: Provide patch_h5_paths, slide_paths, output_dir
+    
+    Single Mode Parameters:
+        patch_h5_path (str): Path to the HDF5 file containing patches.
+        slide_path (str): Path to the whole slide image.
+        output_h5_path (str): Path to save the computed features in HDF5 format.
+        output_pt_path (Optional[str]): Path to save the computed features in PyTorch format.
+    
+    Batch Mode Parameters:
+        patch_h5_paths (List[str]): Paths to HDF5 files containing patches for multiple slides.
+        slide_paths (List[str]): Paths to whole slide images.
+        slide_ids (Optional[List[str]]): Optional slide IDs. If None, uses slide filenames without extension.
+        output_dir (str): Directory to save output files.
+        output_h5_suffix (str): Suffix for HDF5 output files (default: "features.h5").
+        output_pt_suffix (str): Suffix for PyTorch output files (default: "features.pt").
+        slide_batch_size (int): Number of slides to process in a single batch during slide-level aggregation (default: 8).
+    
+    Model Parameters:
+        model_type (ModelType): Type of model to use for patch-level feature extraction.
+        model_path (Optional[str]): Path to the patch encoder model weights, if applicable.
+        model_dir (Optional[str]): Directory containing pre-downloaded models (for convenience).
+        patch_path (Optional[str]): Directory containing pre-tiled images, if applicable.
+        intermediate_h5_path (Optional[str]): Path for intermediate patch features (two-step mode, single mode only).
+        aggregation_method (str): Aggregation method: identity (single-step), mean/max/model (two-step).
+        slide_model_type (Optional[ModelType]): Type of slide encoder model (when aggregation_method="model").
+        slide_model_path (Optional[str]): Path to slide encoder model weights.
+    
+    Processing Parameters:
+        batch_size (int): Batch size for processing patches or tiles.
+        use_gpu (bool): Whether to use GPU for computation.
+        gpu_device_id (Optional[int]): Specific GPU device ID to use, if applicable.
+        gpu_device_ids (Optional[List[int]]): List of GPU device IDs to use, if applicable.
+        num_workers (int): Number of worker threads for data loading.
     """
 
-    patch_h5_path: str = MISSING
-    slide_path: str = MISSING
-    output_h5_path: str = MISSING
-    output_pt_path: str = MISSING
+    # Single mode parameters
+    patch_h5_path: Optional[str] = None
+    slide_path: Optional[str] = None
+    output_h5_path: Optional[str] = None
+    output_pt_path: Optional[str] = None
+    # Batch mode parameters
+    patch_h5_paths: Optional[List[str]] = None
+    slide_paths: Optional[List[str]] = None
+    slide_ids: Optional[List[str]] = None
+    output_dir: Optional[str] = None
+    output_h5_suffix: str = "features.h5"
+    output_pt_suffix: str = "features.pt"
+    slide_batch_size: int = 8
+    # Model parameters
     model_type: ModelType = ModelType.CLIP
     model_path: Optional[str] = None
+    model_dir: Optional[str] = None  # Directory containing pre-downloaded models
     model_save_path: Optional[str] = None
     patch_path: Optional[str] = None
+    intermediate_h5_path: Optional[str] = None
+    aggregation_method: str = "identity"
+    slide_model_type: Optional[ModelType] = None
+    slide_model_path: Optional[str] = None
+    # Processing parameters
     batch_size: int = 64
     use_gpu: bool = True
     gpu_device_id: Optional[int] = None
     gpu_device_ids: Optional[List[int]] = None
     num_workers: int = 16
-
-
-@timed
-def extract_features_from_patch_dir(
-    patch_path,
-    output_h5_path,
-    model_fun,
-    batch_size=64,
-    verbose=0,
-    print_every=20,
-    preprocess=None,
-    num_workers=16,
-    pin_memory=True,
-):
-
-    dataset = ImageFolder(
-        root=patch_path,
-        transform=preprocess,
-    )
-
-    loader = DataLoader(
-        dataset=dataset,
-        batch_size=batch_size,
-        num_workers=num_workers,
-        pin_memory=pin_memory,
-        worker_init_fn=None,
-        shuffle=False,
-    )
-
-    if verbose > 0:
-        logger.info(
-            "processing {}: total of {} batches".format(patch_path, len(loader))
-        )
-
-    if len(loader) == 0:
-        return None
-
-    mode = "w"
-
-    for count, (batch, labels) in enumerate(loader):
-        labels = labels.numpy()
-        if count % print_every == 0:
-            logger.info(
-                "batch {}/{}, {} tiles processed".format(
-                    count, len(loader), count * batch_size
-                )
-            )
-
-        features = model_fun(batch)
-
-        features = features.numpy()
-        asset_dict = {
-            "features": features,
-            "class": labels,
-            "image_paths": np.array([x[0] for x in dataset.imgs]).astype("T"),
-            "class_to_idx": np.array(
-                [np.asarray([k, v], dtype="T") for k, v in dataset.class_to_idx.items()]
-            ),
-        }
-        save_hdf5(output_h5_path, asset_dict, attr_h5_path=None, mode=mode)
-        mode = "a"
-
-
-@timed
-def extract_features(
-    file_path,
-    output_h5_path,
-    wsi_path,
-    model_fun,
-    patch_path=None,
-    batch_size=64,
-    verbose=0,
-    print_every=20,
-    use_imagenet_rgb_dist=True,
-    preprocess=None,
-    num_workers=16,
-    pin_memory=True,
-):
-    """
-    args:
-            file_path: directory of bag (.h5 file)
-            output_h5_path: file path to save computed features (.h5 file)
-            model_type: model type
-            batch_size: batch_size for computing features in batches
-            verbose: level of feedback
-            pretrained: use weights pretrained on imagenet
-    """
-
-    dataset = Whole_Slide_Bag_FP(
-        file_path=file_path,
-        wsi_path=wsi_path,
-        use_imagenet_rgb_dist=use_imagenet_rgb_dist,
-        preprocess=preprocess,
-    )
-
-    loader = DataLoader(
-        dataset=dataset,
-        batch_size=batch_size,
-        num_workers=num_workers,
-        pin_memory=pin_memory,
-        collate_fn=collate_features,
-        worker_init_fn=dataset.worker_init,
-        shuffle=False,
-    )
-
-    if verbose > 0:
-        logger.info("processing {}: total of {} batches".format(file_path, len(loader)))
-
-    if len(loader) == 0:
-        return None
-
-    mode = "w"
-
-    for count, (batch, coords) in enumerate(loader):
-        if count % print_every == 0:
-            logger.info(
-                "batch {}/{}, {} tiles processed".format(
-                    count, len(loader), count * batch_size
-                )
-            )
-
-        features = model_fun(batch)
-
-        features = features.numpy()
-        asset_dict = {"features": features, "coords": coords}
-        save_hdf5(output_h5_path, asset_dict, attr_h5_path=file_path, mode=mode)
-        mode = "a"
-
-    return output_h5_path
+    is_test_run: bool = False
 
 
 desc_doc = """== ${hydra.help.app_name} ==
 
 Extract features (embeddings) from whole slide images (WSI) or patches using a 
-pathology foundation model.  The embeddings are written to a PyTorch tensor file (.pt)
+pathology foundation model. The embeddings are written to a PyTorch tensor file (.pt)
 and an HDF5 (.h5) file.
+
+Supports both single-slide and batch processing modes:
+- Single mode: Process one slide (provide patch_h5_path, slide_path, output_h5_path)
+- Batch mode: Process multiple slides (provide patch_h5_paths, slide_paths, output_dir)
+
+When multiple slides are specified, batch processing automatically loads models once 
+for all slides, providing significant performance benefits.
+
+This tool supports two modes (automatically selected based on aggregation_method):
+1. Single-step mode (aggregation_method="identity"): Direct feature extraction (default)
+2. Two-step mode (aggregation_method in ["mean", "max", "model"]): 
+   - Step 1: Patch-level encoding (extract features from individual patches)
+   - Step 2: Slide-level aggregation (aggregate patch features to slide level)
+   
+Slide-level aggregation methods:
+   - identity: Keep all patch features - single-step mode (no aggregation)
+   - mean/max: Simple pooling aggregation - two-step mode
+   - model: Use a slide encoder model - two-step mode (e.g., GIGAPATH_SLIDE for Prov-GigaPath)
 """
 
 parameter_doc = f"""== Available Parameters ==
@@ -210,60 +133,150 @@ cs.store(name="extract_features_config", node=ExtractFeaturesConfig)
 
 @hydra.main(version_base=None, config_path=".", config_name="extract_features_config")
 def main(cfg: ExtractFeaturesConfig):
+    """Extract features from whole slide image(s) using a foundation model."""
+    # Detect mode based on configuration
+    batch_mode = cfg.slide_paths is not None
+    
+    if batch_mode:
+        logger.info("Running in batch mode (multiple slides)")
+        _main_batch(cfg)
+    else:
+        logger.info("Running in single-slide mode")
+        _main_single(cfg)
 
-    # restrict verbose logging from aiobotocore
-    logging.getLogger('aiobotocore').setLevel(logging.CRITICAL)
 
-    gpu_device_id = cfg.gpu_device_id
-    if cfg.gpu_device_ids:
-        gpu_device_id = cfg.gpu_device_ids
+@resolve_remote_paths()
+def _main_single(cfg: ExtractFeaturesConfig):
+    """Process a single slide."""
+    if cfg.patch_h5_path is None or cfg.slide_path is None or cfg.output_h5_path is None:
+        raise ValueError(
+            "Single-slide mode requires patch_h5_path, slide_path, and output_h5_path to be specified"
+        )
+    
+    save_features(
+        slide_path=cfg.slide_path,
+        gpu_device_id=cfg.gpu_device_id,
+        model_type=cfg.model_type,
+        model_path=cfg.model_path,
+        use_gpu=cfg.use_gpu,
+        output_h5_path=cfg.output_h5_path,
+        output_pt_path=cfg.output_pt_path,
+        patch_h5_path=cfg.patch_h5_path,
+        patch_path=cfg.patch_path,
+        model_save_path=cfg.model_save_path,
+        batch_size=cfg.batch_size,
+        num_workers=cfg.num_workers,
+        gpu_device_ids=cfg.gpu_device_ids,
+        is_test_run=cfg.is_test_run,
+        intermediate_h5_path=cfg.intermediate_h5_path,
+        aggregation_method=cfg.aggregation_method,
+        slide_model_type=cfg.slide_model_type,
+        slide_model_path=cfg.slide_model_path,
+    )
 
-    logger.info("loading model checkpoint")
 
-    model_factory = get_model_factory(cfg.model_type)
-    if model_factory is None:
-        raise ValueError("model not recognized")
-    model = model_factory.get_model(cfg.model_path, cfg.use_gpu, gpu_device_id)
-    if cfg.model_save_path is not None:
-        Path(cfg.model_save_path).parent.mkdir(parents=True, exist_ok=True)
-        logger.info(f"saving model to {cfg.model_save_path}")
-        model.save(cfg.model_save_path)
-    preprocessing = model.get_preprocessing_fun()
-
-    if cfg.patch_path:
-        extract_features_from_patch_dir(
-            patch_path=cfg.patch_path,
-            output_h5_path=cfg.output_h5_path,
-            model_fun=model.get_model_fun(),
-            preprocess=preprocessing,
-            pin_memory=cfg.use_gpu,
+@resolve_remote_paths()
+def _main_batch(cfg: ExtractFeaturesConfig):
+    """Process multiple slides in batch mode."""
+    if cfg.patch_h5_paths is None or cfg.slide_paths is None or cfg.output_dir is None:
+        raise ValueError(
+            "Batch mode requires patch_h5_paths, slide_paths, and output_dir to be specified"
+        )
+    
+    # Create output directory
+    output_dir = Path(cfg.output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+    
+    # Generate slide IDs if not provided
+    slide_ids = cfg.slide_ids
+    if slide_ids is None:
+        slide_ids = [Path(sp).stem for sp in cfg.slide_paths]
+    
+    # Validate input lengths
+    if not (len(cfg.patch_h5_paths) == len(cfg.slide_paths)):
+        raise ValueError(
+            f"patch_h5_paths and slide_paths must have the same length: "
+            f"patch_h5_paths={len(cfg.patch_h5_paths)}, slide_paths={len(cfg.slide_paths)}"
+        )
+    
+    if slide_ids and len(slide_ids) != len(cfg.slide_paths):
+        raise ValueError(
+            f"slide_ids must have the same length as slide_paths: "
+            f"slide_ids={len(slide_ids)}, slide_paths={len(cfg.slide_paths)}"
+        )
+    
+    # Prepare output paths
+    output_h5_paths = [str(output_dir / f"{slide_id}.{cfg.output_h5_suffix}") for slide_id in slide_ids]
+    output_pt_paths = [str(output_dir / f"{slide_id}.{cfg.output_pt_suffix}") for slide_id in slide_ids]
+    
+    # Check if we need two-step processing
+    use_two_step = cfg.aggregation_method != "identity"
+    
+    logger.info(f"Batch extracting features for {len(cfg.slide_paths)} slides")
+    
+    if use_two_step:
+        # Extract to intermediate patch feature files for later aggregation
+        intermediate_h5_paths = [
+            str(output_dir / f"{slide_id}.patch.h5") 
+            for slide_id in slide_ids
+        ]
+        
+        extract_patch_features_batch(
+            patch_h5_paths=cfg.patch_h5_paths,
+            slide_paths=cfg.slide_paths,
+            output_h5_paths=intermediate_h5_paths,
+            model_type=cfg.model_type,
+            model_path=cfg.model_path,
+            model_dir=cfg.model_dir,
             batch_size=cfg.batch_size,
-            verbose=1,
-            print_every=20,
+            use_gpu=cfg.use_gpu,
+            gpu_device_id=cfg.gpu_device_id,
+            gpu_device_ids=cfg.gpu_device_ids,
             num_workers=cfg.num_workers,
+            pin_memory=True,
+            is_test_run=cfg.is_test_run,
+        )
+        
+        # Aggregate to slide level using batch processing
+        logger.info(f"Batch aggregating {len(cfg.slide_paths)} slides with aggregation_method={cfg.aggregation_method}")
+        aggregate_slide_features_batch(
+            patch_features_h5_paths=intermediate_h5_paths,
+            output_h5_paths=output_h5_paths,
+            output_pt_paths=output_pt_paths,
+            aggregation_method=cfg.aggregation_method,
+            model_type=cfg.slide_model_type,
+            model_path=cfg.slide_model_path,
+            model_dir=cfg.model_dir,
+            use_gpu=cfg.use_gpu,
+            gpu_device_id=cfg.gpu_device_id,
+            gpu_device_ids=cfg.gpu_device_ids,
+            slide_batch_size=cfg.slide_batch_size,
         )
     else:
-        extract_features(
-            file_path=cfg.patch_h5_path,
-            output_h5_path=cfg.output_h5_path,
-            wsi_path=cfg.slide_path,
-            model_fun=model.get_model_fun(),
-            preprocess=preprocessing,
-            pin_memory=cfg.use_gpu,
+        # Single-step: extract directly to final output (no aggregation)
+        extract_patch_features_batch(
+            patch_h5_paths=cfg.patch_h5_paths,
+            slide_paths=cfg.slide_paths,
+            output_h5_paths=output_h5_paths,
+            model_type=cfg.model_type,
+            model_path=cfg.model_path,
+            model_dir=cfg.model_dir,
             batch_size=cfg.batch_size,
-            verbose=1,
-            print_every=20,
-            use_imagenet_rgb_dist=preprocessing is None,
+            use_gpu=cfg.use_gpu,
+            gpu_device_id=cfg.gpu_device_id,
+            gpu_device_ids=cfg.gpu_device_ids,
             num_workers=cfg.num_workers,
+            pin_memory=True,
+            is_test_run=cfg.is_test_run,
         )
-
-    with h5py.File(cfg.output_h5_path, "r") as file:
-        features = file["features"][:]
-        logger.info(f"features size: {features.shape} ")
-        # logger.info(f'coordinates size: {file["coords"].shape} ')
-
-        features = torch.from_numpy(features)
-        torch.save(features, cfg.output_pt_path)
+        
+        # Save as PT format for consistency
+        for output_h5, output_pt in zip(output_h5_paths, output_pt_paths):
+            with h5py.File(output_h5, "r") as f:
+                features = torch.from_numpy(f["features"][:])
+                torch.save(features, output_pt)
+    
+    logger.info(f"Batch processing complete. Output saved to {output_dir}")
 
 
 if __name__ == "__main__":
