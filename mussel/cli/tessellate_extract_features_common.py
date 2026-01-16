@@ -3,7 +3,7 @@
 import os
 import pickle
 from pathlib import Path
-from typing import Optional, Tuple, Union
+from typing import Optional, Union
 
 import h5py
 import numpy as np

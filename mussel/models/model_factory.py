@@ -398,7 +398,7 @@ class TorchModel(Model):
             # Convert to channels_last memory format for better GPU utilization
             try:
                 self.obj = self.obj.to(memory_format=torch.channels_last)
-            except:
+            except Exception:
                 pass  # Some models may not support channels_last
         
         self.obj = self.obj.to(self.device)
@@ -433,8 +433,8 @@ class TorchModel(Model):
                 if self.use_gpu:
                     try:
                         x = x.to(memory_format=torch.channels_last)
-                    except:
-                        pass
+                    except Exception:
+                        pass  # Some tensor shapes may not support channels_last
                 return self.obj(x).cpu()
 
         return model_fun
@@ -926,9 +926,9 @@ class VirchowModel(TorchModel):
                 if self.use_gpu:
                     try:
                         x = x.to(memory_format=torch.channels_last)
-                    except:
-                        pass
-                
+                    except Exception:
+                        pass  # Some tensor shapes may not support channels_last
+
                 output = self.obj(x)
                 
                 # Virchow returns [batch, num_tokens, embed_dim]
@@ -973,7 +973,10 @@ class Virchow2Model(VirchowModel):
                 mlp_layer=SwiGLUPacked,
                 act_layer=torch.nn.SiLU,
             )
-        # Call TorchModel.__init__ directly to avoid calling VirchowModel.__init__
+        # Call TorchModel.__init__ directly to skip VirchowModel.__init__
+        # which would set the wrong default model_path (VIRCHOW instead of VIRCHOW2).
+        # This is intentional - Virchow2Model reuses VirchowModel's preprocessing
+        # and inference methods but needs different model initialization.
         TorchModel.__init__(self, model_path, model_obj, use_gpu, gpu_device_id)
 
 

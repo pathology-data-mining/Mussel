@@ -1,4 +1,3 @@
-import os
 import ssl
 from dataclasses import dataclass
 from typing import List, Optional

@@ -42,8 +42,6 @@ def _is_remote_path(path):
 
 def _get_fsspec_filesystem(path):
     """Get an fsspec filesystem instance for a remote path."""
-    import ssl
-
     if not FSSPEC_AVAILABLE:
         raise ImportError(
             "fsspec is required for remote file operations. Install with: pip install fsspec"

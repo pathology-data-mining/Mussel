@@ -13,7 +13,7 @@ from loguru import logger
 from omegaconf import MISSING
 
 from mussel.models import ModelType
-from mussel.utils import save_features, extract_patch_features_batch, aggregate_slide_features_batch, aggregate_slide_features, resolve_remote_paths
+from mussel.utils import save_features, extract_patch_features_batch, aggregate_slide_features_batch, resolve_remote_paths
 
 ssl._create_default_https_context = ssl._create_unverified_context
 

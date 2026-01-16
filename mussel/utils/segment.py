@@ -4,7 +4,6 @@ import multiprocessing as mp
 from dataclasses import dataclass
 from pathlib import Path
 from typing import List, Optional
-import time
 
 import cv2
 import numpy as np
@@ -17,7 +16,6 @@ from shapely.prepared import prep
 
 from mussel.utils.file import save_hdf5
 from mussel.utils.timer import timed
-from mussel.datasets import WholeSlideImageTileCoordDataset
 
 Image.MAX_IMAGE_PIXELS = None
 
@@ -203,7 +201,7 @@ def contours_to_polygon(foreground_contours, hole_contours=None) -> MultiPolygon
     for idx, contour in enumerate(foreground_contours):
         try:
             new_poly = create_polygon(contour)
-        except:
+        except Exception:
             logger.warning(f"Unable to create polygon from foreground contour {idx}")
             new_poly = None
         if new_poly is not None:
@@ -214,7 +212,7 @@ def contours_to_polygon(foreground_contours, hole_contours=None) -> MultiPolygon
             for contour in contours:
                 try:
                     new_poly = create_polygon(contour)
-                except:
+                except Exception:
                     logger.warning(f"Unable to create polygon from hole contour {idx}")
                     new_poly = None
                 if new_poly is not None:
