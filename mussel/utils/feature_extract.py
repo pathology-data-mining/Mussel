@@ -1,13 +1,15 @@
 import gc
 import logging
+from abc import ABC, abstractmethod
+from dataclasses import dataclass
 from pathlib import Path
+from typing import Optional
 
 import h5py
 import numpy as np
 import torch
 from torch.utils.data import DataLoader
 from torchvision.datasets import ImageFolder
-from functools import singledispatch
 from tqdm import tqdm
 
 from mussel.datasets import (
@@ -28,6 +30,340 @@ from .ml import collate_features
 from .timer import timed
 
 logger = logging.getLogger(__name__)
+
+
+# =============================================================================
+# Feature Extraction Result and Dataset Processors
+# =============================================================================
+
+
+@dataclass
+class FeatureExtractionResult:
+    """Result of feature extraction from a dataset.
+
+    Attributes:
+        features: Extracted feature array of shape (N, D) where N is number of
+            samples and D is feature dimension.
+        labels: Optional label array of shape (N,) for classification datasets.
+        coords: Optional coordinate array of shape (N, 2) for tile-based datasets.
+        output_path: Optional path where features were saved to disk.
+    """
+    features: np.ndarray
+    labels: Optional[np.ndarray] = None
+    coords: Optional[np.ndarray] = None
+    output_path: Optional[str] = None
+
+
+class DatasetProcessor(ABC):
+    """Abstract base class for processing different dataset types.
+
+    This class defines the interface for feature extraction from various
+    dataset types. Subclasses implement the specific processing logic for
+    each dataset type (H5, ImageFolder, TileCoord, etc.).
+    """
+
+    @abstractmethod
+    def process(
+        self,
+        dataset,
+        loader: DataLoader,
+        model_fun,
+        output_h5_path: Optional[str] = None,
+        patch_h5_path: Optional[str] = None,
+        is_test_run: bool = False,
+    ) -> FeatureExtractionResult:
+        """Process a dataset and extract features.
+
+        Args:
+            dataset: The dataset to process.
+            loader: DataLoader for the dataset.
+            model_fun: Function to extract features from a batch of images.
+            output_h5_path: Optional path to save features to HDF5.
+            patch_h5_path: Optional path to source H5 for copying attributes.
+            is_test_run: If True, only process first 3 batches.
+
+        Returns:
+            FeatureExtractionResult containing features and metadata.
+        """
+        pass
+
+
+class TileCoordProcessor(DatasetProcessor):
+    """Processor for WholeSlideImageTileCoordDataset.
+
+    This processor extracts features from tile coordinates without saving
+    to disk. It returns features and labels directly in memory.
+    """
+
+    def process(
+        self,
+        dataset,
+        loader: DataLoader,
+        model_fun,
+        output_h5_path: Optional[str] = None,
+        patch_h5_path: Optional[str] = None,
+        is_test_run: bool = False,
+    ) -> FeatureExtractionResult:
+        """Process WholeSlideImageTileCoordDataset to extract features.
+
+        Args:
+            dataset: WholeSlideImageTileCoordDataset instance.
+            loader: DataLoader for the dataset.
+            model_fun: Function to extract features from a batch.
+            output_h5_path: Unused (features returned in memory).
+            patch_h5_path: Unused.
+            is_test_run: If True, only process first 3 batches.
+
+        Returns:
+            FeatureExtractionResult with features and labels arrays.
+        """
+        all_features = []
+        all_labels = []
+
+        for count, (batch, labels) in enumerate(tqdm(loader, desc="Extracting features")):
+            if is_test_run and count > 2:
+                break
+
+            features = model_fun(batch)
+            all_features.append(features.numpy())
+            all_labels.append(labels)
+
+        features = np.concatenate(all_features, axis=0)
+        labels = np.concatenate(all_labels, axis=0)
+
+        return FeatureExtractionResult(features=features, labels=labels)
+
+
+class H5DatasetProcessor(DatasetProcessor):
+    """Processor for WholeSlideImageH5Dataset.
+
+    This processor extracts features from an H5-based dataset and saves
+    them incrementally to an output H5 file.
+    """
+
+    def process(
+        self,
+        dataset,
+        loader: DataLoader,
+        model_fun,
+        output_h5_path: Optional[str] = None,
+        patch_h5_path: Optional[str] = None,
+        is_test_run: bool = False,
+    ) -> FeatureExtractionResult:
+        """Process WholeSlideImageH5Dataset to extract features and save to HDF5.
+
+        Args:
+            dataset: WholeSlideImageH5Dataset instance.
+            loader: DataLoader for the dataset.
+            model_fun: Function to extract features from a batch.
+            output_h5_path: Path to save extracted features (required).
+            patch_h5_path: Path to source H5 for copying attributes.
+            is_test_run: If True, only process first 3 batches.
+
+        Returns:
+            FeatureExtractionResult with features, coords, and output path.
+
+        Raises:
+            ValueError: If output_h5_path is not provided.
+        """
+        if output_h5_path is None:
+            raise ValueError("output_h5_path is required for H5DatasetProcessor")
+
+        mode = "w"
+        all_features = []
+        all_coords = []
+
+        for count, (batch, coords) in enumerate(tqdm(loader, desc="Extracting features")):
+            if is_test_run and count > 2:
+                break
+
+            # Skip empty batches (all tiles failed to load)
+            if batch.numel() == 0:
+                logger.warning(f"Skipping empty batch {count} (all tiles failed to load)")
+                continue
+
+            features = model_fun(batch).numpy()
+            all_features.append(features)
+            all_coords.append(coords)
+
+            asset_dict = {"features": features, "coords": coords}
+            save_hdf5(output_h5_path, asset_dict, attr_h5_path=patch_h5_path, mode=mode)
+            mode = "a"
+
+        # Concatenate all results
+        features = np.concatenate(all_features, axis=0) if all_features else np.array([])
+        coords = np.concatenate(all_coords, axis=0) if all_coords else np.array([])
+
+        return FeatureExtractionResult(
+            features=features,
+            coords=coords,
+            output_path=output_h5_path,
+        )
+
+
+class ImageFolderProcessor(DatasetProcessor):
+    """Processor for ImageFolder and FlatImageDataset.
+
+    This processor extracts features from image folder datasets and saves
+    them to an output H5 file along with image paths and class labels.
+    """
+
+    def process(
+        self,
+        dataset,
+        loader: DataLoader,
+        model_fun,
+        output_h5_path: Optional[str] = None,
+        patch_h5_path: Optional[str] = None,
+        is_test_run: bool = False,
+    ) -> FeatureExtractionResult:
+        """Process ImageFolder or FlatImageDataset to extract features.
+
+        Args:
+            dataset: ImageFolder or FlatImageDataset instance.
+            loader: DataLoader for the dataset.
+            model_fun: Function to extract features from a batch.
+            output_h5_path: Path to save extracted features (required).
+            patch_h5_path: Unused.
+            is_test_run: If True, only process first 3 batches.
+
+        Returns:
+            FeatureExtractionResult with features, labels, and output path.
+
+        Raises:
+            ValueError: If output_h5_path is not provided.
+        """
+        if output_h5_path is None:
+            raise ValueError("output_h5_path is required for ImageFolderProcessor")
+
+        # Save metadata first based on dataset type
+        if hasattr(dataset, 'imgs'):
+            # ImageFolder dataset
+            asset_dict = {
+                "image_paths": np.array([x[0] for x in dataset.imgs]).astype("S"),
+                "class_to_idx": np.array(
+                    [np.asarray([k, v], dtype="S") for k, v in dataset.class_to_idx.items()]
+                ),
+            }
+        elif hasattr(dataset, 'samples'):
+            # FlatImageDataset
+            asset_dict = {
+                "image_paths": np.array([str(x) for x in dataset.samples]).astype("S"),
+            }
+        else:
+            asset_dict = {}
+
+        save_hdf5(output_h5_path, asset_dict, attr_h5_path=None, mode="w")
+
+        all_features = []
+        all_labels = []
+
+        for count, (batch, labels) in enumerate(tqdm(loader, desc="Extracting features")):
+            if is_test_run and count > 2:
+                break
+
+            labels_np = labels.numpy()
+            features = model_fun(batch).numpy()
+
+            all_features.append(features)
+            all_labels.append(labels_np)
+
+            asset_dict = {"features": features, "class": labels_np}
+            save_hdf5(output_h5_path, asset_dict, attr_h5_path=None, mode="a")
+
+        # Concatenate all results
+        features = np.concatenate(all_features, axis=0) if all_features else np.array([])
+        labels = np.concatenate(all_labels, axis=0) if all_labels else np.array([])
+
+        return FeatureExtractionResult(
+            features=features,
+            labels=labels,
+            output_path=output_h5_path,
+        )
+
+
+def get_dataset_processor(dataset) -> DatasetProcessor:
+    """Get the appropriate processor for a dataset type.
+
+    This factory function returns the correct DatasetProcessor subclass
+    based on the type of dataset provided.
+
+    Args:
+        dataset: The dataset instance to process.
+
+    Returns:
+        DatasetProcessor instance appropriate for the dataset type.
+
+    Raises:
+        ValueError: If dataset type is not supported.
+    """
+    if isinstance(dataset, WholeSlideImageTileCoordDataset):
+        return TileCoordProcessor()
+    elif isinstance(dataset, WholeSlideImageH5Dataset):
+        return H5DatasetProcessor()
+    elif isinstance(dataset, (ImageFolder, FlatImageDataset)):
+        return ImageFolderProcessor()
+    else:
+        raise ValueError(
+            f"Unsupported dataset type: {type(dataset).__name__}. "
+            f"Supported types: WholeSlideImageTileCoordDataset, "
+            f"WholeSlideImageH5Dataset, ImageFolder, FlatImageDataset"
+        )
+
+
+def process_dataset(
+    dataset,
+    loader: DataLoader,
+    model_fun,
+    output_h5_path: Optional[str] = None,
+    patch_h5_path: Optional[str] = None,
+    is_test_run: bool = False,
+) -> FeatureExtractionResult:
+    """Process a dataset to extract features.
+
+    This function automatically selects the appropriate processor based on
+    the dataset type and runs feature extraction. It provides a unified
+    interface for all supported dataset types.
+
+    Args:
+        dataset: Dataset to process. Supported types:
+            - WholeSlideImageTileCoordDataset: Returns features in memory
+            - WholeSlideImageH5Dataset: Saves to H5 file
+            - ImageFolder: Saves to H5 file with class labels
+            - FlatImageDataset: Saves to H5 file
+        loader: DataLoader for the dataset.
+        model_fun: Function to extract features from a batch of images.
+        output_h5_path: Optional path to save features to HDF5.
+            Required for H5Dataset, ImageFolder, and FlatImageDataset.
+        patch_h5_path: Optional path to source H5 for copying attributes.
+            Used by H5DatasetProcessor.
+        is_test_run: If True, only process first 3 batches (default: False).
+
+    Returns:
+        FeatureExtractionResult containing:
+            - features: Extracted feature array
+            - labels: Label array (for TileCoord and ImageFolder datasets)
+            - coords: Coordinate array (for H5Dataset)
+            - output_path: Path to saved file (if applicable)
+
+    Raises:
+        ValueError: If dataset type is not supported or required parameters
+            are missing.
+    """
+    processor = get_dataset_processor(dataset)
+    return processor.process(
+        dataset=dataset,
+        loader=loader,
+        model_fun=model_fun,
+        output_h5_path=output_h5_path,
+        patch_h5_path=patch_h5_path,
+        is_test_run=is_test_run,
+    )
+
+
+# =============================================================================
+# Model Path Resolution
+# =============================================================================
 
 
 def get_model_path_from_dir(model_dir, model_type):
@@ -116,180 +452,8 @@ def get_model_path_from_dir(model_dir, model_type):
     if model_file_pth_lower.exists() and model_file_pth_lower.is_file():
         logger.info(f"Found {model_type.name} in model_dir: {model_file_pth_lower}")
         return str(model_file_pth_lower)
-    
+
     return None
-
-
-@singledispatch
-def process_dataset(
-    dataset,
-    loader,
-    model_fun,
-    patch_h5_path=None,
-    output_h5_path=None,
-):
-    """
-    Args:
-            dataset: dataset object
-            loader: dataloader object
-            model_fun: function to extract features from a batch of images
-            patch_h5_path: path to the h5 file containing patch coordinates (if any)
-            output_h5_path: path to save the extracted features (if any)
-    """
-    pass
-
-
-@process_dataset.register(WholeSlideImageTileCoordDataset)
-def _(dataset: WholeSlideImageTileCoordDataset, loader, model_fun, is_test_run=False):
-    """Process a WholeSlideImageTileCoordDataset to extract features.
-
-    Args:
-        dataset: WholeSlideImageTileCoordDataset instance.
-        loader: DataLoader for the dataset.
-        model_fun: Function to extract features from a batch of images.
-        is_test_run: If True, only process first 3 batches (default: False).
-
-    Returns:
-        Tuple of (features array, labels array).
-    """
-    all_features = []
-    all_labels = []
-    for count, (batch, labels) in enumerate(tqdm(loader, desc="Extracting features")):
-        if is_test_run and count > 2:
-            break
-
-        features = model_fun(batch)
-        all_features.append(features.numpy())
-        all_labels.append(labels)
-    all_features = np.concatenate(all_features, axis=0)
-    all_labels = np.concatenate(all_labels, axis=0)
-    return all_features, all_labels
-
-
-@process_dataset.register(ImageFolder)
-def _(
-    dataset: ImageFolder,
-    loader,
-    model_fun,
-    patch_h5_path=None,
-    output_h5_path=None,
-    is_test_run=False,
-):
-    """Process an ImageFolder dataset to extract features and save to HDF5.
-
-    Args:
-        dataset: ImageFolder instance.
-        loader: DataLoader for the dataset.
-        model_fun: Function to extract features from a batch of images.
-        patch_h5_path: Path to the h5 file containing patch coordinates (unused).
-        output_h5_path: Path to save the extracted features.
-        is_test_run: If True, only process first 3 batches (default: False).
-
-    Returns:
-        Path to the output HDF5 file.
-    """
-    asset_dict = {
-        "image_paths": np.array([x[0] for x in dataset.imgs]).astype("T"),
-        "class_to_idx": np.array(
-            [np.asarray([k, v], dtype="T") for k, v in dataset.class_to_idx.items()]
-        ),
-    }
-    save_hdf5(output_h5_path, asset_dict, attr_h5_path=None, mode="w")
-    for count, (batch, labels) in enumerate(tqdm(loader, desc="Extracting features")):
-        if is_test_run and count > 2:
-            break
-        labels = labels.numpy()
-
-        features = model_fun(batch)
-        features = features.numpy()
-        asset_dict = {
-            "features": features,
-            "class": labels,
-        }
-        save_hdf5(output_h5_path, asset_dict, attr_h5_path=None, mode="a")
-    return output_h5_path
-
-
-@process_dataset.register(FlatImageDataset)
-def _(
-    dataset: FlatImageDataset,
-    loader,
-    model_fun,
-    patch_h5_path=None,
-    output_h5_path=None,
-    is_test_run=False,
-):
-    """Process a FlatImageDataset to extract features and save to HDF5.
-
-    Args:
-        dataset: FlatImageDataset instance.
-        loader: DataLoader for the dataset.
-        model_fun: Function to extract features from a batch of images.
-        patch_h5_path: Path to the h5 file containing patch coordinates (unused).
-        output_h5_path: Path to save the extracted features.
-        is_test_run: If True, only process first 3 batches (default: False).
-
-    Returns:
-        Path to the output HDF5 file.
-    """
-    asset_dict = {
-        "image_paths": np.array([str(x) for x in dataset.samples]).astype("S"),
-    }
-    save_hdf5(output_h5_path, asset_dict, attr_h5_path=None, mode="w")
-    for count, (batch, labels) in enumerate(tqdm(loader, desc="Extracting features")):
-        if is_test_run and count > 2:
-            break
-        labels = labels.numpy()
-
-        features = model_fun(batch)
-        features = features.numpy()
-        asset_dict = {
-            "features": features,
-            "class": labels,
-        }
-        save_hdf5(output_h5_path, asset_dict, attr_h5_path=None, mode="a")
-    return output_h5_path
-
-
-@process_dataset.register(WholeSlideImageH5Dataset)
-def _(
-    dataset: WholeSlideImageH5Dataset,
-    loader,
-    model_fun,
-    patch_h5_path=None,
-    output_h5_path=None,
-    is_test_run=False,
-):
-    """Process a WholeSlideImageH5Dataset to extract features and save to HDF5.
-
-    Args:
-        dataset: WholeSlideImageH5Dataset instance.
-        loader: DataLoader for the dataset.
-        model_fun: Function to extract features from a batch of images.
-        patch_h5_path: Path to the h5 file containing patch coordinates.
-        output_h5_path: Path to save the extracted features.
-        is_test_run: If True, only process first 3 batches (default: False).
-
-    Returns:
-        Path to the output HDF5 file.
-    """
-    mode = "w"
-    for count, (batch, coords) in enumerate(tqdm(loader, desc="Extracting features")):
-        if is_test_run and count > 2:
-            break
-        
-        # Skip empty batches (all tiles failed to load)
-        if batch.numel() == 0:
-            logger.warning(f"Skipping empty batch {count} (all tiles failed to load)")
-            continue
-
-        features = model_fun(batch)
-        features = features.numpy()
-        
-        asset_dict = {"features": features, "coords": coords}
-        save_hdf5(output_h5_path, asset_dict, attr_h5_path=patch_h5_path, mode=mode)
-        mode = "a"
-    return output_h5_path
 
 
 def _apply_slide_aggregation(
@@ -534,9 +698,10 @@ def get_features(
         prefetch_factor=4 if num_workers > 0 else None,  # Increased from 2 to 4 for better GPU utilization
     )
 
-    features, labels = process_dataset(
+    result = process_dataset(
         dataset, loader, model_fun=model.get_model_fun(), is_test_run=is_test_run
     )
+    features, labels = result.features, result.labels
 
     # Apply slide-level encoding if requested
     if use_slide_encoder:

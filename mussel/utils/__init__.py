@@ -6,6 +6,13 @@ from .feature_extract import (
     extract_patch_features_batch,
     aggregate_slide_features,
     aggregate_slide_features_batch,
+    process_dataset,
+    get_dataset_processor,
+    FeatureExtractionResult,
+    DatasetProcessor,
+    TileCoordProcessor,
+    H5DatasetProcessor,
+    ImageFolderProcessor,
 )
 from .file import save_hdf5, save_torch_tensor, download_model_path, resolve_remote_paths
 from .ml import collate_features
