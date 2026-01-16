@@ -10,7 +10,11 @@ from torchvision.datasets import ImageFolder
 from functools import singledispatch
 from tqdm import tqdm
 
-from mussel.datasets import WholeSlideImageH5Dataset, WholeSlideImageTileCoordDataset
+from mussel.datasets import (
+    WholeSlideImageH5Dataset,
+    WholeSlideImageTileCoordDataset,
+    FlatImageDataset,
+)
 from mussel.models import (
     ModelType,
     get_model_factory,
@@ -37,24 +41,69 @@ def get_model_path_from_dir(model_dir, model_type):
     Returns:
         Path to model if found in model_dir, None otherwise
     """
-    if model_dir is None:
+    if model_dir is None or model_type is None:
         return None
+    
+    # GIGAPATH_SLIDE only supports hf-hub: format, return the default path
+    # This will trigger HuggingFace caching automatically
+    # Must check this BEFORE checking for directories to avoid returning directory paths
+    if model_type == ModelType.GIGAPATH_SLIDE:
+        return ModelType.GIGAPATH_SLIDE.path
     
     model_dir_path = Path(model_dir)
     if not model_dir_path.exists():
         return None
     
+    # Special case for CONCH1_5: prefer TITAN_SLIDE directory if available
+    if model_type == ModelType.CONCH1_5:
+        titan_dir = model_dir_path / "TITAN_SLIDE"
+        if titan_dir.exists() and titan_dir.is_dir():
+            logger.info(f"✓ Using local model file: {model_type.name} -> {titan_dir}")
+            return str(titan_dir)
+        titan_dir_lower = model_dir_path / "titan_slide"
+        if titan_dir_lower.exists() and titan_dir_lower.is_dir():
+            logger.info(f"✓ Using local model file: {model_type.name} -> {titan_dir_lower}")
+            return str(titan_dir_lower)
+    
     # Check for model directory named after the model type
     model_subdir = model_dir_path / model_type.name
     if model_subdir.exists() and model_subdir.is_dir():
-        logger.info(f"Found {model_type.name} in model_dir: {model_subdir}")
-        return str(model_subdir)
+        # For TITAN_SLIDE, look for slide_encoder.pth or pytorch_model.bin inside the directory
+        if model_type == ModelType.TITAN_SLIDE:
+            slide_encoder_pth = model_subdir / "slide_encoder.pth"
+            pytorch_model_bin = model_subdir / "pytorch_model.bin"
+            if slide_encoder_pth.exists():
+                logger.info(f"✓ Using local model file: {model_type.name} -> {slide_encoder_pth}")
+                return str(slide_encoder_pth)
+            elif pytorch_model_bin.exists():
+                # Return directory path, model loading code will handle pytorch_model.bin
+                logger.info(f"✓ Using local model directory: {model_type.name} -> {model_subdir}")
+                return str(model_subdir)
+            # For TITAN_SLIDE, we require slide_encoder.pth or pytorch_model.bin to exist
+            # Don't fall through to return the directory for other model types
+        else:
+            logger.info(f"Found {model_type.name} in model_dir: {model_subdir}")
+            return str(model_subdir)
     
     # Check for model directory named with lowercase
     model_subdir_lower = model_dir_path / model_type.name.lower()
     if model_subdir_lower.exists() and model_subdir_lower.is_dir():
-        logger.info(f"Found {model_type.name} in model_dir: {model_subdir_lower}")
-        return str(model_subdir_lower)
+        # For TITAN_SLIDE, look for slide_encoder.pth or pytorch_model.bin inside the directory
+        if model_type == ModelType.TITAN_SLIDE:
+            slide_encoder_pth = model_subdir_lower / "slide_encoder.pth"
+            pytorch_model_bin = model_subdir_lower / "pytorch_model.bin"
+            if slide_encoder_pth.exists():
+                logger.info(f"✓ Using local model file: {model_type.name} -> {slide_encoder_pth}")
+                return str(slide_encoder_pth)
+            elif pytorch_model_bin.exists():
+                # Return directory path, model loading code will handle pytorch_model.bin
+                logger.info(f"✓ Using local model directory: {model_type.name} -> {model_subdir_lower}")
+                return str(model_subdir_lower)
+            # For TITAN_SLIDE, we require slide_encoder.pth or pytorch_model.bin to exist
+            # Don't fall through to return the directory for other model types
+        else:
+            logger.info(f"Found {model_type.name} in model_dir: {model_subdir_lower}")
+            return str(model_subdir_lower)
     
     # Check for .pth file (pickled models) - uppercase
     model_file_pth = model_dir_path / f"{model_type.name}.pth"
@@ -161,6 +210,47 @@ def _(
     return output_h5_path
 
 
+@process_dataset.register(FlatImageDataset)
+def _(
+    dataset: FlatImageDataset,
+    loader,
+    model_fun,
+    patch_h5_path=None,
+    output_h5_path=None,
+    is_test_run=False,
+):
+    """Process a FlatImageDataset to extract features and save to HDF5.
+
+    Args:
+        dataset: FlatImageDataset instance.
+        loader: DataLoader for the dataset.
+        model_fun: Function to extract features from a batch of images.
+        patch_h5_path: Path to the h5 file containing patch coordinates (unused).
+        output_h5_path: Path to save the extracted features.
+        is_test_run: If True, only process first 3 batches (default: False).
+
+    Returns:
+        Path to the output HDF5 file.
+    """
+    asset_dict = {
+        "image_paths": np.array([str(x) for x in dataset.samples]).astype("S"),
+    }
+    save_hdf5(output_h5_path, asset_dict, attr_h5_path=None, mode="w")
+    for count, (batch, labels) in enumerate(tqdm(loader, desc="Extracting features")):
+        if is_test_run and count > 2:
+            break
+        labels = labels.numpy()
+
+        features = model_fun(batch)
+        features = features.numpy()
+        asset_dict = {
+            "features": features,
+            "class": labels,
+        }
+        save_hdf5(output_h5_path, asset_dict, attr_h5_path=None, mode="a")
+    return output_h5_path
+
+
 @process_dataset.register(WholeSlideImageH5Dataset)
 def _(
     dataset: WholeSlideImageH5Dataset,
@@ -187,6 +277,11 @@ def _(
     for count, (batch, coords) in enumerate(tqdm(loader, desc="Extracting features")):
         if is_test_run and count > 2:
             break
+        
+        # Skip empty batches (all tiles failed to load)
+        if batch.numel() == 0:
+            logger.warning(f"Skipping empty batch {count} (all tiles failed to load)")
+            continue
 
         features = model_fun(batch)
         features = features.numpy()
@@ -340,7 +435,6 @@ def get_features(
     attrs,
     model_type=ModelType.CLIP,
     model_path=None,
-    model=None,
     batch_size=64,
     use_gpu=True,
     gpu_device_id=None,
@@ -363,7 +457,6 @@ def get_features(
             When using model-based aggregation with a slide encoder, this will be automatically
             set to the required patch encoder if not already specified correctly.
         model_path: Optional path to model weights.
-        model: Optional pre-loaded model instance. If provided, model_type and model_path are ignored.
         batch_size: Batch size for feature extraction (default: 64).
         use_gpu: Whether to use GPU for inference (default: True).
         gpu_device_id: GPU device ID to use.
@@ -381,46 +474,43 @@ def get_features(
     Returns:
         Tuple of (features array, labels array).
     """
-    if model is None:
-        logger.info("loading model checkpoint")
+    logger.info("loading model checkpoint")
 
-        if gpu_device_ids:
-            gpu_device_id = gpu_device_ids
+    if gpu_device_ids:
+        gpu_device_id = gpu_device_ids
 
-        # Auto-set aggregation_method to "model" if slide_model_type is specified
-        if (
-            use_slide_encoder
-            and slide_model_type is not None
-            and aggregation_method != "model"
-        ):
+    # Auto-set aggregation_method to "model" if slide_model_type is specified
+    if (
+        use_slide_encoder
+        and slide_model_type is not None
+        and aggregation_method != "model"
+    ):
+        logger.info(
+            f"Auto-setting aggregation_method to 'model' since slide_model_type "
+            f"({slide_model_type}) is specified"
+        )
+        aggregation_method = "model"
+
+    # Auto-infer patch encoder from slide encoder if using model-based aggregation
+    if (
+        use_slide_encoder
+        and aggregation_method == "model"
+        and slide_model_type is not None
+    ):
+        required_patch_encoder = get_required_patch_encoder(slide_model_type)
+        if model_type != required_patch_encoder:
             logger.info(
-                f"Auto-setting aggregation_method to 'model' since slide_model_type "
-                f"({slide_model_type}) is specified"
+                f"Auto-selecting patch encoder {required_patch_encoder} "
+                f"as required by slide encoder {slide_model_type}"
             )
-            aggregation_method = "model"
+            model_type = required_patch_encoder
+        # Validate compatibility
+        validate_slide_encoder_compatibility(model_type, slide_model_type)
 
-        # Auto-infer patch encoder from slide encoder if using model-based aggregation
-        if (
-            use_slide_encoder
-            and aggregation_method == "model"
-            and slide_model_type is not None
-        ):
-            required_patch_encoder = get_required_patch_encoder(slide_model_type)
-            if model_type != required_patch_encoder:
-                logger.info(
-                    f"Auto-selecting patch encoder {required_patch_encoder} "
-                    f"as required by slide encoder {slide_model_type}"
-                )
-                model_type = required_patch_encoder
-            # Validate compatibility
-            validate_slide_encoder_compatibility(model_type, slide_model_type)
-
-        model_factory = get_model_factory(model_type)
-        if model_factory is None:
-            raise ValueError("model not recognized")
-        model = model_factory.get_model(model_path, use_gpu, gpu_device_id)
-    else:
-        logger.info("using pre-loaded model")
+    model_factory = get_model_factory(model_type)
+    if model_factory is None:
+        raise ValueError("model not recognized")
+    model = model_factory.get_model(model_path, use_gpu, gpu_device_id)
     preprocessing = model.get_preprocessing_fun()
 
     dataset = WholeSlideImageTileCoordDataset(
@@ -532,10 +622,20 @@ def extract_patch_features(
     preprocessing = model.get_preprocessing_fun()
 
     if patch_path:
-        dataset = ImageFolder(
-            root=patch_path,
-            transform=preprocessing,
-        )
+        # Try ImageFolder first (for class-based structure)
+        # Fall back to FlatImageDataset if no class folders found
+        try:
+            dataset = ImageFolder(
+                root=patch_path,
+                transform=preprocessing,
+            )
+        except FileNotFoundError:
+            # No class folders found, use flat directory structure
+            logger.info(f"No class folders found in {patch_path}, using flat directory structure")
+            dataset = FlatImageDataset(
+                root=patch_path,
+                transform=preprocessing,
+            )
 
         loader = DataLoader(
             dataset=dataset,
@@ -845,6 +945,11 @@ def aggregate_slide_features_batch(
         model_path = get_model_path_from_dir(model_dir, model_type)
         if model_path:
             logger.info(f"Using slide model from model_dir: {model_path}")
+    
+    # If still None, use the default HF hub path from ModelType
+    if model_path is None:
+        model_path = model_type.path
+        logger.info(f"Using default HuggingFace path for {model_type.name}: {model_path}")
     
     # Load the slide encoder model once
     logger.info(f"Loading slide encoder model: {model_type}")
@@ -1220,10 +1325,20 @@ def save_features(
         preprocessing = model.get_preprocessing_fun()
 
         if patch_path:
-            dataset = ImageFolder(
-                root=patch_path,
-                transform=preprocessing,
-            )
+            # Try ImageFolder first (for class-based structure)
+            # Fall back to FlatImageDataset if no class folders found
+            try:
+                dataset = ImageFolder(
+                    root=patch_path,
+                    transform=preprocessing,
+                )
+            except FileNotFoundError:
+                # No class folders found, use flat directory structure
+                logger.info(f"No class folders found in {patch_path}, using flat directory structure")
+                dataset = FlatImageDataset(
+                    root=patch_path,
+                    transform=preprocessing,
+                )
 
             loader = DataLoader(
                 dataset=dataset,

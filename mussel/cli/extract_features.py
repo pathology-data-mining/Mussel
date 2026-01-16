@@ -23,9 +23,23 @@ class ExtractFeaturesConfig:
     """
     Configuration for extract-features command.
     
-    Supports both single-slide and batch processing modes:
-    - Single mode: Provide patch_h5_path, slide_path, output_h5_path
-    - Batch mode: Provide patch_h5_paths, slide_paths, output_dir
+    Supports three input modes:
+    
+    1. Single Slide Mode:
+       - Provide: patch_h5_path, slide_path, output_h5_path
+       - Extracts features from one slide using patch coordinates from HDF5 file
+       - Output: Single H5 and PT file with features for one slide
+    
+    2. Batch Slides Mode:
+       - Provide: patch_h5_paths, slide_paths, output_dir
+       - Extracts features from multiple slides (batch processing)
+       - Output: Multiple H5/PT files (one per slide) in output_dir
+    
+    3. Patch Directory Mode:
+       - Provide: patch_path (directory), output_h5_path, output_pt_path
+       - Extracts features from pre-extracted patch images in a directory
+       - Output: Single H5 and PT file containing features for ALL patches in the directory
+       - Note: Outputs are aggregated - one file per patch directory, not per patch image
     
     Single Mode Parameters:
         patch_h5_path (str): Path to the HDF5 file containing patches.
@@ -46,7 +60,7 @@ class ExtractFeaturesConfig:
         model_type (ModelType): Type of model to use for patch-level feature extraction.
         model_path (Optional[str]): Path to the patch encoder model weights, if applicable.
         model_dir (Optional[str]): Directory containing pre-downloaded models (for convenience).
-        patch_path (Optional[str]): Directory containing pre-tiled images, if applicable.
+        patch_path (Optional[str]): Directory containing pre-tiled patch images (Patch Directory Mode).
         intermediate_h5_path (Optional[str]): Path for intermediate patch features (two-step mode, single mode only).
         aggregation_method (str): Aggregation method: identity (single-step), mean/max/model (two-step).
         slide_model_type (Optional[ModelType]): Type of slide encoder model (when aggregation_method="model").
@@ -94,25 +108,31 @@ class ExtractFeaturesConfig:
 
 desc_doc = """== ${hydra.help.app_name} ==
 
-Extract features (embeddings) from whole slide images (WSI) or patches using a 
-pathology foundation model. The embeddings are written to a PyTorch tensor file (.pt)
-and an HDF5 (.h5) file.
+Extract features (embeddings) from whole slide images (WSI) or patch directories using a 
+pathology foundation model. The embeddings are written to PyTorch tensor file (.pt)
+and HDF5 (.h5) files.
 
-Supports both single-slide and batch processing modes:
-- Single mode: Process one slide (provide patch_h5_path, slide_path, output_h5_path)
-- Batch mode: Process multiple slides (provide patch_h5_paths, slide_paths, output_dir)
+Three Input Modes:
 
-When multiple slides are specified, batch processing automatically loads models once 
-for all slides, providing significant performance benefits.
+1. Single Slide Mode:
+   Process one slide from patch coordinates in HDF5 file
+   Args: patch_h5_path=<path> slide_path=<path> output_h5_path=<path> [output_pt_path=<path>]
+   Output: Single H5 and PT file with features for one slide
 
-This tool supports two modes (automatically selected based on aggregation_method):
-1. Single-step mode (aggregation_method="identity"): Direct feature extraction (default)
-2. Two-step mode (aggregation_method in ["mean", "max", "model"]): 
-   - Step 1: Patch-level encoding (extract features from individual patches)
-   - Step 2: Slide-level aggregation (aggregate patch features to slide level)
-   
-Slide-level aggregation methods:
-   - identity: Keep all patch features - single-step mode (no aggregation)
+2. Batch Slides Mode:
+   Process multiple slides efficiently (batch processing)
+   Args: patch_h5_paths=[<path1>,<path2>,...] slide_paths=[<path1>,<path2>,...] output_dir=<dir>
+   Output: Multiple H5/PT files (one per slide) in output_dir
+   Note: Models loaded once for all slides - significant performance benefit
+
+3. Patch Directory Mode:
+   Process pre-extracted patch images from a directory
+   Args: patch_path=<dir> output_h5_path=<path> output_pt_path=<path> slide_path=None patch_h5_path=None
+   Output: Single H5 and PT file containing features for ALL patches in directory
+   Note: Supports S3 paths (s3://bucket/prefix/)
+
+Aggregation Methods (automatically selected based on aggregation_method):
+   - identity: Keep all patch features - single-step mode (default, no aggregation)
    - mean/max: Simple pooling aggregation - two-step mode
    - model: Use a slide encoder model - two-step mode (e.g., GIGAPATH_SLIDE for Prov-GigaPath)
 """
