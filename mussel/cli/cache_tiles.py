@@ -2,13 +2,14 @@
 Inputs: slide_file_path, patch_file_path, annotation_csv_path
 Results in .pt file with N_tiles x 3 x img_size x img_size tensor
 """
+
 import argparse
 import json
 import time
 from dataclasses import dataclass, field
 from typing import List, Optional
-import logging
 
+import hydra
 import pandas as pd
 import tiffslide as openslide
 import torch
@@ -18,8 +19,7 @@ from loguru import logger
 from omegaconf import MISSING
 from torch.utils.data import DataLoader
 
-import hydra
-from mussel.datasets.h5 import Whole_Slide_Bag_FP
+from mussel.datasets.h5 import WholeSlideImageH5Dataset
 from mussel.utils.ml import collate_features
 
 
@@ -68,11 +68,8 @@ cs.store(
 
 @hydra.main(config_path=".", config_name="cache_tiles_config", version_base=None)
 def main(cfg: CacheTilesConfig):
+    """Cache tiles from a whole slide image to a PyTorch tensor file."""
     time_start = time.time()
-
-    # restrict verbose logging from aiobotocore
-    logging.getLogger('aiobotocore').setLevel(logging.CRITICAL)
-
     indices = None
     if cfg.limit_to_class and cfg.annotation_csv_path:
         annot = pd.read_csv(cfg.annotation_csv_path)
@@ -80,13 +77,18 @@ def main(cfg: CacheTilesConfig):
         indices = annot[annot["class"].isin(cfg.limit_to_class)].index.tolist()
         logger.info(f"limiting to class {cfg.limit_to_class} with {len(indices)} tiles")
 
-    dataset = Whole_Slide_Bag_FP(
-        file_path=cfg.patch_h5_path,
-        wsi_path=cfg.slide_path,
+    dataset = WholeSlideImageH5Dataset(
+        h5_path=cfg.patch_h5_path,
+        slide_path=cfg.slide_path,
         use_imagenet_rgb_dist=True,
         limit_to_indices=indices if cfg.limit_to_class else None,
     )
-    kwargs = {"num_workers": cfg.num_workers, "pin_memory": True}
+    kwargs = {
+        "num_workers": cfg.num_workers,
+        "pin_memory": True,
+        "persistent_workers": cfg.num_workers > 0,
+        "prefetch_factor": 2 if cfg.num_workers > 0 else None,
+    }
     loader = DataLoader(
         dataset=dataset,
         batch_size=cfg.batch_size,
