@@ -29,8 +29,6 @@ from mussel.models import ModelType, get_default_patch_size
 from mussel.utils import save_features, filter_features, save_hdf5
 from mussel.utils.segment import draw_slide_mask, save_patches_png, segment_tissue
 
-ssl._create_default_https_context = ssl._create_unverified_context
-
 
 defaults = ["_self_", {"seg_config": "default"}]
 
@@ -61,6 +59,7 @@ class FilterTessellateConfig:
     gpu_device_ids (Optional[List[int]]): List of GPU device IDs to use, if applicable.
     save_features_to_h5 (bool): Whether to save the filtered features to HDF5.
     keep_intermediate_files (bool): Whether to keep intermediate files (tessellation and features).
+    ssl_verify (bool): Whether to verify SSL certificates when downloading models or accessing remote resources (default: True).
     """
 
     defaults: List[Any] = field(default_factory=lambda: defaults)
@@ -84,6 +83,7 @@ class FilterTessellateConfig:
     gpu_device_ids: Optional[List[int]] = None
     save_features_to_h5: bool = False
     keep_intermediate_files: bool = False
+    ssl_verify: bool = True  # Whether to verify SSL certificates for remote operations
     seg_config: SegConfig = MISSING
     vis_config: VisConfig = field(default_factory=VisConfig)
     png_config: PngConfig = field(default_factory=PngConfig)

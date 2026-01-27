@@ -36,8 +36,6 @@ from mussel.utils import (
     resolve_remote_paths,
 )
 
-ssl._create_default_https_context = ssl._create_unverified_context
-
 
 def _is_remote_path(path):
     """Check if a path is a remote URL scheme."""
@@ -272,6 +270,7 @@ class TessellateExtractFeaturesConfig:
         pre_download_models (bool): Whether to pre-download models to model_dir before processing.
         intermediate_h5_path (Optional[str]): Path for intermediate patch features (single mode, two-step).
         aggregation_method (str): Aggregation method for post-filtering: identity (single-step), mean/max/model (two-step).
+        ssl_verify (bool): Whether to verify SSL certificates when downloading models or accessing remote resources (default: True).
 
     Visualization Parameters (Single Mode):
         output_png_dir (Optional[str]): Directory to save patches as PNG files (post-filtering).
@@ -348,6 +347,7 @@ class TessellateExtractFeaturesConfig:
     intermediate_h5_path: Optional[str] = None
     aggregation_method: str = "identity"
     slide_model_type: Any = None  # Can be ModelType or List[ModelType]
+    ssl_verify: bool = True  # Whether to verify SSL certificates for remote operations
 
     def __post_init__(self):
         """Set default patch size based on model type if not explicitly set."""

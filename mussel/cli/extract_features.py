@@ -15,38 +15,36 @@ from omegaconf import MISSING
 from mussel.models import ModelType
 from mussel.utils import save_features, extract_patch_features_batch, aggregate_slide_features_batch, resolve_remote_paths
 
-ssl._create_default_https_context = ssl._create_unverified_context
-
 
 @dataclass
 class ExtractFeaturesConfig:
     """
     Configuration for extract-features command.
-    
+
     Supports three input modes:
-    
+
     1. Single Slide Mode:
        - Provide: patch_h5_path, slide_path, output_h5_path
        - Extracts features from one slide using patch coordinates from HDF5 file
        - Output: Single H5 and PT file with features for one slide
-    
+
     2. Batch Slides Mode:
        - Provide: patch_h5_paths, slide_paths, output_dir
        - Extracts features from multiple slides (batch processing)
        - Output: Multiple H5/PT files (one per slide) in output_dir
-    
+
     3. Patch Directory Mode:
        - Provide: patch_path (directory), output_h5_path, output_pt_path
        - Extracts features from pre-extracted patch images in a directory
        - Output: Single H5 and PT file containing features for ALL patches in the directory
        - Note: Outputs are aggregated - one file per patch directory, not per patch image
-    
+
     Single Mode Parameters:
         patch_h5_path (str): Path to the HDF5 file containing patches.
         slide_path (str): Path to the whole slide image.
         output_h5_path (str): Path to save the computed features in HDF5 format.
         output_pt_path (Optional[str]): Path to save the computed features in PyTorch format.
-    
+
     Batch Mode Parameters:
         patch_h5_paths (List[str]): Paths to HDF5 files containing patches for multiple slides.
         slide_paths (List[str]): Paths to whole slide images.
@@ -55,7 +53,7 @@ class ExtractFeaturesConfig:
         output_h5_suffix (str): Suffix for HDF5 output files (default: "features.h5").
         output_pt_suffix (str): Suffix for PyTorch output files (default: "features.pt").
         slide_batch_size (int): Number of slides to process in a single batch during slide-level aggregation (default: 8).
-    
+
     Model Parameters:
         model_type (ModelType): Type of model to use for patch-level feature extraction.
         model_path (Optional[str]): Path to the patch encoder model weights, if applicable.
@@ -65,7 +63,8 @@ class ExtractFeaturesConfig:
         aggregation_method (str): Aggregation method: identity (single-step), mean/max/model (two-step).
         slide_model_type (Optional[ModelType]): Type of slide encoder model (when aggregation_method="model").
         slide_model_path (Optional[str]): Path to slide encoder model weights.
-    
+        ssl_verify (bool): Whether to verify SSL certificates when downloading models or accessing remote resources (default: True).
+
     Processing Parameters:
         batch_size (int): Batch size for processing patches or tiles.
         use_gpu (bool): Whether to use GPU for computation.
@@ -97,6 +96,7 @@ class ExtractFeaturesConfig:
     aggregation_method: str = "identity"
     slide_model_type: Optional[ModelType] = None
     slide_model_path: Optional[str] = None
+    ssl_verify: bool = True  # Whether to verify SSL certificates for remote operations
     # Processing parameters
     batch_size: int = 64
     use_gpu: bool = True

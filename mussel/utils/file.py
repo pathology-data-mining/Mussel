@@ -1,13 +1,9 @@
 import pickle
 import os
-import ssl
 from contextlib import ExitStack
 from pathlib import Path
 
 import h5py
-
-# Disable SSL verification globally (like in CLI scripts)
-ssl._create_default_https_context = ssl._create_unverified_context
 
 try:
     import fsspec
@@ -40,7 +36,7 @@ def _is_remote_path(path):
     )
 
 
-def _get_fsspec_filesystem(path):
+def _get_fsspec_filesystem(path, ssl_verify=True):
     """Get an fsspec filesystem instance for a remote path."""
     if not FSSPEC_AVAILABLE:
         raise ImportError(
@@ -50,7 +46,7 @@ def _get_fsspec_filesystem(path):
     # Normalize azblob:// to az:// for fsspec
     protocol = path.split("://")[0]
     extracted_account_name = None
-    
+
     if protocol == "azblob":
         protocol = "az"
         # Handle two formats:
@@ -58,7 +54,7 @@ def _get_fsspec_filesystem(path):
         # 2. azblob://account.blob.core.windows.net/container/path (full)
         remainder = path.split("://", 1)[1]
         parts = remainder.split("/", 1)
-        
+
         if parts and "." in parts[0]:
             # Full format with account name
             account_part = parts[0]
@@ -93,19 +89,14 @@ def _get_fsspec_filesystem(path):
             storage_options["sas_token"] = sas_token
         # If no credentials, fsspec will try default Azure credentials
 
-        # For Azure, disable SSL verification
-        storage_options["connection_verify"] = False
+        # Apply SSL verification setting
+        storage_options["connection_verify"] = ssl_verify
         storage_options["connection_timeout"] = 600
-
-        # Set environment variable to disable SSL verification globally for Azure SDK
-        # This is necessary because connection_verify alone doesn't always work
-        os.environ["REQUESTS_CA_BUNDLE"] = ""
-        os.environ["CURL_CA_BUNDLE"] = ""
 
     return fsspec.filesystem(protocol, **storage_options)
 
 
-def save_pkl(filename, save_object):
+def save_pkl(filename, save_object, ssl_verify=True):
     """Save a Python object to a pickle file.
 
     Supports both local and remote paths (az://, s3://, etc.).
@@ -113,9 +104,10 @@ def save_pkl(filename, save_object):
     Args:
         filename: Path to the output pickle file (local or remote).
         save_object: Python object to serialize and save.
+        ssl_verify: Whether to verify SSL certificates for remote operations.
     """
     if _is_remote_path(filename):
-        fs = _get_fsspec_filesystem(filename)
+        fs = _get_fsspec_filesystem(filename, ssl_verify)
         with fs.open(filename, "wb") as writer:
             pickle.dump(save_object, writer)
     else:
@@ -123,19 +115,20 @@ def save_pkl(filename, save_object):
             pickle.dump(save_object, writer)
 
 
-def load_pkl(filename):
+def load_pkl(filename, ssl_verify=True):
     """Load a Python object from a pickle file.
 
     Supports both local and remote paths (az://, s3://, etc.).
 
     Args:
         filename: Path to the pickle file to load (local or remote).
+        ssl_verify: Whether to verify SSL certificates for remote operations.
 
     Returns:
         The deserialized Python object.
     """
     if _is_remote_path(filename):
-        fs = _get_fsspec_filesystem(filename)
+        fs = _get_fsspec_filesystem(filename, ssl_verify)
         with fs.open(filename, "rb") as loader:
             file = pickle.load(loader)
     else:
@@ -151,6 +144,7 @@ def save_hdf5(
     attr_h5_path=None,
     mode="a",
     compression=True,
+    ssl_verify=True,
 ):
     """Save data to an HDF5 file with optional attributes.
 
@@ -170,6 +164,7 @@ def save_hdf5(
         mode: File mode ('a' for append, 'w' for write).
         compression: Enable gzip compression (default: True). Reduces file size 3-4x
                     with minimal performance impact. Set to False for uncompressed.
+        ssl_verify: Whether to verify SSL certificates for remote operations.
 
     Returns:
         The output path.
@@ -252,7 +247,7 @@ def save_hdf5(
 
         # Upload to remote if needed
         if is_remote:
-            fs = _get_fsspec_filesystem(output_path)
+            fs = _get_fsspec_filesystem(output_path, ssl_verify)
             fs.put(local_path, output_path)
     finally:
         # Clean up temporary file if used
@@ -262,7 +257,7 @@ def save_hdf5(
     return output_path
 
 
-def save_torch_tensor(output_path, tensor):
+def save_torch_tensor(output_path, tensor, ssl_verify=True):
     """Save a PyTorch tensor to a file.
 
     Supports both local and remote paths (az://, s3://, etc.).
@@ -271,6 +266,7 @@ def save_torch_tensor(output_path, tensor):
     Args:
         output_path: Path to the output file (local or remote).
         tensor: PyTorch tensor to save.
+        ssl_verify: Whether to verify SSL certificates for remote operations.
 
     Returns:
         The output path.
@@ -285,7 +281,7 @@ def save_torch_tensor(output_path, tensor):
         local_path = tempfile.NamedTemporaryFile(delete=False, suffix=".pt").name
         try:
             torch.save(tensor, local_path)
-            fs = _get_fsspec_filesystem(output_path)
+            fs = _get_fsspec_filesystem(output_path, ssl_verify)
             fs.put(local_path, output_path)
         finally:
             Path(local_path).unlink(missing_ok=True)
@@ -297,7 +293,7 @@ def save_torch_tensor(output_path, tensor):
     return output_path
 
 
-def download_slide(slide_path, local_dir=None):
+def download_slide(slide_path, local_dir=None, ssl_verify=True):
     """Download a remote slide to a local path.
 
     If the slide is already local, returns the original path.
@@ -306,6 +302,7 @@ def download_slide(slide_path, local_dir=None):
     Args:
         slide_path: Path to the slide (local or remote).
         local_dir: Optional directory to download to. If None, uses system temp directory.
+        ssl_verify: Whether to verify SSL certificates for remote operations.
 
     Returns:
         Tuple of (local_path, is_temp) where is_temp indicates if cleanup is needed.
@@ -330,7 +327,7 @@ def download_slide(slide_path, local_dir=None):
 
     logger.info(f"Downloading remote slide {slide_path} to {local_path}")
     try:
-        fs = _get_fsspec_filesystem(slide_path)
+        fs = _get_fsspec_filesystem(slide_path, ssl_verify)
         fs.get(slide_path, local_path)
         logger.info(f"Download complete: {local_path}")
         return local_path, True
@@ -490,7 +487,7 @@ def _download_azure_files_directory(share_name, prefix, local_path):
     logger.info(f"Download complete: {downloaded_count} files downloaded, {skipped_count} skipped")
 
 
-def download_model_path(model_path, cache_dir=None):
+def download_model_path(model_path, cache_dir=None, ssl_verify=True):
     """Download a remote model path to a local cache directory.
 
     If the model path is already local, returns the original path.
@@ -500,6 +497,7 @@ def download_model_path(model_path, cache_dir=None):
     Args:
         model_path: Path to the model file or directory (local or remote).
         cache_dir: Optional cache directory to download to. If None, uses HF_HOME or system default.
+        ssl_verify: Whether to verify SSL certificates for remote operations.
 
     Returns:
         Local path to the downloaded model (file or directory).
@@ -543,10 +541,10 @@ def download_model_path(model_path, cache_dir=None):
             # Parse share name and path: azfiles://share/path/to/model
             path_parts = model_path.split("://", 1)[1]
             parts = path_parts.split("/", 1)
-            
+
             share_name = parts[0]
             prefix = parts[1] if len(parts) > 1 else ""
-            
+
             # Azure Files paths ending with / are directories
             if model_path.endswith("/") or not prefix or "/" in prefix:
                 os.makedirs(local_path, exist_ok=True)
@@ -566,7 +564,7 @@ def download_model_path(model_path, cache_dir=None):
             # 2. azblob://account.blob.core.windows.net/container/prefix/path
             path_parts = model_path.split("://", 1)[1]
             parts = path_parts.split("/")
-            
+
             # Check if first part contains dots (account name format)
             if "." in parts[0]:
                 # Full format: skip account part, use next as container
@@ -586,11 +584,11 @@ def download_model_path(model_path, cache_dir=None):
                 logger.warning(
                     f"Single file download from Azure via SDK not implemented, using fsspec"
                 )
-                fs = _get_fsspec_filesystem(model_path)
+                fs = _get_fsspec_filesystem(model_path, ssl_verify)
                 fs.get(model_path, local_path)
         else:
             # Use fsspec for non-Azure or if Azure SDK unavailable
-            fs = _get_fsspec_filesystem(model_path)
+            fs = _get_fsspec_filesystem(model_path, ssl_verify)
 
             # For Azure blob storage, simply check if path ends with / to determine if directory
             # Avoid pre-checking with ls() or isdir() as these can hang due to network issues
@@ -612,7 +610,7 @@ def download_model_path(model_path, cache_dir=None):
         raise
 
 
-def resolve_remote_paths(*attrs, auto_detect=True, suffixes=None):
+def resolve_remote_paths(*attrs, auto_detect=True, suffixes=None, ssl_verify=True):
     """
     Decorator that automatically resolves remote paths in config to local cached paths.
 
@@ -627,6 +625,7 @@ def resolve_remote_paths(*attrs, auto_detect=True, suffixes=None):
                     Default: True
         suffixes: List of suffixes to detect (e.g., ['_path', '_dir', '_pkl']).
                  If None, uses default: ['_path', '_dir', '_pkl', '_file']
+        ssl_verify: Whether to verify SSL certificates for remote operations.
 
     Usage:
         # Auto-detect all path-like attributes
@@ -682,7 +681,7 @@ def resolve_remote_paths(*attrs, auto_detect=True, suffixes=None):
                 if _is_remote_path(value):
                     logger.info(f"Downloading remote {attr}: {value}")
                     try:
-                        local_path = download_model_path(value)
+                        local_path = download_model_path(value, ssl_verify=ssl_verify)
                         setattr(cfg, attr, local_path)
                         logger.info(f"Resolved {attr} to local path: {local_path}")
                     except Exception as e:

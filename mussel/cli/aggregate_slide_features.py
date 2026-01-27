@@ -1,4 +1,3 @@
-import ssl
 from dataclasses import dataclass
 from typing import List, Optional
 
@@ -11,14 +10,12 @@ from omegaconf import MISSING
 from mussel.models import ModelType
 from mussel.utils import aggregate_slide_features
 
-ssl._create_default_https_context = ssl._create_unverified_context
-
 
 @dataclass
 class AggregateSlideFeaturesConfig:
     """
     Configuration for aggregating patch features to slide-level features.
-    
+
     Args:
         patch_features_h5_path (str): Path to HDF5 file containing patch-level feature embeddings.
         output_h5_path (str): Path to save the aggregated slide-level features in HDF5 format.
@@ -28,6 +25,7 @@ class AggregateSlideFeaturesConfig:
         use_gpu (bool): Whether to use GPU for computation.
         gpu_device_id (Optional[int]): Specific GPU device ID to use.
         gpu_device_ids (Optional[List[int]]): List of GPU device IDs for multi-GPU inference.
+        ssl_verify (bool): Whether to verify SSL certificates when downloading models or accessing remote resources (default: True).
     """
 
     patch_features_h5_path: str = MISSING
@@ -38,6 +36,7 @@ class AggregateSlideFeaturesConfig:
     use_gpu: bool = True
     gpu_device_id: Optional[int] = None
     gpu_device_ids: Optional[List[int]] = None
+    ssl_verify: bool = True  # Whether to verify SSL certificates for remote operations
 
 
 desc_doc = """== ${hydra.help.app_name} ==
