@@ -76,8 +76,9 @@ def get_best_attn_implementation():
         if torch.cuda.is_available() and torch.cuda.get_device_capability()[0] >= 8:
             logger.info("Using flash_attention_2 for HuggingFace models")
             return "flash_attention_2"
-    except (ImportError, AttributeError):
-        pass
+    except (ImportError, AttributeError) as exc:
+        # flash_attn is optional; if unavailable or incompatible we fall back to SDPA/eager
+        logger.debug("flash_attn not available or incompatible; falling back to other attention implementations: %s", exc)
     
     # SDPA is available in PyTorch 2.0+ and will use xformers if available
     if hasattr(torch.nn.functional, 'scaled_dot_product_attention'):
