@@ -116,8 +116,12 @@ def model_download_lock(
         # Release lock
         try:
             fcntl.flock(lock_fd.fileno(), fcntl.LOCK_UN)
-        except Exception:
-            pass
+        except Exception as exc:
+            # Best-effort cleanup: failing to release the lock should not break callers,
+            # but we log it for debugging purposes.
+            logger.debug(
+                "Failed to release file lock for model %s: %s", model_name, exc
+            )
         lock_fd.close()
 
 
