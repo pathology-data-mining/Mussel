@@ -404,15 +404,8 @@ class TorchModel(Model):
         self.obj = self.obj.to(self.device)
         self.obj.eval()
         
-        # Disable torch.compile for now due to compatibility issues
-        # Will re-enable after testing individual models
-        # if hasattr(torch, 'compile') and use_gpu:
-        #     try:
-        #         self.obj = torch.compile(self.obj, mode='max-autotune')
-        #     except Exception as e:
-        #         # Fall back if compilation fails
-        #         import logging
-        #         logging.getLogger(__name__).warning(f"Failed to compile model: {e}")
+        # torch.compile is disabled for now due to compatibility issues.
+        # Consider re-enabling after testing individual models with it.
 
     def get_model_fun(self) -> Callable:
         """Get model inference function with automatic mixed precision.
