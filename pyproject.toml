@@ -13,7 +13,6 @@ dependencies = [
   "tiffslide",
   "opencv-python-headless",
   "hydra-core",
-  "loguru",
   "geopandas",
   "scikit-learn",
   "transformers<4.46",

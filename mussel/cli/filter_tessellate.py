@@ -2,6 +2,7 @@ import os
 import pickle
 import ssl
 import tempfile
+import logging
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, List, Optional
@@ -13,7 +14,6 @@ import torch
 import tiffslide
 from hydra.conf import HelpConf, HydraConf
 from hydra.core.config_store import ConfigStore
-from loguru import logger
 from omegaconf import MISSING, OmegaConf
 from shapely.geometry import Polygon
 

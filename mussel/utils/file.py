@@ -307,7 +307,8 @@ def download_slide(slide_path, local_dir=None, ssl_verify=True):
     Returns:
         Tuple of (local_path, is_temp) where is_temp indicates if cleanup is needed.
     """
-    from loguru import logger
+    import logging
+    logger = logging.getLogger(__name__)
 
     if not _is_remote_path(slide_path):
         # Already local

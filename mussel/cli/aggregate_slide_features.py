@@ -1,14 +1,16 @@
 from dataclasses import dataclass
 from typing import List, Optional
+import logging
 
 import hydra
 from hydra.conf import HelpConf, HydraConf
 from hydra.core.config_store import ConfigStore
-from loguru import logger
 from omegaconf import MISSING
 
 from mussel.models import ModelType
 from mussel.utils import aggregate_slide_features
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -104,18 +106,18 @@ def main(cfg: AggregateSlideFeaturesConfig):
     logger.info(f"Input: {cfg.patch_features_h5_path}")
     logger.info(f"Output: {cfg.output_h5_path}")
     logger.info(f"Aggregation method: {cfg.aggregation_method}")
-    
+
     # Auto-set aggregation_method to "model" if slide_model_type is specified
     aggregation_method = cfg.aggregation_method
     if cfg.slide_model_type is not None and aggregation_method == "identity":
         aggregation_method = "model"
         logger.info(f"Auto-setting aggregation_method to 'model' since slide_model_type={cfg.slide_model_type}")
-    
+
     if cfg.slide_model_type is not None:
         logger.info(f"Slide model type: {cfg.slide_model_type}")
         if cfg.slide_model_path:
             logger.info(f"Slide model path: {cfg.slide_model_path}")
-    
+
     # Perform aggregation
     aggregate_slide_features(
         patch_features_h5_path=cfg.patch_features_h5_path,
@@ -127,7 +129,7 @@ def main(cfg: AggregateSlideFeaturesConfig):
         gpu_device_id=cfg.gpu_device_id,
         gpu_device_ids=cfg.gpu_device_ids,
     )
-    
+
     logger.info(f"Slide features saved to: {cfg.output_h5_path}")
     logger.info("Aggregation complete!")
 

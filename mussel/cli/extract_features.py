@@ -1,5 +1,6 @@
 import os
 import ssl
+import logging
 from dataclasses import dataclass
 from pathlib import Path
 from typing import List, Optional
@@ -9,11 +10,12 @@ import torch
 import hydra
 from hydra.conf import HelpConf, HydraConf
 from hydra.core.config_store import ConfigStore
-from loguru import logger
 from omegaconf import MISSING
 
 from mussel.models import ModelType
 from mussel.utils import save_features, extract_patch_features_batch, aggregate_slide_features_batch, resolve_remote_paths
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
