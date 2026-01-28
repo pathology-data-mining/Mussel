@@ -1,3 +1,4 @@
+import logging
 import os
 import shutil
 import ssl
@@ -6,12 +7,13 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+logger = logging.getLogger(__name__)
+
 import h5py
 import torch
 import hydra
 from hydra.conf import HelpConf, HydraConf
 from hydra.core.config_store import ConfigStore
-from loguru import logger
 from omegaconf import MISSING, OmegaConf
 
 from mussel.cli.tessellate import (
@@ -32,6 +34,7 @@ from mussel.models import ModelType, get_required_patch_encoder, get_default_pat
 from mussel.utils import (
     aggregate_slide_features_batch,
     extract_patch_features_batch,
+    get_model_path_from_dir,
     save_torch_tensor,
     resolve_remote_paths,
 )
@@ -69,95 +72,7 @@ def _safe_path_join(base_path, *parts):
 
 defaults = ["_self_", {"seg_config": "default"}]
 
-
-def get_model_path_from_dir(model_dir: Optional[str], model_type: Optional[ModelType]) -> Optional[str]:
-    """
-    Get model path from model_dir if available.
-
-    Args:
-        model_dir: Directory containing pre-downloaded models (should be local)
-        model_type: ModelType enum (can be None)
-
-    Returns:
-        Path to model if found in model_dir, None otherwise
-    """
-    if model_dir is None or model_type is None:
-        return None
-
-    # Special case for GIGAPATH_SLIDE: return "hf-hub:" format to trigger HF caching
-    # The GigapathSlideEncoderModel only accepts hf-hub: format
-    # Must check this BEFORE checking for directories to avoid returning directory paths
-    if model_type == ModelType.GIGAPATH_SLIDE:
-        # Always use the default HF hub path, which will be cached automatically
-        return ModelType.GIGAPATH_SLIDE.path
-    
-    model_dir_path = Path(model_dir)
-    if not model_dir_path.exists():
-        return None
-    
-    # Special case for CONCH1_5: prefer TITAN_SLIDE directory if available
-    # CONCH can be extracted from TITAN model, avoiding pickle issues
-    if model_type == ModelType.CONCH1_5:
-        titan_dir = model_dir_path / "TITAN_SLIDE"
-        if titan_dir.exists() and titan_dir.is_dir():
-            logger.info(f"✓ Using local model file: {model_type.name} -> {titan_dir}")
-            return str(titan_dir)
-        titan_dir_lower = model_dir_path / "titan_slide"
-        if titan_dir_lower.exists() and titan_dir_lower.is_dir():
-            logger.info(f"✓ Using local model file: {model_type.name} -> {titan_dir_lower}")
-            return str(titan_dir_lower)
-    
-    # Check for model directory named after the model type
-    model_subdir = model_dir_path / model_type.name
-    if model_subdir.exists() and model_subdir.is_dir():
-        # For slide encoders, look for slide_encoder.pth inside the directory
-        # If it doesn't exist but pytorch_model.bin does, return the directory path
-        # The GigapathSlideEncoderModel can handle directories with pytorch_model.bin
-        if model_type in [ModelType.GIGAPATH_SLIDE, ModelType.TITAN_SLIDE]:
-            slide_encoder_pth = model_subdir / "slide_encoder.pth"
-            if slide_encoder_pth.exists():
-                logger.info(f"✓ Using local model file: {model_type.name} -> {slide_encoder_pth}")
-                return str(slide_encoder_pth)
-            # Check if directory has pytorch_model.bin (HuggingFace cache format)
-            pytorch_model_bin = model_subdir / "pytorch_model.bin"
-            if pytorch_model_bin.exists():
-                logger.info(f"✓ Using local model directory: {model_type.name} -> {model_subdir}")
-                return str(model_subdir)
-        logger.info(f"✓ Using local model file: {model_type.name} -> {model_subdir}")
-        return str(model_subdir)
-    
-    # Check for model directory named with lowercase
-    model_subdir_lower = model_dir_path / model_type.name.lower()
-    if model_subdir_lower.exists() and model_subdir_lower.is_dir():
-        # For slide encoders, look for slide_encoder.pth inside the directory
-        # If it doesn't exist but pytorch_model.bin does, return the directory path
-        # The GigapathSlideEncoderModel can handle directories with pytorch_model.bin
-        if model_type in [ModelType.GIGAPATH_SLIDE, ModelType.TITAN_SLIDE]:
-            slide_encoder_pth = model_subdir_lower / "slide_encoder.pth"
-            if slide_encoder_pth.exists():
-                logger.info(f"✓ Using local model file: {model_type.name} -> {slide_encoder_pth}")
-                return str(slide_encoder_pth)
-            # Check if directory has pytorch_model.bin (HuggingFace cache format)
-            pytorch_model_bin = model_subdir_lower / "pytorch_model.bin"
-            if pytorch_model_bin.exists():
-                logger.info(f"✓ Using local model directory: {model_type.name} -> {model_subdir_lower}")
-                return str(model_subdir_lower)
-        logger.info(f"✓ Using local model file: {model_type.name} -> {model_subdir_lower}")
-        return str(model_subdir_lower)
-    
-    # Check for .pth file (pickled models) - uppercase
-    model_file_pth = model_dir_path / f"{model_type.name}.pth"
-    if model_file_pth.exists() and model_file_pth.is_file():
-        logger.info(f"✓ Using local model file: {model_type.name} -> {model_file_pth}")
-        return str(model_file_pth)
-    
-    # Check for .pth file (pickled models) - lowercase
-    model_file_pth_lower = model_dir_path / f"{model_type.name.lower()}.pth"
-    if model_file_pth_lower.exists() and model_file_pth_lower.is_file():
-        logger.info(f"✓ Using local model file: {model_type.name} -> {model_file_pth_lower}")
-        return str(model_file_pth_lower)
-    
-    return None
+# Note: get_model_path_from_dir is imported from mussel.utils
 
 
 def get_classifier_pkl_from_model_dir(model_dir: Optional[str], classifier_pkl: Optional[str]) -> Optional[str]:
@@ -431,8 +346,6 @@ significant performance benefits (6-8x speedup) by:
 
 Workflow modes:
 1. Without filtering (classifier_pkl=None): tessellate → extract features (2 steps)
-2. With filtering, same model: tessellate → extract → filter (3 steps, optimized)
-3. With filtering, different models: tessellate → extract → filter → re-extract (4 steps)
 2. With filtering, same model: tessellate → extract → filter (3 steps, optimized)
 3. With filtering, different models: tessellate → extract → filter → re-extract (4 steps)
 """

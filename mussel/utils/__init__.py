@@ -8,6 +8,7 @@ from .feature_extract import (
     aggregate_slide_features_batch,
     process_dataset,
     get_dataset_processor,
+    get_model_path_from_dir,
     FeatureExtractionResult,
     DatasetProcessor,
     TileCoordProcessor,

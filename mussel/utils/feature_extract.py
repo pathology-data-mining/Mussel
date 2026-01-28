@@ -3,7 +3,7 @@ import logging
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional
+from typing import Any, Callable, List, Optional, Union
 
 import h5py
 import numpy as np
@@ -366,107 +366,119 @@ def process_dataset(
 # =============================================================================
 
 
-def get_model_path_from_dir(model_dir, model_type):
-    """
-    Get model path from model_dir if available.
-    
+def get_model_path_from_dir(
+    model_dir: Optional[str], model_type: Optional[ModelType]
+) -> Optional[str]:
+    """Get model path from model_dir if available.
+
+    Searches for pre-downloaded models in the specified directory. Supports
+    multiple naming conventions and model formats.
+
     Args:
-        model_dir: Directory containing pre-downloaded models
-        model_type: ModelType enum
-        
+        model_dir: Directory containing pre-downloaded models (should be local).
+        model_type: ModelType enum indicating which model to find.
+
     Returns:
-        Path to model if found in model_dir, None otherwise
+        Path to model if found in model_dir, None otherwise.
+
+    Search order:
+        1. Special case for GIGAPATH_SLIDE: returns HF hub path
+        2. Special case for CONCH1_5: prefers TITAN_SLIDE directory
+        3. Directory named after model type (uppercase)
+        4. Directory named after model type (lowercase)
+        5. .pth file named after model type (uppercase)
+        6. .pth file named after model type (lowercase)
     """
     if model_dir is None or model_type is None:
         return None
-    
-    # GIGAPATH_SLIDE only supports hf-hub: format, return the default path
-    # This will trigger HuggingFace caching automatically
+
+    # Special case for GIGAPATH_SLIDE: return "hf-hub:" format to trigger HF caching
+    # The GigapathSlideEncoderModel only accepts hf-hub: format
     # Must check this BEFORE checking for directories to avoid returning directory paths
     if model_type == ModelType.GIGAPATH_SLIDE:
+        # Always use the default HF hub path, which will be cached automatically
         return ModelType.GIGAPATH_SLIDE.path
-    
+
     model_dir_path = Path(model_dir)
     if not model_dir_path.exists():
         return None
-    
+
     # Special case for CONCH1_5: prefer TITAN_SLIDE directory if available
+    # CONCH can be extracted from TITAN model, avoiding pickle issues
     if model_type == ModelType.CONCH1_5:
         titan_dir = model_dir_path / "TITAN_SLIDE"
         if titan_dir.exists() and titan_dir.is_dir():
-            logger.info(f"✓ Using local model file: {model_type.name} -> {titan_dir}")
+            logger.info(f"Using local model file: {model_type.name} -> {titan_dir}")
             return str(titan_dir)
         titan_dir_lower = model_dir_path / "titan_slide"
         if titan_dir_lower.exists() and titan_dir_lower.is_dir():
-            logger.info(f"✓ Using local model file: {model_type.name} -> {titan_dir_lower}")
+            logger.info(f"Using local model file: {model_type.name} -> {titan_dir_lower}")
             return str(titan_dir_lower)
-    
+
     # Check for model directory named after the model type
     model_subdir = model_dir_path / model_type.name
     if model_subdir.exists() and model_subdir.is_dir():
-        # For TITAN_SLIDE, look for slide_encoder.pth or pytorch_model.bin inside the directory
-        if model_type == ModelType.TITAN_SLIDE:
+        # For slide encoders, look for slide_encoder.pth inside the directory
+        # If it doesn't exist but pytorch_model.bin does, return the directory path
+        # The GigapathSlideEncoderModel can handle directories with pytorch_model.bin
+        if model_type in [ModelType.GIGAPATH_SLIDE, ModelType.TITAN_SLIDE]:
             slide_encoder_pth = model_subdir / "slide_encoder.pth"
-            pytorch_model_bin = model_subdir / "pytorch_model.bin"
             if slide_encoder_pth.exists():
-                logger.info(f"✓ Using local model file: {model_type.name} -> {slide_encoder_pth}")
+                logger.info(f"Using local model file: {model_type.name} -> {slide_encoder_pth}")
                 return str(slide_encoder_pth)
-            elif pytorch_model_bin.exists():
-                # Return directory path, model loading code will handle pytorch_model.bin
-                logger.info(f"✓ Using local model directory: {model_type.name} -> {model_subdir}")
+            # Check if directory has pytorch_model.bin (HuggingFace cache format)
+            pytorch_model_bin = model_subdir / "pytorch_model.bin"
+            if pytorch_model_bin.exists():
+                logger.info(f"Using local model directory: {model_type.name} -> {model_subdir}")
                 return str(model_subdir)
-            # For TITAN_SLIDE, we require slide_encoder.pth or pytorch_model.bin to exist
-            # Don't fall through to return the directory for other model types
-        else:
-            logger.info(f"Found {model_type.name} in model_dir: {model_subdir}")
-            return str(model_subdir)
-    
+        logger.info(f"Using local model file: {model_type.name} -> {model_subdir}")
+        return str(model_subdir)
+
     # Check for model directory named with lowercase
     model_subdir_lower = model_dir_path / model_type.name.lower()
     if model_subdir_lower.exists() and model_subdir_lower.is_dir():
-        # For TITAN_SLIDE, look for slide_encoder.pth or pytorch_model.bin inside the directory
-        if model_type == ModelType.TITAN_SLIDE:
+        # For slide encoders, look for slide_encoder.pth inside the directory
+        # If it doesn't exist but pytorch_model.bin does, return the directory path
+        # The GigapathSlideEncoderModel can handle directories with pytorch_model.bin
+        if model_type in [ModelType.GIGAPATH_SLIDE, ModelType.TITAN_SLIDE]:
             slide_encoder_pth = model_subdir_lower / "slide_encoder.pth"
-            pytorch_model_bin = model_subdir_lower / "pytorch_model.bin"
             if slide_encoder_pth.exists():
-                logger.info(f"✓ Using local model file: {model_type.name} -> {slide_encoder_pth}")
+                logger.info(f"Using local model file: {model_type.name} -> {slide_encoder_pth}")
                 return str(slide_encoder_pth)
-            elif pytorch_model_bin.exists():
-                # Return directory path, model loading code will handle pytorch_model.bin
-                logger.info(f"✓ Using local model directory: {model_type.name} -> {model_subdir_lower}")
+            # Check if directory has pytorch_model.bin (HuggingFace cache format)
+            pytorch_model_bin = model_subdir_lower / "pytorch_model.bin"
+            if pytorch_model_bin.exists():
+                logger.info(f"Using local model directory: {model_type.name} -> {model_subdir_lower}")
                 return str(model_subdir_lower)
-            # For TITAN_SLIDE, we require slide_encoder.pth or pytorch_model.bin to exist
-            # Don't fall through to return the directory for other model types
-        else:
-            logger.info(f"Found {model_type.name} in model_dir: {model_subdir_lower}")
-            return str(model_subdir_lower)
-    
+        logger.info(f"Using local model file: {model_type.name} -> {model_subdir_lower}")
+        return str(model_subdir_lower)
+
     # Check for .pth file (pickled models) - uppercase
     model_file_pth = model_dir_path / f"{model_type.name}.pth"
     if model_file_pth.exists() and model_file_pth.is_file():
-        logger.info(f"Found {model_type.name} in model_dir: {model_file_pth}")
+        logger.info(f"Using local model file: {model_type.name} -> {model_file_pth}")
         return str(model_file_pth)
-    
+
     # Check for .pth file (pickled models) - lowercase
     model_file_pth_lower = model_dir_path / f"{model_type.name.lower()}.pth"
     if model_file_pth_lower.exists() and model_file_pth_lower.is_file():
-        logger.info(f"Found {model_type.name} in model_dir: {model_file_pth_lower}")
+        logger.info(f"Using local model file: {model_type.name} -> {model_file_pth_lower}")
         return str(model_file_pth_lower)
 
     return None
 
 
 def _apply_slide_aggregation(
-    features,
-    aggregation_method="identity",
-    slide_model_type=None,
-    slide_model_path=None,
-    use_gpu=True,
-    gpu_device_id=None,
-    gpu_device_ids=None,
-    coords=None,
-    patch_size=None,
-):
+    features: np.ndarray,
+    aggregation_method: str = "identity",
+    slide_model_type: Optional[ModelType] = None,
+    slide_model_path: Optional[str] = None,
+    use_gpu: bool = True,
+    gpu_device_id: Optional[Union[int, List[int]]] = None,
+    gpu_device_ids: Optional[List[int]] = None,
+    coords: Optional[np.ndarray] = None,
+    patch_size: Optional[int] = None,
+) -> np.ndarray:
     """Apply slide-level aggregation to patch features.
 
     Helper function shared by get_features() and aggregate_slide_features().
@@ -594,23 +606,23 @@ def _apply_slide_aggregation(
 
 
 def get_features(
-    coords,
-    slide_path,
-    attrs,
-    model_type=ModelType.CLIP,
-    model_path=None,
-    batch_size=64,
-    use_gpu=True,
-    gpu_device_id=None,
-    gpu_device_ids=None,
-    pin_memory=True,
-    num_workers=16,
-    is_test_run=False,
-    use_slide_encoder=False,
-    slide_model_type=None,
-    slide_model_path=None,
-    aggregation_method="identity",
-):
+    coords: np.ndarray,
+    slide_path: str,
+    attrs: dict,
+    model_type: ModelType = ModelType.CLIP,
+    model_path: Optional[str] = None,
+    batch_size: int = 64,
+    use_gpu: bool = True,
+    gpu_device_id: Optional[Union[int, List[int]]] = None,
+    gpu_device_ids: Optional[List[int]] = None,
+    pin_memory: bool = True,
+    num_workers: int = 16,
+    is_test_run: bool = False,
+    use_slide_encoder: bool = False,
+    slide_model_type: Optional[ModelType] = None,
+    slide_model_path: Optional[str] = None,
+    aggregation_method: str = "identity",
+) -> tuple[np.ndarray, np.ndarray]:
     """Extract features from whole slide image tiles.
 
     Args:
@@ -729,21 +741,21 @@ def get_features(
 
 @timed
 def extract_patch_features(
-    patch_h5_path,
-    slide_path,
-    output_h5_path,
-    model_type=ModelType.CLIP,
-    model_path=None,
-    model_save_path=None,
-    patch_path=None,
-    batch_size=64,
-    use_gpu=True,
-    gpu_device_id=None,
-    gpu_device_ids=None,
-    num_workers=16,
-    pin_memory=True,
-    is_test_run=False,
-):
+    patch_h5_path: str,
+    slide_path: str,
+    output_h5_path: str,
+    model_type: ModelType = ModelType.CLIP,
+    model_path: Optional[str] = None,
+    model_save_path: Optional[str] = None,
+    patch_path: Optional[str] = None,
+    batch_size: int = 64,
+    use_gpu: bool = True,
+    gpu_device_id: Optional[Union[int, List[int]]] = None,
+    gpu_device_ids: Optional[List[int]] = None,
+    num_workers: int = 16,
+    pin_memory: bool = True,
+    is_test_run: bool = False,
+) -> str:
     """Extract patch-level features from whole slide image (Step 1: Patch Encoding).
 
     This function performs patch-level feature extraction, converting image patches
@@ -1274,16 +1286,16 @@ def aggregate_slide_features_batch(
 
 @timed
 def aggregate_slide_features(
-    patch_features_h5_path,
-    output_h5_path=None,
-    output_pt_path=None,
-    aggregation_method="identity",
-    model_type=None,
-    model_path=None,
-    use_gpu=True,
-    gpu_device_id=None,
-    gpu_device_ids=None,
-):
+    patch_features_h5_path: str,
+    output_h5_path: Optional[str] = None,
+    output_pt_path: Optional[str] = None,
+    aggregation_method: str = "identity",
+    model_type: Optional[ModelType] = None,
+    model_path: Optional[str] = None,
+    use_gpu: bool = True,
+    gpu_device_id: Optional[Union[int, List[int]]] = None,
+    gpu_device_ids: Optional[List[int]] = None,
+) -> Union[tuple[Optional[str], Optional[str]], np.ndarray]:
     """Aggregate patch-level features to slide-level (Step 2: Slide Encoding).
 
     This function takes patch-level features and aggregates them into slide-level
@@ -1359,26 +1371,26 @@ def aggregate_slide_features(
 
 @timed
 def save_features(
-    patch_h5_path,
-    slide_path,
-    output_h5_path,
-    output_pt_path=None,
-    model_type=ModelType.CLIP,
-    model_path=None,
-    model_save_path=None,
-    patch_path=None,
-    batch_size=64,
-    use_gpu=True,
-    gpu_device_id=None,
-    gpu_device_ids=None,
-    num_workers=16,
-    pin_memory=True,
-    is_test_run=False,
-    intermediate_h5_path=None,
-    aggregation_method="identity",
-    slide_model_type=None,
-    slide_model_path=None,
-):
+    patch_h5_path: str,
+    slide_path: str,
+    output_h5_path: str,
+    output_pt_path: Optional[str] = None,
+    model_type: ModelType = ModelType.CLIP,
+    model_path: Optional[str] = None,
+    model_save_path: Optional[str] = None,
+    patch_path: Optional[str] = None,
+    batch_size: int = 64,
+    use_gpu: bool = True,
+    gpu_device_id: Optional[Union[int, List[int]]] = None,
+    gpu_device_ids: Optional[List[int]] = None,
+    num_workers: int = 16,
+    pin_memory: bool = True,
+    is_test_run: bool = False,
+    intermediate_h5_path: Optional[str] = None,
+    aggregation_method: str = "identity",
+    slide_model_type: Optional[ModelType] = None,
+    slide_model_path: Optional[str] = None,
+) -> tuple[str, Optional[str]]:
     """Extract features from whole slide image and save to HDF5 and PyTorch formats.
 
     This function can operate in two modes (automatically determined by aggregation_method):
@@ -1561,10 +1573,10 @@ def save_features(
 @timed
 def filter_features(
     features: torch.Tensor,
-    coords,
-    classifier,
+    coords: np.ndarray,
+    classifier: Any,
     threshold: float,
-):
+) -> tuple[torch.Tensor, np.ndarray]:
     """Filter features based on classifier predictions.
 
     Args:
