@@ -1,5 +1,6 @@
 import base64
 import json
+import logging
 import os
 from argparse import ArgumentParser
 from dataclasses import dataclass
@@ -13,8 +14,9 @@ import tiffslide as openslide
 import torch
 from hydra.conf import HelpConf, HydraConf
 from hydra.core.config_store import ConfigStore
-from loguru import logger
 from omegaconf import MISSING
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass

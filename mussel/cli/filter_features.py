@@ -1,3 +1,4 @@
+import logging
 import os
 import pickle
 from dataclasses import dataclass, field
@@ -9,8 +10,9 @@ import numpy as np
 import torch
 from hydra.conf import HelpConf, HydraConf
 from hydra.core.config_store import ConfigStore
-from loguru import logger
 from omegaconf import MISSING, OmegaConf
+
+logger = logging.getLogger(__name__)
 
 from mussel.utils import save_hdf5, filter_features
 
@@ -70,7 +72,7 @@ def main(
             features = torch.load(cfg.features_pt_path, weights_only=True)
         else:
             features = np.array(features_h5["features"])
-            features = torch.Tensor(features)
+            features = torch.from_numpy(features)
         logger.info(
             f"Loaded {features.shape[0]} features of dimension {features.shape[1]}"
         )

@@ -45,10 +45,11 @@ def test_extract_patch_features_batch_basic(tmp_path):
         # Output path
         output_h5_paths.append(str(tmp_path / f"slide{i}_features.h5"))
     
-    # Mock the model and dataset to avoid loading actual slides
+    # Mock the model, dataset, and process_dataset to avoid loading actual slides
     with (
         patch('mussel.utils.feature_extract.get_model_factory') as mock_factory,
         patch('mussel.utils.feature_extract.WholeSlideImageH5Dataset') as mock_dataset_class,
+        patch('mussel.utils.feature_extract.process_dataset') as mock_process,
     ):
         # Mock model
         mock_model = MagicMock()
@@ -58,12 +59,12 @@ def test_extract_patch_features_batch_basic(tmp_path):
         mock_model.get_model_fun.return_value = mock_model_fun
         mock_model.get_preprocessing_fun.return_value = None
         mock_factory.return_value = MagicMock(get_model=MagicMock(return_value=mock_model))
-        
+
         # Mock dataset
         mock_dataset = MagicMock()
         mock_dataset.__len__.return_value = 5
         mock_dataset_class.return_value = mock_dataset
-        
+
         # Call the batch extraction function
         result_paths = extract_patch_features_batch(
             patch_h5_paths=patch_h5_paths,
@@ -75,14 +76,18 @@ def test_extract_patch_features_batch_basic(tmp_path):
             use_gpu=False,
             num_workers=0,
         )
-        
+
         # Verify model was loaded only once
         assert mock_factory.call_count == 1, "Model factory should be called only once"
-        
+
         # Verify dataset was created for each slide
         assert mock_dataset_class.call_count == num_slides, \
             f"Dataset should be created {num_slides} times, got {mock_dataset_class.call_count}"
-        
+
+        # Verify process_dataset was called for each slide
+        assert mock_process.call_count == num_slides, \
+            f"process_dataset should be called {num_slides} times, got {mock_process.call_count}"
+
         # Verify result paths match input
         assert result_paths == output_h5_paths
 
@@ -112,6 +117,7 @@ def test_extract_patch_features_batch_single_slide(tmp_path):
     with (
         patch('mussel.utils.feature_extract.get_model_factory') as mock_factory,
         patch('mussel.utils.feature_extract.WholeSlideImageH5Dataset') as mock_dataset_class,
+        patch('mussel.utils.feature_extract.process_dataset') as mock_process,
     ):
         # Mock model
         mock_model = MagicMock()
@@ -121,12 +127,12 @@ def test_extract_patch_features_batch_single_slide(tmp_path):
         mock_model.get_model_fun.return_value = mock_model_fun
         mock_model.get_preprocessing_fun.return_value = None
         mock_factory.return_value = MagicMock(get_model=MagicMock(return_value=mock_model))
-        
+
         # Mock dataset
         mock_dataset = MagicMock()
         mock_dataset.__len__.return_value = 10
         mock_dataset_class.return_value = mock_dataset
-        
+
         result_paths = extract_patch_features_batch(
             patch_h5_paths=patch_h5_paths,
             slide_paths=slide_paths,
@@ -137,7 +143,7 @@ def test_extract_patch_features_batch_single_slide(tmp_path):
             use_gpu=False,
             num_workers=0,
         )
-        
+
         # Even with one slide, model should be loaded only once
         assert mock_factory.call_count == 1
         assert result_paths == output_h5_paths

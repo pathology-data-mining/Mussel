@@ -1,3 +1,4 @@
+import logging
 from dataclasses import dataclass
 from typing import Optional
 
@@ -10,8 +11,9 @@ import pandas as pd
 import yaml
 from hydra.conf import HelpConf, HydraConf
 from hydra.core.config_store import ConfigStore
-from loguru import logger
 from omegaconf import MISSING, OmegaConf
+
+logger = logging.getLogger(__name__)
 from PIL import Image
 from shapely.geometry import MultiPolygon, Polygon
 

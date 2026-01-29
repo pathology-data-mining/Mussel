@@ -29,6 +29,7 @@ from mussel.models import ModelType, get_default_patch_size
 from mussel.utils import save_features, filter_features, save_hdf5
 from mussel.utils.segment import draw_slide_mask, save_patches_png, segment_tissue
 
+logger = logging.getLogger(__name__)
 
 defaults = ["_self_", {"seg_config": "default"}]
 
@@ -220,7 +221,7 @@ def main(
             features = torch.load(features_pt_path, weights_only=True)
         else:
             features = np.array(features_h5["features"])
-            features = torch.Tensor(features)
+            features = torch.from_numpy(features)
         logger.info(
             f"Loaded {features.shape[0]} features of dimension {features.shape[1]}"
         )

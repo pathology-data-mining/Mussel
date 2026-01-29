@@ -1,7 +1,10 @@
+import logging
+
 import h5py
 import tiffslide as openslide
-from loguru import logger
 from PIL import Image
+
+logger = logging.getLogger(__name__)
 from torch.utils.data import Dataset
 from torchvision import transforms
 

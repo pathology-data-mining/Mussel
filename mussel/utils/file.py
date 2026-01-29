@@ -1,9 +1,12 @@
+import logging
 import pickle
 import os
 from contextlib import ExitStack
 from pathlib import Path
 
 import h5py
+
+logger = logging.getLogger(__name__)
 
 try:
     import fsspec
@@ -307,9 +310,6 @@ def download_slide(slide_path, local_dir=None, ssl_verify=True):
     Returns:
         Tuple of (local_path, is_temp) where is_temp indicates if cleanup is needed.
     """
-    import logging
-    logger = logging.getLogger(__name__)
-
     if not _is_remote_path(slide_path):
         # Already local
         return slide_path, False
@@ -345,8 +345,6 @@ def _download_azure_directory_with_sdk(container_name, prefix, local_path):
         prefix: Blob prefix (directory path)
         local_path: Local destination directory
     """
-    from loguru import logger
-    import logging
     import warnings
 
     if not AZURE_SDK_AVAILABLE:
@@ -418,8 +416,6 @@ def _download_azure_files_directory(share_name, prefix, local_path):
         prefix: Directory prefix within the share
         local_path: Local destination directory
     """
-    from loguru import logger
-    import logging
     import warnings
 
     if not AZURE_FILES_SDK_AVAILABLE:
@@ -503,8 +499,6 @@ def download_model_path(model_path, cache_dir=None, ssl_verify=True):
     Returns:
         Local path to the downloaded model (file or directory).
     """
-    from loguru import logger
-
     if not _is_remote_path(model_path):
         # Already local
         return model_path
@@ -645,7 +639,6 @@ def resolve_remote_paths(*attrs, auto_detect=True, suffixes=None, ssl_verify=Tru
             ...
     """
     from functools import wraps
-    from loguru import logger
 
     # Default suffixes for auto-detection
     if suffixes is None:

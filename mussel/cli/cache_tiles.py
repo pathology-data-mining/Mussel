@@ -5,6 +5,7 @@ Results in .pt file with N_tiles x 3 x img_size x img_size tensor
 
 import argparse
 import json
+import logging
 import time
 from dataclasses import dataclass, field
 from typing import List, Optional
@@ -15,8 +16,9 @@ import tiffslide as openslide
 import torch
 from hydra.conf import HelpConf, HydraConf
 from hydra.core.config_store import ConfigStore
-from loguru import logger
 from omegaconf import MISSING
+
+logger = logging.getLogger(__name__)
 from torch.utils.data import DataLoader
 
 from mussel.datasets.h5 import WholeSlideImageH5Dataset

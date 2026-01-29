@@ -1,6 +1,9 @@
+import logging
+
 import tiffslide as openslide
-from loguru import logger
 from torch.utils.data import Dataset
+
+logger = logging.getLogger(__name__)
 from torchvision import transforms
 
 from .utils import eval_transforms

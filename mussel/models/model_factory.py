@@ -7,7 +7,6 @@ from functools import partial
 from pathlib import Path
 from typing import Callable, List
 
-from loguru import logger
 import open_clip
 import timm
 import torch

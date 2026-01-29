@@ -1,5 +1,6 @@
 """Common functionality for tessellate-extract-features workflows."""
 
+import logging
 import os
 import pickle
 from pathlib import Path
@@ -9,8 +10,9 @@ import h5py
 import numpy as np
 import torch
 import tiffslide
-from loguru import logger
 from omegaconf import OmegaConf
+
+logger = logging.getLogger(__name__)
 from shapely.geometry import Polygon
 
 from mussel.utils import save_features, filter_features, save_hdf5, save_torch_tensor
@@ -156,7 +158,7 @@ def process_slide_tessellation_and_filtering(
                 features = torch.load(prefilter_features_pt_path, weights_only=True)
             else:
                 features = np.array(features_h5["features"])
-                features = torch.Tensor(features)
+                features = torch.from_numpy(features)
             
             filtered_features, filtered_coords = filter_features(
                 features,
@@ -361,7 +363,7 @@ def process_slide_tessellation_only(
                 features = torch.load(prefilter_features_pt_path, weights_only=True)
             else:
                 features = np.array(features_h5["features"])
-                features = torch.Tensor(features)
+                features = torch.from_numpy(features)
             
             filtered_features, filtered_coords = filter_features(
                 features,

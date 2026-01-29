@@ -87,10 +87,10 @@ def get_classifier_pkl_from_model_dir(model_dir: Optional[str], classifier_pkl: 
     Returns:
         Path to classifier pkl if found, None otherwise
     """
-    if classifier_pkl is not None:
+    if classifier_pkl:
         return classifier_pkl
-    
-    if model_dir is None:
+
+    if not model_dir:
         return None
     
     model_dir_path = Path(model_dir)
@@ -795,11 +795,12 @@ def _main_batch(
 
     # Determine if we need two-step processing (patch features + slide aggregation)
     # If a slide model is specified, force two-step processing with model aggregation
-    if cfg.slide_model_type is not None and cfg.aggregation_method == "identity":
+    aggregation_method = cfg.aggregation_method
+    if cfg.slide_model_type is not None and aggregation_method == "identity":
         logger.info(f"Auto-enabling two-step processing with aggregation_method='model' for slide_model_type={cfg.slide_model_type.name}")
-        cfg.aggregation_method = "model"
-    
-    use_two_step = cfg.aggregation_method != "identity"
+        aggregation_method = "model"
+
+    use_two_step = aggregation_method != "identity"
 
     if use_two_step:
         # Extract to intermediate patch feature files for later aggregation
@@ -929,7 +930,7 @@ def _main_batch(
                     features = torch.from_numpy(f["features"][:])
                 save_torch_tensor(pt_dest, features)
                 logger.debug(f"Saved PT to {pt_dest}")
-        elif cfg.aggregation_method == "model" and cfg.slide_model_type is None:
+        elif aggregation_method == "model" and cfg.slide_model_type is None:
             # aggregation_method=model requires a slide_model_type
             logger.error(f"aggregation_method='model' requires slide_model_type to be specified")
             logger.error(f"Current model_type={model_type.name} is a tile encoder, not a slide encoder")
@@ -941,7 +942,7 @@ def _main_batch(
         else:
             # True slide aggregation for models that aggregate patches
             logger.info(
-                f"\n=== Phase 3: Batch aggregating {len(slide_results)} slides (aggregation_method={cfg.aggregation_method}) ==="
+                f"\n=== Phase 3: Batch aggregating {len(slide_results)} slides (aggregation_method={aggregation_method}) ==="
             )
             if cfg.slide_model_type:
                 logger.info(f"Slide model: {cfg.slide_model_type.name}")
@@ -957,7 +958,7 @@ def _main_batch(
                     patch_features_h5_paths=intermediate_h5_paths,
                     output_h5_paths=output_h5_paths,
                     output_pt_paths=output_pt_paths,
-                    aggregation_method=cfg.aggregation_method,
+                    aggregation_method=aggregation_method,
                     model_type=cfg.slide_model_type,
                     model_path=slide_model_path,
                     model_dir=cfg.model_dir,
@@ -975,27 +976,28 @@ def _main_batch(
         if not cfg.save_features_to_h5 and h5_files_to_strip:
             logger.info(f"Converting {len(h5_files_to_strip)} h5 files to coords-only (save_features_to_h5=false)")
             for h5_path in h5_files_to_strip:
-                # Check if file still has features before stripping
                 try:
                     if not os.path.exists(h5_path):
                         logger.debug(f"Skipping non-existent file: {h5_path}")
                         continue
-                    
+
                     with h5py.File(h5_path, "r") as f:
-                        if "features" in f:
-                            coords = f["coords"][:]
-                            has_features = True
-                        else:
-                            has_features = False
-                    
-                    if has_features:
-                        # Delete file and recreate with coords only
-                        os.remove(h5_path)
-                        with h5py.File(h5_path, "w") as f:
-                            f.create_dataset("coords", data=coords, compression="gzip")
-                        logger.debug(f"Stripped features from {h5_path}")
+                        if "features" not in f:
+                            continue
+                        coords = f["coords"][:]
+
+                    # Atomic write: create temp file then rename to avoid data loss on failure
+                    tmp_path = h5_path + ".tmp"
+                    with h5py.File(tmp_path, "w") as f:
+                        f.create_dataset("coords", data=coords, compression="gzip")
+                    os.replace(tmp_path, h5_path)
+                    logger.debug(f"Stripped features from {h5_path}")
                 except Exception as e:
                     logger.warning(f"Could not strip features from {h5_path}: {e}")
+                    # Clean up temp file if it exists
+                    tmp_path = h5_path + ".tmp"
+                    if os.path.exists(tmp_path):
+                        os.remove(tmp_path)
             logger.info("Feature stripping complete")
     else:
         # Single-step: extract directly to final output (no aggregation)
@@ -1182,10 +1184,11 @@ def _main_batch_multi_model(cfg: TessellateExtractFeaturesConfig):
     # Calculate optimization benefit
     total_tessellations_without = len(all_models) * len(cfg.slide_paths)
     total_tessellations_with = len(models_by_patch_size) * len(cfg.slide_paths)
-    savings_pct = (1 - total_tessellations_with / total_tessellations_without) * 100
-    logger.info(
-        f"\nTessellation optimization: {total_tessellations_with}/{total_tessellations_without} ({savings_pct:.0f}% fewer)"
-    )
+    if total_tessellations_without > 0:
+        savings_pct = (1 - total_tessellations_with / total_tessellations_without) * 100
+        logger.info(
+            f"\nTessellation optimization: {total_tessellations_with}/{total_tessellations_without} ({savings_pct:.0f}% fewer)"
+        )
 
     # Create output directory (only for local paths)
     output_dir_str = cfg.output_dir

@@ -1,3 +1,4 @@
+import logging
 import os
 import time
 from dataclasses import dataclass, field
@@ -11,8 +12,9 @@ import tiffslide
 from hydra.conf import HelpConf, HydraConf
 from hydra.core.config_store import ConfigStore
 from hydra.core.hydra_config import HydraConfig
-from loguru import logger
 from omegaconf import MISSING, OmegaConf
+
+logger = logging.getLogger(__name__)
 
 from mussel.utils.segment import draw_slide_mask, save_patches_png, segment_tissue
 

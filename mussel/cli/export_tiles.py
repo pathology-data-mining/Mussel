@@ -4,6 +4,7 @@ CLI tool to export tiles as individual .png files from .patch.h5 file
 """
 
 import functools
+import logging
 import multiprocessing as mp
 import os
 import time
@@ -16,8 +17,9 @@ import numpy as np
 import tiffslide
 from hydra.conf import HelpConf, HydraConf
 from hydra.core.config_store import ConfigStore
-from loguru import logger
 from omegaconf import MISSING
+
+logger = logging.getLogger(__name__)
 from tqdm import tqdm
 
 from mussel.utils import export_tiles
