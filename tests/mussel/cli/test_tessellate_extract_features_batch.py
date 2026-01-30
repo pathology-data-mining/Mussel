@@ -12,10 +12,17 @@ from mussel.cli.tessellate_extract_features import TessellateExtractFeaturesConf
 from mussel.cli.tessellate import SegConfig
 from mussel.models import ModelType
 
+# Import fixtures from common conftest
+import sys
+sys.path.insert(0, str(Path(__file__).parent.parent))
+from conftest import test_data_path, classifier_pkl_path
 
-def test_tessellate_extract_features_batch_basic(tmp_path):
+
+@pytest.mark.slow
+@pytest.mark.integration
+def test_tessellate_extract_features_batch_basic(tmp_path, test_data_path):
     """Test basic batch processing of multiple slides using the unified command."""
-    slide_path = "tests/testdata/948176.svs"
+    slide_path = os.path.join(test_data_path, "948176.svs")
     # Use the same slide twice to test batch processing
     slide_paths = [slide_path, slide_path]
     output_dir = str(tmp_path / "batch_output")
@@ -49,11 +56,13 @@ def test_tessellate_extract_features_batch_basic(tmp_path):
         assert f["features"].shape[0] > 0
 
 
-def test_tessellate_extract_features_batch_with_filtering(tmp_path):
+@pytest.mark.slow
+@pytest.mark.integration
+def test_tessellate_extract_features_batch_with_filtering(tmp_path, test_data_path, classifier_pkl_path):
     """Test batch processing with filtering enabled."""
-    slide_path = "tests/testdata/948176.svs"
+    slide_path = os.path.join(test_data_path, "948176.svs")
     slide_paths = [slide_path, slide_path]
-    classifier_pkl = "tests/testdata/simple_classifier.pkl"
+    classifier_pkl = classifier_pkl_path
     output_dir = str(tmp_path / "batch_output")
     
     seg_config = SegConfig(segment_threshold=0)
@@ -79,9 +88,11 @@ def test_tessellate_extract_features_batch_with_filtering(tmp_path):
     assert os.path.exists(os.path.join(output_dir, "slide2.features.h5"))
 
 
-def test_tessellate_extract_features_batch_with_model_aggregation(tmp_path):
+@pytest.mark.slow
+@pytest.mark.integration
+def test_tessellate_extract_features_batch_with_model_aggregation(tmp_path, test_data_path):
     """Test batch processing with slide-level model aggregation."""
-    slide_path = "tests/testdata/948176.svs"
+    slide_path = os.path.join(test_data_path, "948176.svs")
     slide_paths = [slide_path, slide_path]
     output_dir = str(tmp_path / "batch_output")
     
@@ -171,9 +182,11 @@ def test_batch_processing_performance_benefit():
     pass
 
 
-def test_auto_slide_id_generation(tmp_path):
+@pytest.mark.slow
+@pytest.mark.integration
+def test_auto_slide_id_generation(tmp_path, test_data_path):
     """Test that slide IDs are auto-generated from filenames."""
-    slide_path = "tests/testdata/948176.svs"
+    slide_path = os.path.join(test_data_path, "948176.svs")
     slide_paths = [slide_path]
     output_dir = str(tmp_path / "batch_output")
     
@@ -198,9 +211,11 @@ def test_auto_slide_id_generation(tmp_path):
     assert os.path.exists(os.path.join(output_dir, "948176.features.pt"))
 
 
-def test_tile_level_batching_single_model_load(tmp_path):
+@pytest.mark.slow
+@pytest.mark.integration
+def test_tile_level_batching_single_model_load(tmp_path, test_data_path):
     """Test that tile-level batching loads the patch encoder model only once."""
-    slide_path = "tests/testdata/948176.svs"
+    slide_path = os.path.join(test_data_path, "948176.svs")
     slide_paths = [slide_path, slide_path]
     output_dir = str(tmp_path / "batch_output")
     
@@ -241,9 +256,11 @@ def test_tile_level_batching_single_model_load(tmp_path):
     assert os.path.exists(os.path.join(output_dir, "slide2.features.h5"))
 
 
-def test_tile_level_batching_with_slide_aggregation(tmp_path):
+@pytest.mark.slow
+@pytest.mark.integration
+def test_tile_level_batching_with_slide_aggregation(tmp_path, test_data_path):
     """Test tile-level batching combined with slide-level aggregation batching."""
-    slide_path = "tests/testdata/948176.svs"
+    slide_path = os.path.join(test_data_path, "948176.svs")
     slide_paths = [slide_path, slide_path]
     output_dir = str(tmp_path / "batch_output")
     

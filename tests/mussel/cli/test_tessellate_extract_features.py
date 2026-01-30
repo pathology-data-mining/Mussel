@@ -11,6 +11,12 @@ from mussel.cli.tessellate import SegConfig
 from mussel.models import ModelType
 
 
+# Import fixtures from common conftest
+import sys
+sys.path.insert(0, str(Path(__file__).parent.parent))
+from conftest import test_data_path, classifier_pkl_path
+
+
 def test_default_patch_size_for_model():
     """Test that patch size is automatically set based on model type."""
     # Test with CONCH1_5 which should use 512
@@ -83,10 +89,12 @@ def test_explicit_patch_size_preserved():
     assert cfg.seg_config.patch_size == 384
 
 
-def test_tessellate_extract_features(tmp_path):
+@pytest.mark.slow
+@pytest.mark.integration
+def test_tessellate_extract_features(tmp_path, test_data_path, classifier_pkl_path):
     """Test the integrated tessellate-extract-features workflow with dual extraction."""
-    slide_path = "tests/testdata/948176.svs"
-    classifier_pkl = "tests/testdata/simple_classifier.pkl"
+    slide_path = os.path.join(test_data_path, "948176.svs")
+    classifier_pkl = classifier_pkl_path
     output_h5_path = os.path.join(tmp_path, "filtered_features.h5")
     output_pt_path = os.path.join(tmp_path, "filtered_features.pt")
 
@@ -122,10 +130,12 @@ def test_tessellate_extract_features(tmp_path):
     assert data.shape[0] > 0
 
 
-def test_tessellate_extract_features_with_different_models(tmp_path):
+@pytest.mark.slow
+@pytest.mark.integration
+def test_tessellate_extract_features_with_different_models(tmp_path, test_data_path, classifier_pkl_path):
     """Test with different models for pre-filter and post-filter extraction."""
-    slide_path = "tests/testdata/948176.svs"
-    classifier_pkl = "tests/testdata/simple_classifier.pkl"
+    slide_path = os.path.join(test_data_path, "948176.svs")
+    classifier_pkl = classifier_pkl_path
     output_h5_path = os.path.join(tmp_path, "features.h5")
     output_pt_path = os.path.join(tmp_path, "features.pt")
 
@@ -151,10 +161,10 @@ def test_tessellate_extract_features_with_different_models(tmp_path):
     assert os.path.exists(output_pt_path)
 
 
-def test_tessellate_extract_features_with_intermediate_files(tmp_path):
+def test_tessellate_extract_features_with_intermediate_files(tmp_path, test_data_path, classifier_pkl_path):
     """Test the integrated workflow while keeping intermediate files."""
-    slide_path = "tests/testdata/948176.svs"
-    classifier_pkl = "tests/testdata/simple_classifier.pkl"
+    slide_path = os.path.join(test_data_path, "948176.svs")
+    classifier_pkl = classifier_pkl_path
     output_h5_path = os.path.join(tmp_path, "features.h5")
     output_pt_path = os.path.join(tmp_path, "features.pt")
 
@@ -189,10 +199,12 @@ def test_tessellate_extract_features_with_intermediate_files(tmp_path):
     assert os.path.exists(filtered_coords_h5_path)
 
 
-def test_tessellate_extract_features_with_visualizations(tmp_path):
+@pytest.mark.slow
+@pytest.mark.integration
+def test_tessellate_extract_features_with_visualizations(tmp_path, test_data_path, classifier_pkl_path):
     """Test the workflow with optional visualization outputs."""
-    slide_path = "tests/testdata/948176.svs"
-    classifier_pkl = "tests/testdata/simple_classifier.pkl"
+    slide_path = os.path.join(test_data_path, "948176.svs")
+    classifier_pkl = classifier_pkl_path
     output_h5_path = os.path.join(tmp_path, "features.h5")
     output_pt_path = os.path.join(tmp_path, "features.pt")
     output_mask_path = os.path.join(tmp_path, "mask.png")
@@ -226,9 +238,11 @@ def test_tessellate_extract_features_with_visualizations(tmp_path):
     assert os.path.exists(output_thumbnail_path)
 
 
-def test_tessellate_extract_features_without_filtering(tmp_path):
+@pytest.mark.slow
+@pytest.mark.integration
+def test_tessellate_extract_features_without_filtering(tmp_path, test_data_path):
     """Test the workflow without filtering (classifier_pkl=None)."""
-    slide_path = "tests/testdata/948176.svs"
+    slide_path = os.path.join(test_data_path, "948176.svs")
     output_h5_path = os.path.join(tmp_path, "features.h5")
     output_pt_path = os.path.join(tmp_path, "features.pt")
 
@@ -262,10 +276,12 @@ def test_tessellate_extract_features_without_filtering(tmp_path):
     assert data.shape[0] > 0
 
 
-def test_tessellate_extract_features_with_slide_encoder_inference(tmp_path):
+@pytest.mark.slow
+@pytest.mark.integration
+def test_tessellate_extract_features_with_slide_encoder_inference(tmp_path, test_data_path):
     """Test that model_type is inferred from slide_model_type when using model aggregation."""
-    
-    slide_path = "tests/testdata/948176.svs"
+
+    slide_path = os.path.join(test_data_path, "948176.svs")
     output_h5_path = os.path.join(tmp_path, "features.h5")
     output_pt_path = os.path.join(tmp_path, "features.pt")
     

@@ -11,10 +11,16 @@ import ssl
 
 ssl._create_default_https_context = ssl._create_unverified_context
 
+# Import fixtures from common conftest
+import sys
+sys.path.insert(0, str(Path(__file__).parent.parent))
+from conftest import test_data_path
 
-def test_extract_features(tmp_path):
-    slide_path = "tests/testdata/948176.svs"
-    patch_h5_path = "tests/testdata/948176.patch.h5"
+
+@pytest.mark.slow
+@pytest.mark.integration
+def test_extract_features(tmp_path, test_data_path, patch_h5_path):
+    slide_path = os.path.join(test_data_path, "948176.svs")
     output_h5_path = tmp_path / "test.h5"
     output_pt_path = tmp_path / "test.pt"
     cfg = ExtractFeaturesConfig(
@@ -31,10 +37,11 @@ def test_extract_features(tmp_path):
     assert os.path.exists(output_pt_path)
 
 
-def test_extract_features_two_step(tmp_path):
+@pytest.mark.slow
+@pytest.mark.integration
+def test_extract_features_two_step(tmp_path, test_data_path, patch_h5_path):
     """Test two-step feature extraction with identity aggregation."""
-    slide_path = "tests/testdata/948176.svs"
-    patch_h5_path = "tests/testdata/948176.patch.h5"
+    slide_path = os.path.join(test_data_path, "948176.svs")
     output_h5_path = tmp_path / "test.h5"
     output_pt_path = tmp_path / "test.pt"
     intermediate_h5_path = tmp_path / "test.patch.h5"
@@ -58,10 +65,11 @@ def test_extract_features_two_step(tmp_path):
     assert os.path.exists(output_pt_path)
 
 
-def test_extract_patch_features_direct(tmp_path):
+@pytest.mark.slow
+@pytest.mark.integration
+def test_extract_patch_features_direct(tmp_path, test_data_path, patch_h5_path):
     """Test direct call to extract_patch_features function."""
-    slide_path = "tests/testdata/948176.svs"
-    patch_h5_path = "tests/testdata/948176.patch.h5"
+    slide_path = os.path.join(test_data_path, "948176.svs")
     output_h5_path = tmp_path / "patch_features.h5"
     
     result = extract_patch_features(
@@ -77,10 +85,11 @@ def test_extract_patch_features_direct(tmp_path):
     assert result == str(output_h5_path)
 
 
-def test_aggregate_slide_features_identity(tmp_path):
+@pytest.mark.slow
+@pytest.mark.integration
+def test_aggregate_slide_features_identity(tmp_path, test_data_path, patch_h5_path):
     """Test aggregate_slide_features with identity aggregation."""
-    slide_path = "tests/testdata/948176.svs"
-    patch_h5_path = "tests/testdata/948176.patch.h5"
+    slide_path = os.path.join(test_data_path, "948176.svs")
     patch_features_h5_path = tmp_path / "patch_features.h5"
     output_h5_path = tmp_path / "slide_features.h5"
     output_pt_path = tmp_path / "slide_features.pt"
@@ -109,10 +118,11 @@ def test_aggregate_slide_features_identity(tmp_path):
     assert pt_result == str(output_pt_path)
 
 
-def test_aggregate_slide_features_mean(tmp_path):
+@pytest.mark.slow
+@pytest.mark.integration
+def test_aggregate_slide_features_mean(tmp_path, test_data_path, patch_h5_path):
     """Test aggregate_slide_features with mean pooling."""
-    slide_path = "tests/testdata/948176.svs"
-    patch_h5_path = "tests/testdata/948176.patch.h5"
+    slide_path = os.path.join(test_data_path, "948176.svs")
     patch_features_h5_path = tmp_path / "patch_features.h5"
     output_h5_path = tmp_path / "slide_features_mean.h5"
     output_pt_path = tmp_path / "slide_features_mean.pt"

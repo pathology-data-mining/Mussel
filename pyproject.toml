@@ -135,6 +135,13 @@ include = ["mussel*"]
 requires = ["setuptools"]
 build-backend = "setuptools.build_meta"
 
+[tool.pytest.ini_options]
+addopts = "-v --tb=short"
+markers = [
+    "slow: marks tests as slow and require significant time to run (deselect with '-m \"not slow\"')",
+    "integration: marks integration tests that perform actual model inference",
+]
+
 [project.scripts]
 annotate = 'mussel.cli.annotate:main'
 cache_tiles = 'mussel.cli.cache_tiles:main'

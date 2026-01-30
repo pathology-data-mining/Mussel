@@ -4,6 +4,11 @@ from mussel.cli.filter_tessellate import FilterTessellateConfig
 from mussel.cli.tessellate import SegConfig
 from mussel.models import ModelType
 
+# Import fixtures from common conftest
+import sys
+sys.path.insert(0, str(Path(__file__).parent.parent))
+from conftest import test_data_path, classifier_pkl_path
+
 
 def test_filter_tessellate_default_patch_size_for_model():
     """Test that patch size is automatically set based on model type in filter_tessellate."""
@@ -70,10 +75,12 @@ def test_filter_tessellate_explicit_patch_size_preserved():
     assert cfg.seg_config.patch_size == 384
 
 
-def test_filter_tessellate_config_construction(tmp_path):
+@pytest.mark.slow
+@pytest.mark.integration
+def test_filter_tessellate_config_construction(tmp_path, test_data_path, classifier_pkl_path):
     """Test that FilterTessellateConfig can be constructed with valid parameters."""
-    slide_path = "tests/testdata/948176.svs"
-    classifier_pkl = "tests/testdata/simple_classifier.pkl"
+    slide_path = os.path.join(test_data_path, "948176.svs")
+    classifier_pkl = classifier_pkl_path
     output_h5_path = os.path.join(tmp_path, "filtered.h5")
     output_pt_path = os.path.join(tmp_path, "filtered.pt")
 
@@ -99,10 +106,12 @@ def test_filter_tessellate_config_construction(tmp_path):
     assert cfg.model_type == ModelType.RESNET50
 
 
-def test_filter_tessellate_config_with_intermediate_files(tmp_path):
+@pytest.mark.slow
+@pytest.mark.integration
+def test_filter_tessellate_config_with_intermediate_files(tmp_path, test_data_path, classifier_pkl_path):
     """Test config construction with keep_intermediate_files=True."""
-    slide_path = "tests/testdata/948176.svs"
-    classifier_pkl = "tests/testdata/simple_classifier.pkl"
+    slide_path = os.path.join(test_data_path, "948176.svs")
+    classifier_pkl = classifier_pkl_path
     output_h5_path = os.path.join(tmp_path, "filtered.h5")
     output_pt_path = os.path.join(tmp_path, "filtered.pt")
 
