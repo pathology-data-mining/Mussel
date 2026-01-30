@@ -11,11 +11,6 @@ import ssl
 
 ssl._create_default_https_context = ssl._create_unverified_context
 
-# Import fixtures from common conftest
-import sys
-sys.path.insert(0, str(Path(__file__).parent.parent))
-from conftest import test_data_path
-
 
 @pytest.mark.slow
 @pytest.mark.integration
@@ -82,7 +77,7 @@ def test_extract_patch_features_direct(tmp_path, test_data_path, patch_h5_path):
     )
     
     assert os.path.exists(result)
-    assert result == str(output_h5_path)
+    assert str(result) == str(output_h5_path)
 
 
 @pytest.mark.slow
@@ -114,8 +109,8 @@ def test_aggregate_slide_features_identity(tmp_path, test_data_path, patch_h5_pa
     
     assert os.path.exists(output_h5_path)
     assert os.path.exists(output_pt_path)
-    assert h5_result == str(output_h5_path)
-    assert pt_result == str(output_pt_path)
+    assert str(h5_result) == str(output_h5_path)
+    assert str(pt_result) == str(output_pt_path)
 
 
 @pytest.mark.slow
@@ -147,8 +142,8 @@ def test_aggregate_slide_features_mean(tmp_path, test_data_path, patch_h5_path):
     
     assert os.path.exists(output_h5_path)
     assert os.path.exists(output_pt_path)
-    assert h5_result == str(output_h5_path)
-    assert pt_result == str(output_pt_path)
+    assert str(h5_result) == str(output_h5_path)
+    assert str(pt_result) == str(output_pt_path)
 
 
 def test_slide_encoder_compatibility_validation():

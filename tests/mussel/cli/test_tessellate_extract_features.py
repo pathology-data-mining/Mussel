@@ -1,6 +1,7 @@
 import os
 from pathlib import Path
 from unittest.mock import patch, MagicMock
+import pytest
 
 from omegaconf import OmegaConf
 import h5py
@@ -9,12 +10,6 @@ import torch
 from mussel.cli.tessellate_extract_features import TessellateExtractFeaturesConfig, main
 from mussel.cli.tessellate import SegConfig
 from mussel.models import ModelType
-
-
-# Import fixtures from common conftest
-import sys
-sys.path.insert(0, str(Path(__file__).parent.parent))
-from conftest import test_data_path, classifier_pkl_path
 
 
 def test_default_patch_size_for_model():
@@ -305,8 +300,8 @@ def test_tessellate_extract_features_with_slide_encoder_inference(tmp_path, test
     
     # Mock save_features to capture the model_type parameter
     with (
-        patch('mussel.cli.tessellate_extract_features.save_features') as mock_save_features,
-        patch('mussel.cli.tessellate_extract_features.segment_tissue') as mock_segment
+        patch('mussel.cli.tessellate_extract_features_common.save_features') as mock_save_features,
+        patch('mussel.cli.tessellate_extract_features_common.segment_tissue') as mock_segment
     ):
         
         # Mock segment_tissue to return fake data
