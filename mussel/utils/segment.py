@@ -546,7 +546,7 @@ def draw_slide_mask(
     fill=(255, 0, 0, 80),
     max_size=None,
     custom_downsample=None,
-    outline_width=3,
+    outline_width=10,
 ):
     """
     Draw slide mask with polygon contours or list of grid polygons.
@@ -559,7 +559,7 @@ def draw_slide_mask(
         fill: Fill color as RGBA tuple (default: (255, 0, 0, 80))
         max_size: Maximum image size (default: None)
         custom_downsample: Custom downsampling factor (default: None)
-        outline_width: Width of the outline in pixels (default: 3)
+        outline_width: Width of the outline in pixels (default: 10)
 
     Returns:
         PIL Image with drawn mask
