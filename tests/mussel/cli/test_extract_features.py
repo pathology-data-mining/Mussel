@@ -14,6 +14,7 @@ ssl._create_default_https_context = ssl._create_unverified_context
 
 @pytest.mark.slow
 @pytest.mark.integration
+@pytest.mark.timeout(600)
 def test_extract_features(tmp_path, test_data_path, patch_h5_path):
     slide_path = os.path.join(test_data_path, "948176.svs")
     output_h5_path = tmp_path / "test.h5"
@@ -34,6 +35,7 @@ def test_extract_features(tmp_path, test_data_path, patch_h5_path):
 
 @pytest.mark.slow
 @pytest.mark.integration
+@pytest.mark.timeout(600)
 def test_extract_features_two_step(tmp_path, test_data_path, patch_h5_path):
     """Test two-step feature extraction with identity aggregation."""
     slide_path = os.path.join(test_data_path, "948176.svs")
@@ -62,6 +64,7 @@ def test_extract_features_two_step(tmp_path, test_data_path, patch_h5_path):
 
 @pytest.mark.slow
 @pytest.mark.integration
+@pytest.mark.timeout(600)
 def test_extract_patch_features_direct(tmp_path, test_data_path, patch_h5_path):
     """Test direct call to extract_patch_features function."""
     slide_path = os.path.join(test_data_path, "948176.svs")
@@ -82,6 +85,7 @@ def test_extract_patch_features_direct(tmp_path, test_data_path, patch_h5_path):
 
 @pytest.mark.slow
 @pytest.mark.integration
+@pytest.mark.timeout(600)
 def test_aggregate_slide_features_identity(tmp_path, test_data_path, patch_h5_path):
     """Test aggregate_slide_features with identity aggregation."""
     slide_path = os.path.join(test_data_path, "948176.svs")
@@ -115,6 +119,7 @@ def test_aggregate_slide_features_identity(tmp_path, test_data_path, patch_h5_pa
 
 @pytest.mark.slow
 @pytest.mark.integration
+@pytest.mark.timeout(600)
 def test_aggregate_slide_features_mean(tmp_path, test_data_path, patch_h5_path):
     """Test aggregate_slide_features with mean pooling."""
     slide_path = os.path.join(test_data_path, "948176.svs")

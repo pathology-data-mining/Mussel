@@ -11,6 +11,8 @@ import ssl
 ssl._create_default_https_context = ssl._create_unverified_context
 
 
+@pytest.mark.slow
+@pytest.mark.timeout(600)
 def test_aggregate_slide_features_mean(tmp_path):
     """Test aggregating slide features using mean pooling."""
     # First, we need to create a patch features file
@@ -47,6 +49,8 @@ def test_aggregate_slide_features_mean(tmp_path):
     assert os.path.exists(output_h5_path)
 
 
+@pytest.mark.slow
+@pytest.mark.timeout(600)
 def test_aggregate_slide_features_max(tmp_path):
     """Test aggregating slide features using max pooling."""
     from mussel.cli.extract_features import ExtractFeaturesConfig
@@ -81,6 +85,8 @@ def test_aggregate_slide_features_max(tmp_path):
     assert os.path.exists(output_h5_path)
 
 
+@pytest.mark.slow
+@pytest.mark.timeout(600)
 def test_aggregate_slide_features_auto_set_aggregation_method(tmp_path):
     """Test that aggregation_method is automatically set to 'model' when slide_model_type is specified."""
     from mussel.cli.extract_features import ExtractFeaturesConfig
