@@ -1,4 +1,5 @@
 import h5py
+import pytest
 import mussel.utils
 from mussel.models import ModelType
 
@@ -7,6 +8,8 @@ import ssl
 ssl._create_default_https_context = ssl._create_unverified_context
 
 
+@pytest.mark.slow
+@pytest.mark.timeout(600)
 def test_get_features():
     slide_path = "tests/testdata/948176.svs"
     patch_h5_path = "tests/testdata/948176.patch.h5"
@@ -47,6 +50,8 @@ def test_segment_tissue():
     assert "hole_area_threshold" in attrs
 
 
+@pytest.mark.slow
+@pytest.mark.timeout(600)
 def test_get_features_with_slide_encoder():
     """Test get_features with slide-level encoding."""
     slide_path = "tests/testdata/948176.svs"
@@ -73,6 +78,8 @@ def test_get_features_with_slide_encoder():
     assert labels.shape[0] == len(coords)
 
 
+@pytest.mark.slow
+@pytest.mark.timeout(600)
 def test_get_features_auto_infer_patch_encoder():
     """Test that patch encoder is automatically inferred from slide encoder."""
     slide_path = "tests/testdata/948176.svs"

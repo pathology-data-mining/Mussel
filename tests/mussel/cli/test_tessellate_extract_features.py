@@ -86,6 +86,7 @@ def test_explicit_patch_size_preserved():
 
 @pytest.mark.slow
 @pytest.mark.integration
+@pytest.mark.timeout(600)
 def test_tessellate_extract_features(tmp_path, test_data_path, classifier_pkl_path):
     """Test the integrated tessellate-extract-features workflow with dual extraction."""
     slide_path = os.path.join(test_data_path, "948176.svs")
@@ -127,6 +128,7 @@ def test_tessellate_extract_features(tmp_path, test_data_path, classifier_pkl_pa
 
 @pytest.mark.slow
 @pytest.mark.integration
+@pytest.mark.timeout(600)
 def test_tessellate_extract_features_with_different_models(tmp_path, test_data_path, classifier_pkl_path):
     """Test with different models for pre-filter and post-filter extraction."""
     slide_path = os.path.join(test_data_path, "948176.svs")
@@ -156,6 +158,9 @@ def test_tessellate_extract_features_with_different_models(tmp_path, test_data_p
     assert os.path.exists(output_pt_path)
 
 
+@pytest.mark.slow
+@pytest.mark.integration
+@pytest.mark.timeout(600)
 def test_tessellate_extract_features_with_intermediate_files(tmp_path, test_data_path, classifier_pkl_path):
     """Test the integrated workflow while keeping intermediate files."""
     slide_path = os.path.join(test_data_path, "948176.svs")
@@ -196,6 +201,7 @@ def test_tessellate_extract_features_with_intermediate_files(tmp_path, test_data
 
 @pytest.mark.slow
 @pytest.mark.integration
+@pytest.mark.timeout(600)
 def test_tessellate_extract_features_with_visualizations(tmp_path, test_data_path, classifier_pkl_path):
     """Test the workflow with optional visualization outputs."""
     slide_path = os.path.join(test_data_path, "948176.svs")
@@ -235,6 +241,7 @@ def test_tessellate_extract_features_with_visualizations(tmp_path, test_data_pat
 
 @pytest.mark.slow
 @pytest.mark.integration
+@pytest.mark.timeout(600)
 def test_tessellate_extract_features_without_filtering(tmp_path, test_data_path):
     """Test the workflow without filtering (classifier_pkl=None)."""
     slide_path = os.path.join(test_data_path, "948176.svs")
@@ -273,6 +280,7 @@ def test_tessellate_extract_features_without_filtering(tmp_path, test_data_path)
 
 @pytest.mark.slow
 @pytest.mark.integration
+@pytest.mark.timeout(600)
 def test_tessellate_extract_features_with_slide_encoder_inference(tmp_path, test_data_path):
     """Test that model_type is inferred from slide_model_type when using model aggregation."""
 
