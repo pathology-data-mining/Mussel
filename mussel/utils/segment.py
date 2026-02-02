@@ -546,9 +546,23 @@ def draw_slide_mask(
     fill=(255, 0, 0, 80),
     max_size=None,
     custom_downsample=None,
+    outline_width=3,
 ):
     """
-    Draw slide mask with polygon contours or list of grid polygons
+    Draw slide mask with polygon contours or list of grid polygons.
+
+    Args:
+        slide_path: Path to the whole slide image
+        polygons: Shapely geometry or list of geometries to draw
+        vis_level: Visualization level (default: 0)
+        outline: Outline color (default: "black")
+        fill: Fill color as RGBA tuple (default: (255, 0, 0, 80))
+        max_size: Maximum image size (default: None)
+        custom_downsample: Custom downsampling factor (default: None)
+        outline_width: Width of the outline in pixels (default: 3)
+
+    Returns:
+        PIL Image with drawn mask
     """
     wsi = tiffslide.open_slide(slide_path)
 
@@ -572,13 +586,30 @@ def draw_slide_mask(
 
     draw = ImageDraw.Draw(img, "RGBA")
 
+    # Draw filled polygons first
     for polygon in polygons:
         scaled_polygon = scale_geometry(polygon, scale[0])
         if isinstance(polygon, MultiPolygon):
             for geom in scaled_polygon.geoms:
-                draw.polygon(geom.exterior.coords, outline=outline, fill=fill)
+                draw.polygon(geom.exterior.coords, outline=None, fill=fill)
         else:
-            draw.polygon(scaled_polygon.exterior.coords, outline=outline, fill=fill)
+            draw.polygon(scaled_polygon.exterior.coords, outline=None, fill=fill)
+
+    # Then draw outlines with specified width for better visibility
+    for polygon in polygons:
+        scaled_polygon = scale_geometry(polygon, scale[0])
+        if isinstance(polygon, MultiPolygon):
+            for geom in scaled_polygon.geoms:
+                draw.polygon(
+                    geom.exterior.coords, outline=outline, fill=None, width=outline_width
+                )
+        else:
+            draw.polygon(
+                scaled_polygon.exterior.coords,
+                outline=outline,
+                fill=None,
+                width=outline_width,
+            )
 
     image_width, image_height = img.size
     if custom_downsample and custom_downsample > 1:
