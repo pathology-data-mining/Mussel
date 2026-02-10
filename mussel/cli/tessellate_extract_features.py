@@ -35,97 +35,14 @@ from mussel.utils import (
     aggregate_slide_features_batch,
     extract_patch_features_batch,
     get_model_path_from_dir,
+    get_classifier_pkl_from_model_dir,
+    get_batch_size_for_model,
     save_torch_tensor,
     resolve_remote_paths,
 )
 
 
-def _is_remote_path(path):
-    """Check if a path is a remote URL scheme."""
-    if not isinstance(path, str):
-        return False
-    return path.startswith(
-        ("az://", "abfs://", "s3://", "gs://", "http://", "https://")
-    )
-
-
-def _safe_path_join(base_path, *parts):
-    """Safely join path components, preserving URL schemes for remote paths.
-
-    Args:
-        base_path: Base path (can be local or remote URL)
-        *parts: Path components to join
-
-    Returns:
-        Joined path as string
-    """
-    if _is_remote_path(str(base_path)):
-        # For remote paths, use string concatenation with /
-        result = str(base_path).rstrip("/")
-        for part in parts:
-            result = f"{result}/{str(part).lstrip('/')}"
-        return result
-    else:
-        # For local paths, use Path
-        return str(Path(base_path) / Path(*parts))
-
-
 defaults = ["_self_", {"seg_config": "default"}]
-
-# Note: get_model_path_from_dir is imported from mussel.utils
-
-
-def get_classifier_pkl_from_model_dir(model_dir: Optional[str], classifier_pkl: Optional[str]) -> Optional[str]:
-    """
-    Get classifier pkl path. If classifier_pkl is None and model_dir is provided,
-    look for classifier.pkl in model_dir.
-
-    Args:
-        model_dir: Directory containing pre-downloaded models
-        classifier_pkl: Direct path to classifier pkl file
-
-    Returns:
-        Path to classifier pkl if found, None otherwise
-    """
-    if classifier_pkl:
-        return classifier_pkl
-
-    if not model_dir:
-        return None
-    
-    model_dir_path = Path(model_dir)
-    if not model_dir_path.exists():
-        return None
-    
-    # Check for classifier.pkl in model_dir
-    classifier_file = model_dir_path / "classifier.pkl"
-    if classifier_file.exists() and classifier_file.is_file():
-        logger.info(f"✓ Using local classifier file: {classifier_file}")
-        return str(classifier_file)
-    
-    return None
-
-
-
-def get_batch_size_for_model(cfg, model_type) -> int:
-    """
-    Get the appropriate batch size for a given model type.
-
-    Args:
-        cfg: Configuration object
-        model_type: ModelType enum or string name
-
-    Returns:
-        Batch size to use for this model (from model_batch_sizes if defined, else default batch_size)
-    """
-    # Get model name
-    if hasattr(model_type, "name"):
-        model_name = model_type.name
-    else:
-        model_name = str(model_type)
-
-    # Return per-model batch size if defined, else default
-    return cfg.model_batch_sizes.get(model_name, cfg.batch_size)
 
 
 @dataclass

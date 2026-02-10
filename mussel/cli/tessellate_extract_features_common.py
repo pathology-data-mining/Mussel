@@ -15,36 +15,15 @@ from omegaconf import OmegaConf
 logger = logging.getLogger(__name__)
 from shapely.geometry import Polygon
 
-from mussel.utils import save_features, filter_features, save_hdf5, save_torch_tensor
+from mussel.utils import (
+    save_features,
+    filter_features,
+    save_hdf5,
+    save_torch_tensor,
+    is_remote_path,
+    safe_path_join,
+)
 from mussel.utils.segment import draw_slide_mask, save_patches_png, segment_tissue
-
-
-def _is_remote_path(path):
-    """Check if a path is a remote URL scheme."""
-    if not isinstance(path, str):
-        return False
-    return path.startswith(('az://', 'abfs://', 's3://', 'gs://', 'http://', 'https://'))
-
-
-def _safe_path_join(base_path, *parts):
-    """Safely join path components, preserving URL schemes for remote paths.
-    
-    Args:
-        base_path: Base path (can be local or remote URL)
-        *parts: Path components to join
-        
-    Returns:
-        Joined path as string
-    """
-    if _is_remote_path(str(base_path)):
-        # For remote paths, use string concatenation with /
-        result = str(base_path).rstrip('/')
-        for part in parts:
-            result = f"{result}/{str(part).lstrip('/')}"
-        return result
-    else:
-        # For local paths, use Path
-        return str(Path(base_path) / Path(*parts))
 
 
 def process_slide_tessellation_and_filtering(
@@ -94,7 +73,7 @@ def process_slide_tessellation_and_filtering(
     # Step 1: Tessellate
     logger.info(f"Tessellating slide: {slide_path}")
     if cfg.keep_intermediate_files:
-        tessellate_h5_path = _safe_path_join(base_path, f"{Path(slide_path).stem}.tessellate.h5")
+        tessellate_h5_path = safe_path_join(base_path, f"{Path(slide_path).stem}.tessellate.h5")
     else:
         tessellate_h5_path = os.path.join(temp_dir, f"{Path(slide_path).stem}.tessellate.h5")
     
@@ -128,8 +107,8 @@ def process_slide_tessellation_and_filtering(
         # Extract features for filtering
         logger.info(f"Extracting features for filtering: {slide_path}")
         if cfg.keep_intermediate_files:
-            prefilter_features_h5_path = _safe_path_join(base_path, f"{Path(slide_path).stem}.prefilter_features.h5")
-            prefilter_features_pt_path = _safe_path_join(base_path, f"{Path(slide_path).stem}.prefilter_features.pt")
+            prefilter_features_h5_path = safe_path_join(base_path, f"{Path(slide_path).stem}.prefilter_features.h5")
+            prefilter_features_pt_path = safe_path_join(base_path, f"{Path(slide_path).stem}.prefilter_features.pt")
         else:
             prefilter_features_h5_path = os.path.join(temp_dir, f"{Path(slide_path).stem}.prefilter_features.h5")
             prefilter_features_pt_path = os.path.join(temp_dir, f"{Path(slide_path).stem}.prefilter_features.pt")
@@ -187,7 +166,7 @@ def process_slide_tessellation_and_filtering(
             else:
                 # Save filtered coordinates for second extraction
                 if cfg.keep_intermediate_files:
-                    filtered_coords_h5_path = _safe_path_join(base_path, f"{Path(slide_path).stem}.filtered_coords.h5")
+                    filtered_coords_h5_path = safe_path_join(base_path, f"{Path(slide_path).stem}.filtered_coords.h5")
                 else:
                     filtered_coords_h5_path = os.path.join(temp_dir, f"{Path(slide_path).stem}.filtered_coords.h5")
                 
@@ -206,7 +185,7 @@ def process_slide_tessellation_and_filtering(
     if two_step_mode and cfg.aggregation_method != "identity":
         # Extract patch features for batch aggregation later
         logger.info(f"Extracting patch features: {slide_path}")
-        intermediate_h5_path = _safe_path_join(base_path, f"{Path(slide_path).stem}.patch.h5")
+        intermediate_h5_path = safe_path_join(base_path, f"{Path(slide_path).stem}.patch.h5")
         
         save_features(
             slide_path=slide_path,
@@ -298,7 +277,7 @@ def process_slide_tessellation_only(
     # Step 1: Tessellate
     logger.info(f"Tessellating slide: {slide_path}")
     if cfg.keep_intermediate_files:
-        tessellate_h5_path = _safe_path_join(base_path, f"{Path(slide_path).stem}.tessellate.h5")
+        tessellate_h5_path = safe_path_join(base_path, f"{Path(slide_path).stem}.tessellate.h5")
     else:
         tessellate_h5_path = os.path.join(temp_dir, f"{Path(slide_path).stem}.tessellate.h5")
     
@@ -333,8 +312,8 @@ def process_slide_tessellation_only(
         # Extract features for filtering
         logger.info(f"Extracting features for filtering: {slide_path}")
         if cfg.keep_intermediate_files:
-            prefilter_features_h5_path = _safe_path_join(base_path, f"{Path(slide_path).stem}.prefilter_features.h5")
-            prefilter_features_pt_path = _safe_path_join(base_path, f"{Path(slide_path).stem}.prefilter_features.pt")
+            prefilter_features_h5_path = safe_path_join(base_path, f"{Path(slide_path).stem}.prefilter_features.h5")
+            prefilter_features_pt_path = safe_path_join(base_path, f"{Path(slide_path).stem}.prefilter_features.pt")
         else:
             prefilter_features_h5_path = os.path.join(temp_dir, f"{Path(slide_path).stem}.prefilter_features.h5")
             prefilter_features_pt_path = os.path.join(temp_dir, f"{Path(slide_path).stem}.prefilter_features.pt")
@@ -384,7 +363,7 @@ def process_slide_tessellation_only(
             else:
                 # Create filtered coords h5 for second extraction
                 if cfg.keep_intermediate_files:
-                    filtered_coords_h5_path = _safe_path_join(base_path, f"{Path(slide_path).stem}.filtered_coords.h5")
+                    filtered_coords_h5_path = safe_path_join(base_path, f"{Path(slide_path).stem}.filtered_coords.h5")
                 else:
                     filtered_coords_h5_path = os.path.join(temp_dir, f"{Path(slide_path).stem}.filtered_coords.h5")
                 

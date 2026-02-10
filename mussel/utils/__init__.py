@@ -9,13 +9,22 @@ from .feature_extract import (
     process_dataset,
     get_dataset_processor,
     get_model_path_from_dir,
+    get_classifier_pkl_from_model_dir,
+    get_batch_size_for_model,
     FeatureExtractionResult,
     DatasetProcessor,
     TileCoordProcessor,
     H5DatasetProcessor,
     ImageFolderProcessor,
 )
-from .file import save_hdf5, save_torch_tensor, download_model_path, resolve_remote_paths
+from .file import (
+    save_hdf5,
+    save_torch_tensor,
+    download_model_path,
+    resolve_remote_paths,
+    is_remote_path,
+    safe_path_join,
+)
 from .ml import collate_features
 from .segment import save_patches_png, segment_tissue
 from .tile_export import export_tiles

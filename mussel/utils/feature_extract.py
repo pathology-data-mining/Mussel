@@ -488,6 +488,71 @@ def get_model_path_from_dir(
     return None
 
 
+def get_classifier_pkl_from_model_dir(
+    model_dir: Optional[str], classifier_pkl: Optional[str]
+) -> Optional[str]:
+    """Get classifier pkl path from model_dir if available.
+    
+    If classifier_pkl is provided directly, returns it. Otherwise, looks for
+    classifier.pkl in the model_dir directory.
+    
+    Args:
+        model_dir: Directory containing pre-downloaded models and classifiers.
+        classifier_pkl: Direct path to classifier pkl file.
+    
+    Returns:
+        Path to classifier pkl if found, None otherwise.
+    """
+    if classifier_pkl:
+        return classifier_pkl
+
+    if not model_dir:
+        return None
+
+    model_dir_path = Path(model_dir)
+    if not model_dir_path.exists():
+        return None
+
+    # Check for classifier.pkl in model_dir
+    classifier_file = model_dir_path / "classifier.pkl"
+    if classifier_file.exists() and classifier_file.is_file():
+        logger.info(f"✓ Using local classifier file: {classifier_file}")
+        return str(classifier_file)
+
+    return None
+
+
+def get_batch_size_for_model(cfg, model_type) -> int:
+    """Get the appropriate batch size for a given model type.
+    
+    Looks up model-specific batch sizes from config, falling back to default.
+    
+    Args:
+        cfg: Configuration object with batch_size and model_batch_sizes attributes.
+        model_type: ModelType enum or string name.
+    
+    Returns:
+        Batch size to use for this model (from model_batch_sizes if defined,
+        else default batch_size).
+    
+    Examples:
+        >>> cfg.batch_size = 64
+        >>> cfg.model_batch_sizes = {"VIRCHOW": 32}
+        >>> get_batch_size_for_model(cfg, ModelType.VIRCHOW)
+        32
+        >>> get_batch_size_for_model(cfg, ModelType.CLIP)
+        64
+    """
+    # Get model name
+    if hasattr(model_type, "name"):
+        model_name = model_type.name
+    else:
+        model_name = str(model_type)
+
+    # Return per-model batch size if defined, else default
+    return cfg.model_batch_sizes.get(model_name, cfg.batch_size)
+
+
 def _apply_slide_aggregation(
     features: np.ndarray,
     aggregation_method: str = "identity",

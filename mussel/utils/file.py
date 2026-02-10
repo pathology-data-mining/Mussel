@@ -39,6 +39,51 @@ def _is_remote_path(path):
     )
 
 
+def is_remote_path(path):
+    """Check if a path is a remote path (starts with az://, azblob://, s3://, etc.).
+    
+    Public API for checking remote paths.
+    
+    Args:
+        path: Path to check (string or Path-like object)
+    
+    Returns:
+        True if path is a remote URL, False otherwise
+    """
+    return _is_remote_path(path)
+
+
+def safe_path_join(base_path, *parts):
+    """Safely join path components, preserving URL schemes for remote paths.
+    
+    For remote paths (az://, s3://, etc.), uses string concatenation with /.
+    For local paths, uses pathlib.Path for proper OS-specific joining.
+    
+    Args:
+        base_path: Base path (can be local or remote URL)
+        *parts: Path components to join
+    
+    Returns:
+        Joined path as string
+    
+    Examples:
+        >>> safe_path_join("s3://bucket", "folder", "file.txt")
+        's3://bucket/folder/file.txt'
+        >>> safe_path_join("/local/path", "folder", "file.txt")
+        '/local/path/folder/file.txt'
+    """
+    if _is_remote_path(str(base_path)):
+        # For remote paths, use string concatenation with /
+        result = str(base_path).rstrip("/")
+        for part in parts:
+            result = f"{result}/{str(part).lstrip('/')}"
+        return result
+    else:
+        # For local paths, use Path
+        from pathlib import Path
+        return str(Path(base_path) / Path(*parts))
+
+
 def _get_fsspec_filesystem(path, ssl_verify=True):
     """Get an fsspec filesystem instance for a remote path."""
     if not FSSPEC_AVAILABLE:
