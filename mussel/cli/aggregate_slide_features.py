@@ -8,7 +8,7 @@ from hydra.core.config_store import ConfigStore
 from omegaconf import MISSING
 
 from mussel.models import ModelType
-from mussel.utils import aggregate_slide_features
+from mussel.utils import aggregate_slide_features, resolve_aggregation_method
 
 logger = logging.getLogger(__name__)
 
@@ -108,10 +108,9 @@ def main(cfg: AggregateSlideFeaturesConfig):
     logger.info(f"Aggregation method: {cfg.aggregation_method}")
 
     # Auto-set aggregation_method to "model" if slide_model_type is specified
-    aggregation_method = cfg.aggregation_method
-    if cfg.slide_model_type is not None and aggregation_method == "identity":
-        aggregation_method = "model"
-        logger.info(f"Auto-setting aggregation_method to 'model' since slide_model_type={cfg.slide_model_type}")
+    aggregation_method = resolve_aggregation_method(
+        cfg.aggregation_method, cfg.slide_model_type
+    )
 
     if cfg.slide_model_type is not None:
         logger.info(f"Slide model type: {cfg.slide_model_type}")

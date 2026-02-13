@@ -11,6 +11,8 @@ from .feature_extract import (
     get_model_path_from_dir,
     get_classifier_pkl_from_model_dir,
     get_batch_size_for_model,
+    resolve_aggregation_method,
+    resolve_patch_encoder,
     FeatureExtractionResult,
     DatasetProcessor,
     TileCoordProcessor,
@@ -24,6 +26,9 @@ from .file import (
     resolve_remote_paths,
     is_remote_path,
     safe_path_join,
+    get_slide_id_from_path,
+    get_slide_ids_from_paths,
+    ensure_directory_exists,
 )
 from .ml import collate_features
 from .segment import save_patches_png, segment_tissue

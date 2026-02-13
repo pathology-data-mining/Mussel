@@ -553,6 +553,69 @@ def get_batch_size_for_model(cfg, model_type) -> int:
     return cfg.model_batch_sizes.get(model_name, cfg.batch_size)
 
 
+def resolve_aggregation_method(
+    aggregation_method: str, slide_model_type: Optional
+) -> str:
+    """Auto-set aggregation method based on slide model type.
+    
+    If slide_model_type is specified and aggregation_method is "identity",
+    automatically switches to "model" aggregation.
+    
+    Args:
+        aggregation_method: Current aggregation method setting
+        slide_model_type: Optional slide encoder model type
+    
+    Returns:
+        Resolved aggregation method (may be changed to "model")
+    
+    Examples:
+        >>> resolve_aggregation_method("identity", ModelType.GIGAPATH_SLIDE)
+        'model'
+        >>> resolve_aggregation_method("mean", ModelType.GIGAPATH_SLIDE)
+        'mean'
+        >>> resolve_aggregation_method("identity", None)
+        'identity'
+    """
+    if slide_model_type is not None and aggregation_method == "identity":
+        logger.info(
+            f"Auto-setting aggregation_method to 'model' since "
+            f"slide_model_type={slide_model_type}"
+        )
+        return "model"
+    return aggregation_method
+
+
+def resolve_patch_encoder(
+    model_type: Optional, slide_model_type: Optional
+):
+    """Auto-infer patch encoder from slide model type if not specified.
+    
+    If model_type is None and slide_model_type is provided, automatically
+    determines the required patch encoder for that slide model.
+    
+    Args:
+        model_type: Optional explicit patch encoder model type
+        slide_model_type: Optional slide encoder model type
+    
+    Returns:
+        Resolved model type (may be auto-inferred from slide model)
+    
+    Examples:
+        >>> resolve_patch_encoder(None, ModelType.GIGAPATH_SLIDE)
+        ModelType.GIGAPATH
+        >>> resolve_patch_encoder(ModelType.CLIP, ModelType.GIGAPATH_SLIDE)
+        ModelType.CLIP
+    """
+    if model_type is None and slide_model_type is not None:
+        from mussel.models import get_required_patch_encoder
+        model_type = get_required_patch_encoder(slide_model_type)
+        logger.info(
+            f"Auto-inferring model_type={model_type.name} "
+            f"from slide_model_type={slide_model_type.name}"
+        )
+    return model_type
+
+
 def _apply_slide_aggregation(
     features: np.ndarray,
     aggregation_method: str = "identity",

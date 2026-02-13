@@ -3,17 +3,36 @@ import ssl
 import logging
 from dataclasses import dataclass
 from pathlib import Path
-from typing import List, Optional
+from typing import Dict, List, Optional
 
 import h5py
+import numpy as np
 import torch
+from torch.utils.data import DataLoader
 import hydra
 from hydra.conf import HelpConf, HydraConf
 from hydra.core.config_store import ConfigStore
 from omegaconf import MISSING
+from tqdm import tqdm
 
-from mussel.models import ModelType
-from mussel.utils import save_features, extract_patch_features_batch, aggregate_slide_features_batch, resolve_remote_paths
+from mussel.datasets import WholeSlideImageTileCoordDataset
+from mussel.models import ModelType, get_model_factory
+from mussel.utils import (
+    save_features,
+    extract_patch_features_batch,
+    aggregate_slide_features_batch,
+    resolve_remote_paths,
+    get_slide_ids_from_paths,
+    ensure_directory_exists,
+)
+from mussel.utils.file import save_hdf5, save_torch_tensor
+from mussel.utils.ml import collate_features
+from mussel.utils.multi_slide import (
+    SampleSlideGroup,
+    SlideInfo,
+    compute_subsampling_indices,
+    load_sample_batch_csv,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -23,7 +42,7 @@ class ExtractFeaturesConfig:
     """
     Configuration for extract-features command.
 
-    Supports three input modes:
+    Supports four input modes:
 
     1. Single Slide Mode:
        - Provide: patch_h5_path, slide_path, output_h5_path
@@ -41,6 +60,12 @@ class ExtractFeaturesConfig:
        - Output: Single H5 and PT file containing features for ALL patches in the directory
        - Note: Outputs are aggregated - one file per patch directory, not per patch image
 
+    4. Multi-Slide (Sample) Mode:
+       - Provide: sample_batch_csv_path, output_dir (with {sample_id} placeholder)
+       - Extracts features from multiple slides belonging to the same sample
+       - Optional: sample_id to filter to a single sample, max_tiles_per_sample for subsampling
+       - Output: One H5/PT file per sample with concatenated features from all slides
+
     Single Mode Parameters:
         patch_h5_path (str): Path to the HDF5 file containing patches.
         slide_path (str): Path to the whole slide image.
@@ -55,6 +80,12 @@ class ExtractFeaturesConfig:
         output_h5_suffix (str): Suffix for HDF5 output files (default: "features.h5").
         output_pt_suffix (str): Suffix for PyTorch output files (default: "features.pt").
         slide_batch_size (int): Number of slides to process in a single batch during slide-level aggregation (default: 8).
+
+    Multi-Slide (Sample) Mode Parameters:
+        sample_batch_csv_path (str): Path to CSV file with columns: sample_id, slide_path, patch_h5_path.
+        sample_id (Optional[str]): Filter to process only this sample (for parallel job submission).
+        max_tiles_per_sample (Optional[int]): Maximum tiles per sample; subsample proportionally if exceeded.
+        random_seed (int): Random seed for reproducible subsampling (default: 42).
 
     Model Parameters:
         model_type (ModelType): Type of model to use for patch-level feature extraction.
@@ -99,6 +130,11 @@ class ExtractFeaturesConfig:
     slide_model_type: Optional[ModelType] = None
     slide_model_path: Optional[str] = None
     ssl_verify: bool = True  # Whether to verify SSL certificates for remote operations
+    # Multi-slide (sample) mode parameters
+    sample_batch_csv_path: Optional[str] = None
+    sample_id: Optional[str] = None
+    max_tiles_per_sample: Optional[int] = None
+    random_seed: int = 42
     # Processing parameters
     batch_size: int = 64
     use_gpu: bool = True
@@ -110,11 +146,11 @@ class ExtractFeaturesConfig:
 
 desc_doc = """== ${hydra.help.app_name} ==
 
-Extract features (embeddings) from whole slide images (WSI) or patch directories using a 
+Extract features (embeddings) from whole slide images (WSI) or patch directories using a
 pathology foundation model. The embeddings are written to PyTorch tensor file (.pt)
 and HDF5 (.h5) files.
 
-Three Input Modes:
+Four Input Modes:
 
 1. Single Slide Mode:
    Process one slide from patch coordinates in HDF5 file
@@ -132,6 +168,13 @@ Three Input Modes:
    Args: patch_path=<dir> output_h5_path=<path> output_pt_path=<path> slide_path=None patch_h5_path=None
    Output: Single H5 and PT file containing features for ALL patches in directory
    Note: Supports S3 paths (s3://bucket/prefix/)
+
+4. Multi-Slide (Sample) Mode:
+   Process multiple slides per sample with optional subsampling
+   Args: sample_batch_csv_path=<csv> output_dir=<dir> [sample_id=<id>] [max_tiles_per_sample=<n>]
+   CSV format: sample_id,slide_path,patch_h5_path
+   Output: One H5/PT per sample with concatenated features and slide_idx tracking
+   Note: Supports {sample_id} placeholder in output paths
 
 Aggregation Methods (automatically selected based on aggregation_method):
    - identity: Keep all patch features - single-step mode (default, no aggregation)
@@ -157,9 +200,13 @@ cs.store(name="extract_features_config", node=ExtractFeaturesConfig)
 def main(cfg: ExtractFeaturesConfig):
     """Extract features from whole slide image(s) using a foundation model."""
     # Detect mode based on configuration
+    multi_slide_mode = cfg.sample_batch_csv_path is not None
     batch_mode = cfg.slide_paths is not None
-    
-    if batch_mode:
+
+    if multi_slide_mode:
+        logger.info("Running in multi-slide (sample) mode")
+        _main_multi_slide(cfg)
+    elif batch_mode:
         logger.info("Running in batch mode (multiple slides)")
         _main_batch(cfg)
     else:
@@ -207,12 +254,10 @@ def _main_batch(cfg: ExtractFeaturesConfig):
     
     # Create output directory
     output_dir = Path(cfg.output_dir)
-    output_dir.mkdir(parents=True, exist_ok=True)
+    ensure_directory_exists(output_dir)
     
     # Generate slide IDs if not provided
-    slide_ids = cfg.slide_ids
-    if slide_ids is None:
-        slide_ids = [Path(sp).stem for sp in cfg.slide_paths]
+    slide_ids = get_slide_ids_from_paths(cfg.slide_paths, cfg.slide_ids)
     
     # Validate input lengths
     if not (len(cfg.patch_h5_paths) == len(cfg.slide_paths)):
@@ -299,6 +344,220 @@ def _main_batch(cfg: ExtractFeaturesConfig):
                 torch.save(features, output_pt)
     
     logger.info(f"Batch processing complete. Output saved to {output_dir}")
+
+
+@resolve_remote_paths()
+def _main_multi_slide(cfg: ExtractFeaturesConfig):
+    """Process multiple slides per sample (multi-slide mode)."""
+    if cfg.sample_batch_csv_path is None or cfg.output_dir is None:
+        raise ValueError(
+            "Multi-slide mode requires sample_batch_csv_path and output_dir to be specified"
+        )
+
+    # Load and optionally filter samples
+    samples = load_sample_batch_csv(cfg.sample_batch_csv_path)
+
+    if cfg.sample_id is not None:
+        if cfg.sample_id not in samples:
+            raise ValueError(
+                f"Sample ID '{cfg.sample_id}' not found in CSV. "
+                f"Available samples: {list(samples.keys())}"
+            )
+        samples = {cfg.sample_id: samples[cfg.sample_id]}
+        logger.info(f"Filtered to single sample: {cfg.sample_id}")
+
+    logger.info(f"Processing {len(samples)} sample(s)")
+
+    # Create output directory
+    output_dir = Path(cfg.output_dir)
+    ensure_directory_exists(output_dir)
+
+    # Load model once for all samples
+    gpu_device_id = cfg.gpu_device_ids if cfg.gpu_device_ids else cfg.gpu_device_id
+
+    logger.info("Loading model checkpoint (once for all samples)")
+    model_factory = get_model_factory(cfg.model_type)
+    if model_factory is None:
+        raise ValueError(f"Model type {cfg.model_type} not recognized")
+    model = model_factory.get_model(cfg.model_path, cfg.use_gpu, gpu_device_id)
+    model_fun = model.get_model_fun()
+    preprocessing = model.get_preprocessing_fun()
+
+    # Process each sample
+    for sample_id, sample_group in samples.items():
+        logger.info(f"Processing sample: {sample_id} ({len(sample_group.slides)} slides)")
+
+        # Generate output paths with {sample_id} placeholder support
+        output_h5_path = str(output_dir / f"{sample_id}.{cfg.output_h5_suffix}")
+        output_pt_path = str(output_dir / f"{sample_id}.{cfg.output_pt_suffix}")
+
+        # Support {sample_id} placeholder in output_h5_path/output_pt_path if provided
+        if cfg.output_h5_path and "{sample_id}" in cfg.output_h5_path:
+            output_h5_path = cfg.output_h5_path.replace("{sample_id}", sample_id)
+        if cfg.output_pt_path and "{sample_id}" in cfg.output_pt_path:
+            output_pt_path = cfg.output_pt_path.replace("{sample_id}", sample_id)
+
+        extract_features_multi_slide(
+            sample_group=sample_group,
+            output_h5_path=output_h5_path,
+            output_pt_path=output_pt_path,
+            model_fun=model_fun,
+            preprocessing=preprocessing,
+            max_tiles_per_sample=cfg.max_tiles_per_sample,
+            random_seed=cfg.random_seed,
+            batch_size=cfg.batch_size,
+            num_workers=cfg.num_workers,
+            is_test_run=cfg.is_test_run,
+        )
+
+    logger.info(f"Multi-slide processing complete. Output saved to {output_dir}")
+
+
+def extract_features_multi_slide(
+    sample_group: SampleSlideGroup,
+    output_h5_path: str,
+    output_pt_path: str,
+    model_fun,
+    preprocessing,
+    max_tiles_per_sample: Optional[int] = None,
+    random_seed: int = 42,
+    batch_size: int = 64,
+    num_workers: int = 16,
+    is_test_run: bool = False,
+) -> None:
+    """Extract and concatenate features from multiple slides belonging to a sample.
+
+    Args:
+        sample_group: SampleSlideGroup containing sample_id and list of SlideInfo.
+        output_h5_path: Path to save concatenated features in HDF5 format.
+        output_pt_path: Path to save concatenated features in PyTorch format.
+        model_fun: Model inference function.
+        preprocessing: Preprocessing function for images.
+        max_tiles_per_sample: Maximum total tiles; subsample proportionally if exceeded.
+        random_seed: Random seed for reproducible subsampling.
+        batch_size: Batch size for feature extraction.
+        num_workers: Number of data loader workers.
+        is_test_run: If True, only process first 3 batches per slide.
+    """
+    sample_id = sample_group.sample_id
+    slides = sample_group.slides
+
+    # Apply subsampling if needed
+    if max_tiles_per_sample is not None and max_tiles_per_sample > 0:
+        slides = compute_subsampling_indices(
+            slides,
+            max_tiles=max_tiles_per_sample,
+            strategy="proportional",
+            random_seed=random_seed,
+        )
+
+    logger.info(
+        f"Sample {sample_id}: {sample_group.total_tiles} total tiles, "
+        f"{sum(s.num_selected_tiles for s in slides)} selected tiles"
+    )
+
+    all_features = []
+    all_coords = []
+    all_slide_idx = []
+
+    # Process each slide
+    for slide_idx, slide in enumerate(slides):
+        logger.info(
+            f"  Slide {slide_idx + 1}/{len(slides)}: {slide.slide_path} "
+            f"({slide.num_selected_tiles}/{slide.num_tiles} tiles)"
+        )
+
+        # Read coordinates and attributes from H5 file
+        with h5py.File(slide.patch_h5_path, "r") as h5f:
+            coords = h5f["coords"][:]
+            attrs = {key: h5f["coords"].attrs[key] for key in h5f["coords"].attrs}
+
+        # Create dataset with optional limit_to_indices for subsampling
+        dataset = WholeSlideImageTileCoordDataset(
+            coords=coords,
+            attrs=attrs,
+            slide_path=slide.slide_path,
+            use_imagenet_rgb_dist=preprocessing is None,
+            preprocess=preprocessing,
+            limit_to_indices=slide.selected_indices,
+            init_wsi_in_worker=num_workers > 0,
+        )
+
+        loader = DataLoader(
+            dataset=dataset,
+            batch_size=batch_size,
+            num_workers=num_workers,
+            pin_memory=True,
+            worker_init_fn=dataset.worker_init if num_workers > 0 else None,
+            collate_fn=collate_features,
+            shuffle=False,
+            persistent_workers=num_workers > 0,
+            prefetch_factor=4 if num_workers > 0 else None,
+        )
+
+        # Extract features for this slide
+        slide_features = []
+        slide_coords = []
+
+        for count, (batch, batch_coords) in enumerate(
+            tqdm(loader, desc=f"Slide {slide_idx + 1}")
+        ):
+            if is_test_run and count > 2:
+                break
+
+            # Skip empty batches
+            if batch.numel() == 0:
+                logger.warning(f"Skipping empty batch {count}")
+                continue
+
+            features = model_fun(batch).numpy()
+            slide_features.append(features)
+            slide_coords.append(batch_coords)
+
+        if slide_features:
+            slide_features = np.concatenate(slide_features, axis=0)
+            slide_coords = np.concatenate(slide_coords, axis=0)
+
+            all_features.append(slide_features)
+            all_coords.append(slide_coords)
+            all_slide_idx.append(np.full(len(slide_features), slide_idx, dtype=np.int32))
+
+            logger.info(f"    Extracted {len(slide_features)} feature vectors")
+
+    # Concatenate all slides
+    if not all_features:
+        raise ValueError(f"No features extracted for sample {sample_id}")
+
+    features = np.concatenate(all_features, axis=0)
+    coords = np.concatenate(all_coords, axis=0)
+    slide_idx_array = np.concatenate(all_slide_idx, axis=0)
+
+    logger.info(
+        f"Sample {sample_id}: Total {features.shape[0]} features, "
+        f"shape {features.shape}"
+    )
+
+    # Save to HDF5
+    ensure_directory_exists(output_h5_path, is_file_path=True)
+
+    asset_dict = {
+        "features": features,
+        "coords": coords,
+        "slide_idx": slide_idx_array,
+    }
+    save_hdf5(output_h5_path, asset_dict, mode="w")
+
+    # Add sample metadata as H5 attributes
+    with h5py.File(output_h5_path, "a") as h5f:
+        h5f.attrs["sample_id"] = sample_id
+        h5f.attrs["num_slides"] = len(slides)
+
+    logger.info(f"Saved features to {output_h5_path}")
+
+    # Save to PyTorch format
+    features_tensor = torch.from_numpy(features)
+    save_torch_tensor(output_pt_path, features_tensor)
+    logger.info(f"Saved features to {output_pt_path}")
 
 
 if __name__ == "__main__":

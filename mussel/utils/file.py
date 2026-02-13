@@ -3,6 +3,7 @@ import pickle
 import os
 from contextlib import ExitStack
 from pathlib import Path
+from typing import List, Optional
 
 import h5py
 
@@ -82,6 +83,76 @@ def safe_path_join(base_path, *parts):
         # For local paths, use Path
         from pathlib import Path
         return str(Path(base_path) / Path(*parts))
+
+
+def get_slide_id_from_path(slide_path: str, slide_id: Optional[str] = None) -> str:
+    """Get slide ID from path or use provided ID.
+    
+    If slide_id is provided, returns it. Otherwise, extracts the filename
+    without extension from slide_path.
+    
+    Args:
+        slide_path: Path to the slide file
+        slide_id: Optional explicit slide ID
+    
+    Returns:
+        Slide ID string
+    
+    Examples:
+        >>> get_slide_id_from_path("/path/to/slide.svs")
+        'slide'
+        >>> get_slide_id_from_path("/path/to/slide.svs", "custom_id")
+        'custom_id'
+    """
+    from pathlib import Path
+    return slide_id if slide_id else Path(slide_path).stem
+
+
+def get_slide_ids_from_paths(
+    slide_paths: List[str], slide_ids: Optional[List[str]] = None
+) -> List[str]:
+    """Get slide IDs from paths or use provided IDs.
+    
+    If slide_ids is provided, returns it. Otherwise, extracts filenames
+    without extensions from slide_paths.
+    
+    Args:
+        slide_paths: List of paths to slide files
+        slide_ids: Optional list of explicit slide IDs
+    
+    Returns:
+        List of slide ID strings
+    
+    Examples:
+        >>> get_slide_ids_from_paths(["/a/slide1.svs", "/b/slide2.svs"])
+        ['slide1', 'slide2']
+        >>> get_slide_ids_from_paths(["/a/s1.svs"], ["custom"])
+        ['custom']
+    """
+    from pathlib import Path
+    return slide_ids if slide_ids else [Path(sp).stem for sp in slide_paths]
+
+
+def ensure_directory_exists(path, is_file_path: bool = False):
+    """Ensure directory exists, creating parents if needed.
+    
+    Args:
+        path: Directory path or file path (str or Path)
+        is_file_path: If True, creates parent directory of file
+    
+    Returns:
+        Path object of the directory that was created/verified
+    
+    Examples:
+        >>> ensure_directory_exists("/path/to/output")
+        PosixPath('/path/to/output')
+        >>> ensure_directory_exists("/path/to/file.txt", is_file_path=True)
+        PosixPath('/path/to')
+    """
+    from pathlib import Path
+    dir_path = Path(path).parent if is_file_path else Path(path)
+    dir_path.mkdir(parents=True, exist_ok=True)
+    return dir_path
 
 
 def _get_fsspec_filesystem(path, ssl_verify=True):

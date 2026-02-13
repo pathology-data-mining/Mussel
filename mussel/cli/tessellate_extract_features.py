@@ -37,8 +37,13 @@ from mussel.utils import (
     get_model_path_from_dir,
     get_classifier_pkl_from_model_dir,
     get_batch_size_for_model,
+    resolve_aggregation_method,
+    resolve_patch_encoder,
     save_torch_tensor,
     resolve_remote_paths,
+    get_slide_id_from_path,
+    get_slide_ids_from_paths,
+    ensure_directory_exists,
 )
 
 
@@ -387,18 +392,18 @@ def _main_single(cfg: TessellateExtractFeaturesConfig):
     if cfg.output_dir:
         # Convert single-slide mode with output_dir to use explicit paths
         output_dir = Path(cfg.output_dir)
-        output_dir.mkdir(parents=True, exist_ok=True)
+        ensure_directory_exists(output_dir)
 
         # Generate slide_id if not provided
-        slide_id = cfg.slide_id if cfg.slide_id else Path(cfg.slide_path).stem
+        slide_id = get_slide_id_from_path(cfg.slide_path, cfg.slide_id)
 
         # Generate output paths from output_dir
         cfg.output_h5_path = str(output_dir / "h5" / f"{slide_id}.{cfg.output_h5_suffix}")
         cfg.output_pt_path = str(output_dir / "pt" / f"{slide_id}.{cfg.output_pt_suffix}")
 
         # Create subdirectories
-        Path(cfg.output_h5_path).parent.mkdir(parents=True, exist_ok=True)
-        Path(cfg.output_pt_path).parent.mkdir(parents=True, exist_ok=True)
+        ensure_directory_exists(cfg.output_h5_path, is_file_path=True)
+        ensure_directory_exists(cfg.output_pt_path, is_file_path=True)
 
         logger.info(f"Using output_dir: {cfg.output_dir}")
         logger.info(f"Generated output_h5_path: {cfg.output_h5_path}")
@@ -552,13 +557,13 @@ def _main_batch(
     output_dir_str = cfg.output_dir
     if not _is_remote_path(output_dir_str):
         output_dir_path = Path(output_dir_str)
-        output_dir_path.mkdir(parents=True, exist_ok=True)
+        ensure_directory_exists(output_dir_path)
 
     # Create patch output directory if specified
     patch_output_dir_str = patch_output_dir if patch_output_dir else output_dir_str
     if patch_output_dir and not _is_remote_path(patch_output_dir_str):
         patch_output_dir_path = Path(patch_output_dir_str)
-        patch_output_dir_path.mkdir(parents=True, exist_ok=True)
+        ensure_directory_exists(patch_output_dir_path)
 
     # Create temporary directory for intermediate files if not keeping them
     temp_dir = None
@@ -632,7 +637,7 @@ def _main_batch(
     # Generate slide IDs if not provided
     slide_ids = cfg.slide_ids
     if slide_ids is None:
-        slide_ids = [Path(sp).stem for sp in cfg.slide_paths]
+        slide_ids = get_slide_ids_from_paths(cfg.slide_paths)
 
     # Phase 1: Tessellate all slides and perform filtering if needed
     logger.info(f"\n=== Phase 1: Tessellating {len(cfg.slide_paths)} slides ===")
@@ -694,7 +699,7 @@ def _main_batch(
     for subdir in subdirs:
         subdir_path = _safe_path_join(output_dir_str, subdir)
         if not _is_remote_path(subdir_path):
-            Path(subdir_path).mkdir(parents=True, exist_ok=True)
+            ensure_directory_exists(subdir_path)
 
     # Phase 2: Batch extract patch features for all slides
     logger.info(
@@ -732,7 +737,7 @@ def _main_batch(
         # Create tile_h5 subdirectory if it's a local path
         tile_h5_dir = _safe_path_join(patch_output_dir_str, "tile_h5")
         if not _is_remote_path(tile_h5_dir):
-            Path(tile_h5_dir).mkdir(parents=True, exist_ok=True)
+            ensure_directory_exists(tile_h5_dir)
 
         try:
             extract_patch_features_batch(
@@ -770,7 +775,7 @@ def _main_batch(
             for subdir in subdirs:
                 subdir_path = _safe_path_join(patch_output_dir_str, subdir)
                 if not _is_remote_path(subdir_path):
-                    Path(subdir_path).mkdir(parents=True, exist_ok=True)
+                    ensure_directory_exists(subdir_path)
 
             # For tile encoders, just copy the intermediate h5 files and extract PT files
             # No aggregation needed since they already contain tile-level features
@@ -932,7 +937,7 @@ def _main_batch(
             # Create tile_h5 subdirectory for coords-only H5 files
             tile_h5_dir = _safe_path_join(output_dir_str, "tile_h5")
             if not _is_remote_path(tile_h5_dir):
-                Path(tile_h5_dir).mkdir(parents=True, exist_ok=True)
+                ensure_directory_exists(tile_h5_dir)
             
             coords_h5_paths = [
                 _safe_path_join(output_dir_str, "tile_h5", f"{r['slide_id']}.patch.h5")
@@ -945,7 +950,7 @@ def _main_batch(
             # Also create coords-only H5 files (patch.h5) in batch mode for downstream processes
             tile_h5_dir = _safe_path_join(output_dir_str, "tile_h5")
             if not _is_remote_path(tile_h5_dir):
-                Path(tile_h5_dir).mkdir(parents=True, exist_ok=True)
+                ensure_directory_exists(tile_h5_dir)
 
             coords_h5_paths = [
                 _safe_path_join(output_dir_str, "tile_h5", f"{r['slide_id']}.patch.h5")
@@ -1111,7 +1116,7 @@ def _main_batch_multi_model(cfg: TessellateExtractFeaturesConfig):
     output_dir_str = cfg.output_dir
     if not _is_remote_path(output_dir_str):
         output_dir_path = Path(output_dir_str)
-        output_dir_path.mkdir(parents=True, exist_ok=True)
+        ensure_directory_exists(output_dir_path)
 
     # Process each patch size group
     for patch_size in sorted(models_by_patch_size.keys()):
@@ -1145,7 +1150,7 @@ def _main_batch_multi_model(cfg: TessellateExtractFeaturesConfig):
 
                 # Create model subdirectory (only for local paths)
                 if not _is_remote_path(model_output_dir):
-                    Path(model_output_dir).mkdir(parents=True, exist_ok=True)
+                    ensure_directory_exists(model_output_dir)
 
                 # Call regular batch processing for this model
                 cfg_copy.output_h5_suffix = f"features.h5"
