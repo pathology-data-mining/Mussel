@@ -1,20 +1,22 @@
+import logging
 from dataclasses import dataclass
 from typing import Optional
 
 import cv2
 import geopandas as gpd
 import h5py
+import hydra
 import numpy as np
 import pandas as pd
 import yaml
 from hydra.conf import HelpConf, HydraConf
 from hydra.core.config_store import ConfigStore
-from loguru import logger
 from omegaconf import MISSING, OmegaConf
+
+logger = logging.getLogger(__name__)
 from PIL import Image
 from shapely.geometry import MultiPolygon, Polygon
 
-import hydra
 from mussel.utils.segment import contours_to_polygon
 
 Image.MAX_IMAGE_PIXELS = None
@@ -60,6 +62,7 @@ cs.store(name="merge_annotation_features_config", node=MergeAnnotationFeaturesCo
     version_base=None, config_path=".", config_name="merge_annotation_features_config"
 )
 def main(cfg: MergeAnnotationFeaturesConfig):
+    """Merge tile features with annotations from a BMP file."""
     with open(cfg.features_h5_path, "rb") as f:
         logger.info(f"Reading features from {cfg.features_h5_path}...")
         tiles_h5 = h5py.File(f, "r")
