@@ -286,3 +286,44 @@ def test_model_download_lock_handles_special_characters():
         for model_name in test_cases:
             with model_download_lock(model_name, cache_dir=tmpdir) as should_download:
                 assert should_download is True
+
+
+def test_model_download_lock_closes_file_descriptor():
+    """Test that file descriptor is always closed, even on exception during unlock"""
+    import os
+    from unittest.mock import patch
+    
+    with tempfile.TemporaryDirectory() as tmpdir:
+        locks_dir = Path(tmpdir) / ".locks"
+        locks_dir.mkdir(parents=True, exist_ok=True)
+        lock_file = locks_dir / "fd-test-model.lock"
+        
+        # Track file descriptor
+        opened_fds = []
+        original_open = open
+        
+        def tracking_open(*args, **kwargs):
+            fd = original_open(*args, **kwargs)
+            if str(lock_file) in str(args[0]):
+                opened_fds.append(fd)
+            return fd
+        
+        # Test normal flow - fd should be closed
+        with patch("builtins.open", side_effect=tracking_open):
+            with model_download_lock("fd-test-model", cache_dir=tmpdir):
+                pass
+        
+        assert len(opened_fds) == 1, "Should have opened lock file once"
+        assert opened_fds[0].closed, "File descriptor should be closed after context exit"
+        
+        # Test exception flow - fd should still be closed
+        opened_fds.clear()
+        try:
+            with patch("builtins.open", side_effect=tracking_open):
+                with model_download_lock("fd-test-model", cache_dir=tmpdir):
+                    raise RuntimeError("Simulated error")
+        except RuntimeError:
+            pass
+        
+        assert len(opened_fds) == 1, "Should have opened lock file once"
+        assert opened_fds[0].closed, "File descriptor should be closed even after exception"

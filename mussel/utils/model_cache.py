@@ -113,7 +113,7 @@ def model_download_lock(
                 time.sleep(1)
 
     finally:
-        # Release lock
+        # Release lock and close file descriptor
         try:
             fcntl.flock(lock_fd.fileno(), fcntl.LOCK_UN)
         except Exception as exc:
@@ -122,7 +122,14 @@ def model_download_lock(
             logger.debug(
                 "Failed to release file lock for model %s: %s", model_name, exc
             )
-        lock_fd.close()
+        finally:
+            # Always close file descriptor, even if unlock fails
+            try:
+                lock_fd.close()
+            except Exception as exc:
+                logger.debug(
+                    "Failed to close lock file for model %s: %s", model_name, exc
+                )
 
 
 def with_model_cache_lock(download_func):
