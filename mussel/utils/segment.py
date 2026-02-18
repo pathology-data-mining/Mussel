@@ -404,8 +404,48 @@ def segment_tissue(
     keep_ids: List[int] = [],
     output_h5_path: Optional[str] = None,
 ):
-    """
-    Segment the tissue via HSV -> Median thresholding -> Binary threshold
+    """Segment tissue regions in a whole-slide image and generate tissue patches.
+    
+    Performs tissue segmentation using HSV color space, median filtering, and binary
+    thresholding to identify tissue regions. Then partitions tissue into a grid of
+    patches for downstream processing.
+    
+    Args:
+        slide_path: Path to the whole-slide image file.
+        slide_id: Optional identifier for the slide (defaults to filename stem).
+        seg_level: Pyramid level to use for segmentation (default: -1 for auto-select).
+        segment_threshold: Binary threshold value for tissue detection (default: 20).
+        segment_max_value: Maximum value for binary thresholding (default: 255).
+        median_blur_ksize: Kernel size for median blur filter (default: 7).
+        morphology_ex_kernel: Kernel size for morphological closing (0 to disable).
+        use_otsu: Whether to use Otsu's method for automatic threshold (default: False).
+        tissue_area_threshold: Minimum tissue contour area in reference patches (default: 100).
+        hole_area_threshold: Maximum hole area in reference patches (default: 16).
+        max_num_holes: Maximum number of holes allowed per tissue contour (default: 10).
+        patch_size: Target patch size in microns at desired MPP (default: 256).
+        mpp: Target microns per pixel for patches (default: 0.5).
+        step_size: Step size between patches in microns (defaults to patch_size).
+        ref_patch_size: Reference patch size for area calculations (default: 512).
+        exclude_ids: List of contour indices to exclude from processing.
+        keep_ids: List of contour indices to keep (if empty, keeps all except excluded).
+        output_h5_path: Optional path to save coordinates and attributes as HDF5.
+        
+    Returns:
+        tuple: A 4-tuple containing:
+            - polygon (shapely.geometry.MultiPolygon): Tissue regions as a multipolygon
+            - grid (list): List of shapely.geometry.box objects representing patches
+            - coords (list): List of (x, y) coordinates for top-left corner of each patch
+            - attrs (dict): Dictionary of segmentation parameters and metadata including:
+                - seg_level: Segmentation pyramid level used
+                - patch_size: Native patch size in pixels
+                - step_size: Native step size in pixels
+                - mpp: Target microns per pixel
+                - native_mpp: Slide's native MPP
+                - level_dim: Dimensions at level 0
+                - name: Slide identifier
+                - (and other segmentation parameters)
+                
+        Returns None if no tissue contours are found or if slide dimensions are too large.
     """
     wsi = tiffslide.open_slide(slide_path)
     if slide_id is None:
