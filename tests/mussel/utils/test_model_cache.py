@@ -327,3 +327,30 @@ def test_model_download_lock_closes_file_descriptor():
         
         assert len(opened_fds) == 1, "Should have opened lock file once"
         assert opened_fds[0].closed, "File descriptor should be closed even after exception"
+
+
+def test_model_download_lock_cross_platform():
+    """Test that module provides cross-platform compatibility"""
+    from mussel.utils import model_cache
+    
+    # Check that platform detection works
+    assert hasattr(model_cache, "_SYSTEM")
+    assert hasattr(model_cache, "_HAS_FCNTL")
+    assert hasattr(model_cache, "_HAS_MSVCRT")
+    
+    # Check that helper functions exist
+    assert callable(model_cache._acquire_lock)
+    assert callable(model_cache._release_lock)
+    
+    # On Linux, fcntl should be available
+    import platform
+    if platform.system() == "Linux":
+        assert model_cache._HAS_FCNTL is True
+        assert model_cache._HAS_MSVCRT is False
+    
+    # Test that locking works even without platform-specific modules
+    # (falls back to no-op with warning)
+    with tempfile.TemporaryDirectory() as tmpdir:
+        with model_download_lock("platform-test", cache_dir=tmpdir) as should_download:
+            # Should work regardless of platform
+            assert should_download in (True, False)

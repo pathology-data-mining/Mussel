@@ -4,17 +4,98 @@ Model caching utilities with file locking to prevent concurrent download clashes
 This module provides safe model downloading with file-based locking to ensure that
 when multiple tasks try to download the same model simultaneously, only one actually
 downloads it while the others wait.
+
+Cross-platform support:
+- Unix/Linux/macOS: Uses fcntl for robust file locking
+- Windows: Uses msvcrt for file locking
+- Fallback: No-op if neither available (with warning)
 """
 
-import fcntl
 import logging
 import os
+import platform
 import time
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Optional
 
 logger = logging.getLogger(__name__)
+
+# Platform-specific file locking imports
+_SYSTEM = platform.system()
+_HAS_FCNTL = False
+_HAS_MSVCRT = False
+
+if _SYSTEM in ("Linux", "Darwin", "FreeBSD", "OpenBSD"):
+    # Unix-like systems
+    try:
+        import fcntl
+        _HAS_FCNTL = True
+    except ImportError:
+        logger.warning("fcntl not available on this system, file locking disabled")
+elif _SYSTEM == "Windows":
+    # Windows systems
+    try:
+        import msvcrt
+        _HAS_MSVCRT = True
+    except ImportError:
+        logger.warning("msvcrt not available on Windows, file locking disabled")
+else:
+    logger.warning(
+        f"Unknown platform '{_SYSTEM}', file locking disabled. "
+        "Concurrent model downloads may conflict."
+    )
+
+
+def _acquire_lock(file_handle, blocking=True):
+    """
+    Acquire an exclusive lock on a file (cross-platform).
+    
+    Args:
+        file_handle: Open file object
+        blocking: If True, wait for lock. If False, raise if unavailable.
+    
+    Raises:
+        BlockingIOError: If non-blocking and lock unavailable
+    """
+    if _HAS_FCNTL:
+        # Unix-like: use fcntl
+        flags = fcntl.LOCK_EX
+        if not blocking:
+            flags |= fcntl.LOCK_NB
+        fcntl.flock(file_handle.fileno(), flags)
+    elif _HAS_MSVCRT:
+        # Windows: use msvcrt
+        mode = msvcrt.LK_NBLCK if not blocking else msvcrt.LK_LOCK
+        try:
+            msvcrt.locking(file_handle.fileno(), mode, 1)
+        except OSError as e:
+            # msvcrt raises OSError for lock conflicts, convert to BlockingIOError
+            if not blocking and e.errno in (13, 33):  # Permission denied, lock violation
+                raise BlockingIOError("Lock is held by another process") from e
+            raise
+    else:
+        # No locking available - log warning
+        if not hasattr(_acquire_lock, "_warned"):
+            logger.warning(
+                "File locking not available on this platform. "
+                "Concurrent model downloads may conflict."
+            )
+            _acquire_lock._warned = True
+
+
+def _release_lock(file_handle):
+    """
+    Release an exclusive lock on a file (cross-platform).
+    
+    Args:
+        file_handle: Open file object
+    """
+    if _HAS_FCNTL:
+        fcntl.flock(file_handle.fileno(), fcntl.LOCK_UN)
+    elif _HAS_MSVCRT:
+        msvcrt.locking(file_handle.fileno(), msvcrt.LK_UNLCK, 1)
+    # If no locking available, this is a no-op
 
 
 @contextmanager
@@ -26,6 +107,11 @@ def model_download_lock(
 
     This ensures that when multiple processes try to download the same model,
     only one actually performs the download while others wait.
+    
+    Cross-platform support:
+    - Unix/Linux/macOS: Uses fcntl for robust file locking
+    - Windows: Uses msvcrt for file locking
+    - Other platforms: No locking (warning logged)
 
     Args:
         model_name: Name/identifier of the model being downloaded
@@ -75,7 +161,7 @@ def model_download_lock(
         # Try to acquire exclusive lock with timeout
         while True:
             try:
-                fcntl.flock(lock_fd.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+                _acquire_lock(lock_fd, blocking=False)
                 # Lock acquired!
                 logger.info(f"Lock acquired for {model_name}")
 
@@ -115,7 +201,7 @@ def model_download_lock(
     finally:
         # Release lock and close file descriptor
         try:
-            fcntl.flock(lock_fd.fileno(), fcntl.LOCK_UN)
+            _release_lock(lock_fd)
         except Exception as exc:
             # Best-effort cleanup: failing to release the lock should not break callers,
             # but we log it for debugging purposes.
