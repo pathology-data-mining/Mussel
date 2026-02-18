@@ -1407,8 +1407,11 @@ def aggregate_slide_features_batch(
                     save_torch_tensor(output_pt_paths[i], features_tensor)
             except Exception as e:
                 logger.error(f"Failed to save results for slide {slide_name}: {str(e)}")
-                if slide_name in successful_slides:
+                # Remove from successful list if present
+                try:
                     successful_slides.remove(slide_name)
+                except ValueError:
+                    pass  # Slide wasn't in successful list
                 if slide_name not in failed_slides:
                     failed_slides.append(slide_name)
     
