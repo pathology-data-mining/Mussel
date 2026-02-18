@@ -291,6 +291,7 @@ def save_hdf5(
     is_remote = _is_remote_path(output_path)
 
     # For remote paths, use a temporary local file
+    local_path = None  # Initialize to ensure it exists for finally block
     if is_remote:
         import tempfile
 
@@ -370,7 +371,7 @@ def save_hdf5(
             fs.put(local_path, output_path)
     finally:
         # Clean up temporary file if used
-        if is_remote:
+        if is_remote and local_path is not None:
             Path(local_path).unlink(missing_ok=True)
 
     return output_path
@@ -394,6 +395,7 @@ def save_torch_tensor(output_path, tensor, ssl_verify=True):
 
     is_remote = _is_remote_path(output_path)
 
+    local_path = None  # Initialize to ensure it exists for finally block
     if is_remote:
         import tempfile
 
@@ -403,7 +405,8 @@ def save_torch_tensor(output_path, tensor, ssl_verify=True):
             fs = _get_fsspec_filesystem(output_path, ssl_verify)
             fs.put(local_path, output_path)
         finally:
-            Path(local_path).unlink(missing_ok=True)
+            if local_path is not None:
+                Path(local_path).unlink(missing_ok=True)
     else:
         # Create parent directories if they don't exist
         Path(output_path).parent.mkdir(parents=True, exist_ok=True)
