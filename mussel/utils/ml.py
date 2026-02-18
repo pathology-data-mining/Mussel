@@ -1,4 +1,5 @@
 import collections
+import logging
 import math
 from itertools import islice
 
@@ -10,6 +11,7 @@ from torch.utils.data import (DataLoader, RandomSampler, Sampler,
                               SequentialSampler, WeightedRandomSampler,
                               sampler)
 
+logger = logging.getLogger(__name__)
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 
