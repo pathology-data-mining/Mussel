@@ -603,6 +603,54 @@ def _download_azure_files_directory(share_name, prefix, local_path):
     logger.info(f"Download complete: {downloaded_count} files downloaded, {skipped_count} skipped")
 
 
+def _download_azure_files_file(share_name, file_path, local_path):
+    """Download a single file from Azure Files using the Azure SDK.
+
+    Args:
+        share_name: Azure Files share name
+        file_path: Path to the file within the share
+        local_path: Local destination file path
+    """
+    import warnings
+
+    if not AZURE_FILES_SDK_AVAILABLE:
+        raise ImportError("azure-storage-file-share is required for Azure Files downloads")
+
+    # Suppress Azure SDK logging
+    logging.getLogger("azure.core.pipeline.policies.http_logging_policy").setLevel(logging.WARNING)
+    logging.getLogger("azure.storage.fileshare").setLevel(logging.WARNING)
+    warnings.filterwarnings("ignore", category=Warning, module="urllib3")
+
+    # Get credentials
+    account_name = os.environ.get("AZURE_STORAGE_ACCOUNT_NAME")
+    account_key = os.environ.get("AZURE_STORAGE_ACCOUNT_KEY")
+
+    if not account_name or not account_key:
+        raise ValueError(
+            "AZURE_STORAGE_ACCOUNT_NAME and AZURE_STORAGE_ACCOUNT_KEY must be set"
+        )
+
+    account_url = f"https://{account_name}.file.core.windows.net"
+    share_service_client = ShareServiceClient(
+        account_url=account_url, credential=account_key
+    )
+
+    share_client = share_service_client.get_share_client(share_name)
+    file_client = share_client.get_file_client(file_path)
+    
+    logger.info(f"Downloading single file {share_name}/{file_path}")
+    
+    # Create parent directory if needed
+    os.makedirs(os.path.dirname(local_path), exist_ok=True)
+    
+    # Download file
+    with open(local_path, "wb") as f:
+        data = file_client.download_file()
+        f.write(data.readall())
+    
+    logger.info(f"Download complete: {local_path}")
+
+
 def download_model_path(model_path, cache_dir=None, ssl_verify=True):
     """Download a remote model path to a local cache directory.
 
@@ -660,16 +708,19 @@ def download_model_path(model_path, cache_dir=None, ssl_verify=True):
             prefix = parts[1] if len(parts) > 1 else ""
 
             # Azure Files paths ending with / are directories
-            if model_path.endswith("/") or not prefix or "/" in prefix:
+            if model_path.endswith("/") or not prefix:
+                # Directory download
                 os.makedirs(local_path, exist_ok=True)
                 _download_azure_files_directory(share_name, prefix, local_path)
             else:
-                # Single file download
-                logger.warning(
-                    f"Single file download from Azure Files not implemented, downloading as directory"
-                )
-                os.makedirs(local_path, exist_ok=True)
-                _download_azure_files_directory(share_name, prefix, local_path)
+                # Single file download - check if path contains subdirectories
+                if "/" in prefix:
+                    # Path like "models/subdir/file.pth" - treat as directory structure
+                    os.makedirs(local_path, exist_ok=True)
+                    _download_azure_files_directory(share_name, prefix, local_path)
+                else:
+                    # Path like "model.pth" - single file in share root
+                    _download_azure_files_file(share_name, prefix, local_path)
         # For Azure Blob paths, use direct Azure SDK (more reliable than fsspec)
         elif model_path.startswith(("az://", "azblob://", "abfs://")) and AZURE_SDK_AVAILABLE:
             logger.info("Using Azure SDK for download (more reliable than fsspec)")
