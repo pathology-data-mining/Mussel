@@ -862,6 +862,11 @@ class OptimusModel(TorchModel):
 
 
 class VirchowModel(TorchModel):
+    """Virchow model base class with shared preprocessing and inference logic."""
+    
+    # Default model type - subclasses can override this
+    _default_model_type = ModelType.VIRCHOW
+    
     def __init__(
         self,
         model_path,
@@ -876,7 +881,7 @@ class VirchowModel(TorchModel):
             gpu_device_id: GPU device ID or list of IDs for multi-GPU (default: None).
         """
         if model_path is None:
-            model_path = ModelType.VIRCHOW.path
+            model_path = self._default_model_type.path
         model_obj = None
         if model_path.startswith("hf-hub:"):
             model_obj = timm.create_model(
@@ -943,34 +948,8 @@ class VirchowModel(TorchModel):
 class Virchow2Model(VirchowModel):
     """Virchow2 model - uses same architecture and feature extraction as Virchow."""
     
-    def __init__(
-        self,
-        model_path,
-        use_gpu: bool = True,
-        gpu_device_id: int | List[int] | None = None,
-    ):
-        """Initialize Virchow2 model.
-
-        Args:
-            model_path: Path to model file or HuggingFace repo ID.
-            use_gpu: Whether to use GPU (default: True).
-            gpu_device_id: GPU device ID or list of IDs for multi-GPU (default: None).
-        """
-        if model_path is None:
-            model_path = ModelType.VIRCHOW2.path
-        model_obj = None
-        if model_path.startswith("hf-hub:"):
-            model_obj = timm.create_model(
-                model_path,
-                pretrained=True,
-                mlp_layer=SwiGLUPacked,
-                act_layer=torch.nn.SiLU,
-            )
-        # Call TorchModel.__init__ directly to skip VirchowModel.__init__
-        # which would set the wrong default model_path (VIRCHOW instead of VIRCHOW2).
-        # This is intentional - Virchow2Model reuses VirchowModel's preprocessing
-        # and inference methods but needs different model initialization.
-        TorchModel.__init__(self, model_path, model_obj, use_gpu, gpu_device_id)
+    # Override default model type for Virchow2
+    _default_model_type = ModelType.VIRCHOW2
 
 
 class UniModel(TorchModel):
