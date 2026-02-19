@@ -319,3 +319,63 @@ class TestGetSlideMPP:
             mock_logger.warning.assert_called_once()
             call_args = str(mock_logger.warning.call_args)
             assert "default" in call_args.lower()
+
+
+class TestDrawSlideMask:
+    """Test suite for draw_slide_mask function resource cleanup"""
+    
+    def test_draw_slide_mask_closes_wsi_on_success(self):
+        """Test that WSI is closed after successful execution"""
+        from unittest.mock import MagicMock, patch, call
+        import shapely
+        
+        # Create mock WSI
+        mock_wsi = MagicMock()
+        mock_wsi.level_dimensions = [(1000, 1000), (500, 500)]
+        mock_wsi.get_best_level_for_downsample.return_value = 1
+        
+        # Mock read_region to return a simple image
+        mock_image = MagicMock()
+        mock_image.convert.return_value = mock_image
+        mock_wsi.read_region.return_value = mock_image
+        
+        # Create a simple polygon
+        polygon = shapely.geometry.box(0, 0, 100, 100)
+        
+        with patch('mussel.utils.segment.tiffslide.open_slide', return_value=mock_wsi):
+            with patch('mussel.utils.segment.np.array', return_value=[[0, 0, 0]]):
+                with patch('mussel.utils.segment.Image.fromarray') as mock_fromarray:
+                    mock_img = MagicMock()
+                    mock_img.size = (1000, 1000)
+                    mock_fromarray.return_value = mock_img
+                    
+                    from mussel.utils.segment import draw_slide_mask
+                    result = draw_slide_mask("/fake/path.svs", polygon)
+                    
+                    # Verify WSI was closed
+                    mock_wsi.close.assert_called_once()
+    
+    def test_draw_slide_mask_closes_wsi_on_exception(self):
+        """Test that WSI is closed even if exception occurs during processing"""
+        from unittest.mock import MagicMock, patch
+        import shapely
+        
+        # Create mock WSI
+        mock_wsi = MagicMock()
+        mock_wsi.level_dimensions = [(1000, 1000)]
+        
+        # Make read_region raise an exception
+        mock_wsi.read_region.side_effect = RuntimeError("Simulated error")
+        
+        polygon = shapely.geometry.box(0, 0, 100, 100)
+        
+        with patch('mussel.utils.segment.tiffslide.open_slide', return_value=mock_wsi):
+            with patch('mussel.utils.segment._assert_level_downsamples', return_value=[(1.0, 1.0)]):
+                from mussel.utils.segment import draw_slide_mask
+                
+                # Should raise exception
+                with pytest.raises(RuntimeError, match="Simulated error"):
+                    draw_slide_mask("/fake/path.svs", polygon)
+                
+                # But WSI should still be closed
+                mock_wsi.close.assert_called_once()

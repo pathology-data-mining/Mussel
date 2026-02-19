@@ -589,57 +589,59 @@ def draw_slide_mask(
     Draw slide mask with polygon contours or list of grid polygons
     """
     wsi = tiffslide.open_slide(slide_path)
+    
+    try:
+        if vis_level < 0:
+            if len(wsi.level_dimensions) == 1:
+                vis_level = 0
+            else:
+                vis_level = wsi.get_best_level_for_downsample(64)
 
-    if vis_level < 0:
-        if len(wsi.level_dimensions) == 1:
-            vis_level = 0
-        else:
-            vis_level = wsi.get_best_level_for_downsample(64)
+        if type(polygons) != list:
+            polygons = [polygons]
 
-    if type(polygons) != list:
-        polygons = [polygons]
+        level_downsamples = _assert_level_downsamples(wsi)
+        downsample = level_downsamples[vis_level]
+        scale = [1 / downsample[0], 1 / downsample[1]]
+        region_size = wsi.level_dimensions[vis_level]
 
-    level_downsamples = _assert_level_downsamples(wsi)
-    downsample = level_downsamples[vis_level]
-    scale = [1 / downsample[0], 1 / downsample[1]]
-    region_size = wsi.level_dimensions[vis_level]
+        img = np.array(wsi.read_region((0, 0), vis_level, region_size).convert("RGB"))
 
-    img = np.array(wsi.read_region((0, 0), vis_level, region_size).convert("RGB"))
+        img = Image.fromarray(img)
 
-    img = Image.fromarray(img)
+        draw = ImageDraw.Draw(img, "RGBA")
 
-    draw = ImageDraw.Draw(img, "RGBA")
+        for polygon in polygons:
+            scaled_polygon = scale_geometry(polygon, scale[0])
+            if isinstance(polygon, MultiPolygon):
+                for geom in scaled_polygon.geoms:
+                    draw.polygon(geom.exterior.coords, outline=outline, fill=fill)
+            else:
+                draw.polygon(scaled_polygon.exterior.coords, outline=outline, fill=fill)
 
-    for polygon in polygons:
-        scaled_polygon = scale_geometry(polygon, scale[0])
-        if isinstance(polygon, MultiPolygon):
-            for geom in scaled_polygon.geoms:
-                draw.polygon(geom.exterior.coords, outline=outline, fill=fill)
-        else:
-            draw.polygon(scaled_polygon.exterior.coords, outline=outline, fill=fill)
-
-    image_width, image_height = img.size
-    if custom_downsample and custom_downsample > 1:
-        img = img.resize(
-            (
-                int(image_width / custom_downsample),
-                int(image_height / custom_downsample),
+        image_width, image_height = img.size
+        if custom_downsample and custom_downsample > 1:
+            img = img.resize(
+                (
+                    int(image_width / custom_downsample),
+                    int(image_height / custom_downsample),
+                )
             )
-        )
 
-    if max_size is not None and (image_width > max_size or image_height > max_size):
-        resize_factor = (
-            max_size / image_width
-            if image_width > image_height
-            else max_size / image_height
-        )
-        img = img.resize(
-            (int(image_width * resize_factor), int(image_height * resize_factor))
-        )
+        if max_size is not None and (image_width > max_size or image_height > max_size):
+            resize_factor = (
+                max_size / image_width
+                if image_width > image_height
+                else max_size / image_height
+            )
+            img = img.resize(
+                (int(image_width * resize_factor), int(image_height * resize_factor))
+            )
 
-    wsi.close()
-
-    return img
+        return img
+    finally:
+        # Always close WSI file handle, even if exception occurs
+        wsi.close()
 
 
 def _save_patch_png(coord, img, save_dir):
