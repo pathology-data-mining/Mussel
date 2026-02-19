@@ -448,132 +448,134 @@ def segment_tissue(
         Returns None if no tissue contours are found or if slide dimensions are too large.
     """
     wsi = tiffslide.open_slide(slide_path)
-    if slide_id is None:
-        slide_id = Path(slide_path).stem
+    
+    try:
+        if slide_id is None:
+            slide_id = Path(slide_path).stem
 
-    if seg_level < 0:
-        if len(wsi.level_dimensions) == 1:
-            seg_level = 0
-        else:
-            seg_level = wsi.get_best_level_for_downsample(64)
+        if seg_level < 0:
+            if len(wsi.level_dimensions) == 1:
+                seg_level = 0
+            else:
+                seg_level = wsi.get_best_level_for_downsample(64)
 
-    logger.info(f"Using level {seg_level} for segmentation")
-    width, height = wsi.level_dimensions[seg_level]
-    if width * height > 1e12:
-        logger.error(
-            "level_dim {} x {} is likely too large for successful segmentation, aborting".format(
-                width, height
+        logger.info(f"Using level {seg_level} for segmentation")
+        width, height = wsi.level_dimensions[seg_level]
+        if width * height > 1e12:
+            logger.error(
+                "level_dim {} x {} is likely too large for successful segmentation, aborting".format(
+                    width, height
+                )
             )
-        )
-        return
+            return None
 
-    if step_size is None:
-        step_size = patch_size
+        if step_size is None:
+            step_size = patch_size
 
-    # Get MPP with fallback handling
-    slide_mpp = get_slide_mpp(wsi, slide_path)
+        # Get MPP with fallback handling
+        slide_mpp = get_slide_mpp(wsi, slide_path)
 
-    native_step_size = get_native_size(step_size, mpp, slide_mpp)
-    native_patch_size = get_native_size(patch_size, mpp, slide_mpp)
-    logger.info(f"native_step_size: {native_step_size}")
-    logger.info(f"native_patch_size: {native_patch_size}")
+        native_step_size = get_native_size(step_size, mpp, slide_mpp)
+        native_patch_size = get_native_size(patch_size, mpp, slide_mpp)
+        logger.info(f"native_step_size: {native_step_size}")
+        logger.info(f"native_patch_size: {native_patch_size}")
 
-    img = np.array(wsi.read_region((0, 0), seg_level, wsi.level_dimensions[seg_level]))
-    img_hsv = cv2.cvtColor(img, cv2.COLOR_RGB2HSV)  # Convert to HSV space
-    img_med = cv2.medianBlur(
-        img_hsv[:, :, 1], median_blur_ksize
-    )  # Apply median blurring
+        img = np.array(wsi.read_region((0, 0), seg_level, wsi.level_dimensions[seg_level]))
+        img_hsv = cv2.cvtColor(img, cv2.COLOR_RGB2HSV)  # Convert to HSV space
+        img_med = cv2.medianBlur(
+            img_hsv[:, :, 1], median_blur_ksize
+        )  # Apply median blurring
 
-    # Thresholding
-    if use_otsu:
-        _, img_otsu = cv2.threshold(
-            img_med, 0, segment_max_value, cv2.THRESH_OTSU + cv2.THRESH_BINARY
-        )
-    else:
-        _, img_otsu = cv2.threshold(
-            img_med, segment_threshold, segment_max_value, cv2.THRESH_BINARY
-        )
+        # Thresholding
+        if use_otsu:
+            _, img_otsu = cv2.threshold(
+                img_med, 0, segment_max_value, cv2.THRESH_OTSU + cv2.THRESH_BINARY
+            )
+        else:
+            _, img_otsu = cv2.threshold(
+                img_med, segment_threshold, segment_max_value, cv2.THRESH_BINARY
+            )
 
-    # Morphological closing
-    if morphology_ex_kernel > 0:
-        kernel = np.ones((morphology_ex_kernel, morphology_ex_kernel), np.uint8)
-        img_otsu = cv2.morphologyEx(img_otsu, cv2.MORPH_CLOSE, kernel)
+        # Morphological closing
+        if morphology_ex_kernel > 0:
+            kernel = np.ones((morphology_ex_kernel, morphology_ex_kernel), np.uint8)
+            img_otsu = cv2.morphologyEx(img_otsu, cv2.MORPH_CLOSE, kernel)
 
-    level_downsamples = _assert_level_downsamples(wsi)
-    scale = level_downsamples[seg_level]
-    scaled_ref_patch_area = int(ref_patch_size**2 / (scale[0] * scale[1]))
-    tissue_area_threshold *= scaled_ref_patch_area
-    hole_area_threshold *= scaled_ref_patch_area
+        level_downsamples = _assert_level_downsamples(wsi)
+        scale = level_downsamples[seg_level]
+        scaled_ref_patch_area = int(ref_patch_size**2 / (scale[0] * scale[1]))
+        tissue_area_threshold *= scaled_ref_patch_area
+        hole_area_threshold *= scaled_ref_patch_area
 
-    # Find and filter contours
-    contours, hierarchy = cv2.findContours(
-        img_otsu, cv2.RETR_CCOMP, cv2.CHAIN_APPROX_NONE
-    )  # Find contours
-    if contours is None or hierarchy is None:
-        return None
-    hierarchy = np.squeeze(hierarchy, axis=(0,))[:, 2:]
-    foreground_contours, hole_contours = _filter_contours(
-        contours,
-        hierarchy,
-        tissue_area_threshold,
-        hole_area_threshold,
-        max_num_holes,
-    )  # Necessary for filtering out artifacts
+        # Find and filter contours
+        contours, hierarchy = cv2.findContours(
+            img_otsu, cv2.RETR_CCOMP, cv2.CHAIN_APPROX_NONE
+        )  # Find contours
+        if contours is None or hierarchy is None:
+            return None
+        hierarchy = np.squeeze(hierarchy, axis=(0,))[:, 2:]
+        foreground_contours, hole_contours = _filter_contours(
+            contours,
+            hierarchy,
+            tissue_area_threshold,
+            hole_area_threshold,
+            max_num_holes,
+        )  # Necessary for filtering out artifacts
 
-    contours_tissue = scale_contour_dim(foreground_contours, scale)
-    holes_tissue = scale_holes_dim(hole_contours, scale)
+        contours_tissue = scale_contour_dim(foreground_contours, scale)
+        holes_tissue = scale_holes_dim(hole_contours, scale)
 
-    # exclude_ids = [0,7,9]
-    if len(keep_ids) > 0:
-        contour_ids = set(keep_ids) - set(exclude_ids)
-    else:
-        contour_ids = set(np.arange(len(contours_tissue))) - set(exclude_ids)
+        # exclude_ids = [0,7,9]
+        if len(keep_ids) > 0:
+            contour_ids = set(keep_ids) - set(exclude_ids)
+        else:
+            contour_ids = set(np.arange(len(contours_tissue))) - set(exclude_ids)
 
-    contours_tissue = [contours_tissue[i] for i in contour_ids]
-    holes_tissue = [holes_tissue[i] for i in contour_ids]
+        contours_tissue = [contours_tissue[i] for i in contour_ids]
+        holes_tissue = [holes_tissue[i] for i in contour_ids]
 
-    logger.info(f"Creating patches for: {slide_id} ...")
-    if contours_tissue is None or len(contours_tissue) == 0:
-        logger.info("0 contours found")
-        return None
+        logger.info(f"Creating patches for: {slide_id} ...")
+        if contours_tissue is None or len(contours_tissue) == 0:
+            logger.info("0 contours found")
+            return None
 
-    n_contours = len(contours_tissue)
-    logger.info(f"Total number of contours: {n_contours}")
+        n_contours = len(contours_tissue)
+        logger.info(f"Total number of contours: {n_contours}")
 
-    polygon = contours_to_polygon(contours_tissue, holes_tissue)
-    grid = partition(polygon, native_step_size, native_patch_size)
-    coords = [g.exterior.coords[0] for g in grid]
-    logger.info(f"Total number of patches: {len(coords)}")
+        polygon = contours_to_polygon(contours_tissue, holes_tissue)
+        grid = partition(polygon, native_step_size, native_patch_size)
+        coords = [g.exterior.coords[0] for g in grid]
+        logger.info(f"Total number of patches: {len(coords)}")
 
-    attrs = {
-        "seg_level": seg_level,
-        "segment_threshold": segment_threshold,
-        "segment_max_value": segment_max_value,
-        "median_blur_ksize": median_blur_ksize,
-        "morphology_ex_kernel": morphology_ex_kernel,
-        "use_otsu": use_otsu,
-        "tissue_area_threshold": tissue_area_threshold,
-        "hole_area_threshold": hole_area_threshold,
-        "max_num_holes": max_num_holes,
-        "ref_patch_size": ref_patch_size,
-        "patch_size": native_patch_size,
-        "step_size": native_step_size,
-        "patch_size_to_resize_to_for_desired_mpp": patch_size,
-        "patch_level": 0,
-        "mpp": mpp,
-        "native_mpp": slide_mpp,
-        "level_dim": wsi.level_dimensions[0],
-        "name": slide_id,
-    }
-    if output_h5_path:
-        asset_dict = {"coords": np.array(coords)}
-        attr_dict = {"coords": attrs}
-        save_hdf5(output_h5_path, asset_dict, attr_dict, mode="w")
-        logger.info(f"Writing to {output_h5_path}")
+        attrs = {
+            "seg_level": seg_level,
+            "segment_threshold": segment_threshold,
+            "segment_max_value": segment_max_value,
+            "median_blur_ksize": median_blur_ksize,
+            "morphology_ex_kernel": morphology_ex_kernel,
+            "use_otsu": use_otsu,
+            "tissue_area_threshold": tissue_area_threshold,
+            "hole_area_threshold": hole_area_threshold,
+            "max_num_holes": max_num_holes,
+            "ref_patch_size": ref_patch_size,
+            "patch_size": native_patch_size,
+            "step_size": native_step_size,
+            "patch_size_to_resize_to_for_desired_mpp": patch_size,
+            "patch_level": 0,
+            "mpp": mpp,
+            "native_mpp": slide_mpp,
+            "level_dim": wsi.level_dimensions[0],
+            "name": slide_id,
+        }
+        if output_h5_path:
+            asset_dict = {"coords": np.array(coords)}
+            attr_dict = {"coords": attrs}
+            save_hdf5(output_h5_path, asset_dict, attr_dict, mode="w")
+            logger.info(f"Writing to {output_h5_path}")
 
-    wsi.close()
-
-    return polygon, grid, coords, attrs
+        return polygon, grid, coords, attrs
+    finally:
+        wsi.close()
 
 
 def draw_slide_mask(
@@ -692,31 +694,36 @@ def save_patches_png(
     Save patches as png
     """
     wsi = tiffslide.open_slide(slide_path)
-
-    # Get MPP with fallback handling
-    slide_mpp = get_slide_mpp(wsi, slide_path)
+    pool = None
     
-    native_patch_size = get_native_size(patch_size, mpp, slide_mpp)
+    try:
+        # Get MPP with fallback handling
+        slide_mpp = get_slide_mpp(wsi, slide_path)
+        
+        native_patch_size = get_native_size(patch_size, mpp, slide_mpp)
 
-    save_dir = Path(save_dir)
-    save_dir.mkdir(parents=True, exist_ok=True)
+        save_dir = Path(save_dir)
+        save_dir.mkdir(parents=True, exist_ok=True)
 
-    pool = mp.Pool(num_workers)
-    patch_gen = get_patch_generator(
-        wsi,
-        coords,
-        patch_level=0,
-        patch_size=native_patch_size,
-        filter_black_white=filter_black_white,
-        black_threshold=black_threshold,
-        white_threshold=white_threshold,
-    )
-    pool.starmap(
-        functools.partial(
-            _save_patch_png,
-            save_dir=save_dir,
-        ),
-        patch_gen,
-    )
-    pool.close()
-    wsi.close()
+        pool = mp.Pool(num_workers)
+        patch_gen = get_patch_generator(
+            wsi,
+            coords,
+            patch_level=0,
+            patch_size=native_patch_size,
+            filter_black_white=filter_black_white,
+            black_threshold=black_threshold,
+            white_threshold=white_threshold,
+        )
+        pool.starmap(
+            functools.partial(
+                _save_patch_png,
+                save_dir=save_dir,
+            ),
+            patch_gen,
+        )
+    finally:
+        if pool is not None:
+            pool.close()
+            pool.join()
+        wsi.close()

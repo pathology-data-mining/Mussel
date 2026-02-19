@@ -379,3 +379,112 @@ class TestDrawSlideMask:
                 
                 # But WSI should still be closed
                 mock_wsi.close.assert_called_once()
+
+
+def test_segment_tissue_closes_wsi_on_early_return_dimension_error():
+    """Test that segment_tissue closes WSI when returning early due to large dimensions."""
+    mock_wsi = MagicMock()
+    mock_wsi.level_dimensions = [(10**7, 10**7)]  # Triggers width * height > 1e12
+    
+    with patch('mussel.utils.segment.tiffslide.open_slide', return_value=mock_wsi):
+        from mussel.utils.segment import segment_tissue
+        
+        result = segment_tissue("/fake/path.svs", seg_level=0)
+        
+        # Should return None due to dimension error
+        assert result is None
+        # But WSI should still be closed
+        mock_wsi.close.assert_called_once()
+
+
+def test_segment_tissue_closes_wsi_on_early_return_no_contours():
+    """Test that segment_tissue closes WSI when returning early due to no contours."""
+    mock_wsi = MagicMock()
+    mock_wsi.level_dimensions = [(1000, 1000), (500, 500)]
+    mock_wsi.get_best_level_for_downsample.return_value = 1
+    
+    # Mock read_region to return a blank image (no tissue)
+    mock_img = np.zeros((500, 500, 3), dtype=np.uint8)
+    mock_wsi.read_region.return_value = mock_img
+    
+    with patch('mussel.utils.segment.tiffslide.open_slide', return_value=mock_wsi):
+        with patch('mussel.utils.segment._assert_level_downsamples', return_value=[(1.0, 1.0), (2.0, 2.0)]):
+            with patch('cv2.findContours', return_value=([], None)):  # No contours found
+                from mussel.utils.segment import segment_tissue
+                
+                result = segment_tissue("/fake/path.svs")
+                
+                # Should return None due to no contours
+                assert result is None
+                # But WSI should still be closed
+                mock_wsi.close.assert_called_once()
+
+
+def test_segment_tissue_closes_wsi_on_exception():
+    """Test that segment_tissue closes WSI when an exception occurs."""
+    mock_wsi = MagicMock()
+    mock_wsi.level_dimensions = [(1000, 1000)]
+    mock_wsi.read_region.side_effect = RuntimeError("Simulated read error")
+    
+    with patch('mussel.utils.segment.tiffslide.open_slide', return_value=mock_wsi):
+        from mussel.utils.segment import segment_tissue
+        
+        with pytest.raises(RuntimeError, match="Simulated read error"):
+            segment_tissue("/fake/path.svs", seg_level=0)
+        
+        # WSI should still be closed despite exception
+        mock_wsi.close.assert_called_once()
+
+
+def test_save_patches_png_closes_wsi_and_pool_on_success():
+    """Test that save_patches_png closes both WSI and multiprocessing pool on success."""
+    mock_wsi = MagicMock()
+    mock_wsi.level_dimensions = [(1000, 1000)]
+    mock_pool = MagicMock()
+    
+    coords = [(0, 0), (256, 0), (0, 256)]
+    
+    with patch('mussel.utils.segment.tiffslide.open_slide', return_value=mock_wsi):
+        with patch('mussel.utils.segment.mp.Pool', return_value=mock_pool):
+            with patch('mussel.utils.segment.get_slide_mpp', return_value=0.5):
+                from mussel.utils.segment import save_patches_png
+                
+                save_patches_png(
+                    slide_path="/fake/path.svs",
+                    coords=coords,
+                    save_dir="/fake/output",
+                    num_workers=2,
+                )
+                
+                # Both WSI and pool should be closed
+                mock_wsi.close.assert_called_once()
+                mock_pool.close.assert_called_once()
+                mock_pool.join.assert_called_once()
+
+
+def test_save_patches_png_closes_wsi_and_pool_on_exception():
+    """Test that save_patches_png closes both WSI and multiprocessing pool when exception occurs."""
+    mock_wsi = MagicMock()
+    mock_wsi.level_dimensions = [(1000, 1000)]
+    mock_pool = MagicMock()
+    mock_pool.starmap.side_effect = RuntimeError("Simulated pool error")
+    
+    coords = [(0, 0), (256, 0)]
+    
+    with patch('mussel.utils.segment.tiffslide.open_slide', return_value=mock_wsi):
+        with patch('mussel.utils.segment.mp.Pool', return_value=mock_pool):
+            with patch('mussel.utils.segment.get_slide_mpp', return_value=0.5):
+                from mussel.utils.segment import save_patches_png
+                
+                with pytest.raises(RuntimeError, match="Simulated pool error"):
+                    save_patches_png(
+                        slide_path="/fake/path.svs",
+                        coords=coords,
+                        save_dir="/fake/output",
+                        num_workers=2,
+                    )
+                
+                # Both WSI and pool should still be closed despite exception
+                mock_wsi.close.assert_called_once()
+                mock_pool.close.assert_called_once()
+                mock_pool.join.assert_called_once()
