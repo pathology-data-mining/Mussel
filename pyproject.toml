@@ -4,7 +4,7 @@ version = "1.1.1"
 description = "weakly supervised computational pathology on whole slide images"
 license = { text = "GPL-3.0 license" }
 readme = "README.md"
-requires-python = ">=3.10, <3.12"
+requires-python = ">=3.10, <3.12"  # NOTE: flash-attn prebuilt wheels (see lines 112–113) are only provided for 3.10/3.11; update wheel URLs if raising this upper bound.
 dependencies = [
   "pandas",
   "numpy<2",
