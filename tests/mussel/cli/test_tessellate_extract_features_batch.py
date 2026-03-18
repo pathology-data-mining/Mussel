@@ -12,11 +12,6 @@ from mussel.cli.tessellate_extract_features import TessellateExtractFeaturesConf
 from mussel.cli.tessellate import SegConfig
 from mussel.models import ModelType
 
-# Import fixtures from common conftest
-import sys
-sys.path.insert(0, str(Path(__file__).parent.parent))
-from conftest import test_data_path, classifier_pkl_path
-
 
 @pytest.mark.slow
 @pytest.mark.integration

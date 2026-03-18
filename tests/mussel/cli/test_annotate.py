@@ -1,13 +1,9 @@
 import os
+from pathlib import Path
 from omegaconf import OmegaConf
 
 import mussel.cli.annotate
 from mussel.cli.annotate import AnnotateConfig
-
-# Import fixtures from common conftest
-import sys
-sys.path.insert(0, str(Path(__file__).parent.parent))
-from conftest import test_data_path
 
 def test_annotate(tmp_path, test_data_path):
     annotation_classes = [

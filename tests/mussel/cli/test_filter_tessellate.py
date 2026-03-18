@@ -1,13 +1,11 @@
 import os
+from pathlib import Path
+
+import pytest
 
 from mussel.cli.filter_tessellate import FilterTessellateConfig
 from mussel.cli.tessellate import SegConfig
 from mussel.models import ModelType
-
-# Import fixtures from common conftest
-import sys
-sys.path.insert(0, str(Path(__file__).parent.parent))
-from conftest import test_data_path, classifier_pkl_path
 
 
 def test_filter_tessellate_default_patch_size_for_model():

@@ -44,7 +44,13 @@ from mussel.utils import (
     get_slide_id_from_path,
     get_slide_ids_from_paths,
     ensure_directory_exists,
+    is_remote_path,
+    safe_path_join,
 )
+
+# Private aliases used throughout this module
+_is_remote_path = is_remote_path
+_safe_path_join = safe_path_join
 
 
 defaults = ["_self_", {"seg_config": "default"}]
@@ -337,13 +343,18 @@ def main(
                 if cfg.model_type is not None
                 else cfg.prefilter_model_type
             )
-            recommended_patch_size = get_default_patch_size(model_for_patch_size)
-            if recommended_patch_size != SegConfig.DEFAULT_PATCH_SIZE:
-                logger.info(
-                    f"Setting seg_config.patch_size={recommended_patch_size} based on "
-                    f"model_type={model_for_patch_size.name} (recommended default for this model)"
-                )
-                cfg.seg_config.patch_size = recommended_patch_size
+            # Skip auto-setting when model_type is a list (multi-model mode);
+            # patch size cannot be inferred from multiple models unambiguously.
+            if isinstance(model_for_patch_size, (list, ListConfig)):
+                pass
+            else:
+                recommended_patch_size = get_default_patch_size(model_for_patch_size)
+                if recommended_patch_size != SegConfig.DEFAULT_PATCH_SIZE:
+                    logger.info(
+                        f"Setting seg_config.patch_size={recommended_patch_size} based on "
+                        f"model_type={model_for_patch_size.name} (recommended default for this model)"
+                    )
+                    cfg.seg_config.patch_size = recommended_patch_size
         except (ValueError, AttributeError):
             # Model not in mapping or other issue, keep default
             pass

@@ -403,9 +403,7 @@ def create_visualizations(
     if output_grid_mask_path:
         logger.info(f"Creating grid mask with {len(final_coords)} tiles")
         with h5py.File(tessellate_h5_path, "r") as h5:
-            native_patch_size = h5.attrs["patch_size"]
-        
-        grid_polygons = []
+            native_patch_size = h5["coords"].attrs["patch_size"]
         for coord in final_coords:
             x, y = coord
             poly = Polygon([

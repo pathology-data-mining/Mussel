@@ -254,7 +254,7 @@ def main(
         logger.info(f"Creating filtered grid mask with {len(coords)} tiles")
         # Read patch_size from the tessellate h5 file to create proper grid boxes
         with h5py.File(tessellate_h5_path, "r") as h5:
-            native_patch_size = h5.attrs["patch_size"]
+            native_patch_size = h5["coords"].attrs["patch_size"]
         
         # Create Polygon boxes for each filtered coordinate
         filtered_grid = []

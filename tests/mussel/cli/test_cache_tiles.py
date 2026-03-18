@@ -1,13 +1,11 @@
 import os
+from pathlib import Path
+
+import pytest
 from omegaconf import OmegaConf
 
 import mussel.cli.cache_tiles
 from mussel.cli.cache_tiles import CacheTilesConfig
-
-# Import fixtures from common conftest
-import sys
-sys.path.insert(0, str(Path(__file__).parent.parent))
-from conftest import test_data_path
 
 @pytest.mark.slow
 @pytest.mark.integration
