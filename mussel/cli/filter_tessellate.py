@@ -1,5 +1,5 @@
 import os
-import pickle
+import shutil
 import ssl
 import tempfile
 import logging
@@ -9,7 +9,6 @@ from typing import Any, List, Optional
 
 import h5py
 import hydra
-import numpy as np
 import torch
 import tiffslide
 from hydra.conf import HelpConf, HydraConf
@@ -26,7 +25,7 @@ from mussel.cli.tessellate import (
     PngConfig,
 )
 from mussel.models import ModelType, get_default_patch_size
-from mussel.utils import save_features, filter_features, save_hdf5
+from mussel.utils import save_features, filter_features, save_hdf5, load_classifier, load_features_from_h5
 from mussel.utils.segment import draw_slide_mask, save_patches_png, segment_tissue
 
 logger = logging.getLogger(__name__)
@@ -170,7 +169,6 @@ def main(
     else:
         logger.error("Tessellation failed")
         if temp_dir:
-            import shutil
             shutil.rmtree(temp_dir)
         return
 
@@ -213,37 +211,31 @@ def main(
     # Step 3: Filter features
     logger.info("Step 3/3: Filtering features using classifier...")
     logger.info(f"Loading classifier from {cfg.classifier_pkl}")
-    with open(cfg.classifier_pkl, "rb") as f:
-        classifier = pickle.load(f)
+    classifier = load_classifier(cfg.classifier_pkl)
 
-    with h5py.File(features_h5_path, "r") as features_h5:
-        if features_pt_path and os.path.exists(features_pt_path):
-            features = torch.load(features_pt_path, weights_only=True)
-        else:
-            features = np.array(features_h5["features"])
-            features = torch.from_numpy(features)
-        logger.info(
-            f"Loaded {features.shape[0]} features of dimension {features.shape[1]}"
-        )
-        features, coords = filter_features(
-            features,
-            features_h5["coords"][:],
-            classifier,
-            cfg.classifier_threshold,
-        )
+    features, coords_all = load_features_from_h5(features_h5_path, features_pt_path)
+    logger.info(
+        f"Loaded {features.shape[0]} features of dimension {features.shape[1]}"
+    )
+    features, coords = filter_features(
+        features,
+        coords_all,
+        classifier,
+        cfg.classifier_threshold,
+    )
 
-        logger.info(f"Saving filtered results to {cfg.output_h5_path}")
-        asset_dict = {"coords": coords}
-        if cfg.save_features_to_h5:
-            asset_dict["features"] = features.numpy()
-        save_hdf5(
-            cfg.output_h5_path,
-            asset_dict,
-            attr_h5_path=features_h5_path,
-            mode="w",
-        )
+    logger.info(f"Saving filtered results to {cfg.output_h5_path}")
+    asset_dict = {"coords": coords}
+    if cfg.save_features_to_h5:
+        asset_dict["features"] = features.numpy()
+    save_hdf5(
+        cfg.output_h5_path,
+        asset_dict,
+        attr_h5_path=features_h5_path,
+        mode="w",
+    )
 
-        torch.save(features, cfg.output_pt_path)
+    torch.save(features, cfg.output_pt_path)
 
     logger.info(
         f"Filter-tessellate complete. {len(coords)} tiles passed the threshold."
@@ -299,7 +291,6 @@ def main(
 
     # Clean up temporary directory if not keeping intermediate files
     if temp_dir:
-        import shutil
         shutil.rmtree(temp_dir)
         logger.info("Cleaned up temporary files.")
 

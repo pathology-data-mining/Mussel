@@ -2,18 +2,15 @@
 
 import logging
 import os
-import pickle
 from pathlib import Path
 from typing import Optional, Union
 
 import h5py
-import numpy as np
-import torch
 import tiffslide
 from omegaconf import OmegaConf
+from shapely.geometry import Polygon
 
 logger = logging.getLogger(__name__)
-from shapely.geometry import Polygon
 
 from mussel.utils import (
     save_features,
@@ -22,6 +19,8 @@ from mussel.utils import (
     save_torch_tensor,
     is_remote_path,
     safe_path_join,
+    load_classifier,
+    load_features_from_h5,
 )
 from mussel.utils.segment import draw_slide_mask, save_patches_png, segment_tissue
 
@@ -129,56 +128,49 @@ def process_slide_tessellation_and_filtering(
         
         # Filter features
         logger.info(f"Filtering features: {slide_path}")
-        with open(cfg.classifier_pkl, "rb") as f:
-            classifier = pickle.load(f)
-        
-        with h5py.File(prefilter_features_h5_path, "r") as features_h5:
-            if prefilter_features_pt_path and os.path.exists(prefilter_features_pt_path):
-                features = torch.load(prefilter_features_pt_path, weights_only=True)
-            else:
-                features = np.array(features_h5["features"])
-                features = torch.from_numpy(features)
-            
-            filtered_features, filtered_coords = filter_features(
-                features,
-                features_h5["coords"][:],
-                classifier,
-                cfg.classifier_threshold,
+        classifier = load_classifier(cfg.classifier_pkl)
+        features, all_coords = load_features_from_h5(prefilter_features_h5_path, prefilter_features_pt_path)
+
+        filtered_features, filtered_coords = filter_features(
+            features,
+            all_coords,
+            classifier,
+            cfg.classifier_threshold,
+        )
+
+        logger.info(
+            f"Filtering complete. {len(filtered_coords)} tiles passed (out of {len(coords)})."
+        )
+
+        if skip_second_extraction:
+            # Save filtered features directly
+            asset_dict = {"coords": filtered_coords}
+            if cfg.save_features_to_h5:
+                asset_dict["features"] = filtered_features.numpy()
+            save_hdf5(
+                output_h5_path,
+                asset_dict,
+                attr_h5_path=prefilter_features_h5_path,
+                mode="w",
             )
-            
-            logger.info(
-                f"Filtering complete. {len(filtered_coords)} tiles passed (out of {len(coords)})."
-            )
-            
-            if skip_second_extraction:
-                # Save filtered features directly
-                asset_dict = {"coords": filtered_coords}
-                if cfg.save_features_to_h5:
-                    asset_dict["features"] = filtered_features.numpy()
-                save_hdf5(
-                    output_h5_path,
-                    asset_dict,
-                    attr_h5_path=prefilter_features_h5_path,
-                    mode="w",
-                )
-                save_torch_tensor(output_pt_path, filtered_features)
-                return None  # No further processing needed
+            save_torch_tensor(output_pt_path, filtered_features)
+            return None  # No further processing needed
+        else:
+            # Save filtered coordinates for second extraction
+            if cfg.keep_intermediate_files:
+                filtered_coords_h5_path = safe_path_join(base_path, f"{Path(slide_path).stem}.filtered_coords.h5")
             else:
-                # Save filtered coordinates for second extraction
-                if cfg.keep_intermediate_files:
-                    filtered_coords_h5_path = safe_path_join(base_path, f"{Path(slide_path).stem}.filtered_coords.h5")
-                else:
-                    filtered_coords_h5_path = os.path.join(temp_dir, f"{Path(slide_path).stem}.filtered_coords.h5")
-                
-                save_hdf5(
-                    filtered_coords_h5_path,
-                    {"coords": filtered_coords},
-                    attr_h5_path=prefilter_features_h5_path,
-                    mode="w",
-                )
-                
-                final_coords_h5_path = filtered_coords_h5_path
-        
+                filtered_coords_h5_path = os.path.join(temp_dir, f"{Path(slide_path).stem}.filtered_coords.h5")
+
+            save_hdf5(
+                filtered_coords_h5_path,
+                {"coords": filtered_coords},
+                attr_h5_path=prefilter_features_h5_path,
+                mode="w",
+            )
+
+            final_coords_h5_path = filtered_coords_h5_path
+
         final_coords = filtered_coords
     
     # Final extraction step
@@ -334,49 +326,42 @@ def process_slide_tessellation_only(
         
         # Filter features
         logger.info(f"Filtering features: {slide_path}")
-        with open(cfg.classifier_pkl, "rb") as f:
-            classifier = pickle.load(f)
-        
-        with h5py.File(prefilter_features_h5_path, "r") as features_h5:
-            if prefilter_features_pt_path and os.path.exists(prefilter_features_pt_path):
-                features = torch.load(prefilter_features_pt_path, weights_only=True)
+        classifier = load_classifier(cfg.classifier_pkl)
+        features, all_coords = load_features_from_h5(prefilter_features_h5_path, prefilter_features_pt_path)
+
+        filtered_features, filtered_coords = filter_features(
+            features,
+            all_coords,
+            classifier,
+            cfg.classifier_threshold,
+        )
+
+        logger.info(
+            f"Filtering complete. {len(filtered_coords)} tiles passed (out of {len(coords)})."
+        )
+
+        if skip_second_extraction:
+            # If not doing second extraction, we're done - need to save final features
+            # But we'll handle this in the batch processing logic
+            final_coords = filtered_coords
+            final_coords_h5_path = prefilter_features_h5_path
+        else:
+            # Create filtered coords h5 for second extraction
+            if cfg.keep_intermediate_files:
+                filtered_coords_h5_path = safe_path_join(base_path, f"{Path(slide_path).stem}.filtered_coords.h5")
             else:
-                features = np.array(features_h5["features"])
-                features = torch.from_numpy(features)
-            
-            filtered_features, filtered_coords = filter_features(
-                features,
-                features_h5["coords"][:],
-                classifier,
-                cfg.classifier_threshold,
+                filtered_coords_h5_path = os.path.join(temp_dir, f"{Path(slide_path).stem}.filtered_coords.h5")
+
+            asset_dict = {"coords": filtered_coords}
+            save_hdf5(
+                filtered_coords_h5_path,
+                asset_dict,
+                attr_h5_path=tessellate_h5_path,
+                mode="w",
             )
-            
-            logger.info(
-                f"Filtering complete. {len(filtered_coords)} tiles passed (out of {len(coords)})."
-            )
-            
-            if skip_second_extraction:
-                # If not doing second extraction, we're done - need to save final features
-                # But we'll handle this in the batch processing logic
-                final_coords = filtered_coords
-                final_coords_h5_path = prefilter_features_h5_path
-            else:
-                # Create filtered coords h5 for second extraction
-                if cfg.keep_intermediate_files:
-                    filtered_coords_h5_path = safe_path_join(base_path, f"{Path(slide_path).stem}.filtered_coords.h5")
-                else:
-                    filtered_coords_h5_path = os.path.join(temp_dir, f"{Path(slide_path).stem}.filtered_coords.h5")
-                
-                asset_dict = {"coords": filtered_coords}
-                save_hdf5(
-                    filtered_coords_h5_path,
-                    asset_dict,
-                    attr_h5_path=tessellate_h5_path,
-                    mode="w",
-                )
-                
-                final_coords_h5_path = filtered_coords_h5_path
-                final_coords = filtered_coords
+
+            final_coords_h5_path = filtered_coords_h5_path
+            final_coords = filtered_coords
     
     # Return paths for batch feature extraction
     return {

@@ -1,20 +1,17 @@
 import logging
 import os
-import pickle
 from dataclasses import dataclass, field
 from typing import Optional
 
-import h5py
-import hydra
-import numpy as np
 import torch
+import hydra
 from hydra.conf import HelpConf, HydraConf
 from hydra.core.config_store import ConfigStore
 from omegaconf import MISSING, OmegaConf
 
 logger = logging.getLogger(__name__)
 
-from mussel.utils import save_hdf5, filter_features
+from mussel.utils import save_hdf5, filter_features, load_classifier, load_features_from_h5
 
 
 @dataclass
@@ -64,37 +61,31 @@ def main(
 ):
     """Filter features using a classifier model."""
     logger.info(f"loading model pkl {cfg.classifier_pkl}")
-    with open(cfg.classifier_pkl, "rb") as f:
-        classifier = pickle.load(f)
+    classifier = load_classifier(cfg.classifier_pkl)
 
-    with h5py.File(cfg.features_h5_path, "r") as features_h5:
-        if cfg.features_pt_path:
-            features = torch.load(cfg.features_pt_path, weights_only=True)
-        else:
-            features = np.array(features_h5["features"])
-            features = torch.from_numpy(features)
-        logger.info(
-            f"Loaded {features.shape[0]} features of dimension {features.shape[1]}"
-        )
-        features, coords = filter_features(
-            features,
-            features_h5["coords"][:],
-            classifier,
-            cfg.classifier_threshold,
-        )
+    features, coords_all = load_features_from_h5(cfg.features_h5_path, cfg.features_pt_path)
+    logger.info(
+        f"Loaded {features.shape[0]} features of dimension {features.shape[1]}"
+    )
+    features, coords = filter_features(
+        features,
+        coords_all,
+        classifier,
+        cfg.classifier_threshold,
+    )
 
-        logger.info(f"Saving to {cfg.output_h5_path}")
-        asset_dict = {"coords": coords}
-        if cfg.save_features_to_h5:
-            asset_dict["features"] = features.numpy()
-        save_hdf5(
-            cfg.output_h5_path,
-            asset_dict,
-            attr_h5_path=cfg.features_h5_path,
-            mode="w",
-        )
+    logger.info(f"Saving to {cfg.output_h5_path}")
+    asset_dict = {"coords": coords}
+    if cfg.save_features_to_h5:
+        asset_dict["features"] = features.numpy()
+    save_hdf5(
+        cfg.output_h5_path,
+        asset_dict,
+        attr_h5_path=cfg.features_h5_path,
+        mode="w",
+    )
 
-        torch.save(features, cfg.output_pt_path)
+    torch.save(features, cfg.output_pt_path)
 
 
 if __name__ == "__main__":

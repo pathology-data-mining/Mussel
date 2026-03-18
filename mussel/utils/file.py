@@ -256,6 +256,47 @@ def load_pkl(filename, ssl_verify=True):
     return file
 
 
+def load_classifier(pkl_path: str):
+    """Load a sklearn-style classifier from a pickle file.
+
+    Args:
+        pkl_path: Path to the classifier pickle file.
+
+    Returns:
+        The deserialized classifier object.
+    """
+    with open(pkl_path, "rb") as f:
+        return pickle.load(f)
+
+
+def load_features_from_h5(
+    h5_path: str, pt_path: Optional[str] = None
+):
+    """Load features and coordinates from an HDF5 file.
+
+    If *pt_path* is given and exists, features are loaded from that PyTorch
+    tensor file instead (coordinates are always read from the HDF5 file).
+
+    Args:
+        h5_path: Path to the HDF5 file containing ``features`` and ``coords`` datasets.
+        pt_path: Optional path to a ``.pt`` file whose tensor replaces the HDF5 features.
+
+    Returns:
+        Tuple of ``(features, coords)`` where features is a ``torch.Tensor``
+        and coords is a ``numpy.ndarray``.
+    """
+    import numpy as np
+    import torch
+
+    with h5py.File(h5_path, "r") as h5:
+        if pt_path and os.path.exists(pt_path):
+            features = torch.load(pt_path, weights_only=True)
+        else:
+            features = torch.from_numpy(np.array(h5["features"]))
+        coords = h5["coords"][:]
+    return features, coords
+
+
 def save_hdf5(
     output_path,
     asset_dict,
