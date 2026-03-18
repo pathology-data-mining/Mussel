@@ -374,6 +374,31 @@ def process_slide_tessellation_only(
     }
 
 
+def _build_grid_polygons(coords, tessellate_h5_path: str) -> list:
+    """Build a list of Shapely Polygons for each tile coordinate.
+
+    Args:
+        coords: Array of (x, y) tile coordinates.
+        tessellate_h5_path: HDF5 file whose ``coords`` dataset carries the
+            ``patch_size`` attribute used to size each polygon.
+
+    Returns:
+        List of Shapely :class:`~shapely.geometry.Polygon` objects.
+    """
+    with h5py.File(tessellate_h5_path, "r") as h5:
+        native_patch_size = h5["coords"].attrs["patch_size"]
+    polygons = []
+    for coord in coords:
+        x, y = coord
+        polygons.append(Polygon([
+            [x, y],
+            [x, y + native_patch_size],
+            [x + native_patch_size, y + native_patch_size],
+            [x + native_patch_size, y],
+        ]))
+    return polygons
+
+
 def create_visualizations(
     slide_path: str,
     final_coords,
@@ -387,18 +412,7 @@ def create_visualizations(
     # Create grid visualization
     if output_grid_mask_path:
         logger.info(f"Creating grid mask with {len(final_coords)} tiles")
-        with h5py.File(tessellate_h5_path, "r") as h5:
-            native_patch_size = h5["coords"].attrs["patch_size"]
-        for coord in final_coords:
-            x, y = coord
-            poly = Polygon([
-                [x, y],
-                [x, y + native_patch_size],
-                [x + native_patch_size, y + native_patch_size],
-                [x + native_patch_size, y],
-            ])
-            grid_polygons.append(poly)
-        
+        grid_polygons = _build_grid_polygons(final_coords, tessellate_h5_path)
         grid_mask = draw_slide_mask(
             slide_path,
             grid_polygons,

@@ -7,14 +7,12 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, List, Optional
 
-import h5py
 import hydra
 import torch
 import tiffslide
 from hydra.conf import HelpConf, HydraConf
 from hydra.core.config_store import ConfigStore
 from omegaconf import MISSING, OmegaConf
-from shapely.geometry import Polygon
 
 from mussel.cli.tessellate import (
     SegConfig,
@@ -24,6 +22,7 @@ from mussel.cli.tessellate import (
     VisConfig,
     PngConfig,
 )
+from mussel.cli.tessellate_extract_features_common import _build_grid_polygons
 from mussel.models import ModelType, get_default_patch_size
 from mussel.utils import save_features, filter_features, save_hdf5, load_classifier, load_features_from_h5
 from mussel.utils.segment import draw_slide_mask, save_patches_png, segment_tissue
@@ -244,23 +243,7 @@ def main(
     # Create filtered grid visualization (post-filtering)
     if cfg.output_grid_mask_path:
         logger.info(f"Creating filtered grid mask with {len(coords)} tiles")
-        # Read patch_size from the tessellate h5 file to create proper grid boxes
-        with h5py.File(tessellate_h5_path, "r") as h5:
-            native_patch_size = h5["coords"].attrs["patch_size"]
-        
-        # Create Polygon boxes for each filtered coordinate
-        filtered_grid = []
-        for coord in coords:
-            x, y = coord
-            poly = Polygon([
-                [x, y],
-                [x, y + native_patch_size],
-                [x + native_patch_size, y + native_patch_size],
-                [x + native_patch_size, y],
-            ])
-            filtered_grid.append(poly)
-        
-        # Draw and save the filtered grid mask
+        filtered_grid = _build_grid_polygons(coords, tessellate_h5_path)
         grid_mask = draw_slide_mask(
             cfg.slide_path,
             filtered_grid,
