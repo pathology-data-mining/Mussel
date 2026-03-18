@@ -142,6 +142,7 @@ addopts = "-v --tb=short"
 markers = [
     "slow: marks tests as slow and require significant time to run (deselect with '-m \"not slow\"')",
     "integration: marks integration tests that perform actual model inference",
+    "gpu_compatible: marks tests that support --use-gpu flag for faster execution (use the use_gpu fixture to check)",
 ]
 
 [project.scripts]
