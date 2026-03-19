@@ -138,7 +138,7 @@ requires = ["setuptools"]
 build-backend = "setuptools.build_meta"
 
 [tool.pytest.ini_options]
-addopts = "-v --tb=short"
+addopts = "-v --tb=short --import-mode=importlib"
 markers = [
     "slow: marks tests as slow and require significant time to run (deselect with '-m \"not slow\"')",
     "integration: marks integration tests that perform actual model inference",

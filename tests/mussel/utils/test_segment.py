@@ -1,3 +1,4 @@
+import numpy as np
 import pytest
 from unittest.mock import MagicMock, patch
 
@@ -187,6 +188,7 @@ class TestGetSlideMPP:
     
     def test_get_slide_mpp_type_error_handling(self):
         """Test handling of TypeError when converting MPP value"""
+        import tiffslide
         wsi = MagicMock()
         # Return a value that can't be converted to float
         wsi.properties = {tiffslide.PROPERTY_NAME_MPP_X: object()}
@@ -332,6 +334,7 @@ class TestDrawSlideMask:
         # Create mock WSI
         mock_wsi = MagicMock()
         mock_wsi.level_dimensions = [(1000, 1000), (500, 500)]
+        mock_wsi.level_downsamples = [1.0, 2.0]
         mock_wsi.get_best_level_for_downsample.return_value = 1
         
         # Mock read_region to return a simple image
@@ -345,15 +348,16 @@ class TestDrawSlideMask:
         with patch('mussel.utils.segment.tiffslide.open_slide', return_value=mock_wsi):
             with patch('mussel.utils.segment.np.array', return_value=[[0, 0, 0]]):
                 with patch('mussel.utils.segment.Image.fromarray') as mock_fromarray:
-                    mock_img = MagicMock()
-                    mock_img.size = (1000, 1000)
-                    mock_fromarray.return_value = mock_img
-                    
-                    from mussel.utils.segment import draw_slide_mask
-                    result = draw_slide_mask("/fake/path.svs", polygon)
-                    
-                    # Verify WSI was closed
-                    mock_wsi.close.assert_called_once()
+                    with patch('mussel.utils.segment.scale_geometry', side_effect=lambda g, s: g):
+                        mock_img = MagicMock()
+                        mock_img.size = (1000, 1000)
+                        mock_fromarray.return_value = mock_img
+                        
+                        from mussel.utils.segment import draw_slide_mask
+                        result = draw_slide_mask("/fake/path.svs", polygon)
+                        
+                        # Verify WSI was closed
+                        mock_wsi.close.assert_called_once()
     
     def test_draw_slide_mask_closes_wsi_on_exception(self):
         """Test that WSI is closed even if exception occurs during processing"""
@@ -408,16 +412,17 @@ def test_segment_tissue_closes_wsi_on_early_return_no_contours():
     mock_wsi.read_region.return_value = mock_img
     
     with patch('mussel.utils.segment.tiffslide.open_slide', return_value=mock_wsi):
-        with patch('mussel.utils.segment._assert_level_downsamples', return_value=[(1.0, 1.0), (2.0, 2.0)]):
-            with patch('cv2.findContours', return_value=([], None)):  # No contours found
-                from mussel.utils.segment import segment_tissue
-                
-                result = segment_tissue("/fake/path.svs")
-                
-                # Should return None due to no contours
-                assert result is None
-                # But WSI should still be closed
-                mock_wsi.close.assert_called_once()
+        with patch('mussel.utils.segment.get_slide_mpp', return_value=0.25):
+            with patch('mussel.utils.segment._assert_level_downsamples', return_value=[(1.0, 1.0), (2.0, 2.0)]):
+                with patch('cv2.findContours', return_value=([], None)):  # No contours found
+                    from mussel.utils.segment import segment_tissue
+                    
+                    result = segment_tissue("/fake/path.svs")
+                    
+                    # Should return None due to no contours
+                    assert result is None
+                    # But WSI should still be closed
+                    mock_wsi.close.assert_called_once()
 
 
 def test_segment_tissue_closes_wsi_on_exception():
@@ -427,16 +432,17 @@ def test_segment_tissue_closes_wsi_on_exception():
     mock_wsi.read_region.side_effect = RuntimeError("Simulated read error")
     
     with patch('mussel.utils.segment.tiffslide.open_slide', return_value=mock_wsi):
-        from mussel.utils.segment import segment_tissue
-        
-        with pytest.raises(RuntimeError, match="Simulated read error"):
-            segment_tissue("/fake/path.svs", seg_level=0)
-        
-        # WSI should still be closed despite exception
-        mock_wsi.close.assert_called_once()
+        with patch('mussel.utils.segment.get_slide_mpp', return_value=0.25):
+            from mussel.utils.segment import segment_tissue
+            
+            with pytest.raises(RuntimeError, match="Simulated read error"):
+                segment_tissue("/fake/path.svs", seg_level=0)
+            
+            # WSI should still be closed despite exception
+            mock_wsi.close.assert_called_once()
 
 
-def test_save_patches_png_closes_wsi_and_pool_on_success():
+def test_save_patches_png_closes_wsi_and_pool_on_success(tmp_path):
     """Test that save_patches_png closes both WSI and multiprocessing pool on success."""
     mock_wsi = MagicMock()
     mock_wsi.level_dimensions = [(1000, 1000)]
@@ -452,7 +458,7 @@ def test_save_patches_png_closes_wsi_and_pool_on_success():
                 save_patches_png(
                     slide_path="/fake/path.svs",
                     coords=coords,
-                    save_dir="/fake/output",
+                    save_dir=str(tmp_path / "output"),
                     num_workers=2,
                 )
                 
@@ -462,7 +468,7 @@ def test_save_patches_png_closes_wsi_and_pool_on_success():
                 mock_pool.join.assert_called_once()
 
 
-def test_save_patches_png_closes_wsi_and_pool_on_exception():
+def test_save_patches_png_closes_wsi_and_pool_on_exception(tmp_path):
     """Test that save_patches_png closes both WSI and multiprocessing pool when exception occurs."""
     mock_wsi = MagicMock()
     mock_wsi.level_dimensions = [(1000, 1000)]
@@ -480,7 +486,7 @@ def test_save_patches_png_closes_wsi_and_pool_on_exception():
                     save_patches_png(
                         slide_path="/fake/path.svs",
                         coords=coords,
-                        save_dir="/fake/output",
+                        save_dir=str(tmp_path / "output"),
                         num_workers=2,
                     )
                 

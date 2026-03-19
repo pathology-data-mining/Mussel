@@ -318,6 +318,10 @@ def test_model_download_lock_closes_file_descriptor():
         
         # Test exception flow - fd should still be closed
         opened_fds.clear()
+        # Remove done file so the lock path is taken again (not early-return)
+        done_file = locks_dir / "fd-test-model.done"
+        if done_file.exists():
+            done_file.unlink()
         try:
             with patch("builtins.open", side_effect=tracking_open):
                 with model_download_lock("fd-test-model", cache_dir=tmpdir):
