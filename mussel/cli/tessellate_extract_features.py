@@ -800,8 +800,13 @@ def _main_batch(
                     f"{r['slide_id']}.patch.h5",
                 )
                 if not _is_remote_path(tile_h5_dest):
-                    # Only copy if source and destination are different
-                    if os.path.abspath(intermediate_h5_path) != os.path.abspath(tile_h5_dest):
+                    # Only copy if source and destination are different; avoid
+                    # os.path.abspath on remote paths as it corrupts them.
+                    if _is_remote_path(intermediate_h5_path):
+                        same_path = intermediate_h5_path == tile_h5_dest
+                    else:
+                        same_path = os.path.abspath(intermediate_h5_path) == os.path.abspath(tile_h5_dest)
+                    if not same_path:
                         shutil.copy2(intermediate_h5_path, tile_h5_dest)
                         logger.debug(f"Copied tile features to {tile_h5_dest}")
                     else:

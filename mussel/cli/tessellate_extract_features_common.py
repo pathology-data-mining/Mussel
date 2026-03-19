@@ -25,33 +25,6 @@ from mussel.utils import (
 from mussel.utils.segment import draw_slide_mask, save_patches_png, segment_tissue
 
 
-"""Common functionality for tessellate-extract-features workflows."""
-
-import logging
-import os
-from pathlib import Path
-from typing import Optional, Union
-
-import h5py
-import tiffslide
-from omegaconf import OmegaConf
-from shapely.geometry import Polygon
-
-logger = logging.getLogger(__name__)
-
-from mussel.utils import (
-    save_features,
-    filter_features,
-    save_hdf5,
-    save_torch_tensor,
-    is_remote_path,
-    safe_path_join,
-    load_classifier,
-    load_features_from_h5,
-)
-from mussel.utils.segment import draw_slide_mask, save_patches_png, segment_tissue
-
-
 def _tessellate_and_filter(
     slide_path: str,
     slide_id: Optional[str],
