@@ -86,15 +86,15 @@ test-all:
 
 test-gpu:
 	@echo "Running ALL tests with GPU..."
-	@uv run pytest tests/ -m "" --use-gpu --num-workers=4
+	@uv run pytest tests/ -m "" --use-gpu --num-workers=8
 
 test-fast-gpu:
 	@echo "Running fast tests with GPU..."
-	@uv run pytest tests/ -m "not slow" --use-gpu --num-workers=4
+	@uv run pytest tests/ -m "not slow" --use-gpu --num-workers=8
 
 test-slow-gpu:
 	@echo "Running slow integration tests with GPU..."
-	@uv run pytest tests/ -m slow --use-gpu --num-workers=4
+	@uv run pytest tests/ -m slow --use-gpu --num-workers=8
 
 test-parallel:
 	@echo "Running fast tests in parallel..."

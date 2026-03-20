@@ -28,7 +28,14 @@ dependencies = [
 ]
 
 [dependency-groups]
-dev = ["mypy", "isort", "black", "pytest", "ipython>=8.37.0"]
+dev = [
+    "mypy",
+    "isort",
+    "black",
+    "pytest",
+    "pytest-timeout",
+    "ipython>=8.37.0",
+]
 
 [project.optional-dependencies]
 "tensorflow-gpu" = [
