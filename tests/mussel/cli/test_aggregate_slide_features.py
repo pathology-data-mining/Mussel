@@ -13,7 +13,7 @@ ssl._create_default_https_context = ssl._create_unverified_context
 
 @pytest.mark.slow
 @pytest.mark.timeout(600)
-def test_aggregate_slide_features_mean(tmp_path):
+def test_aggregate_slide_features_mean(tmp_path, use_gpu, num_workers):
     """Test aggregating slide features using mean pooling."""
     # First, we need to create a patch features file
     # For testing, we'll use extract_features to create one
@@ -29,9 +29,9 @@ def test_aggregate_slide_features_mean(tmp_path):
         slide_path=slide_path,
         patch_h5_path=patch_h5_path,
         output_h5_path=patch_features_h5_path,
-        num_workers=1,
+        num_workers=num_workers,
         model_type=ModelType.RESNET50,
-        use_gpu=False,
+        use_gpu=use_gpu,
         intermediate_h5_path=patch_features_h5_path,
         aggregation_method="mean",  # This will create patch features and aggregate
     )
@@ -43,7 +43,7 @@ def test_aggregate_slide_features_mean(tmp_path):
         patch_features_h5_path=patch_features_h5_path,
         output_h5_path=output_h5_path,
         aggregation_method="mean",
-        use_gpu=False,
+        use_gpu=use_gpu,
     )
     mussel.cli.aggregate_slide_features.main(OmegaConf.create(cfg))
     assert os.path.exists(output_h5_path)
@@ -51,7 +51,7 @@ def test_aggregate_slide_features_mean(tmp_path):
 
 @pytest.mark.slow
 @pytest.mark.timeout(600)
-def test_aggregate_slide_features_max(tmp_path):
+def test_aggregate_slide_features_max(tmp_path, use_gpu, num_workers):
     """Test aggregating slide features using max pooling."""
     from mussel.cli.extract_features import ExtractFeaturesConfig
     import mussel.cli.extract_features
@@ -65,9 +65,9 @@ def test_aggregate_slide_features_max(tmp_path):
         slide_path=slide_path,
         patch_h5_path=patch_h5_path,
         output_h5_path=patch_features_h5_path,
-        num_workers=1,
+        num_workers=num_workers,
         model_type=ModelType.RESNET50,
-        use_gpu=False,
+        use_gpu=use_gpu,
         intermediate_h5_path=patch_features_h5_path,
         aggregation_method="max",  # This will create patch features and aggregate
     )
@@ -79,7 +79,7 @@ def test_aggregate_slide_features_max(tmp_path):
         patch_features_h5_path=patch_features_h5_path,
         output_h5_path=output_h5_path,
         aggregation_method="max",
-        use_gpu=False,
+        use_gpu=use_gpu,
     )
     mussel.cli.aggregate_slide_features.main(OmegaConf.create(cfg))
     assert os.path.exists(output_h5_path)
@@ -87,7 +87,7 @@ def test_aggregate_slide_features_max(tmp_path):
 
 @pytest.mark.slow
 @pytest.mark.timeout(600)
-def test_aggregate_slide_features_auto_set_aggregation_method(tmp_path):
+def test_aggregate_slide_features_auto_set_aggregation_method(tmp_path, use_gpu, num_workers):
     """Test that aggregation_method is automatically set to 'model' when slide_model_type is specified."""
     from mussel.cli.extract_features import ExtractFeaturesConfig
     import mussel.cli.extract_features
@@ -101,9 +101,9 @@ def test_aggregate_slide_features_auto_set_aggregation_method(tmp_path):
         slide_path=slide_path,
         patch_h5_path=patch_h5_path,
         output_h5_path=patch_features_h5_path,
-        num_workers=1,
+        num_workers=num_workers,
         model_type=ModelType.RESNET50,
-        use_gpu=False,
+        use_gpu=use_gpu,
         intermediate_h5_path=patch_features_h5_path,
         aggregation_method="identity",
     )
@@ -118,7 +118,7 @@ def test_aggregate_slide_features_auto_set_aggregation_method(tmp_path):
         output_h5_path=output_h5_path,
         slide_model_type=ModelType.GIGAPATH_SLIDE,
         aggregation_method="identity",  # This should be auto-set to "model"
-        use_gpu=False,
+        use_gpu=use_gpu,
     )
     
     # We can't test the full execution without model weights, but we can test config

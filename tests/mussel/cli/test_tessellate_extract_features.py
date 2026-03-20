@@ -49,7 +49,7 @@ def test_explicit_patch_size_preserved():
 @pytest.mark.slow
 @pytest.mark.integration
 @pytest.mark.timeout(600)
-def test_tessellate_extract_features(tmp_path, test_data_path, classifier_pkl_path):
+def test_tessellate_extract_features(tmp_path, test_data_path, classifier_pkl_path, use_gpu, num_workers):
     """Test the integrated tessellate-extract-features workflow with dual extraction."""
     slide_path = os.path.join(test_data_path, "948176.svs")
     classifier_pkl = classifier_pkl_path
@@ -66,9 +66,9 @@ def test_tessellate_extract_features(tmp_path, test_data_path, classifier_pkl_pa
         prefilter_model_type=ModelType.RESNET50,  # Use ResNet50 for pre-filtering
         model_type=None,  # Will use same model as prefilter
         seg_config=seg_config,
-        num_workers=1,
+        num_workers=num_workers,
         batch_size=32,
-        use_gpu=False,  # Use CPU for testing
+        use_gpu=use_gpu,  # Use CPU for testing
         keep_intermediate_files=False,
     )
 
@@ -91,7 +91,7 @@ def test_tessellate_extract_features(tmp_path, test_data_path, classifier_pkl_pa
 @pytest.mark.slow
 @pytest.mark.integration
 @pytest.mark.timeout(600)
-def test_tessellate_extract_features_with_different_models(tmp_path, test_data_path, classifier_pkl_path):
+def test_tessellate_extract_features_with_different_models(tmp_path, test_data_path, classifier_pkl_path, use_gpu, num_workers):
     """Test with different models for pre-filter and post-filter extraction."""
     slide_path = os.path.join(test_data_path, "948176.svs")
     classifier_pkl = classifier_pkl_path
@@ -108,9 +108,9 @@ def test_tessellate_extract_features_with_different_models(tmp_path, test_data_p
         prefilter_model_type=ModelType.RESNET50,  # First extraction with ResNet50
         model_type=ModelType.RESNET50,  # Second extraction also with ResNet50
         seg_config=seg_config,
-        num_workers=1,
+        num_workers=num_workers,
         batch_size=32,
-        use_gpu=False,
+        use_gpu=use_gpu,
         keep_intermediate_files=False,
     )
 
@@ -123,7 +123,7 @@ def test_tessellate_extract_features_with_different_models(tmp_path, test_data_p
 @pytest.mark.slow
 @pytest.mark.integration
 @pytest.mark.timeout(600)
-def test_tessellate_extract_features_with_intermediate_files(tmp_path, test_data_path, classifier_pkl_path):
+def test_tessellate_extract_features_with_intermediate_files(tmp_path, test_data_path, classifier_pkl_path, use_gpu, num_workers):
     """Test the integrated workflow while keeping intermediate files."""
     slide_path = os.path.join(test_data_path, "948176.svs")
     classifier_pkl = classifier_pkl_path
@@ -139,9 +139,9 @@ def test_tessellate_extract_features_with_intermediate_files(tmp_path, test_data
         classifier_threshold=0.75,
         prefilter_model_type=ModelType.RESNET50,
         seg_config=seg_config,
-        num_workers=1,
+        num_workers=num_workers,
         batch_size=32,
-        use_gpu=False,
+        use_gpu=use_gpu,
         keep_intermediate_files=True,  # Keep intermediate files
     )
 
@@ -164,7 +164,7 @@ def test_tessellate_extract_features_with_intermediate_files(tmp_path, test_data
 @pytest.mark.slow
 @pytest.mark.integration
 @pytest.mark.timeout(600)
-def test_tessellate_extract_features_with_visualizations(tmp_path, test_data_path, classifier_pkl_path):
+def test_tessellate_extract_features_with_visualizations(tmp_path, test_data_path, classifier_pkl_path, use_gpu, num_workers):
     """Test the workflow with optional visualization outputs."""
     slide_path = os.path.join(test_data_path, "948176.svs")
     classifier_pkl = classifier_pkl_path
@@ -186,9 +186,9 @@ def test_tessellate_extract_features_with_visualizations(tmp_path, test_data_pat
         output_thumbnail_path=output_thumbnail_path,
         prefilter_model_type=ModelType.RESNET50,
         seg_config=seg_config,
-        num_workers=1,
+        num_workers=num_workers,
         batch_size=32,
-        use_gpu=False,
+        use_gpu=use_gpu,
         keep_intermediate_files=False,
     )
 
@@ -204,7 +204,7 @@ def test_tessellate_extract_features_with_visualizations(tmp_path, test_data_pat
 @pytest.mark.slow
 @pytest.mark.integration
 @pytest.mark.timeout(600)
-def test_tessellate_extract_features_without_filtering(tmp_path, test_data_path):
+def test_tessellate_extract_features_without_filtering(tmp_path, test_data_path, use_gpu, num_workers):
     """Test the workflow without filtering (classifier_pkl=None)."""
     slide_path = os.path.join(test_data_path, "948176.svs")
     output_h5_path = os.path.join(tmp_path, "features.h5")
@@ -218,9 +218,9 @@ def test_tessellate_extract_features_without_filtering(tmp_path, test_data_path)
         classifier_pkl=None,  # No filtering
         prefilter_model_type=ModelType.RESNET50,
         seg_config=seg_config,
-        num_workers=1,
+        num_workers=num_workers,
         batch_size=32,
-        use_gpu=False,
+        use_gpu=use_gpu,
         keep_intermediate_files=False,
     )
 
@@ -243,7 +243,7 @@ def test_tessellate_extract_features_without_filtering(tmp_path, test_data_path)
 @pytest.mark.slow
 @pytest.mark.integration
 @pytest.mark.timeout(600)
-def test_tessellate_extract_features_with_slide_encoder_inference(tmp_path, test_data_path):
+def test_tessellate_extract_features_with_slide_encoder_inference(tmp_path, test_data_path, use_gpu, num_workers):
     """Test that model_type is inferred from slide_model_type when using model aggregation."""
 
     slide_path = os.path.join(test_data_path, "948176.svs")
@@ -262,9 +262,9 @@ def test_tessellate_extract_features_with_slide_encoder_inference(tmp_path, test
         aggregation_method="model",
         slide_model_type=ModelType.GIGAPATH_SLIDE,  # Requires GIGAPATH patch encoder
         seg_config=seg_config,
-        num_workers=1,
+        num_workers=num_workers,
         batch_size=32,
-        use_gpu=False,
+        use_gpu=use_gpu,
         keep_intermediate_files=False,
     )
     

@@ -1,4 +1,4 @@
-.PHONY: help install install-dev test test-fast test-slow test-all test-parallel test-watch clean format lint type-check coverage docs build
+.PHONY: help install install-dev test test-fast test-slow test-all test-gpu test-fast-gpu test-slow-gpu test-parallel test-watch clean format lint type-check coverage docs build
 
 # Default target - show help
 help:
@@ -16,6 +16,9 @@ help:
 	@echo "  make test-fast        Run fast tests only (explicit)"
 	@echo "  make test-slow        Run slow integration tests (~10min)"
 	@echo "  make test-all         Run ALL tests (fast + slow)"
+	@echo "  make test-gpu         Run ALL tests with GPU acceleration"
+	@echo "  make test-fast-gpu    Run fast tests with GPU acceleration"
+	@echo "  make test-slow-gpu    Run slow integration tests with GPU acceleration"
 	@echo "  make test-parallel    Run fast tests in parallel (<1s)"
 	@echo "  make test-watch       Run tests in watch mode (on file change)"
 	@echo "  make test-failed      Re-run only failed tests"
@@ -80,6 +83,18 @@ test-slow:
 test-all:
 	@echo "Running ALL tests (fast + slow)..."
 	@uv run pytest tests/ -m ""
+
+test-gpu:
+	@echo "Running ALL tests with GPU..."
+	@uv run pytest tests/ -m "" --use-gpu --num-workers=8
+
+test-fast-gpu:
+	@echo "Running fast tests with GPU..."
+	@uv run pytest tests/ -m "not slow" --use-gpu --num-workers=8
+
+test-slow-gpu:
+	@echo "Running slow integration tests with GPU..."
+	@uv run pytest tests/ -m slow --use-gpu --num-workers=8
 
 test-parallel:
 	@echo "Running fast tests in parallel..."

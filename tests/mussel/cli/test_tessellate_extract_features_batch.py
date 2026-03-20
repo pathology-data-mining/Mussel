@@ -15,7 +15,7 @@ from mussel.models import ModelType
 
 @pytest.mark.slow
 @pytest.mark.integration
-def test_tessellate_extract_features_batch_basic(tmp_path, test_data_path):
+def test_tessellate_extract_features_batch_basic(tmp_path, test_data_path, use_gpu, num_workers):
     """Test basic batch processing of multiple slides using the unified command."""
     slide_path = os.path.join(test_data_path, "948176.svs")
     # Use the same slide twice to test batch processing
@@ -30,9 +30,9 @@ def test_tessellate_extract_features_batch_basic(tmp_path, test_data_path):
         classifier_pkl=None,  # No filtering
         prefilter_model_type=ModelType.RESNET50,
         seg_config=seg_config,
-        num_workers=1,
+        num_workers=num_workers,
         batch_size=32,
-        use_gpu=False,
+        use_gpu=use_gpu,
         keep_intermediate_files=False,
     )
     
@@ -53,7 +53,7 @@ def test_tessellate_extract_features_batch_basic(tmp_path, test_data_path):
 
 @pytest.mark.slow
 @pytest.mark.integration
-def test_tessellate_extract_features_batch_with_filtering(tmp_path, test_data_path, classifier_pkl_path):
+def test_tessellate_extract_features_batch_with_filtering(tmp_path, test_data_path, classifier_pkl_path, use_gpu, num_workers):
     """Test batch processing with filtering enabled."""
     slide_path = os.path.join(test_data_path, "948176.svs")
     slide_paths = [slide_path, slide_path]
@@ -70,9 +70,9 @@ def test_tessellate_extract_features_batch_with_filtering(tmp_path, test_data_pa
         prefilter_model_type=ModelType.RESNET50,
         model_type=None,  # Will use same as prefilter
         seg_config=seg_config,
-        num_workers=1,
+        num_workers=num_workers,
         batch_size=32,
-        use_gpu=False,
+        use_gpu=use_gpu,
         keep_intermediate_files=False,
     )
     
@@ -85,7 +85,7 @@ def test_tessellate_extract_features_batch_with_filtering(tmp_path, test_data_pa
 
 @pytest.mark.slow
 @pytest.mark.integration
-def test_tessellate_extract_features_batch_with_model_aggregation(tmp_path, test_data_path):
+def test_tessellate_extract_features_batch_with_model_aggregation(tmp_path, test_data_path, use_gpu, num_workers):
     """Test batch processing with slide-level model aggregation."""
     slide_path = os.path.join(test_data_path, "948176.svs")
     slide_paths = [slide_path, slide_path]
@@ -101,10 +101,10 @@ def test_tessellate_extract_features_batch_with_model_aggregation(tmp_path, test
         aggregation_method="model",
         slide_model_type=ModelType.GIGAPATH_SLIDE,
         seg_config=seg_config,
-        num_workers=1,
+        num_workers=num_workers,
         batch_size=32,
         slide_batch_size=2,  # Process both slides in one batch
-        use_gpu=False,
+        use_gpu=use_gpu,
         keep_intermediate_files=False,
     )
     
@@ -179,7 +179,7 @@ def test_batch_processing_performance_benefit():
 
 @pytest.mark.slow
 @pytest.mark.integration
-def test_auto_slide_id_generation(tmp_path, test_data_path):
+def test_auto_slide_id_generation(tmp_path, test_data_path, use_gpu, num_workers):
     """Test that slide IDs are auto-generated from filenames."""
     slide_path = os.path.join(test_data_path, "948176.svs")
     slide_paths = [slide_path]
@@ -193,9 +193,9 @@ def test_auto_slide_id_generation(tmp_path, test_data_path):
         classifier_pkl=None,
         prefilter_model_type=ModelType.RESNET50,
         seg_config=seg_config,
-        num_workers=1,
+        num_workers=num_workers,
         batch_size=32,
-        use_gpu=False,
+        use_gpu=use_gpu,
         keep_intermediate_files=False,
     )
     
@@ -208,7 +208,7 @@ def test_auto_slide_id_generation(tmp_path, test_data_path):
 
 @pytest.mark.slow
 @pytest.mark.integration
-def test_tile_level_batching_single_model_load(tmp_path, test_data_path):
+def test_tile_level_batching_single_model_load(tmp_path, test_data_path, use_gpu, num_workers):
     """Test that tile-level batching loads the patch encoder model only once."""
     slide_path = os.path.join(test_data_path, "948176.svs")
     slide_paths = [slide_path, slide_path]
@@ -223,9 +223,9 @@ def test_tile_level_batching_single_model_load(tmp_path, test_data_path):
         prefilter_model_type=ModelType.RESNET50,
         aggregation_method="mean",  # Use mean aggregation (no slide encoder needed)
         seg_config=seg_config,
-        num_workers=1,
+        num_workers=num_workers,
         batch_size=32,
-        use_gpu=False,
+        use_gpu=use_gpu,
         keep_intermediate_files=False,
     )
     
@@ -253,7 +253,7 @@ def test_tile_level_batching_single_model_load(tmp_path, test_data_path):
 
 @pytest.mark.slow
 @pytest.mark.integration
-def test_tile_level_batching_with_slide_aggregation(tmp_path, test_data_path):
+def test_tile_level_batching_with_slide_aggregation(tmp_path, test_data_path, use_gpu, num_workers):
     """Test tile-level batching combined with slide-level aggregation batching."""
     slide_path = os.path.join(test_data_path, "948176.svs")
     slide_paths = [slide_path, slide_path]
@@ -269,10 +269,10 @@ def test_tile_level_batching_with_slide_aggregation(tmp_path, test_data_path):
         aggregation_method="model",
         slide_model_type=ModelType.GIGAPATH_SLIDE,
         seg_config=seg_config,
-        num_workers=1,
+        num_workers=num_workers,
         batch_size=32,
         slide_batch_size=2,
-        use_gpu=False,
+        use_gpu=use_gpu,
         keep_intermediate_files=True,  # Keep intermediate files to verify pipeline
     )
     

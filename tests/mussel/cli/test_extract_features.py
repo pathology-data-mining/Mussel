@@ -15,7 +15,7 @@ ssl._create_default_https_context = ssl._create_unverified_context
 @pytest.mark.slow
 @pytest.mark.integration
 @pytest.mark.timeout(600)
-def test_extract_features(tmp_path, test_data_path, patch_h5_path):
+def test_extract_features(tmp_path, test_data_path, patch_h5_path, use_gpu, num_workers):
     slide_path = os.path.join(test_data_path, "948176.svs")
     output_h5_path = tmp_path / "test.h5"
     output_pt_path = tmp_path / "test.pt"
@@ -24,9 +24,9 @@ def test_extract_features(tmp_path, test_data_path, patch_h5_path):
         patch_h5_path=patch_h5_path,
         output_h5_path=output_h5_path,
         output_pt_path=output_pt_path,
-        num_workers=1,
+        num_workers=num_workers,
         model_type=ModelType.RESNET50,
-        use_gpu=False,
+        use_gpu=use_gpu,
     )
     mussel.cli.extract_features.main(OmegaConf.create(cfg))
     assert os.path.exists(output_h5_path)
@@ -36,7 +36,7 @@ def test_extract_features(tmp_path, test_data_path, patch_h5_path):
 @pytest.mark.slow
 @pytest.mark.integration
 @pytest.mark.timeout(600)
-def test_extract_features_two_step(tmp_path, test_data_path, patch_h5_path):
+def test_extract_features_two_step(tmp_path, test_data_path, patch_h5_path, use_gpu, num_workers):
     """Test two-step feature extraction with identity aggregation."""
     slide_path = os.path.join(test_data_path, "948176.svs")
     output_h5_path = tmp_path / "test.h5"
@@ -48,9 +48,9 @@ def test_extract_features_two_step(tmp_path, test_data_path, patch_h5_path):
         patch_h5_path=patch_h5_path,
         output_h5_path=output_h5_path,
         output_pt_path=output_pt_path,
-        num_workers=1,
+        num_workers=num_workers,
         model_type=ModelType.RESNET50,
-        use_gpu=False,
+        use_gpu=use_gpu,
         intermediate_h5_path=intermediate_h5_path,
         aggregation_method="mean",  # Two-step mode inferred from aggregation_method
     )
@@ -65,7 +65,7 @@ def test_extract_features_two_step(tmp_path, test_data_path, patch_h5_path):
 @pytest.mark.slow
 @pytest.mark.integration
 @pytest.mark.timeout(600)
-def test_extract_patch_features_direct(tmp_path, test_data_path, patch_h5_path):
+def test_extract_patch_features_direct(tmp_path, test_data_path, patch_h5_path, use_gpu, num_workers):
     """Test direct call to extract_patch_features function."""
     slide_path = os.path.join(test_data_path, "948176.svs")
     output_h5_path = tmp_path / "patch_features.h5"
@@ -75,8 +75,8 @@ def test_extract_patch_features_direct(tmp_path, test_data_path, patch_h5_path):
         slide_path=slide_path,
         output_h5_path=output_h5_path,
         model_type=ModelType.RESNET50,
-        use_gpu=False,
-        num_workers=1,
+        use_gpu=use_gpu,
+        num_workers=num_workers,
     )
     
     assert os.path.exists(result)
@@ -86,7 +86,7 @@ def test_extract_patch_features_direct(tmp_path, test_data_path, patch_h5_path):
 @pytest.mark.slow
 @pytest.mark.integration
 @pytest.mark.timeout(600)
-def test_aggregate_slide_features_identity(tmp_path, test_data_path, patch_h5_path):
+def test_aggregate_slide_features_identity(tmp_path, test_data_path, patch_h5_path, use_gpu, num_workers):
     """Test aggregate_slide_features with identity aggregation."""
     slide_path = os.path.join(test_data_path, "948176.svs")
     patch_features_h5_path = tmp_path / "patch_features.h5"
@@ -99,8 +99,8 @@ def test_aggregate_slide_features_identity(tmp_path, test_data_path, patch_h5_pa
         slide_path=slide_path,
         output_h5_path=patch_features_h5_path,
         model_type=ModelType.RESNET50,
-        use_gpu=False,
-        num_workers=1,
+        use_gpu=use_gpu,
+        num_workers=num_workers,
     )
     
     # Then aggregate them
@@ -120,7 +120,7 @@ def test_aggregate_slide_features_identity(tmp_path, test_data_path, patch_h5_pa
 @pytest.mark.slow
 @pytest.mark.integration
 @pytest.mark.timeout(600)
-def test_aggregate_slide_features_mean(tmp_path, test_data_path, patch_h5_path):
+def test_aggregate_slide_features_mean(tmp_path, test_data_path, patch_h5_path, use_gpu, num_workers):
     """Test aggregate_slide_features with mean pooling."""
     slide_path = os.path.join(test_data_path, "948176.svs")
     patch_features_h5_path = tmp_path / "patch_features.h5"
@@ -133,8 +133,8 @@ def test_aggregate_slide_features_mean(tmp_path, test_data_path, patch_h5_path):
         slide_path=slide_path,
         output_h5_path=patch_features_h5_path,
         model_type=ModelType.RESNET50,
-        use_gpu=False,
-        num_workers=1,
+        use_gpu=use_gpu,
+        num_workers=num_workers,
     )
     
     # Then aggregate with mean pooling
@@ -174,7 +174,7 @@ def test_auto_infer_patch_encoder():
     assert required == ModelType.CONCH1_5
 
 
-def test_auto_set_aggregation_method(tmp_path):
+def test_auto_set_aggregation_method(tmp_path, use_gpu, num_workers):
     """Test that aggregation_method is automatically set to 'model' when slide_model_type is specified."""
     import unittest.mock as mock
     from mussel.utils import save_features
@@ -195,8 +195,8 @@ def test_auto_set_aggregation_method(tmp_path):
             model_type=ModelType.GIGAPATH,  # Will be auto-set
             slide_model_type=ModelType.GIGAPATH_SLIDE,
             # aggregation_method should be auto-set to "model"
-            use_gpu=False,
-            num_workers=1,
+            use_gpu=use_gpu,
+            num_workers=num_workers,
         )
         
         # Verify aggregate_slide_features was called with aggregation_method="model"

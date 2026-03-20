@@ -44,7 +44,7 @@ def test_filter_tessellate_explicit_patch_size_preserved():
 
 @pytest.mark.slow
 @pytest.mark.integration
-def test_filter_tessellate_config_construction(tmp_path, test_data_path, classifier_pkl_path):
+def test_filter_tessellate_config_construction(tmp_path, test_data_path, classifier_pkl_path, use_gpu, num_workers):
     """Test that FilterTessellateConfig can be constructed with valid parameters."""
     slide_path = os.path.join(test_data_path, "948176.svs")
     classifier_pkl = classifier_pkl_path
@@ -60,9 +60,9 @@ def test_filter_tessellate_config_construction(tmp_path, test_data_path, classif
         classifier_threshold=0.75,
         model_type=ModelType.RESNET50,
         seg_config=seg_config,
-        num_workers=1,
+        num_workers=num_workers,
         batch_size=32,
-        use_gpu=False,
+        use_gpu=use_gpu,
         keep_intermediate_files=False,
         save_features_to_h5=True,
     )
@@ -75,7 +75,7 @@ def test_filter_tessellate_config_construction(tmp_path, test_data_path, classif
 
 @pytest.mark.slow
 @pytest.mark.integration
-def test_filter_tessellate_config_with_intermediate_files(tmp_path, test_data_path, classifier_pkl_path):
+def test_filter_tessellate_config_with_intermediate_files(tmp_path, test_data_path, classifier_pkl_path, use_gpu, num_workers):
     """Test config construction with keep_intermediate_files=True."""
     slide_path = os.path.join(test_data_path, "948176.svs")
     classifier_pkl = classifier_pkl_path
@@ -91,9 +91,9 @@ def test_filter_tessellate_config_with_intermediate_files(tmp_path, test_data_pa
         classifier_threshold=0.75,
         model_type=ModelType.RESNET50,
         seg_config=seg_config,
-        num_workers=1,
+        num_workers=num_workers,
         batch_size=32,
-        use_gpu=False,
+        use_gpu=use_gpu,
         keep_intermediate_files=True,
         save_features_to_h5=True,
     )
