@@ -6,6 +6,8 @@ from .feature_extract import (
     extract_patch_features_batch,
     aggregate_slide_features,
     aggregate_slide_features_batch,
+    aggregate_sample_features,
+    subsample_tiles,
     process_dataset,
     get_dataset_processor,
     get_model_path_from_dir,

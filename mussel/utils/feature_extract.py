@@ -1721,6 +1721,171 @@ def save_features(
                 save_torch_tensor(output_pt_path, features)
 
 
+def subsample_tiles(
+    features: np.ndarray,
+    coords: np.ndarray,
+    max_tiles: int,
+    strategy: str,
+    slide_sizes: List[int],
+    seed: int = 42,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Subsample tile features and coordinates to at most *max_tiles* rows.
+
+    Args:
+        features: Array of shape ``(N, D)`` with all concatenated tile features.
+        coords:   Array of shape ``(N, 2)`` with corresponding tile coordinates.
+        max_tiles: Maximum number of tiles to keep.
+        strategy: One of ``"random"``, ``"proportional"``, or ``"equal"``.
+            - ``"random"``: uniformly sample *max_tiles* from the full pool.
+            - ``"proportional"``: sample from each slide in proportion to its size.
+            - ``"equal"``: sample an equal number of tiles from each slide.
+        slide_sizes: List of per-slide tile counts ``[N_1, N_2, ...]`` whose sum
+            equals ``len(features)``.  Required for ``"proportional"`` and
+            ``"equal"`` strategies; ignored by ``"random"``.
+        seed: Random seed for reproducibility.
+
+    Returns:
+        ``(features_sub, coords_sub)`` with at most *max_tiles* rows.
+    """
+    n_total = len(features)
+    if n_total <= max_tiles:
+        return features, coords
+
+    rng = np.random.default_rng(seed)
+
+    if strategy == "random":
+        idx = rng.choice(n_total, size=max_tiles, replace=False)
+        idx.sort()
+
+    elif strategy == "proportional":
+        idx_parts = []
+        start = 0
+        remaining = max_tiles
+        for i, size in enumerate(slide_sizes):
+            if i == len(slide_sizes) - 1:
+                n_i = remaining
+            else:
+                n_i = round(max_tiles * size / n_total)
+                n_i = min(n_i, size)
+                remaining -= n_i
+            slide_idx = np.arange(start, start + size)
+            chosen = rng.choice(slide_idx, size=n_i, replace=False)
+            idx_parts.append(chosen)
+            start += size
+        idx = np.sort(np.concatenate(idx_parts))
+
+    elif strategy == "equal":
+        n_slides = len(slide_sizes)
+        base = max_tiles // n_slides
+        idx_parts = []
+        start = 0
+        for i, size in enumerate(slide_sizes):
+            n_i = base + (max_tiles % n_slides if i == n_slides - 1 else 0)
+            n_i = min(n_i, size)
+            slide_idx = np.arange(start, start + size)
+            chosen = rng.choice(slide_idx, size=n_i, replace=False)
+            idx_parts.append(chosen)
+            start += size
+        idx = np.sort(np.concatenate(idx_parts))
+
+    else:
+        raise ValueError(
+            f"Unknown subsampling strategy {strategy!r}. "
+            "Choose from 'random', 'proportional', or 'equal'."
+        )
+
+    return features[idx], coords[idx]
+
+
+def aggregate_sample_features(
+    patch_features_h5_paths: List[str],
+    sample_ids: List[str],
+    output_dir: str,
+    output_h5_suffix: str = "features.h5",
+    max_tiles: Optional[int] = None,
+    subsampling_strategy: str = "random",
+    seed: int = 42,
+) -> None:
+    """Concatenate per-slide patch features into one H5 per sample.
+
+    Reads per-slide feature H5 files (each with ``features`` (N_i, D) and
+    ``coords`` (N_i, 2) datasets), groups them by ``sample_id``, concatenates
+    on the tile axis, optionally subsamples to ``max_tiles``, and writes one
+    output H5 per unique sample.
+
+    Args:
+        patch_features_h5_paths: Paths to per-slide feature H5 files
+            (produced by ``extract_features``).
+        sample_ids: Sample identifier for each slide (same length as
+            ``patch_features_h5_paths``).  Slides with the same ``sample_id``
+            are concatenated together.
+        output_dir: Directory where one ``{sample_id}.{output_h5_suffix}`` file
+            is written per unique sample.
+        output_h5_suffix: Filename suffix for output files (default
+            ``"features.h5"``).
+        max_tiles: If set, subsample each sample to at most this many tiles
+            after concatenation.  ``None`` keeps all tiles.
+        subsampling_strategy: Strategy when subsampling — ``"random"``,
+            ``"proportional"``, or ``"equal"``.  Ignored when ``max_tiles``
+            is ``None`` or total tiles ≤ ``max_tiles``.
+        seed: Random seed for subsampling reproducibility (default ``42``).
+    """
+    import collections
+    import os
+
+    if len(patch_features_h5_paths) != len(sample_ids):
+        raise ValueError(
+            f"patch_features_h5_paths ({len(patch_features_h5_paths)}) and "
+            f"sample_ids ({len(sample_ids)}) must have the same length."
+        )
+
+    os.makedirs(output_dir, exist_ok=True)
+
+    groups: dict = collections.OrderedDict()
+    for idx, sid in enumerate(sample_ids):
+        groups.setdefault(sid, []).append(idx)
+
+    for sample_id, indices in groups.items():
+        logger.info("Aggregating sample %s from %d slide(s)", sample_id, len(indices))
+
+        all_features = []
+        all_coords = []
+        slide_sizes = []
+
+        for i in indices:
+            h5_path = patch_features_h5_paths[i]
+            with h5py.File(h5_path, "r") as h5:
+                feats = np.array(h5["features"])
+                coords = h5["coords"][:]
+            all_features.append(feats)
+            all_coords.append(coords)
+            slide_sizes.append(len(feats))
+            logger.debug("  slide %d: %d tiles from %s", i, len(feats), h5_path)
+
+        features = np.concatenate(all_features, axis=0)
+        coords = np.concatenate(all_coords, axis=0)
+
+        if max_tiles is not None:
+            features, coords = subsample_tiles(
+                features,
+                coords,
+                max_tiles=max_tiles,
+                strategy=subsampling_strategy,
+                slide_sizes=slide_sizes,
+                seed=seed,
+            )
+            logger.info(
+                "  subsampled to %d tiles (strategy=%s, max_tiles=%d)",
+                len(features),
+                subsampling_strategy,
+                max_tiles,
+            )
+
+        out_path = os.path.join(output_dir, f"{sample_id}.{output_h5_suffix}")
+        save_hdf5(out_path, {"features": features, "coords": coords}, mode="w")
+        logger.info("Wrote %s (%d tiles, dim=%d)", out_path, len(features), features.shape[1])
+
+
 @timed
 def filter_features(
     features: torch.Tensor,
