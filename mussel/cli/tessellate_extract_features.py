@@ -820,7 +820,7 @@ def _main_batch(
                 )
                 with h5py.File(intermediate_h5_path, "r") as f:
                     features = torch.from_numpy(f["features"][:])
-                save_torch_tensor(pt_dest, features)
+                save_torch_tensor(pt_dest, features, ssl_verify=cfg.ssl_verify)
                 logger.debug(f"Saved PT features to {pt_dest}")
                 
                 # Optionally copy/create h5 file with features
@@ -866,7 +866,7 @@ def _main_batch(
                 pt_dest = r["output_pt_path"]
                 with h5py.File(intermediate_h5_path, "r") as f:
                     features = torch.from_numpy(f["features"][:])
-                save_torch_tensor(pt_dest, features)
+                save_torch_tensor(pt_dest, features, ssl_verify=cfg.ssl_verify)
                 logger.debug(f"Saved PT to {pt_dest}")
         elif aggregation_method == "model" and cfg.slide_model_type is None:
             # aggregation_method=model requires a slide_model_type
@@ -992,7 +992,7 @@ def _main_batch(
         for i, r in enumerate(slide_results):
             with h5py.File(temp_output_h5_paths[i], "r") as f:
                 features = torch.from_numpy(f["features"][:])
-                save_torch_tensor(r["output_pt_path"], features)
+                save_torch_tensor(r["output_pt_path"], features, ssl_verify=cfg.ssl_verify)
 
                 # Always create coords-only H5 in batch mode for downstream processes
                 coords = f["coords"][:]

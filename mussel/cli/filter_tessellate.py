@@ -145,11 +145,20 @@ def main(
     # Create temporary directory for intermediate files if not keeping them
     temp_dir = None
     base_path = Path(cfg.output_h5_path).parent
-    
+
     if not cfg.keep_intermediate_files:
         temp_dir = tempfile.mkdtemp()
         logger.info(f"Using temporary directory for intermediate files: {temp_dir}")
-    
+
+    try:
+        _main(cfg, temp_dir, base_path)
+    finally:
+        if temp_dir:
+            shutil.rmtree(temp_dir)
+            logger.info("Cleaned up temporary files.")
+
+
+def _main(cfg: FilterTessellateConfig, temp_dir, base_path):
     # Step 1: Tessellate
     logger.info("Step 1/3: Tessellating whole-slide image...")
     if cfg.keep_intermediate_files:
@@ -157,7 +166,7 @@ def main(
         tessellate_h5_path = str(base_path / f"{Path(cfg.slide_path).stem}.tessellate.h5")
     else:
         tessellate_h5_path = os.path.join(temp_dir, "tessellate.h5")
-    
+
     if values := segment_tissue(
         slide_path=cfg.slide_path,
         slide_id=cfg.slide_id,
@@ -167,8 +176,6 @@ def main(
         polygon, grid, coords, _ = values
     else:
         logger.error("Tessellation failed")
-        if temp_dir:
-            shutil.rmtree(temp_dir)
         return
 
     logger.info(f"Tessellation complete. Found {len(coords)} tiles.")
@@ -232,6 +239,7 @@ def main(
         asset_dict,
         attr_h5_path=features_h5_path,
         mode="w",
+        ssl_verify=cfg.ssl_verify,
     )
 
     torch.save(features, cfg.output_pt_path)
@@ -271,11 +279,6 @@ def main(
             thumbnail = wsi.get_thumbnail(cfg.thumbnail_size)
             with open(cfg.output_thumbnail_path, "wb") as f:
                 thumbnail.save(f)
-
-    # Clean up temporary directory if not keeping intermediate files
-    if temp_dir:
-        shutil.rmtree(temp_dir)
-        logger.info("Cleaned up temporary files.")
 
 
 if __name__ == "__main__":

@@ -1763,7 +1763,7 @@ def subsample_tiles(
         remaining = max_tiles
         for i, size in enumerate(slide_sizes):
             if i == len(slide_sizes) - 1:
-                n_i = remaining
+                n_i = max(0, remaining)
             else:
                 n_i = round(max_tiles * size / n_total)
                 n_i = min(n_i, size)
