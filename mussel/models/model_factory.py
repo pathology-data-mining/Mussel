@@ -155,8 +155,8 @@ MODEL_PATCH_SIZES = {
     ModelType.CLIP: 224,  # QuiltNet
     ModelType.GOOGLEPATH: 224,  # Google Path Foundation
     ModelType.CONCH1_5: 512,
-    ModelType.UNI: 256,  # TRIDENT default patch size for UNI
-    ModelType.UNI2: 256,  # TRIDENT default patch size for UNI2
+    ModelType.UNI: 256,
+    ModelType.UNI2: 256,
     # Slide encoders inherit from their patch encoders
     ModelType.GIGAPATH_SLIDE: 256,
     ModelType.TITAN_SLIDE: 512,

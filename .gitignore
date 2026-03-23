@@ -25,3 +25,4 @@ outputs/
 tmp*
 *~
 *.swp
+mussel.egg-info/
