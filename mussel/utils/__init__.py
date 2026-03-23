@@ -6,6 +6,8 @@ from .feature_extract import (
     extract_patch_features_batch,
     aggregate_slide_features,
     aggregate_slide_features_batch,
+    aggregate_sample_features,
+    subsample_tiles,
     process_dataset,
     get_dataset_processor,
     get_model_path_from_dir,
@@ -29,6 +31,8 @@ from .file import (
     get_slide_id_from_path,
     get_slide_ids_from_paths,
     ensure_directory_exists,
+    load_classifier,
+    load_features_from_h5,
 )
 from .ml import collate_features
 from .segment import (

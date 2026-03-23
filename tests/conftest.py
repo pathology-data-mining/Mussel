@@ -62,12 +62,24 @@ def pytest_addoption(parser: pytest.Parser) -> None:
         default=False,
         help="Run gpu_compatible tests on GPU instead of CPU.",
     )
+    parser.addoption(
+        "--num-workers",
+        type=int,
+        default=4,
+        help="Number of DataLoader workers for slow integration tests (default: 4).",
+    )
 
 
 @pytest.fixture
 def use_gpu(request: pytest.FixtureRequest) -> bool:
     """Return True if --use-gpu was passed and a GPU is available."""
     return request.config.getoption("--use-gpu") and torch.cuda.is_available()
+
+
+@pytest.fixture
+def num_workers(request: pytest.FixtureRequest) -> int:
+    """Return the number of DataLoader workers for integration tests."""
+    return request.config.getoption("--num-workers")
 
 
 @pytest.fixture(autouse=True)

@@ -1,6 +1,8 @@
 import json
 import logging
+import os
 import pickle
+import tempfile
 from abc import ABC, abstractmethod
 from enum import Enum
 from functools import partial
@@ -17,6 +19,8 @@ from timm.data.transforms_factory import create_transform
 from timm.layers import SwiGLUPacked
 from torchvision import transforms
 from transformers import AutoModel
+
+from mussel.models.resnet_custom import resnet50_baseline
 
 # Import gigapath.slide_encoder early to register models with timm
 try:
@@ -728,10 +732,18 @@ class GigapathSlideEncoderModel(TorchModel):
         if model_path.startswith("hf-hub:"):
             # Load GigaPath slide encoder using their official API
             # See: https://github.com/prov-gigapath/prov-gigapath#inference-with-the-slide-encoder
-            import gigapath.slide_encoder
-            import os
-            import tempfile
-            
+            try:
+                import gigapath.slide_encoder
+            except ImportError as e:
+                raise RuntimeError(
+                    f"Failed to import gigapath.slide_encoder: {e}\n"
+                    "The GigaPath slide encoder requires flash-attn, which must be "
+                    "compiled for the CUDA version on your system. "
+                    "Install the 'fastattn' extra built for your CUDA version, e.g.:\n"
+                    "  uv sync --extra fastattn\n"
+                    "or run without the GigaPath slide encoder."
+                ) from e
+
             # gigapath expects "hf_hub:" format (underscore, not hyphen)
             model_path_fixed = model_path.replace("hf-hub:", "hf_hub:")
             
@@ -1117,8 +1129,6 @@ class ResnetModel(TorchModel):
             use_gpu: Whether to use GPU (default: True).
             gpu_device_id: GPU device ID or list of IDs for multi-GPU (default: None).
         """
-        from mussel.models.resnet_custom import resnet50_baseline
-
         model_obj = resnet50_baseline(pretrained=True)
         super().__init__(None, model_obj, use_gpu, gpu_device_id)
 

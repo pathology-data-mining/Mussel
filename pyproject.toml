@@ -28,7 +28,14 @@ dependencies = [
 ]
 
 [dependency-groups]
-dev = ["mypy", "isort", "black", "pytest", "ipython>=8.37.0"]
+dev = [
+    "mypy",
+    "isort",
+    "black",
+    "pytest",
+    "pytest-timeout",
+    "ipython>=8.37.0",
+]
 
 [project.optional-dependencies]
 "tensorflow-gpu" = [
@@ -138,7 +145,7 @@ requires = ["setuptools"]
 build-backend = "setuptools.build_meta"
 
 [tool.pytest.ini_options]
-addopts = "-v --tb=short"
+addopts = "-v --tb=short --import-mode=importlib"
 markers = [
     "slow: marks tests as slow and require significant time to run (deselect with '-m \"not slow\"')",
     "integration: marks integration tests that perform actual model inference",
@@ -150,6 +157,7 @@ annotate = 'mussel.cli.annotate:main'
 cache_tiles = 'mussel.cli.cache_tiles:main'
 extract_features = 'mussel.cli.extract_features:main'
 aggregate_slide_features = 'mussel.cli.aggregate_slide_features:main'
+aggregate_sample_features = 'mussel.cli.aggregate_sample_features:main'
 filter_features = 'mussel.cli.filter_features:main'
 filter_tessellate = 'mussel.cli.filter_tessellate:main'
 tessellate = 'mussel.cli.tessellate:main'

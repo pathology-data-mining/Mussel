@@ -1,10 +1,11 @@
 import os
+from pathlib import Path
 from omegaconf import OmegaConf
 
 import mussel.cli.annotate
 from mussel.cli.annotate import AnnotateConfig
 
-def test_annotate(tmp_path):
+def test_annotate(tmp_path, test_data_path):
     annotation_classes = [
         "carcinoma in situ",
         "invasive carcinoma",
@@ -14,8 +15,8 @@ def test_annotate(tmp_path):
         "necrosis",
         "invasive adenocarcinoma",
         "sarcoma"]
-    features_pt_path = "tests/testdata/948176.features.pt"
-    class_embedding_pt_path = "tests/testdata/class_embedding.pt"
+    features_pt_path = os.path.join(test_data_path, "948176.features.pt")
+    class_embedding_pt_path = os.path.join(test_data_path, "class_embedding.pt")
     output_csv_path = tmp_path / "test.csv"
     cfg = AnnotateConfig(
         features_pt_path=features_pt_path,

@@ -47,6 +47,7 @@ cs.store(name="class_embedding_config", node=ClassEmbeddingConfig)
 
 @hydra.main(config_path=".", config_name="class_embedding_config", version_base=None)
 def main(cfg: ClassEmbeddingConfig):
+    """Generate class embeddings for zero-shot tissue classification."""
     if cfg.model_path is None:
         cfg.model_path = cfg.model_type.path
     model, _, _ = open_clip.create_model_and_transforms(cfg.model_path)

@@ -3,7 +3,7 @@ import os
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, List, Optional
+from typing import Any, ClassVar, List, Optional
 
 import hydra
 import numpy as np
@@ -12,11 +12,11 @@ import tiffslide
 from hydra.conf import HelpConf, HydraConf
 from hydra.core.config_store import ConfigStore
 from hydra.core.hydra_config import HydraConfig
-from loguru import logger
 from omegaconf import MISSING, OmegaConf
 
-from mussel.utils.segment import (draw_slide_mask, save_patches_png,
-                                  segment_tissue)
+logger = logging.getLogger(__name__)
+
+from mussel.utils.segment import draw_slide_mask, save_patches_png, segment_tissue
 
 
 @dataclass
@@ -39,6 +39,9 @@ class SegConfig:
     exclude_ids (List[int]): List of contour IDs to exclude.
     """
 
+    # Default patch size constant - used to detect when automatic patch size selection should apply
+    DEFAULT_PATCH_SIZE: ClassVar[int] = 256
+    
     patch_size: int = 256
     step_size: Optional[int] = None  # if None, defaults to patch_size
     mpp: float = 0.5
@@ -121,6 +124,7 @@ defaults = ["_self_", {"seg_config": "default"}]
 class TessellateConfig:
     """
     slide_path (str): Path to the whole-slide image.
+    slide_id (Optional[str]): Optional slide ID. If None, the slide filename without extension is used.
     output_h5_path (str): Path to save the HDF5 file with tile coordinates.
     output_png_dir (Optional[str]): Directory to save patches as PNG files.
     output_mask_path (Optional[str]): Path to save the mask image.
@@ -135,6 +139,7 @@ class TessellateConfig:
 
     defaults: List[Any] = field(default_factory=lambda: defaults)
     slide_path: str = MISSING
+    slide_id: Optional[str] = None
     output_h5_path: str = MISSING
     output_png_dir: Optional[str] = None
     output_mask_path: Optional[str] = None
@@ -180,48 +185,20 @@ cs.store(name="tessellate_config", node=TessellateConfig)
 def main(
     cfg: TessellateConfig,
 ):
-    
-    # restrict verbose logging from aiobotocore
-    logging.getLogger('aiobotocore').setLevel(logging.CRITICAL)
-
-    # Inialize WSI
-    slide_id = os.path.splitext(os.path.basename(cfg.slide_path))[0]
-    wsi = tiffslide.open_slide(cfg.slide_path)
-
-    if cfg.vis_config.vis_level < 0:
-        if len(wsi.level_dimensions) == 1:
-            cfg.vis_config.vis_level = 0
-        else:
-            cfg.vis_config.vis_level = wsi.get_best_level_for_downsample(64)
-
-    if cfg.seg_config.seg_level < 0:
-        if len(wsi.level_dimensions) == 1:
-            cfg.seg_config.seg_level = 0
-        else:
-            cfg.seg_config.seg_level = wsi.get_best_level_for_downsample(64)
-
-    w, h = wsi.level_dimensions[cfg.seg_config.seg_level]
-    if w * h > 1e12:
-        logger.error(
-            "level_dim {} x {} is likely too large for successful segmentation, aborting".format(
-                w, h
-            )
-        )
-        return
-
+    """Tile a whole slide image and perform tissue segmentation."""
     if values := segment_tissue(
-        wsi,
-        slide_id=slide_id,
+        slide_path=cfg.slide_path,
+        slide_id=cfg.slide_id,
         output_h5_path=cfg.output_h5_path,
         **OmegaConf.to_container(cfg.seg_config),
-        ):
-        polygon, grid, coords = values
+    ):
+        polygon, grid, coords, _ = values
     else:
         return
 
     if cfg.output_mask_path:
         mask = draw_slide_mask(
-            wsi,
+            cfg.slide_path,
             polygon,
             **OmegaConf.to_container(cfg.vis_config),
         )
@@ -229,7 +206,7 @@ def main(
 
     if cfg.output_grid_mask_path:
         grid_mask = draw_slide_mask(
-            wsi,
+            cfg.slide_path,
             grid,
             **OmegaConf.to_container(cfg.vis_config),
         )
@@ -238,7 +215,7 @@ def main(
     if cfg.output_png_dir:
         logger.info(f"saving patches to {cfg.output_png_dir}")
         save_patches_png(
-            wsi,
+            cfg.slide_path,
             coords,
             save_dir=cfg.output_png_dir,
             num_workers=cfg.num_workers,
@@ -249,12 +226,11 @@ def main(
         )
 
     if cfg.output_thumbnail_path:
-        logger.info(f"saving thumbnail to {cfg.output_thumbnail_path}")
-        thumbnail = wsi.get_thumbnail(cfg.thumbnail_size)
-        with open(cfg.output_thumbnail_path, "wb") as f:
-            thumbnail.save(f)
-
-    wsi.close()
+        with tiffslide.TiffSlide(cfg.slide_path) as wsi:
+            logger.info(f"saving thumbnail to {cfg.output_thumbnail_path}")
+            thumbnail = wsi.get_thumbnail(cfg.thumbnail_size)
+            with open(cfg.output_thumbnail_path, "wb") as f:
+                thumbnail.save(f)
 
 
 if __name__ == "__main__":

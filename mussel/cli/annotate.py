@@ -8,15 +8,15 @@ from io import BytesIO
 from typing import List, Optional
 
 import h5py
+import hydra
 import pandas as pd
 import tiffslide as openslide
 import torch
 from hydra.conf import HelpConf, HydraConf
 from hydra.core.config_store import ConfigStore
-from loguru import logger
 from omegaconf import MISSING
 
-import hydra
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -43,13 +43,23 @@ class AnnotateConfig:
 
 
 def interrogate_function(slide_path, patch_path, interrogation_report_path, df):
+    """Generate an HTML interrogation report showing tiles grouped by class.
+    
+    Args:
+        slide_path: Path to the whole slide image.
+        patch_path: Path to the HDF5 file containing patch coordinates.
+        interrogation_report_path: Path to save the HTML report.
+        df: DataFrame containing classification results with 'class' column.
+    """
     slide = openslide.OpenSlide(slide_path)
 
     with h5py.File(patch_path, "r") as f:
         patch_size = f["coords"].attrs["patch_size"]
         patch_level = f["coords"].attrs["patch_level"]
         logger.info(len(f["coords"]))
-        assert len(f["coords"]) == len(df), f"{len(f['coords'])} vs {len(df)} tiles, aborting"
+        assert len(f["coords"]) == len(
+            df
+        ), f"{len(f['coords'])} vs {len(df)} tiles, aborting"
         coords = f["coords"][:]
 
     df["tile_index"] = df.index
@@ -105,10 +115,6 @@ cs.store(name="annotate_config", node=AnnotateConfig)
 @hydra.main(config_path=".", config_name="annotate_config", version_base=None)
 def main(cfg: AnnotateConfig):
     """Do zero shot classification on specified classes"""
-
-    # restrict verbose logging from aiobotocore
-    logging.getLogger('aiobotocore').setLevel(logging.CRITICAL)
-
     # load precomputed embeddings
     class_emb = torch.load(cfg.class_embedding_pt_path, weights_only=True)
 
