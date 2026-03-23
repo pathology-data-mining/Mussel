@@ -413,9 +413,9 @@ def _segment_tissue_hest(img: np.ndarray) -> np.ndarray:
     # HEST segmenter expects an RGB uint8 numpy array and returns a binary mask
     # where foreground (tissue) pixels are 255 and background is 0.
     mask = segmenter.segment(img)
-    # Normalise to uint8 0/255 in case the segmenter returns bool or 0/1
+    # Normalise to uint8 0/255 in case the segmenter returns bool or float 0/1
     if mask.dtype == bool or mask.max() <= 1:
-        mask = (mask.astype(np.uint8)) * 255
+        mask = (mask * 255).astype(np.uint8)
     return mask.astype(np.uint8)
 
 
@@ -519,6 +519,10 @@ def segment_tissue(
             return None
 
         if step_size is None:
+            if overlap < 0:
+                raise ValueError(
+                    f"overlap must be non-negative, got {overlap}"
+                )
             if overlap > 0:
                 step_size = patch_size - overlap
                 if step_size <= 0:

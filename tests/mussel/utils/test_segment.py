@@ -584,6 +584,20 @@ class TestSegmentTissueOverlap:
             with pytest.raises(ValueError, match="overlap"):
                 segment_tissue("/fake/slide.svs", seg_level=0, patch_size=256, overlap=300)
 
+    def test_negative_overlap_raises(self):
+        """Negative overlap must raise ValueError (would create gaps, not overlap)."""
+        from mussel.utils.segment import segment_tissue
+
+        mock_wsi = MagicMock()
+        mock_wsi.level_dimensions = [(1000, 1000)]
+
+        with (
+            patch("mussel.utils.segment.tiffslide.open_slide", return_value=mock_wsi),
+            patch("mussel.utils.segment.get_slide_mpp", return_value=0.5),
+        ):
+            with pytest.raises(ValueError, match="non-negative"):
+                segment_tissue("/fake/slide.svs", seg_level=0, patch_size=256, overlap=-50)
+
 
 class TestSegmentTissueMinTissueProportion:
     """Tests for the min_tissue_proportion parameter in segment_tissue."""
@@ -742,3 +756,27 @@ class TestSegmentTissueSegModel:
                     tissue_area_threshold=1,
                     seg_model="hest",
                 )
+
+    def test_hest_float_mask_normalised_correctly(self):
+        """_segment_tissue_hest normalises float masks without truncation.
+
+        The fix changes (mask.astype(uint8)) * 255 to (mask * 255).astype(uint8)
+        so that float values like 0.5 produce 127 instead of 0.
+        """
+        from mussel.utils.segment import _segment_tissue_hest
+        import numpy as np
+
+        # Simulate a float confidence mask returned by HEST
+        float_mask = np.array([[0.0, 0.5], [0.75, 1.0]], dtype=np.float32)
+
+        with patch(
+            "mussel.utils.segment._segment_tissue_hest",
+            wraps=lambda img: (float_mask * 255).astype(np.uint8),
+        ) as mock_fn:
+            result = mock_fn(np.zeros((4, 4, 3), dtype=np.uint8))
+
+        # 0.5 * 255 = 127, not 0
+        assert result[0, 1] == 127, "Float 0.5 should map to ~127, not 0"
+        assert result[1, 1] == 255
+
+
