@@ -412,9 +412,27 @@ def test_wsi_dir_nested(tmp_path):
 
 
 def test_wsi_dir_conflict_raises(tmp_path):
-    """Test that specifying both wsi_dir and slide_paths raises an error."""
+    """Test that specifying both wsi_dir and slide_paths (or slide_path) raises an error."""
     from mussel.cli.tessellate_extract_features import TessellateExtractFeaturesConfig
-    cfg = TessellateExtractFeaturesConfig.__dataclass_fields__
-    assert "wsi_dir" in cfg
-    assert "search_nested" in cfg
+
+    dummy_wsi = tmp_path / "dummy.svs"
+    dummy_wsi.touch()
+
+    # wsi_dir + slide_paths should raise
+    cfg = OmegaConf.structured(TessellateExtractFeaturesConfig)
+    cfg.wsi_dir = str(tmp_path)
+    cfg.slide_paths = ["some_slide.svs"]
+    cfg.output_dir = str(tmp_path / "out")
+    cfg.model_type = "CLIP"
+    with pytest.raises(ValueError, match="Cannot specify both wsi_dir and slide_paths"):
+        main(cfg)
+
+    # wsi_dir + slide_path should also raise
+    cfg2 = OmegaConf.structured(TessellateExtractFeaturesConfig)
+    cfg2.wsi_dir = str(tmp_path)
+    cfg2.slide_path = "some_slide.svs"
+    cfg2.output_dir = str(tmp_path / "out")
+    cfg2.model_type = "CLIP"
+    with pytest.raises(ValueError, match="Cannot specify both wsi_dir and slide_path"):
+        main(cfg2)
 

@@ -534,27 +534,55 @@ class TestSegmentTissueOverlap:
     """Tests for the overlap parameter in segment_tissue."""
 
     def test_overlap_zero_uses_patch_size_as_step(self):
-        """overlap=0 leaves step_size equal to patch_size."""
+        """overlap=0 produces the same result as no overlap (step = patch_size)."""
         mock_wsi = _make_mock_wsi_with_tissue()
+        result_no_overlap = _run_segment_with_mocks(
+            mock_wsi, seg_level=1, patch_size=256, overlap=0, tissue_area_threshold=1
+        )
+        # Reset the mock read_region so the second call returns the same image
+        mock_wsi.read_region.reset_mock()
+        result_explicit = _run_segment_with_mocks(
+            mock_wsi, seg_level=1, patch_size=256, step_size=256, tissue_area_threshold=1
+        )
+        # Both should return the same number of patches (non-overlapping grid)
+        if result_no_overlap is not None and result_explicit is not None:
+            _, _, coords_no_overlap, _ = result_no_overlap
+            _, _, coords_explicit, _ = result_explicit
+            assert len(coords_no_overlap) == len(coords_explicit)
+        else:
+            assert result_no_overlap == result_explicit
+
+    def test_overlap_sets_step_size(self):
+        """overlap > 0 produces more patches than no overlap (smaller step)."""
+        mock_wsi = _make_mock_wsi_with_tissue()
+        result_no_overlap = _run_segment_with_mocks(
+            mock_wsi, seg_level=1, patch_size=256, overlap=0, tissue_area_threshold=1
+        )
+        mock_wsi.read_region.reset_mock()
+        result_with_overlap = _run_segment_with_mocks(
+            mock_wsi, seg_level=1, patch_size=256, overlap=128, tissue_area_threshold=1
+        )
+        if result_no_overlap is not None and result_with_overlap is not None:
+            _, _, coords_no_overlap, _ = result_no_overlap
+            _, _, coords_with_overlap, _ = result_with_overlap
+            # With overlap, step = 128 → denser grid → at least as many patches
+            assert len(coords_with_overlap) >= len(coords_no_overlap)
+
+    def test_overlap_and_step_size_conflict_raises(self):
+        """Passing both overlap > 0 and step_size must raise ValueError."""
+        from mussel.utils.segment import segment_tissue
+
+        mock_wsi = MagicMock()
+        mock_wsi.level_dimensions = [(1000, 1000)]
+
         with (
             patch("mussel.utils.segment.tiffslide.open_slide", return_value=mock_wsi),
             patch("mussel.utils.segment.get_slide_mpp", return_value=0.5),
-            patch(
-                "mussel.utils.segment._assert_level_downsamples",
-                return_value=[(1.0, 1.0), (4.0, 4.0)],
-            ),
         ):
-            from mussel.utils.segment import get_native_size
-            # At mpp=0.5 and slide_mpp=0.5, native_step == patch_size
-            native_step = get_native_size(256, 0.5, 0.5)
-            assert native_step == 256
-
-    def test_overlap_sets_step_size(self):
-        """overlap > 0 derives step_size = patch_size - overlap."""
-        from mussel.utils.segment import get_native_size
-        # patch_size=256, overlap=64 → step_size=192
-        native_step = get_native_size(192, 0.5, 0.5)  # step_size after overlap
-        assert native_step == 192
+            with pytest.raises(ValueError, match="step_size"):
+                segment_tissue(
+                    "/fake/slide.svs", seg_level=0, patch_size=256, overlap=64, step_size=192
+                )
 
     def test_overlap_equal_to_patch_size_raises(self):
         """overlap >= patch_size must raise ValueError."""
@@ -658,7 +686,7 @@ class TestSegmentTissueArtifactRemover:
     """Tests for the artifact_remover_fn hook in segment_tissue."""
 
     def test_artifact_remover_fn_is_called(self):
-        """artifact_remover_fn is invoked on the binary tissue mask."""
+        """artifact_remover_fn is invoked on the binary tissue mask when remove_artifacts=True."""
         called_with = []
 
         def fake_remover(mask):
@@ -672,6 +700,7 @@ class TestSegmentTissueArtifactRemover:
             patch_size=256,
             mpp=0.5,
             tissue_area_threshold=1,
+            remove_artifacts=True,
             artifact_remover_fn=fake_remover,
         )
 
@@ -679,6 +708,33 @@ class TestSegmentTissueArtifactRemover:
         h, w = called_with[0]
         # The mask is at the segmentation level (level 1 thumbnail: 1024x1024)
         assert h > 0 and w > 0
+
+    def test_artifact_remover_fn_not_called_when_flags_false(self, caplog):
+        """artifact_remover_fn with no flag set should warn and not call the function."""
+        import logging
+
+        called_with = []
+
+        def fake_remover(mask):
+            called_with.append(mask.shape)
+            return mask
+
+        mock_wsi = _make_mock_wsi_with_tissue()
+
+        with caplog.at_level(logging.WARNING, logger="mussel.utils.segment"):
+            _run_segment_with_mocks(
+                mock_wsi,
+                patch_size=256,
+                mpp=0.5,
+                tissue_area_threshold=1,
+                artifact_remover_fn=fake_remover,
+                # remove_artifacts and remove_penmarks both default to False
+            )
+
+        assert len(called_with) == 0, "artifact_remover_fn should NOT be called when flags are False"
+        assert any("artifact_remover_fn" in msg for msg in caplog.messages), (
+            "Expected warning about artifact_remover_fn provided but flags are False"
+        )
 
     def test_remove_artifacts_flag_without_fn_logs_warning(self, caplog):
         """remove_artifacts=True with no fn should log a warning, not crash."""

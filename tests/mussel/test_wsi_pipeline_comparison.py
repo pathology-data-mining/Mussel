@@ -28,7 +28,10 @@ import pytest
 # Paths
 # ---------------------------------------------------------------------------
 
-REF_PIPELINE_DIR = "/gpfs/cdsi_ess/home/limr/ess/repos/wsi-reference-pipeline"
+REF_PIPELINE_DIR = os.environ.get(
+    "WSI_REF_PIPELINE_DIR",
+    "/gpfs/cdsi_ess/home/limr/ess/repos/wsi-reference-pipeline",
+)
 REF_PIPELINE_PYTHON = f"{REF_PIPELINE_DIR}/venv/bin/python"
 MUSSEL_TEST_WSI = str(
     Path(__file__).parent.parent / "testdata" / "948176.svs"

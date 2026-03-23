@@ -436,8 +436,8 @@ def segment_tissue(
     mpp: float = 0.5,
     step_size: Optional[int] = None,
     ref_patch_size: int = 512,
-    exclude_ids: List[int] = [],
-    keep_ids: List[int] = [],
+    exclude_ids: List[int] = None,
+    keep_ids: List[int] = None,
     output_h5_path: Optional[str] = None,
     overlap: int = 0,
     min_tissue_proportion: float = 0.0,
@@ -502,6 +502,16 @@ def segment_tissue(
         if slide_id is None:
             slide_id = Path(slide_path).stem
 
+        if not (0.0 <= min_tissue_proportion <= 1.0):
+            raise ValueError(
+                f"min_tissue_proportion must be in [0.0, 1.0], got {min_tissue_proportion}"
+            )
+
+        if exclude_ids is None:
+            exclude_ids = []
+        if keep_ids is None:
+            keep_ids = []
+
         if seg_level < 0:
             if len(wsi.level_dimensions) == 1:
                 seg_level = 0
@@ -531,6 +541,11 @@ def segment_tissue(
                     )
             else:
                 step_size = patch_size
+        elif overlap > 0:
+            raise ValueError(
+                f"Cannot specify both step_size ({step_size}) and overlap ({overlap}). "
+                "Use overlap to derive step_size automatically, or pass step_size directly."
+            )
 
         # Get MPP with fallback handling
         slide_mpp = get_slide_mpp(wsi, slide_path)
@@ -541,6 +556,20 @@ def segment_tissue(
         logger.info(f"native_patch_size: {native_patch_size}")
 
         img = np.array(wsi.read_region((0, 0), seg_level, wsi.level_dimensions[seg_level]))
+
+        # Validate and normalise seg_model
+        supported_seg_models = {"classic", "hest"}
+        if seg_model is None:
+            seg_model = "classic"
+        elif not isinstance(seg_model, str):
+            raise ValueError(f"seg_model must be a string, got {type(seg_model)!r}")
+        else:
+            seg_model = seg_model.strip().lower()
+        if seg_model not in supported_seg_models:
+            raise ValueError(
+                f"Unsupported seg_model {seg_model!r}. "
+                f"Supported values: {sorted(supported_seg_models)}"
+            )
 
         if seg_model == "hest":
             img_otsu = _segment_tissue_hest(img)
@@ -567,7 +596,14 @@ def segment_tissue(
 
         # Optional artifact/pen mark removal via pluggable callable
         if artifact_remover_fn is not None:
-            img_otsu = artifact_remover_fn(img_otsu)
+            if remove_artifacts or remove_penmarks:
+                img_otsu = artifact_remover_fn(img_otsu)
+            else:
+                logger.warning(
+                    "artifact_remover_fn was provided but neither remove_artifacts nor "
+                    "remove_penmarks is True. The function will not be called. Set "
+                    "remove_artifacts=True or remove_penmarks=True to enable removal."
+                )
         elif remove_artifacts or remove_penmarks:
             logger.warning(
                 "remove_artifacts/remove_penmarks flags are set but no artifact_remover_fn "
@@ -622,9 +658,11 @@ def segment_tissue(
         logger.info(f"Total number of patches: {len(coords)}")
 
         if min_tissue_proportion > 0.0:
+            prepared_polygon = prep(polygon)
             filtered = [
                 (g, c) for g, c in zip(grid, coords)
-                if g.intersection(polygon).area / g.area >= min_tissue_proportion
+                if prepared_polygon.intersects(g)
+                and g.intersection(polygon).area / g.area >= min_tissue_proportion
             ]
             if filtered:
                 grid, coords = zip(*filtered)

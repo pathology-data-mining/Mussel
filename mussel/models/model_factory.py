@@ -874,9 +874,12 @@ class PRISMSlideEncoderModel(TorchModel):
         model_obj = None
         if model_path.startswith("hf-hub:"):
             hf_path = model_path[len("hf-hub:"):]
-            from transformers import AutoModel
-            with model_download_lock(hf_path) as _:
-                model_obj = AutoModel.from_pretrained(hf_path, trust_remote_code=True)
+        else:
+            # Treat as either a local directory or a plain HuggingFace repo ID.
+            hf_path = model_path
+        from transformers import AutoModel
+        with model_download_lock(hf_path) as _:
+            model_obj = AutoModel.from_pretrained(hf_path, trust_remote_code=True)
         super().__init__(model_path, model_obj, use_gpu, gpu_device_id)
 
     def get_model_fun(self) -> Callable:
