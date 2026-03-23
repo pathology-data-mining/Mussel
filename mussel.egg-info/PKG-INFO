@@ -1,6 +1,6 @@
 Metadata-Version: 2.4
 Name: mussel
-Version: 1.1.1
+Version: 1.2.0
 Summary: weakly supervised computational pathology on whole slide images
 License: GPL-3.0 license
 Requires-Python: <3.12,>=3.10
@@ -125,8 +125,13 @@ PyTorch is required for the following models:
 * [ResNet-50](https://huggingface.co/microsoft/resnet-50)
 * [TransPath](https://github.com/Xiyue-Wang/TransPath)
 * [Prov-GigaPath](https://github.com/prov-gigapath/prov-gigapath)
-* [Virchow](https://huggingface.co/paige-ai/Virchow)
-* [H-Optimus-0](https://huggingface.co/bioptimus/H-optimus-0)
+* [Virchow](https://huggingface.co/paige-ai/Virchow) / [Virchow2](https://huggingface.co/paige-ai/Virchow2)
+* [H-Optimus-0](https://huggingface.co/bioptimus/H-optimus-0) / [H-Optimus-1](https://huggingface.co/bioptimus/H-optimus-1) / [H0-mini](https://huggingface.co/bioptimus/H0-mini)
+* [Phikon](https://huggingface.co/owkin/phikon) / [Phikon-v2](https://huggingface.co/owkin/phikon-v2)
+* [Midnight-12k](https://huggingface.co/kaiko-ai/midnight)
+* [GPFM](https://huggingface.co/majiabo/GPFM)
+* [Hibou-L](https://huggingface.co/histai/hibou-L)
+* [UNI](https://huggingface.co/MahmoodLab/UNI) / [UNI2](https://huggingface.co/MahmoodLab/UNI2)
 * [OpenCLIP](https://github.com/mlfoundations/open_clip)
 
 
@@ -161,6 +166,17 @@ If you just want CPU support for working with GooglePath, create your Mussel env
 uv sync --extra tensorflow-cpu
 ```
 Again, this is what you'd install on a MacBook running on Apple Silicon.
+
+#### Neural segmentation (optional)
+
+Mussel supports neural tissue segmentation as an alternative to the default HSV/Otsu method.
+This requires the `hest` package:
+
+```bash
+uv sync --extra neural-seg
+```
+
+Once installed, pass `seg_config.seg_model=hest` to `tessellate` or `tessellate_extract_features`.
 
 ## Development Notes
 
@@ -218,6 +234,7 @@ slides, and generating feature embeddings with pathology foundation models.
 The tools currently available from Mussel are,
 
 * `tessellate` - tiling and foreground detection of whole-slide images
+* `tessellate_extract_features` - combined tiling + feature extraction pipeline; supports batch processing from a directory
 * `extract_features` - extract features from whole slide images (WSI) using a foundation model.
 * `create_class_embeddings` - generate tissue-type embeddings for classifying tiles
 * `annotate` - annotate tiles with tissue-types
