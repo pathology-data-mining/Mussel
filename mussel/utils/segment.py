@@ -383,6 +383,42 @@ def _filter_contours(
     return foreground_contours, hole_contours
 
 
+def _segment_tissue_hest(img: np.ndarray) -> np.ndarray:
+    """Generate a binary tissue mask using the HEST neural segmentor.
+
+    Uses the HEST library's trained deep-learning tissue segmentor, which is
+    more robust than classical HSV/Otsu approaches for challenging slides.
+    Requires ``pip install hest`` (or ``uv sync --extra neural-seg``).
+
+    Args:
+        img: RGB image array at the segmentation pyramid level, shape (H, W, 3).
+
+    Returns:
+        Binary mask array (uint8, values 0 or 255), shape (H, W).
+
+    Raises:
+        ImportError: If the ``hest`` package is not installed.
+        RuntimeError: If HEST segmentation fails unexpectedly.
+    """
+    try:
+        from hest.segmentation.tissue_seg import TissueSegmenter  # type: ignore[import]
+    except ImportError as exc:
+        raise ImportError(
+            "Neural segmentation (seg_model='hest') requires the hest package. "
+            "Install it with: pip install hest\n"
+            "Or if using uv: uv sync --extra neural-seg"
+        ) from exc
+
+    segmenter = TissueSegmenter()
+    # HEST segmenter expects an RGB uint8 numpy array and returns a binary mask
+    # where foreground (tissue) pixels are 255 and background is 0.
+    mask = segmenter.segment(img)
+    # Normalise to uint8 0/255 in case the segmenter returns bool or 0/1
+    if mask.dtype == bool or mask.max() <= 1:
+        mask = (mask.astype(np.uint8)) * 255
+    return mask.astype(np.uint8)
+
+
 @timed
 def segment_tissue(
     slide_path: str,
@@ -408,6 +444,7 @@ def segment_tissue(
     remove_artifacts: bool = False,
     remove_penmarks: bool = False,
     artifact_remover_fn=None,  # Optional callable: takes (mask_img: np.ndarray) -> np.ndarray
+    seg_model: str = "classic",  # "classic" (HSV/Otsu) or "hest" (neural)
 ):
     """Segment tissue regions in a whole-slide image and generate tissue patches.
     
@@ -500,25 +537,29 @@ def segment_tissue(
         logger.info(f"native_patch_size: {native_patch_size}")
 
         img = np.array(wsi.read_region((0, 0), seg_level, wsi.level_dimensions[seg_level]))
-        img_hsv = cv2.cvtColor(img, cv2.COLOR_RGB2HSV)  # Convert to HSV space
-        img_med = cv2.medianBlur(
-            img_hsv[:, :, 1], median_blur_ksize
-        )  # Apply median blurring
 
-        # Thresholding
-        if use_otsu:
-            _, img_otsu = cv2.threshold(
-                img_med, 0, segment_max_value, cv2.THRESH_OTSU + cv2.THRESH_BINARY
-            )
+        if seg_model == "hest":
+            img_otsu = _segment_tissue_hest(img)
         else:
-            _, img_otsu = cv2.threshold(
-                img_med, segment_threshold, segment_max_value, cv2.THRESH_BINARY
-            )
+            img_hsv = cv2.cvtColor(img, cv2.COLOR_RGB2HSV)  # Convert to HSV space
+            img_med = cv2.medianBlur(
+                img_hsv[:, :, 1], median_blur_ksize
+            )  # Apply median blurring
 
-        # Morphological closing
-        if morphology_ex_kernel > 0:
-            kernel = np.ones((morphology_ex_kernel, morphology_ex_kernel), np.uint8)
-            img_otsu = cv2.morphologyEx(img_otsu, cv2.MORPH_CLOSE, kernel)
+            # Thresholding
+            if use_otsu:
+                _, img_otsu = cv2.threshold(
+                    img_med, 0, segment_max_value, cv2.THRESH_OTSU + cv2.THRESH_BINARY
+                )
+            else:
+                _, img_otsu = cv2.threshold(
+                    img_med, segment_threshold, segment_max_value, cv2.THRESH_BINARY
+                )
+
+            # Morphological closing
+            if morphology_ex_kernel > 0:
+                kernel = np.ones((morphology_ex_kernel, morphology_ex_kernel), np.uint8)
+                img_otsu = cv2.morphologyEx(img_otsu, cv2.MORPH_CLOSE, kernel)
 
         # Optional artifact/pen mark removal via pluggable callable
         if artifact_remover_fn is not None:
@@ -612,6 +653,7 @@ def segment_tissue(
             "name": slide_id,
             "overlap": overlap,
             "min_tissue_proportion": min_tissue_proportion,
+            "seg_model": seg_model,
         }
         if output_h5_path:
             asset_dict = {"coords": np.array(coords)}

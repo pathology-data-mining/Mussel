@@ -38,6 +38,7 @@ dev = [
 ]
 
 [project.optional-dependencies]
+"neural-seg" = ["hest"]
 "tensorflow-gpu" = [
   "tensorflow[and-cuda]<=2.19.0",
   "keras",

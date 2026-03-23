@@ -126,12 +126,20 @@ class ModelType(Enum):
     MIDNIGHT12K = 18, "midnight12k", "hf-hub:kaiko-ai/midnight"
     GPFM = 19, "gpfm", "hf-hub:majiabo/GPFM"
     HIBOU_L = 20, "hibou_l", "histai/hibou-L"
+    PRISM_SLIDE = 21, "prism_slide", "hf-hub:paige-ai/Prism"
+    FEATHER_SLIDE = 22, "feather_slide", "MahmoodLab/abmil.base.conch_v15.pc108-24k"
+    CHIEF_SLIDE = 23, "chief_slide", ""
+    MADELEINE_SLIDE = 24, "madeleine_slide", "MahmoodLab/madeleine"
 
 
 # Mapping of slide encoder models to their compatible patch encoder models
 SLIDE_ENCODER_COMPATIBILITY = {
     ModelType.GIGAPATH_SLIDE: ModelType.GIGAPATH,
     ModelType.TITAN_SLIDE: ModelType.CONCH1_5,
+    ModelType.PRISM_SLIDE: ModelType.VIRCHOW,
+    ModelType.FEATHER_SLIDE: ModelType.CONCH1_5,
+    ModelType.CHIEF_SLIDE: ModelType.CTRANSPATH,
+    ModelType.MADELEINE_SLIDE: ModelType.CONCH1_5,
     # Add more slide encoder -> patch encoder mappings as they become available
 }
 
@@ -152,6 +160,10 @@ MODEL_PATCH_SIZES = {
     # Slide encoders inherit from their patch encoders
     ModelType.GIGAPATH_SLIDE: 256,
     ModelType.TITAN_SLIDE: 512,
+    ModelType.PRISM_SLIDE: 224,
+    ModelType.FEATHER_SLIDE: 512,
+    ModelType.CHIEF_SLIDE: 224,
+    ModelType.MADELEINE_SLIDE: 512,
     ModelType.PHIKON: 224,
     ModelType.PHIKON_V2: 224,
     ModelType.H_OPTIMUS_1: 224,
@@ -840,7 +852,241 @@ class GigapathSlideEncoderModel(TorchModel):
         )
 
 
-class OptimusModel(TorchModel):
+class PRISMSlideEncoderModel(TorchModel):
+    def __init__(
+        self,
+        model_path,
+        use_gpu: bool = True,
+        gpu_device_id: int | List[int] | None = None,
+    ):
+        """Initialize PRISM slide encoder model.
+
+        PRISM (paige-ai/Prism) is a multimodal slide foundation model from Paige AI
+        that aggregates Virchow patch embeddings into slide-level representations.
+
+        Args:
+            model_path: HuggingFace repo ID or local directory (default: paige-ai/Prism).
+            use_gpu: Whether to use GPU (default: True).
+            gpu_device_id: GPU device ID or list of IDs for multi-GPU (default: None).
+        """
+        if model_path is None:
+            model_path = ModelType.PRISM_SLIDE.path
+        model_obj = None
+        if model_path.startswith("hf-hub:"):
+            hf_path = model_path[len("hf-hub:"):]
+            from transformers import AutoModel
+            with model_download_lock(hf_path) as _:
+                model_obj = AutoModel.from_pretrained(hf_path, trust_remote_code=True)
+        super().__init__(model_path, model_obj, use_gpu, gpu_device_id)
+
+    def get_model_fun(self) -> Callable:
+        """Get model inference function for PRISM slide encoder.
+
+        Returns:
+            Callable that takes patch_features, coords, and patch_size, returns slide-level features.
+        """
+
+        def model_fun(patch_features, coords, patch_size):
+            with torch.no_grad(), torch.inference_mode():
+                patch_features = patch_features.to(self.device, non_blocking=True)
+                result = self.obj.encode_slide(patch_features.unsqueeze(0))
+                if isinstance(result, (list, tuple)):
+                    result = result[0]
+                return result.squeeze().cpu()
+
+        return model_fun
+
+    def get_preprocessing_fun(self) -> Callable:
+        """Slide encoders work on patch features; no image preprocessing needed."""
+        return None
+
+    def save(self, save_path: str):
+        """Save PRISM slide encoder model to disk using HuggingFace's save_pretrained.
+
+        Args:
+            save_path: Path to save the model (must be a directory, not a file).
+
+        Raises:
+            ValueError: If save_path has a file extension.
+        """
+        if Path(save_path).suffix:
+            raise ValueError(
+                f"PRISM_SLIDE model must be saved to a directory, not a file ({save_path})."
+            )
+        Path(save_path).mkdir(parents=True, exist_ok=True)
+        model_to_save = self.obj.module if hasattr(self.obj, "module") else self.obj
+        model_to_save.save_pretrained(save_path)
+        logger.info(f"Saved PRISM slide encoder to {save_path}")
+
+
+class FeatherSlideEncoderModel(TorchModel):
+    def __init__(
+        self,
+        model_path,
+        use_gpu: bool = True,
+        gpu_device_id: int | List[int] | None = None,
+    ):
+        """Initialize Feather slide encoder model.
+
+        Feather (MahmoodLab/FEATHER) is an ABMIL-based slide encoder that aggregates
+        CONCH 1.5 patch features into slide-level representations.
+
+        Args:
+            model_path: HuggingFace repo ID or local directory.
+            use_gpu: Whether to use GPU (default: True).
+            gpu_device_id: GPU device ID or list of IDs for multi-GPU (default: None).
+        """
+        if model_path is None:
+            model_path = ModelType.FEATHER_SLIDE.path
+        model_obj = None
+        if not Path(model_path).is_file():
+            from transformers import AutoModel
+            with model_download_lock(model_path) as _:
+                model_obj = AutoModel.from_pretrained(model_path, trust_remote_code=True)
+        super().__init__(model_path, model_obj, use_gpu, gpu_device_id)
+
+    def get_model_fun(self) -> Callable:
+        """Get model inference function for Feather slide encoder.
+
+        Returns:
+            Callable that takes patch_features, coords, and patch_size, returns slide-level features.
+        """
+
+        def model_fun(patch_features, coords, patch_size):
+            with torch.no_grad(), torch.inference_mode():
+                patch_features = patch_features.to(self.device, non_blocking=True)
+                result = self.obj(patch_features.unsqueeze(0))
+                if isinstance(result, (list, tuple)):
+                    result = result[0]
+                return result.squeeze().cpu()
+
+        return model_fun
+
+    def get_preprocessing_fun(self) -> Callable:
+        """Slide encoders work on patch features; no image preprocessing needed."""
+        return None
+
+    def save(self, save_path: str):
+        """Save Feather slide encoder model to disk using HuggingFace's save_pretrained.
+
+        Args:
+            save_path: Path to save the model (must be a directory, not a file).
+
+        Raises:
+            ValueError: If save_path has a file extension.
+        """
+        if Path(save_path).suffix:
+            raise ValueError(
+                f"FEATHER_SLIDE model must be saved to a directory, not a file ({save_path})."
+            )
+        Path(save_path).mkdir(parents=True, exist_ok=True)
+        model_to_save = self.obj.module if hasattr(self.obj, "module") else self.obj
+        model_to_save.save_pretrained(save_path)
+        logger.info(f"Saved Feather slide encoder to {save_path}")
+
+
+class CHIEFSlideEncoderModel(TorchModel):
+    def __init__(
+        self,
+        model_path,
+        use_gpu: bool = True,
+        gpu_device_id: int | List[int] | None = None,
+    ):
+        """Initialize CHIEF slide encoder model (stub — requires local checkpoint).
+
+        CHIEF (HMS DBMI) requires a local checkpoint that is not available on HuggingFace.
+
+        Args:
+            model_path: Path to local CHIEF checkpoint.
+            use_gpu: Whether to use GPU (default: True).
+            gpu_device_id: GPU device ID or list of IDs for multi-GPU (default: None).
+
+        Raises:
+            ValueError: If model_path is missing or does not exist.
+            NotImplementedError: Always, as CHIEF is not yet fully implemented.
+        """
+        if not model_path or not Path(model_path).exists():
+            raise ValueError(
+                "CHIEF_SLIDE requires a local checkpoint path. "
+                "Download the CHIEF model from https://github.com/hms-dbmi/CHIEF "
+                "and provide the path via slide_model_path=<path>."
+            )
+        raise NotImplementedError(
+            "CHIEF_SLIDE is not yet fully implemented. "
+            "Please open an issue if you need CHIEF support."
+        )
+
+    def get_model_fun(self): ...
+
+    def get_preprocessing_fun(self):
+        """Slide encoders work on patch features; no image preprocessing needed."""
+        return None
+
+
+class MadeleineSlideEncoderModel(TorchModel):
+    def __init__(
+        self,
+        model_path,
+        use_gpu: bool = True,
+        gpu_device_id: int | List[int] | None = None,
+    ):
+        """Initialize Madeleine slide encoder model.
+
+        Madeleine (MahmoodLab/madeleine) is a multimodal slide encoder that aggregates
+        CONCH 1.5 patch features into slide-level representations.
+
+        Args:
+            model_path: HuggingFace repo ID or local directory.
+            use_gpu: Whether to use GPU (default: True).
+            gpu_device_id: GPU device ID or list of IDs for multi-GPU (default: None).
+        """
+        if model_path is None:
+            model_path = ModelType.MADELEINE_SLIDE.path
+        model_obj = None
+        if not Path(model_path).is_file():
+            from transformers import AutoModel
+            with model_download_lock(model_path) as _:
+                model_obj = AutoModel.from_pretrained(model_path, trust_remote_code=True)
+        super().__init__(model_path, model_obj, use_gpu, gpu_device_id)
+
+    def get_model_fun(self) -> Callable:
+        """Get model inference function for Madeleine slide encoder.
+
+        Returns:
+            Callable that takes patch_features, coords, and patch_size, returns slide-level features.
+        """
+
+        def model_fun(patch_features, coords, patch_size):
+            with torch.no_grad(), torch.inference_mode():
+                patch_features = patch_features.to(self.device, non_blocking=True)
+                result = self.obj(patch_features.unsqueeze(0))
+                if isinstance(result, (list, tuple)):
+                    result = result[0]
+                return result.squeeze().cpu()
+
+        return model_fun
+
+    def get_preprocessing_fun(self) -> Callable:
+        """Slide encoders work on patch features; no image preprocessing needed."""
+        return None
+
+    def save(self, save_path: str):
+        """Save Madeleine slide encoder model to disk using HuggingFace's save_pretrained.
+
+        Args:
+            save_path: Path to save the model (must be a directory, not a file).
+
+        Raises:
+            ValueError: If save_path has a file extension.
+        """
+        if Path(save_path).suffix:
+            raise ValueError(
+                f"MADELEINE_SLIDE model must be saved to a directory, not a file ({save_path})."
+            )
+        Path(save_path).mkdir(parents=True, exist_ok=True)
+        model_to_save = self.obj.module if hasattr(self.obj, "module") else self.obj
+        model_to_save.save_pretrained(save_path)
+        logger.info(f"Saved Madeleine slide encoder to {save_path}")
     def __init__(
         self,
         model_path,
@@ -1571,6 +1817,34 @@ class HibouLModelFactory(ModelFactory):
     def get_model(self, model_path=None, use_gpu=True, gpu_device_id=None):
         """Create Hibou-L model instance."""
         return HibouLModel(model_path, use_gpu, gpu_device_id)
+
+
+@register_model_factory(ModelType.PRISM_SLIDE)
+class PRISMSlideEncoderModelFactory(ModelFactory):
+    def get_model(self, model_path=None, use_gpu=True, gpu_device_id=None):
+        """Create PRISM slide encoder model instance."""
+        return PRISMSlideEncoderModel(model_path, use_gpu, gpu_device_id)
+
+
+@register_model_factory(ModelType.FEATHER_SLIDE)
+class FeatherSlideEncoderModelFactory(ModelFactory):
+    def get_model(self, model_path=None, use_gpu=True, gpu_device_id=None):
+        """Create Feather slide encoder model instance."""
+        return FeatherSlideEncoderModel(model_path, use_gpu, gpu_device_id)
+
+
+@register_model_factory(ModelType.CHIEF_SLIDE)
+class CHIEFSlideEncoderModelFactory(ModelFactory):
+    def get_model(self, model_path=None, use_gpu=True, gpu_device_id=None):
+        """Create CHIEF slide encoder model instance."""
+        return CHIEFSlideEncoderModel(model_path, use_gpu, gpu_device_id)
+
+
+@register_model_factory(ModelType.MADELEINE_SLIDE)
+class MadeleineSlideEncoderModelFactory(ModelFactory):
+    def get_model(self, model_path=None, use_gpu=True, gpu_device_id=None):
+        """Create Madeleine slide encoder model instance."""
+        return MadeleineSlideEncoderModel(model_path, use_gpu, gpu_device_id)
 
 
 def get_model_factory(

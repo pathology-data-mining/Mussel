@@ -386,3 +386,35 @@ def test_tile_level_batching_with_slide_aggregation(tmp_path, test_data_path, us
     with h5py.File(os.path.join(output_dir, "h5", "slide1.features.h5"), "r") as f:
         assert f["features"].shape[0] == 1
 
+
+def test_wsi_dir_discovery(test_data_path):
+    """Test that wsi_dir collects slides from a directory."""
+    from mussel.utils.file import collect_wsi_paths, WSI_EXTENSIONS
+    paths = collect_wsi_paths(str(test_data_path), search_nested=False)
+    assert len(paths) > 0
+    assert all(Path(p).suffix.lower() in WSI_EXTENSIONS for p in paths)
+
+
+def test_wsi_dir_nested(tmp_path):
+    """Test that search_nested finds files in subdirectories."""
+    from mussel.utils.file import collect_wsi_paths
+    sub = tmp_path / "sub"
+    sub.mkdir()
+    (sub / "slide.svs").touch()
+    (tmp_path / "top.svs").touch()
+    # Non-nested: only top-level
+    flat = collect_wsi_paths(str(tmp_path), search_nested=False)
+    assert len(flat) == 1
+    assert flat[0].endswith("top.svs")
+    # Nested: both
+    nested = collect_wsi_paths(str(tmp_path), search_nested=True)
+    assert len(nested) == 2
+
+
+def test_wsi_dir_conflict_raises(tmp_path):
+    """Test that specifying both wsi_dir and slide_paths raises an error."""
+    from mussel.cli.tessellate_extract_features import TessellateExtractFeaturesConfig
+    cfg = TessellateExtractFeaturesConfig.__dataclass_fields__
+    assert "wsi_dir" in cfg
+    assert "search_nested" in cfg
+
