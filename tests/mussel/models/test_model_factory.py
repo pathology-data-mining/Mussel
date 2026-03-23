@@ -212,3 +212,154 @@ def test_get_default_patch_size_invalid():
     
     with pytest.raises(ValueError, match="Unknown model type"):
         get_default_patch_size(fake_model)
+
+
+# ---------------------------------------------------------------------------
+# Tests for new patch encoder models (added in trident-features branch)
+# ---------------------------------------------------------------------------
+
+
+def test_new_patch_encoder_enum_values():
+    """New patch encoders are present in the ModelType enum."""
+    assert hasattr(ModelType, "PHIKON")
+    assert hasattr(ModelType, "PHIKON_V2")
+    assert hasattr(ModelType, "H_OPTIMUS_1")
+    assert hasattr(ModelType, "H0_MINI")
+    assert hasattr(ModelType, "MIDNIGHT12K")
+    assert hasattr(ModelType, "GPFM")
+    assert hasattr(ModelType, "HIBOU_L")
+
+
+def test_new_patch_encoder_properties():
+    """New patch encoders have correct codes and IDs."""
+    assert ModelType.PHIKON.code == "phikon"
+    assert ModelType.PHIKON.id == 14
+    assert ModelType.PHIKON_V2.code == "phikon_v2"
+    assert ModelType.PHIKON_V2.id == 15
+    assert ModelType.H_OPTIMUS_1.code == "hoptimus1"
+    assert ModelType.H_OPTIMUS_1.id == 16
+    assert ModelType.H0_MINI.code == "h0mini"
+    assert ModelType.H0_MINI.id == 17
+    assert ModelType.MIDNIGHT12K.code == "midnight12k"
+    assert ModelType.MIDNIGHT12K.id == 18
+    assert ModelType.GPFM.code == "gpfm"
+    assert ModelType.GPFM.id == 19
+    assert ModelType.HIBOU_L.code == "hibou_l"
+    assert ModelType.HIBOU_L.id == 20
+
+
+def test_new_patch_encoders_in_model_factories():
+    """New patch encoders are registered in MODEL_FACTORIES."""
+    assert ModelType.PHIKON in MODEL_FACTORIES
+    assert ModelType.PHIKON_V2 in MODEL_FACTORIES
+    assert ModelType.H_OPTIMUS_1 in MODEL_FACTORIES
+    assert ModelType.H0_MINI in MODEL_FACTORIES
+    assert ModelType.MIDNIGHT12K in MODEL_FACTORIES
+    assert ModelType.GPFM in MODEL_FACTORIES
+    assert ModelType.HIBOU_L in MODEL_FACTORIES
+
+
+def test_new_patch_encoders_in_model_patch_sizes():
+    """New patch encoders have patch size entries (all 224 px)."""
+    for model_type in (
+        ModelType.PHIKON,
+        ModelType.PHIKON_V2,
+        ModelType.H_OPTIMUS_1,
+        ModelType.H0_MINI,
+        ModelType.MIDNIGHT12K,
+        ModelType.GPFM,
+        ModelType.HIBOU_L,
+    ):
+        assert model_type in MODEL_PATCH_SIZES, f"{model_type} missing from MODEL_PATCH_SIZES"
+        assert MODEL_PATCH_SIZES[model_type] == 224, f"{model_type} patch size should be 224"
+
+
+def test_new_patch_encoders_get_default_patch_size():
+    """get_default_patch_size returns 224 for all new patch encoders."""
+    for model_type in (
+        ModelType.PHIKON,
+        ModelType.PHIKON_V2,
+        ModelType.H_OPTIMUS_1,
+        ModelType.H0_MINI,
+        ModelType.MIDNIGHT12K,
+        ModelType.GPFM,
+        ModelType.HIBOU_L,
+    ):
+        assert get_default_patch_size(model_type) == 224, f"{model_type}: expected 224"
+
+
+def test_new_patch_encoders_get_model_factory():
+    """get_model_factory returns a non-None factory for each new patch encoder."""
+    for model_type in (
+        ModelType.PHIKON,
+        ModelType.PHIKON_V2,
+        ModelType.H_OPTIMUS_1,
+        ModelType.H0_MINI,
+        ModelType.MIDNIGHT12K,
+        ModelType.GPFM,
+        ModelType.HIBOU_L,
+    ):
+        factory = get_model_factory(model_type)
+        assert factory is not None, f"No factory registered for {model_type}"
+
+
+# ---------------------------------------------------------------------------
+# Tests for new slide encoder models
+# ---------------------------------------------------------------------------
+
+
+def test_new_slide_encoder_enum_values():
+    """New slide encoders are present in the ModelType enum."""
+    assert hasattr(ModelType, "PRISM_SLIDE")
+    assert hasattr(ModelType, "FEATHER_SLIDE")
+    assert hasattr(ModelType, "CHIEF_SLIDE")
+    assert hasattr(ModelType, "MADELEINE_SLIDE")
+
+
+def test_new_slide_encoder_properties():
+    """New slide encoders have correct codes and IDs."""
+    assert ModelType.PRISM_SLIDE.id == 21
+    assert ModelType.FEATHER_SLIDE.id == 22
+    assert ModelType.CHIEF_SLIDE.id == 23
+    assert ModelType.MADELEINE_SLIDE.id == 24
+
+
+def test_new_slide_encoders_in_model_patch_sizes():
+    """New slide encoders have patch size entries."""
+    assert ModelType.PRISM_SLIDE in MODEL_PATCH_SIZES
+    assert ModelType.FEATHER_SLIDE in MODEL_PATCH_SIZES
+    assert ModelType.CHIEF_SLIDE in MODEL_PATCH_SIZES
+    assert ModelType.MADELEINE_SLIDE in MODEL_PATCH_SIZES
+
+    assert MODEL_PATCH_SIZES[ModelType.PRISM_SLIDE] == 224
+    assert MODEL_PATCH_SIZES[ModelType.FEATHER_SLIDE] == 512
+    assert MODEL_PATCH_SIZES[ModelType.CHIEF_SLIDE] == 224
+    assert MODEL_PATCH_SIZES[ModelType.MADELEINE_SLIDE] == 512
+
+
+def test_new_slide_encoders_compatibility():
+    """New slide encoders map to the correct required patch encoder."""
+    from mussel.models.model_factory import SLIDE_ENCODER_COMPATIBILITY, get_required_patch_encoder
+
+    assert SLIDE_ENCODER_COMPATIBILITY[ModelType.PRISM_SLIDE] == ModelType.VIRCHOW
+    assert SLIDE_ENCODER_COMPATIBILITY[ModelType.FEATHER_SLIDE] == ModelType.CONCH1_5
+    assert SLIDE_ENCODER_COMPATIBILITY[ModelType.CHIEF_SLIDE] == ModelType.CTRANSPATH
+    assert SLIDE_ENCODER_COMPATIBILITY[ModelType.MADELEINE_SLIDE] == ModelType.CONCH1_5
+
+    # Via the public API as well
+    assert get_required_patch_encoder(ModelType.PRISM_SLIDE) == ModelType.VIRCHOW
+    assert get_required_patch_encoder(ModelType.MADELEINE_SLIDE) == ModelType.CONCH1_5
+
+
+def test_chief_slide_raises_not_implemented():
+    """CHIEF_SLIDE raises NotImplementedError — local checkpoint not on HuggingFace."""
+    from mussel.models.model_factory import CHIEFSlideEncoderModel
+
+    # __init__ raises ValueError for missing path before NotImplementedError;
+    # pass a fake existing path to get to the NotImplementedError branch.
+    import tempfile, os
+    with tempfile.TemporaryDirectory() as d:
+        fake_path = os.path.join(d, "chief.pt")
+        open(fake_path, "w").close()
+        with pytest.raises(NotImplementedError):
+            CHIEFSlideEncoderModel(model_path=fake_path)

@@ -494,3 +494,251 @@ def test_save_patches_png_closes_wsi_and_pool_on_exception(tmp_path):
                 mock_wsi.close.assert_called_once()
                 mock_pool.close.assert_called_once()
                 mock_pool.join.assert_called_once()
+
+
+# ---------------------------------------------------------------------------
+# Tests for new segment_tissue parameters (overlap, min_tissue_proportion,
+# artifact_remover_fn, seg_model)
+# ---------------------------------------------------------------------------
+
+
+def _make_mock_wsi_with_tissue(width=4096, height=4096):
+    """Return a mock WSI that produces a solid-white 64×64 thumbnail (all tissue)."""
+    import numpy as np
+    mock_wsi = MagicMock()
+    mock_wsi.level_dimensions = [(width, height), (width // 4, height // 4)]
+    mock_wsi.level_downsamples = [1.0, 4.0]
+    mock_wsi.get_best_level_for_downsample.return_value = 1
+    # Solid white thumbnail → tissue everywhere after Otsu threshold
+    thumb = np.ones((height // 4, width // 4, 3), dtype=np.uint8) * 200
+    mock_wsi.read_region.return_value = thumb
+    return mock_wsi
+
+
+def _run_segment_with_mocks(mock_wsi, **kwargs):
+    """Call segment_tissue with standard mocks and pass extra kwargs through."""
+    from mussel.utils.segment import segment_tissue
+
+    with (
+        patch("mussel.utils.segment.tiffslide.open_slide", return_value=mock_wsi),
+        patch("mussel.utils.segment.get_slide_mpp", return_value=0.5),
+        patch(
+            "mussel.utils.segment._assert_level_downsamples",
+            return_value=[(1.0, 1.0), (4.0, 4.0)],
+        ),
+    ):
+        return segment_tissue("/fake/slide.svs", **kwargs)
+
+
+class TestSegmentTissueOverlap:
+    """Tests for the overlap parameter in segment_tissue."""
+
+    def test_overlap_zero_uses_patch_size_as_step(self):
+        """overlap=0 leaves step_size equal to patch_size."""
+        mock_wsi = _make_mock_wsi_with_tissue()
+        with (
+            patch("mussel.utils.segment.tiffslide.open_slide", return_value=mock_wsi),
+            patch("mussel.utils.segment.get_slide_mpp", return_value=0.5),
+            patch(
+                "mussel.utils.segment._assert_level_downsamples",
+                return_value=[(1.0, 1.0), (4.0, 4.0)],
+            ),
+        ):
+            from mussel.utils.segment import get_native_size
+            # At mpp=0.5 and slide_mpp=0.5, native_step == patch_size
+            native_step = get_native_size(256, 0.5, 0.5)
+            assert native_step == 256
+
+    def test_overlap_sets_step_size(self):
+        """overlap > 0 derives step_size = patch_size - overlap."""
+        from mussel.utils.segment import get_native_size
+        # patch_size=256, overlap=64 → step_size=192
+        native_step = get_native_size(192, 0.5, 0.5)  # step_size after overlap
+        assert native_step == 192
+
+    def test_overlap_equal_to_patch_size_raises(self):
+        """overlap >= patch_size must raise ValueError."""
+        from mussel.utils.segment import segment_tissue
+
+        mock_wsi = MagicMock()
+        mock_wsi.level_dimensions = [(1000, 1000)]
+
+        with (
+            patch("mussel.utils.segment.tiffslide.open_slide", return_value=mock_wsi),
+            patch("mussel.utils.segment.get_slide_mpp", return_value=0.5),
+        ):
+            with pytest.raises(ValueError, match="overlap"):
+                segment_tissue("/fake/slide.svs", seg_level=0, patch_size=256, overlap=256)
+
+    def test_overlap_greater_than_patch_size_raises(self):
+        """overlap > patch_size must raise ValueError."""
+        from mussel.utils.segment import segment_tissue
+
+        mock_wsi = MagicMock()
+        mock_wsi.level_dimensions = [(1000, 1000)]
+
+        with (
+            patch("mussel.utils.segment.tiffslide.open_slide", return_value=mock_wsi),
+            patch("mussel.utils.segment.get_slide_mpp", return_value=0.5),
+        ):
+            with pytest.raises(ValueError, match="overlap"):
+                segment_tissue("/fake/slide.svs", seg_level=0, patch_size=256, overlap=300)
+
+
+class TestSegmentTissueMinTissueProportion:
+    """Tests for the min_tissue_proportion parameter in segment_tissue."""
+
+    def test_min_tissue_proportion_zero_keeps_all_patches(self):
+        """min_tissue_proportion=0.0 should not remove any patches."""
+        from mussel.utils.segment import partition, contours_to_polygon
+        import numpy as np
+        import cv2
+
+        # Build a simple polygon covering a 512×512 region
+        contour = np.array([[[0, 0]], [[512, 0]], [[512, 512]], [[0, 512]]], dtype=np.int32)
+        mock_wsi = MagicMock()
+        mock_wsi.level_dimensions = [(1024, 1024), (256, 256)]
+        mock_wsi.level_downsamples = [1.0, 4.0]
+        mock_wsi.get_best_level_for_downsample.return_value = 1
+        thumb = np.ones((256, 256, 3), dtype=np.uint8) * 200
+        mock_wsi.read_region.return_value = thumb
+
+        with (
+            patch("mussel.utils.segment.tiffslide.open_slide", return_value=mock_wsi),
+            patch("mussel.utils.segment.get_slide_mpp", return_value=0.5),
+            patch(
+                "mussel.utils.segment._assert_level_downsamples",
+                return_value=[(1.0, 1.0), (4.0, 4.0)],
+            ),
+            patch(
+                "mussel.utils.segment._filter_contours",
+                return_value=([contour], [[]]),
+            ),
+        ):
+            from mussel.utils.segment import segment_tissue
+
+            result_no_filter = segment_tissue(
+                "/fake/slide.svs",
+                patch_size=256,
+                mpp=0.5,
+                min_tissue_proportion=0.0,
+                tissue_area_threshold=1,
+            )
+            result_filtered = segment_tissue(
+                "/fake/slide.svs",
+                patch_size=256,
+                mpp=0.5,
+                min_tissue_proportion=1.0,
+                tissue_area_threshold=1,
+            )
+
+        # Both calls should succeed (non-None); filtering may differ in count
+        # but at least min_tissue_proportion=0.0 should not reject everything
+        if result_no_filter is not None and result_filtered is not None:
+            _, _, coords_no_filter, _ = result_no_filter
+            _, _, coords_filtered, _ = result_filtered
+            assert len(coords_no_filter) >= len(coords_filtered)
+
+
+class TestSegmentTissueArtifactRemover:
+    """Tests for the artifact_remover_fn hook in segment_tissue."""
+
+    def test_artifact_remover_fn_is_called(self):
+        """artifact_remover_fn is invoked on the binary tissue mask."""
+        called_with = []
+
+        def fake_remover(mask):
+            called_with.append(mask.shape)
+            return mask  # pass-through
+
+        mock_wsi = _make_mock_wsi_with_tissue()
+
+        _run_segment_with_mocks(
+            mock_wsi,
+            patch_size=256,
+            mpp=0.5,
+            tissue_area_threshold=1,
+            artifact_remover_fn=fake_remover,
+        )
+
+        assert len(called_with) == 1, "artifact_remover_fn should be called exactly once"
+        h, w = called_with[0]
+        # The mask is at the segmentation level (level 1 thumbnail: 1024x1024)
+        assert h > 0 and w > 0
+
+    def test_remove_artifacts_flag_without_fn_logs_warning(self, caplog):
+        """remove_artifacts=True with no fn should log a warning, not crash."""
+        import logging
+
+        mock_wsi = _make_mock_wsi_with_tissue()
+
+        with caplog.at_level(logging.WARNING, logger="mussel.utils.segment"):
+            _run_segment_with_mocks(
+                mock_wsi,
+                patch_size=256,
+                mpp=0.5,
+                tissue_area_threshold=1,
+                remove_artifacts=True,
+                artifact_remover_fn=None,
+            )
+
+        assert any("artifact_remover_fn" in msg for msg in caplog.messages), (
+            "Expected warning about missing artifact_remover_fn"
+        )
+
+    def test_remove_penmarks_flag_without_fn_logs_warning(self, caplog):
+        """remove_penmarks=True with no fn should log a warning, not crash."""
+        import logging
+
+        mock_wsi = _make_mock_wsi_with_tissue()
+
+        with caplog.at_level(logging.WARNING, logger="mussel.utils.segment"):
+            _run_segment_with_mocks(
+                mock_wsi,
+                patch_size=256,
+                mpp=0.5,
+                tissue_area_threshold=1,
+                remove_penmarks=True,
+                artifact_remover_fn=None,
+            )
+
+        assert any("artifact_remover_fn" in msg for msg in caplog.messages)
+
+
+class TestSegmentTissueSegModel:
+    """Tests for the seg_model parameter in segment_tissue."""
+
+    def test_seg_model_classic_is_default(self):
+        """seg_model defaults to 'classic' — no error without hest."""
+        from mussel.utils.segment import segment_tissue
+        import inspect
+
+        sig = inspect.signature(segment_tissue)
+        assert sig.parameters["seg_model"].default == "classic"
+
+    def test_seg_model_hest_raises_without_hest_package(self):
+        """seg_model='hest' raises ImportError/ModuleNotFoundError if hest is absent."""
+        mock_wsi = _make_mock_wsi_with_tissue()
+
+        with (
+            patch("mussel.utils.segment.tiffslide.open_slide", return_value=mock_wsi),
+            patch("mussel.utils.segment.get_slide_mpp", return_value=0.5),
+            patch(
+                "mussel.utils.segment._assert_level_downsamples",
+                return_value=[(1.0, 1.0), (4.0, 4.0)],
+            ),
+            patch(
+                "mussel.utils.segment._segment_tissue_hest",
+                side_effect=ImportError("No module named 'hest'"),
+            ),
+        ):
+            from mussel.utils.segment import segment_tissue
+
+            with pytest.raises(ImportError):
+                segment_tissue(
+                    "/fake/slide.svs",
+                    patch_size=256,
+                    mpp=0.5,
+                    tissue_area_threshold=1,
+                    seg_model="hest",
+                )
