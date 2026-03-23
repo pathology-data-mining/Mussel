@@ -403,6 +403,11 @@ def segment_tissue(
     exclude_ids: List[int] = [],
     keep_ids: List[int] = [],
     output_h5_path: Optional[str] = None,
+    overlap: int = 0,
+    min_tissue_proportion: float = 0.0,
+    remove_artifacts: bool = False,
+    remove_penmarks: bool = False,
+    artifact_remover_fn=None,  # Optional callable: takes (mask_img: np.ndarray) -> np.ndarray
 ):
     """Segment tissue regions in a whole-slide image and generate tissue patches.
     
@@ -429,6 +434,13 @@ def segment_tissue(
         exclude_ids: List of contour indices to exclude from processing.
         keep_ids: List of contour indices to keep (if empty, keeps all except excluded).
         output_h5_path: Optional path to save coordinates and attributes as HDF5.
+        overlap: Patch overlap in absolute pixels (0 = no overlap). step_size = patch_size - overlap.
+        min_tissue_proportion: Minimum fraction of patch area that must be tissue (0.0–1.0).
+            Patches below this threshold are discarded. Defaults to 0.0 (no filtering).
+        remove_artifacts: If True, apply artifact removal before patching (requires artifact_remover_fn).
+        remove_penmarks: If True, apply pen mark removal before patching (requires artifact_remover_fn).
+        artifact_remover_fn: Optional callable ``(mask_img: np.ndarray) -> np.ndarray`` applied to
+            the binary tissue mask after morphological closing. Used for artifact/pen-mark removal.
         
     Returns:
         tuple: A 4-tuple containing:
@@ -470,7 +482,14 @@ def segment_tissue(
             return None
 
         if step_size is None:
-            step_size = patch_size
+            if overlap > 0:
+                step_size = patch_size - overlap
+                if step_size <= 0:
+                    raise ValueError(
+                        f"overlap ({overlap}) must be less than patch_size ({patch_size})"
+                    )
+            else:
+                step_size = patch_size
 
         # Get MPP with fallback handling
         slide_mpp = get_slide_mpp(wsi, slide_path)
@@ -500,6 +519,16 @@ def segment_tissue(
         if morphology_ex_kernel > 0:
             kernel = np.ones((morphology_ex_kernel, morphology_ex_kernel), np.uint8)
             img_otsu = cv2.morphologyEx(img_otsu, cv2.MORPH_CLOSE, kernel)
+
+        # Optional artifact/pen mark removal via pluggable callable
+        if artifact_remover_fn is not None:
+            img_otsu = artifact_remover_fn(img_otsu)
+        elif remove_artifacts or remove_penmarks:
+            logger.warning(
+                "remove_artifacts/remove_penmarks flags are set but no artifact_remover_fn "
+                "was provided. Flags will have no effect. Pass artifact_remover_fn to use "
+                "artifact removal."
+            )
 
         level_downsamples = _assert_level_downsamples(wsi)
         scale = level_downsamples[seg_level]
@@ -547,6 +576,21 @@ def segment_tissue(
         coords = [g.exterior.coords[0] for g in grid]
         logger.info(f"Total number of patches: {len(coords)}")
 
+        if min_tissue_proportion > 0.0:
+            filtered = [
+                (g, c) for g, c in zip(grid, coords)
+                if g.intersection(polygon).area / g.area >= min_tissue_proportion
+            ]
+            if filtered:
+                grid, coords = zip(*filtered)
+                grid, coords = list(grid), list(coords)
+            else:
+                grid, coords = [], []
+            logger.info(
+                f"After min_tissue_proportion={min_tissue_proportion:.2f} filter: "
+                f"{len(coords)} patches remaining"
+            )
+
         attrs = {
             "seg_level": seg_level,
             "segment_threshold": segment_threshold,
@@ -566,6 +610,8 @@ def segment_tissue(
             "native_mpp": slide_mpp,
             "level_dim": wsi.level_dimensions[0],
             "name": slide_id,
+            "overlap": overlap,
+            "min_tissue_proportion": min_tissue_proportion,
         }
         if output_h5_path:
             asset_dict = {"coords": np.array(coords)}

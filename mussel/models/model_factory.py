@@ -119,6 +119,13 @@ class ModelType(Enum):
     UNI = 11, "uni", "hf-hub:MahmoodLab/UNI"
     GIGAPATH_SLIDE = 12, "gigapath_slide", "hf-hub:prov-gigapath/prov-gigapath"
     TITAN_SLIDE = 13, "titan_slide", "MahmoodLab/TITAN"
+    PHIKON = 14, "phikon", "hf-hub:owkin/phikon"
+    PHIKON_V2 = 15, "phikon_v2", "hf-hub:owkin/phikon-v2"
+    H_OPTIMUS_1 = 16, "hoptimus1", "hf-hub:bioptimus/H-optimus-1"
+    H0_MINI = 17, "h0mini", "hf-hub:bioptimus/H0-mini"
+    MIDNIGHT12K = 18, "midnight12k", "hf-hub:kaiko-ai/midnight"
+    GPFM = 19, "gpfm", "hf-hub:majiabo/GPFM"
+    HIBOU_L = 20, "hibou_l", "histai/hibou-L"
 
 
 # Mapping of slide encoder models to their compatible patch encoder models
@@ -145,6 +152,13 @@ MODEL_PATCH_SIZES = {
     # Slide encoders inherit from their patch encoders
     ModelType.GIGAPATH_SLIDE: 256,
     ModelType.TITAN_SLIDE: 512,
+    ModelType.PHIKON: 224,
+    ModelType.PHIKON_V2: 224,
+    ModelType.H_OPTIMUS_1: 224,
+    ModelType.H0_MINI: 224,
+    ModelType.MIDNIGHT12K: 224,
+    ModelType.GPFM: 224,
+    ModelType.HIBOU_L: 224,
 }
 
 
@@ -1119,6 +1133,255 @@ class TransPathModel(TorchModel):
         super().__init__(model_path, model_obj, use_gpu, gpu_device_id)
 
 
+class PhikonModel(TorchModel):
+    """Phikon model base class for owkin/phikon and owkin/phikon-v2."""
+
+    _default_model_type = ModelType.PHIKON
+
+    def __init__(
+        self,
+        model_path,
+        use_gpu: bool = True,
+        gpu_device_id: int | List[int] | None = None,
+    ):
+        """Initialize Phikon model.
+
+        Args:
+            model_path: Path to model file or HuggingFace repo ID.
+            use_gpu: Whether to use GPU (default: True).
+            gpu_device_id: GPU device ID or list of IDs for multi-GPU (default: None).
+        """
+        if model_path is None:
+            model_path = self._default_model_type.path
+        model_obj = None
+        if model_path.startswith("hf-hub:"):
+            model_obj = timm.create_model(model_path, pretrained=True)
+        super().__init__(model_path, model_obj, use_gpu, gpu_device_id)
+
+    def get_preprocessing_fun(self) -> Callable:
+        """Get preprocessing transforms for Phikon.
+
+        Returns:
+            Preprocessing transforms resolved from model config.
+        """
+        return create_transform(**resolve_data_config(self.obj.pretrained_cfg, model=self.obj))
+
+
+class PhikonV2Model(PhikonModel):
+    """Phikon-v2 model - uses same architecture and preprocessing as Phikon."""
+
+    _default_model_type = ModelType.PHIKON_V2
+
+
+class HOptimus1Model(TorchModel):
+    def __init__(
+        self,
+        model_path,
+        use_gpu: bool = True,
+        gpu_device_id: int | List[int] | None = None,
+    ):
+        """Initialize H-Optimus-1 model.
+
+        Args:
+            model_path: Path to model file or HuggingFace repo ID.
+            use_gpu: Whether to use GPU (default: True).
+            gpu_device_id: GPU device ID or list of IDs for multi-GPU (default: None).
+        """
+        if model_path is None:
+            model_path = ModelType.H_OPTIMUS_1.path
+        model_obj = None
+        if model_path.startswith("hf-hub:"):
+            model_obj = timm.create_model(
+                model_path, pretrained=True, init_values=1e-5, dynamic_img_size=False
+            )
+        super().__init__(model_path, model_obj, use_gpu, gpu_device_id)
+
+    def get_preprocessing_fun(self) -> Callable:
+        """Get preprocessing transforms for H-Optimus-1.
+
+        Returns:
+            Composed transforms for H-Optimus-1 input preprocessing.
+        """
+        return transforms.Compose(
+            [
+                transforms.Resize(
+                    224, interpolation=transforms.InterpolationMode.BICUBIC
+                ),
+                transforms.ToTensor(),
+                transforms.Normalize(
+                    mean=(0.707223, 0.578729, 0.703617),
+                    std=(0.211883, 0.230117, 0.177517),
+                ),
+            ]
+        )
+
+
+class H0MiniModel(TorchModel):
+    def __init__(
+        self,
+        model_path,
+        use_gpu: bool = True,
+        gpu_device_id: int | List[int] | None = None,
+    ):
+        """Initialize H0-mini model.
+
+        Args:
+            model_path: Path to model file or HuggingFace repo ID.
+            use_gpu: Whether to use GPU (default: True).
+            gpu_device_id: GPU device ID or list of IDs for multi-GPU (default: None).
+        """
+        if model_path is None:
+            model_path = ModelType.H0_MINI.path
+        model_obj = None
+        if model_path.startswith("hf-hub:"):
+            model_obj = timm.create_model(
+                model_path, pretrained=True, init_values=1e-5, dynamic_img_size=False
+            )
+        super().__init__(model_path, model_obj, use_gpu, gpu_device_id)
+
+    def get_preprocessing_fun(self) -> Callable:
+        """Get preprocessing transforms for H0-mini.
+
+        Returns:
+            Composed transforms for H0-mini input preprocessing.
+        """
+        return transforms.Compose(
+            [
+                transforms.Resize(
+                    224, interpolation=transforms.InterpolationMode.BICUBIC
+                ),
+                transforms.ToTensor(),
+                transforms.Normalize(
+                    mean=(0.707223, 0.578729, 0.703617),
+                    std=(0.211883, 0.230117, 0.177517),
+                ),
+            ]
+        )
+
+
+class Midnight12kModel(TorchModel):
+    def __init__(
+        self,
+        model_path,
+        use_gpu: bool = True,
+        gpu_device_id: int | List[int] | None = None,
+    ):
+        """Initialize Midnight-12k model.
+
+        Args:
+            model_path: Path to model file or HuggingFace repo ID.
+            use_gpu: Whether to use GPU (default: True).
+            gpu_device_id: GPU device ID or list of IDs for multi-GPU (default: None).
+        """
+        if model_path is None:
+            model_path = ModelType.MIDNIGHT12K.path
+        model_obj = None
+        if model_path.startswith("hf-hub:"):
+            model_obj = timm.create_model(model_path, pretrained=True)
+        super().__init__(model_path, model_obj, use_gpu, gpu_device_id)
+
+    def get_preprocessing_fun(self) -> Callable:
+        """Get preprocessing transforms for Midnight-12k.
+
+        Returns:
+            Preprocessing transforms resolved from model config.
+        """
+        return create_transform(**resolve_data_config(self.obj.pretrained_cfg, model=self.obj))
+
+
+class GPFMModel(TorchModel):
+    def __init__(
+        self,
+        model_path,
+        use_gpu: bool = True,
+        gpu_device_id: int | List[int] | None = None,
+    ):
+        """Initialize GPFM model.
+
+        Args:
+            model_path: Path to model file or HuggingFace repo ID.
+            use_gpu: Whether to use GPU (default: True).
+            gpu_device_id: GPU device ID or list of IDs for multi-GPU (default: None).
+        """
+        if model_path is None:
+            model_path = ModelType.GPFM.path
+        model_obj = None
+        if model_path.startswith("hf-hub:"):
+            model_obj = timm.create_model(model_path, pretrained=True)
+        super().__init__(model_path, model_obj, use_gpu, gpu_device_id)
+
+    def get_preprocessing_fun(self) -> Callable:
+        """Get preprocessing transforms for GPFM.
+
+        Returns:
+            Preprocessing transforms resolved from model config.
+        """
+        return create_transform(**resolve_data_config(self.obj.pretrained_cfg, model=self.obj))
+
+
+class HibouLModel(TorchModel):
+    def __init__(
+        self,
+        model_path,
+        use_gpu: bool = True,
+        gpu_device_id: int | List[int] | None = None,
+    ):
+        """Initialize Hibou-L model.
+
+        Args:
+            model_path: Path to model file or HuggingFace repo ID.
+            use_gpu: Whether to use GPU (default: True).
+            gpu_device_id: GPU device ID or list of IDs for multi-GPU (default: None).
+        """
+        if model_path is None:
+            model_path = ModelType.HIBOU_L.path
+
+        from transformers import AutoImageProcessor
+        from transformers import AutoModel as _AutoModel
+
+        with model_download_lock(model_path) as _:
+            model_obj = _AutoModel.from_pretrained(model_path, trust_remote_code=True)
+            self._processor = AutoImageProcessor.from_pretrained(
+                model_path, trust_remote_code=True
+            )
+        super().__init__(model_path, model_obj, use_gpu, gpu_device_id)
+
+    def get_preprocessing_fun(self) -> Callable:
+        """Get preprocessing function for Hibou-L.
+
+        The AutoImageProcessor returns a dict with a 'pixel_values' key.
+        This wrapper extracts the tensor for compatibility with Mussel's pipeline.
+
+        Returns:
+            Callable that preprocesses a PIL image into a single image tensor.
+        """
+        processor = self._processor
+
+        def preprocess(img):
+            """Preprocess a PIL image using the AutoImageProcessor."""
+            return processor(images=img, return_tensors="pt")["pixel_values"].squeeze(0)
+
+        return preprocess
+
+    def get_model_fun(self) -> Callable:
+        """Get model inference function for Hibou-L.
+
+        Extracts the CLS token from the last hidden state.
+
+        Returns:
+            Callable that runs inference and returns CLS token embeddings.
+        """
+
+        def model_fun(x):
+            """Run inference and extract CLS token from last_hidden_state."""
+            with torch.no_grad(), torch.inference_mode():
+                x = x.to(self.device, non_blocking=True)
+                output = self.obj(pixel_values=x)
+                return output.last_hidden_state[:, 0].cpu()
+
+        return model_fun
+
+
 class ResnetModel(TorchModel):
     def __init__(
         self, use_gpu: bool = True, gpu_device_id: int | List[int] | None = None
@@ -1259,6 +1522,55 @@ class ClipModelFactory(ModelFactory):
     def get_model(self, model_path=None, use_gpu=True, gpu_device_id=None):
         """Create CLIP (QuiltNet) model instance."""
         return ClipModel(model_path, use_gpu, gpu_device_id)
+
+
+@register_model_factory(ModelType.PHIKON)
+class PhikonModelFactory(ModelFactory):
+    def get_model(self, model_path=None, use_gpu=True, gpu_device_id=None):
+        """Create Phikon model instance."""
+        return PhikonModel(model_path, use_gpu, gpu_device_id)
+
+
+@register_model_factory(ModelType.PHIKON_V2)
+class PhikonV2ModelFactory(ModelFactory):
+    def get_model(self, model_path=None, use_gpu=True, gpu_device_id=None):
+        """Create Phikon-v2 model instance."""
+        return PhikonV2Model(model_path, use_gpu, gpu_device_id)
+
+
+@register_model_factory(ModelType.H_OPTIMUS_1)
+class HOptimus1ModelFactory(ModelFactory):
+    def get_model(self, model_path=None, use_gpu=True, gpu_device_id=None):
+        """Create H-Optimus-1 model instance."""
+        return HOptimus1Model(model_path, use_gpu, gpu_device_id)
+
+
+@register_model_factory(ModelType.H0_MINI)
+class H0MiniModelFactory(ModelFactory):
+    def get_model(self, model_path=None, use_gpu=True, gpu_device_id=None):
+        """Create H0-mini model instance."""
+        return H0MiniModel(model_path, use_gpu, gpu_device_id)
+
+
+@register_model_factory(ModelType.MIDNIGHT12K)
+class Midnight12kModelFactory(ModelFactory):
+    def get_model(self, model_path=None, use_gpu=True, gpu_device_id=None):
+        """Create Midnight-12k model instance."""
+        return Midnight12kModel(model_path, use_gpu, gpu_device_id)
+
+
+@register_model_factory(ModelType.GPFM)
+class GPFMModelFactory(ModelFactory):
+    def get_model(self, model_path=None, use_gpu=True, gpu_device_id=None):
+        """Create GPFM model instance."""
+        return GPFMModel(model_path, use_gpu, gpu_device_id)
+
+
+@register_model_factory(ModelType.HIBOU_L)
+class HibouLModelFactory(ModelFactory):
+    def get_model(self, model_path=None, use_gpu=True, gpu_device_id=None):
+        """Create Hibou-L model instance."""
+        return HibouLModel(model_path, use_gpu, gpu_device_id)
 
 
 def get_model_factory(

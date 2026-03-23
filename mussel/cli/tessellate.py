@@ -23,7 +23,8 @@ from mussel.utils.segment import draw_slide_mask, save_patches_png, segment_tiss
 class SegConfig:
     """
     patch_size (int): Patch size at specified mpp (microns per pixel).
-    step_size (int): Optional step size. Defaults to the patch size.
+    step_size (int): Optional step size. Defaults to the patch size. Overridden by overlap if set.
+    overlap (int): Patch overlap in absolute pixels (0 = no overlap). step_size = patch_size - overlap.
     mpp (float): Desired microns per pixel
     seg_level (int): Tessellation pyramid level. If negative, use best level for factor=64 downsample.
     segment_threshold (int): Pixel threshold value . If pixel value smaller than or equal to threshold, it is set to 0, otherwise it is set to the maximum value (segment_max_value).
@@ -37,6 +38,9 @@ class SegConfig:
     max_num_holes (int): Maximum number of holes.
     keep_ids (List[int]): List of contour IDs to keep.
     exclude_ids (List[int]): List of contour IDs to exclude.
+    min_tissue_proportion (float): Minimum fraction of patch area that must be tissue (0.0–1.0). Patches below this are discarded.
+    remove_artifacts (bool): If True, apply artifact removal to the tissue mask before patching (requires artifact_remover_fn).
+    remove_penmarks (bool): If True, apply pen mark removal to the tissue mask before patching (requires artifact_remover_fn).
     """
 
     # Default patch size constant - used to detect when automatic patch size selection should apply
@@ -57,6 +61,10 @@ class SegConfig:
     max_num_holes: int = 8
     keep_ids: List[int] = field(default_factory=list)
     exclude_ids: List[int] = field(default_factory=list)
+    overlap: int = 0  # Patch overlap in absolute pixels (0 = no overlap). step_size = patch_size - overlap
+    min_tissue_proportion: float = 0.0  # Minimum fraction of patch that must be tissue (0.0-1.0). Patches below this are discarded.
+    remove_artifacts: bool = False  # If True, apply artifact removal to the tissue mask before patching.
+    remove_penmarks: bool = False  # If True, apply pen mark removal to the tissue mask before patching.
 
 
 @dataclass
