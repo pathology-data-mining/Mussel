@@ -59,6 +59,16 @@ uv run pytest tests/mussel/cli/test_tessellate.py::test_function_name
 - Models use the factory pattern (`ModelFactory.create()`)
 - Dataset processing uses the strategy pattern (`get_dataset_processor()`)
 
+### Import style
+
+All imports belong at the top of the file. **Do not place imports inside functions or methods** unless one of these specific exceptions applies:
+
+1. **Optional / guarded dependency** — the import is inside a `try/except ImportError` block because the package may not be installed (e.g. `fsspec`, `flash_attn`, `tensorflow`, `gigapath`).
+2. **Platform-conditional import** — the import only makes sense on certain OSes (e.g. `fcntl` on Linux, `msvcrt` on Windows).
+3. **Circular-import workaround** — moving the import to the top would create a circular dependency.
+
+Everything else — stdlib modules (`os`, `tempfile`, `warnings`, `traceback`, `collections`, `multiprocessing`, `functools`), third-party packages that are always installed (`numpy`, `torch`, `omegaconf`), and local modules — must be at the top.
+
 ## Hydra Configuration System
 
 All 13 CLI commands use Hydra with **structured configs only** (no YAML files). The pattern is:

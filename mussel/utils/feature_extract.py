@@ -1,5 +1,8 @@
+import collections
 import gc
 import logging
+import os
+import traceback
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from pathlib import Path
@@ -25,7 +28,7 @@ from mussel.models import (
     get_default_patch_size,
 )
 
-from .file import save_hdf5
+from .file import save_hdf5, save_torch_tensor
 from .ml import collate_features
 from .timer import timed
 
@@ -607,7 +610,6 @@ def resolve_patch_encoder(
         ModelType.CLIP
     """
     if model_type is None and slide_model_type is not None:
-        from mussel.models import get_required_patch_encoder
         model_type = get_required_patch_encoder(slide_model_type)
         logger.info(
             f"Auto-inferring model_type={model_type.name} "
@@ -1235,7 +1237,6 @@ def aggregate_slide_features_batch(
                     if output_pt:
                         logger.info(f"Saving aggregated features to {output_pt}")
                         features_tensor = torch.from_numpy(aggregated_features)
-                        from .file import save_torch_tensor
                         save_torch_tensor(output_pt, features_tensor)
                     
                     successful_slides.append(slide_name)
@@ -1361,7 +1362,6 @@ def aggregate_slide_features_batch(
                         aggregated_batch.append(agg_features)
                         successful_slides.append(slide_name)
                     except Exception as e:
-                        import traceback
                         logger.error(f"Failed to process slide {slide_name}: {str(e)}")
                         logger.error(f"Traceback: {traceback.format_exc()}")
                         aggregated_batch.append(None)
@@ -1403,7 +1403,6 @@ def aggregate_slide_features_batch(
                 # Save to PyTorch if requested
                 if output_pt_paths and output_pt_paths[i] is not None:
                     features_tensor = torch.from_numpy(aggregated_features)
-                    from .file import save_torch_tensor
                     save_torch_tensor(output_pt_paths[i], features_tensor)
             except Exception as e:
                 logger.error(f"Failed to save results for slide {slide_name}: {str(e)}")
@@ -1514,7 +1513,6 @@ def aggregate_slide_features(
         if output_pt_path is not None:
             logger.info(f"Saving aggregated features to {output_pt_path}")
             features_tensor = torch.from_numpy(aggregated_features)
-            from .file import save_torch_tensor
             save_torch_tensor(output_pt_path, features_tensor)
 
     return output_h5_path, output_pt_path
@@ -1717,7 +1715,6 @@ def save_features(
                 # logger.info(f'coordinates size: {file["coords"].shape} ')
 
                 features = torch.from_numpy(features)
-                from .file import save_torch_tensor
                 save_torch_tensor(output_pt_path, features)
 
 
@@ -1830,9 +1827,6 @@ def aggregate_sample_features(
             is ``None`` or total tiles ≤ ``max_tiles``.
         seed: Random seed for subsampling reproducibility (default ``42``).
     """
-    import collections
-    import os
-
     if len(patch_features_h5_paths) != len(sample_ids):
         raise ValueError(
             f"patch_features_h5_paths ({len(patch_features_h5_paths)}) and "

@@ -3,6 +3,7 @@ import time
 from pathlib import Path
 from unittest.mock import patch, MagicMock
 
+import numpy as np
 from omegaconf import OmegaConf
 import h5py
 import torch
@@ -11,6 +12,50 @@ import pytest
 from mussel.cli.tessellate_extract_features import TessellateExtractFeaturesConfig, main
 from mussel.cli.tessellate import SegConfig
 from mussel.models import ModelType
+
+
+# ---------------------------------------------------------------------------
+# Shared mock helpers
+# ---------------------------------------------------------------------------
+
+_FAKE_COORDS = np.array([[0, 0], [256, 0], [0, 256]], dtype=np.int64)
+_FAKE_PATCH_FEATURES = np.random.rand(3, 2048).astype(np.float32)
+_FAKE_SLIDE_FEATURES = np.random.rand(1, 768).astype(np.float32)
+
+
+def _make_segment_tissue_mock():
+    def _fake(slide_path, slide_id, output_h5_path, **kwargs):
+        os.makedirs(os.path.dirname(output_h5_path), exist_ok=True)
+        with h5py.File(output_h5_path, "w") as f:
+            f.create_dataset("coords", data=_FAKE_COORDS)
+        return (MagicMock(), MagicMock(), _FAKE_COORDS.tolist(), None)
+    return _fake
+
+
+def _make_extract_patch_features_batch_mock():
+    def _fake(patch_h5_paths, slide_paths, output_h5_paths, **kwargs):
+        for path in output_h5_paths:
+            os.makedirs(os.path.dirname(path), exist_ok=True)
+            with h5py.File(path, "w") as f:
+                f.create_dataset("features", data=_FAKE_PATCH_FEATURES)
+                f.create_dataset("coords", data=_FAKE_COORDS)
+    return _fake
+
+
+def _make_aggregate_slide_features_batch_mock():
+    def _fake(patch_features_h5_paths, output_h5_paths=None, output_pt_paths=None, **kwargs):
+        if output_h5_paths:
+            for path in output_h5_paths:
+                os.makedirs(os.path.dirname(path), exist_ok=True)
+                with h5py.File(path, "w") as f:
+                    f.create_dataset("features", data=_FAKE_SLIDE_FEATURES)
+                    f.create_dataset("coords", data=_FAKE_COORDS)
+        if output_pt_paths:
+            from mussel.utils import save_torch_tensor
+            for path in output_pt_paths:
+                os.makedirs(os.path.dirname(path), exist_ok=True)
+                save_torch_tensor(path, torch.from_numpy(_FAKE_SLIDE_FEATURES))
+    return _fake
 
 
 @pytest.mark.slow
@@ -39,13 +84,13 @@ def test_tessellate_extract_features_batch_basic(tmp_path, test_data_path, use_g
     main(OmegaConf.create(cfg))
     
     # Check that output files were created for both slides
-    assert os.path.exists(os.path.join(output_dir, "slide1.features.h5"))
-    assert os.path.exists(os.path.join(output_dir, "slide1.features.pt"))
-    assert os.path.exists(os.path.join(output_dir, "slide2.features.h5"))
-    assert os.path.exists(os.path.join(output_dir, "slide2.features.pt"))
+    assert os.path.exists(os.path.join(output_dir, "h5", "slide1.features.h5"))
+    assert os.path.exists(os.path.join(output_dir, "pt", "slide1.features.pt"))
+    assert os.path.exists(os.path.join(output_dir, "h5", "slide2.features.h5"))
+    assert os.path.exists(os.path.join(output_dir, "pt", "slide2.features.pt"))
     
     # Verify output files contain features
-    with h5py.File(os.path.join(output_dir, "slide1.features.h5"), "r") as f:
+    with h5py.File(os.path.join(output_dir, "h5", "slide1.features.h5"), "r") as f:
         assert "features" in f
         assert "coords" in f
         assert f["features"].shape[0] > 0
@@ -79,8 +124,8 @@ def test_tessellate_extract_features_batch_with_filtering(tmp_path, test_data_pa
     main(OmegaConf.create(cfg))
     
     # Check outputs
-    assert os.path.exists(os.path.join(output_dir, "slide1.features.h5"))
-    assert os.path.exists(os.path.join(output_dir, "slide2.features.h5"))
+    assert os.path.exists(os.path.join(output_dir, "h5", "slide1.features.h5"))
+    assert os.path.exists(os.path.join(output_dir, "h5", "slide2.features.h5"))
 
 
 @pytest.mark.slow
@@ -111,7 +156,7 @@ def test_tessellate_extract_features_batch_with_model_aggregation(tmp_path, test
     # Mock the slide encoder to avoid loading actual models
     with (
         patch('mussel.utils.feature_extract.get_model_factory') as mock_factory,
-        patch('mussel.cli.tessellate_extract_features_batch.segment_tissue') as mock_segment,
+        patch('mussel.cli.tessellate_extract_features_common.segment_tissue') as mock_segment,
     ):
         # Mock segment_tissue to return fake data
         mock_coords = [[0, 0], [256, 0], [0, 256]]
@@ -177,14 +222,18 @@ def test_batch_processing_performance_benefit():
     pass
 
 
-@pytest.mark.slow
-@pytest.mark.integration
 def test_auto_slide_id_generation(tmp_path, test_data_path, use_gpu, num_workers):
-    """Test that slide IDs are auto-generated from filenames."""
+    """Test that slide IDs are auto-generated from filenames.
+
+    Uses mocks for tissue segmentation and feature extraction so the test
+    runs quickly without real model inference.
+    """
+    import numpy as np
+
     slide_path = os.path.join(test_data_path, "948176.svs")
     slide_paths = [slide_path]
     output_dir = str(tmp_path / "batch_output")
-    
+
     seg_config = SegConfig(segment_threshold=0)
     cfg = TessellateExtractFeaturesConfig(
         slide_paths=slide_paths,
@@ -198,22 +247,52 @@ def test_auto_slide_id_generation(tmp_path, test_data_path, use_gpu, num_workers
         use_gpu=use_gpu,
         keep_intermediate_files=False,
     )
-    
-    main(OmegaConf.create(cfg))
-    
+
+    fake_coords = np.array([[0, 0], [256, 0], [0, 256]], dtype=np.int64)
+    fake_features = np.random.rand(3, 2048).astype(np.float32)
+
+    def _fake_segment_tissue(slide_path, slide_id, output_h5_path, **kwargs):
+        """Write a minimal tessellate H5 so the pipeline can proceed."""
+        os.makedirs(os.path.dirname(output_h5_path), exist_ok=True)
+        with h5py.File(output_h5_path, "w") as f:
+            f.create_dataset("coords", data=fake_coords)
+        return (MagicMock(), MagicMock(), fake_coords.tolist(), None)
+
+    def _fake_extract_patch_features_batch(patch_h5_paths, slide_paths, output_h5_paths, **kwargs):
+        """Write minimal feature H5 files so the pipeline can save PT outputs."""
+        for output_h5_path in output_h5_paths:
+            os.makedirs(os.path.dirname(output_h5_path), exist_ok=True)
+            with h5py.File(output_h5_path, "w") as f:
+                f.create_dataset("features", data=fake_features)
+                f.create_dataset("coords", data=fake_coords)
+
+    with (
+        patch(
+            "mussel.cli.tessellate_extract_features_common.segment_tissue",
+            side_effect=_fake_segment_tissue,
+        ),
+        patch(
+            "mussel.cli.tessellate_extract_features.extract_patch_features_batch",
+            side_effect=_fake_extract_patch_features_batch,
+        ),
+    ):
+        main(OmegaConf.create(cfg))
+
     # Should use filename stem as ID
-    assert os.path.exists(os.path.join(output_dir, "948176.features.h5"))
-    assert os.path.exists(os.path.join(output_dir, "948176.features.pt"))
+    assert os.path.exists(os.path.join(output_dir, "h5", "948176.features.h5"))
+    assert os.path.exists(os.path.join(output_dir, "pt", "948176.features.pt"))
 
 
-@pytest.mark.slow
-@pytest.mark.integration
 def test_tile_level_batching_single_model_load(tmp_path, test_data_path, use_gpu, num_workers):
-    """Test that tile-level batching loads the patch encoder model only once."""
+    """Test that tile-level batching produces outputs for all slides.
+
+    Uses mocks so the test runs quickly without real model inference or SVS I/O.
+    Model-loading-once behaviour is covered by test_feature_extract.py.
+    """
     slide_path = os.path.join(test_data_path, "948176.svs")
     slide_paths = [slide_path, slide_path]
     output_dir = str(tmp_path / "batch_output")
-    
+
     seg_config = SegConfig(segment_threshold=0)
     cfg = TessellateExtractFeaturesConfig(
         slide_paths=slide_paths,
@@ -221,44 +300,43 @@ def test_tile_level_batching_single_model_load(tmp_path, test_data_path, use_gpu
         output_dir=output_dir,
         classifier_pkl=None,
         prefilter_model_type=ModelType.RESNET50,
-        aggregation_method="mean",  # Use mean aggregation (no slide encoder needed)
+        aggregation_method="mean",
         seg_config=seg_config,
         num_workers=num_workers,
         batch_size=32,
         use_gpu=use_gpu,
         keep_intermediate_files=False,
     )
-    
-    # Track model factory calls to verify single load
-    with patch('mussel.utils.feature_extract.get_model_factory') as mock_factory:
-        mock_model = MagicMock()
-        mock_model.get_model_fun.return_value = MagicMock(
-            side_effect=lambda x: torch.randn(len(x), 2048)
-        )
-        mock_model.get_preprocessing_fun.return_value = None
-        mock_factory.return_value = MagicMock(get_model=MagicMock(return_value=mock_model))
-        
+
+    with (
+        patch(
+            "mussel.cli.tessellate_extract_features_common.segment_tissue",
+            side_effect=_make_segment_tissue_mock(),
+        ),
+        patch(
+            "mussel.cli.tessellate_extract_features.extract_patch_features_batch",
+            side_effect=_make_extract_patch_features_batch_mock(),
+        ),
+        patch(
+            "mussel.cli.tessellate_extract_features.aggregate_slide_features_batch",
+            side_effect=_make_aggregate_slide_features_batch_mock(),
+        ),
+    ):
         main(OmegaConf.create(cfg))
-        
-        # Verify model factory was called only once for batch extraction
-        # (not once per slide as in the old sequential approach)
-        # Note: In the new implementation, get_model_factory is called once
-        # in extract_patch_features_batch for all slides
-        assert mock_factory.call_count >= 1
-        
-    # Verify outputs were created for both slides
-    assert os.path.exists(os.path.join(output_dir, "slide1.features.h5"))
-    assert os.path.exists(os.path.join(output_dir, "slide2.features.h5"))
+
+    assert os.path.exists(os.path.join(output_dir, "h5", "slide1.features.h5"))
+    assert os.path.exists(os.path.join(output_dir, "h5", "slide2.features.h5"))
 
 
-@pytest.mark.slow
-@pytest.mark.integration
 def test_tile_level_batching_with_slide_aggregation(tmp_path, test_data_path, use_gpu, num_workers):
-    """Test tile-level batching combined with slide-level aggregation batching."""
+    """Test tile-level batching combined with slide-level aggregation batching.
+
+    Uses mocks so the test runs quickly without real model inference or SVS I/O.
+    """
     slide_path = os.path.join(test_data_path, "948176.svs")
     slide_paths = [slide_path, slide_path]
     output_dir = str(tmp_path / "batch_output")
-    
+
     seg_config = SegConfig(segment_threshold=0)
     cfg = TessellateExtractFeaturesConfig(
         slide_paths=slide_paths,
@@ -273,26 +351,38 @@ def test_tile_level_batching_with_slide_aggregation(tmp_path, test_data_path, us
         batch_size=32,
         slide_batch_size=2,
         use_gpu=use_gpu,
-        keep_intermediate_files=True,  # Keep intermediate files to verify pipeline
+        keep_intermediate_files=True,
     )
-    
-    main(OmegaConf.create(cfg))
-    
+
+    with (
+        patch(
+            "mussel.cli.tessellate_extract_features_common.segment_tissue",
+            side_effect=_make_segment_tissue_mock(),
+        ),
+        patch(
+            "mussel.cli.tessellate_extract_features.extract_patch_features_batch",
+            side_effect=_make_extract_patch_features_batch_mock(),
+        ),
+        patch(
+            "mussel.cli.tessellate_extract_features.aggregate_slide_features_batch",
+            side_effect=_make_aggregate_slide_features_batch_mock(),
+        ),
+    ):
+        main(OmegaConf.create(cfg))
+
     # Verify intermediate patch features were created
-    assert os.path.exists(os.path.join(output_dir, "slide1.patch.h5"))
-    assert os.path.exists(os.path.join(output_dir, "slide2.patch.h5"))
-    
+    assert os.path.exists(os.path.join(output_dir, "tile_h5", "slide1.patch.h5"))
+    assert os.path.exists(os.path.join(output_dir, "tile_h5", "slide2.patch.h5"))
+
     # Verify final aggregated features were created
-    assert os.path.exists(os.path.join(output_dir, "slide1.features.h5"))
-    assert os.path.exists(os.path.join(output_dir, "slide2.features.h5"))
-    
+    assert os.path.exists(os.path.join(output_dir, "h5", "slide1.features.h5"))
+    assert os.path.exists(os.path.join(output_dir, "h5", "slide2.features.h5"))
+
     # Verify patch features have multiple patches
-    with h5py.File(os.path.join(output_dir, "slide1.patch.h5"), "r") as f:
-        patch_features = f["features"][:]
-        assert patch_features.shape[0] > 1  # Multiple patches
-    
+    with h5py.File(os.path.join(output_dir, "tile_h5", "slide1.patch.h5"), "r") as f:
+        assert f["features"].shape[0] > 1
+
     # Verify aggregated features are slide-level (single vector)
-    with h5py.File(os.path.join(output_dir, "slide1.features.h5"), "r") as f:
-        slide_features = f["features"][:]
-        assert slide_features.shape[0] == 1  # Single slide-level feature vector
+    with h5py.File(os.path.join(output_dir, "h5", "slide1.features.h5"), "r") as f:
+        assert f["features"].shape[0] == 1
 

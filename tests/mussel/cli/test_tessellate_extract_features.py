@@ -68,7 +68,7 @@ def test_tessellate_extract_features(tmp_path, test_data_path, classifier_pkl_pa
         seg_config=seg_config,
         num_workers=num_workers,
         batch_size=32,
-        use_gpu=use_gpu,  # Use CPU for testing
+        use_gpu=use_gpu,
         keep_intermediate_files=False,
     )
 
@@ -154,11 +154,12 @@ def test_tessellate_extract_features_with_intermediate_files(tmp_path, test_data
     base_path = Path(output_h5_path).parent
     tessellate_h5_path = base_path / f"{Path(slide_path).stem}.tessellate.h5"
     prefilter_features_h5_path = base_path / f"{Path(slide_path).stem}.prefilter_features.h5"
-    filtered_coords_h5_path = base_path / f"{Path(slide_path).stem}.filtered_coords.h5"
-    
+
     assert os.path.exists(tessellate_h5_path)
     assert os.path.exists(prefilter_features_h5_path)
-    assert os.path.exists(filtered_coords_h5_path)
+    # filtered_coords.h5 is only created when prefilter_model_type != model_type
+    # (i.e. when a second extraction pass is needed). With the same model, the
+    # prefilter_features.h5 already contains the filtered coordinates.
 
 
 @pytest.mark.slow

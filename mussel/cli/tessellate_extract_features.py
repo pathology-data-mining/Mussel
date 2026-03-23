@@ -14,7 +14,9 @@ import torch
 import hydra
 from hydra.conf import HelpConf, HydraConf
 from hydra.core.config_store import ConfigStore
-from omegaconf import MISSING, OmegaConf
+import multiprocessing
+from collections import defaultdict
+from omegaconf import MISSING, OmegaConf, ListConfig, DictConfig
 
 from mussel.cli.tessellate import (
     SegConfig,
@@ -194,8 +196,6 @@ class TessellateExtractFeaturesConfig:
 
     def __post_init__(self):
         """Set default patch size based on model type if not explicitly set."""
-        from omegaconf import ListConfig, DictConfig
-
         # Convert ListConfig to actual lists of ModelType enums
         if isinstance(self.model_type, ListConfig):
             self.model_type = [ModelType[name] for name in self.model_type]
@@ -311,15 +311,10 @@ def main(
 ):
     """Tessellate and extract features from one or more slides, optionally with filtering."""
     # Set multiprocessing start method to avoid permission issues in containers
-    import multiprocessing as mp
-
     try:
-        mp.set_start_method("spawn", force=True)
+        multiprocessing.set_start_method("spawn", force=True)
     except RuntimeError:
         pass  # Already set
-
-    # Import ListConfig for type checking
-    from omegaconf import ListConfig
 
     # Apply model-specific defaults if not explicitly set
     # Hydra doesn't call __post_init__ on structured configs, so we do it here
@@ -521,7 +516,7 @@ def _main_single(cfg: TessellateExtractFeaturesConfig):
     )
 
     if result is None:
-        # Processing failed or was completed early
+        # Tessellation failed
         if temp_dir:
 
             shutil.rmtree(temp_dir)
@@ -1052,14 +1047,6 @@ def _main_batch(
 @resolve_remote_paths('model_dir', 'classifier_pkl', auto_detect=False)
 def _main_batch_multi_model(cfg: TessellateExtractFeaturesConfig):
     """Process multiple slides with multiple models, optimized by grouping models with same patch size."""
-    from collections import defaultdict
-    from omegaconf import ListConfig
-    from mussel.models.model_factory import (
-        get_default_patch_size,
-        get_required_patch_encoder,
-        ModelType,
-    )
-
     if cfg.slide_paths is None or cfg.output_dir is None:
         raise ValueError("Batch mode requires slide_paths and output_dir")
 

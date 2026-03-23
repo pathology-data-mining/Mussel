@@ -205,8 +205,9 @@ def process_slide_tessellation_and_filtering(
         slide_model_path: Path to slide encoder model weights.
 
     Returns:
-        Dict with intermediate paths for aggregation, or ``None`` if processing failed
-        or features were saved early (``skip_second_extraction`` case).
+        ``None`` if processing failed (tessellation error); otherwise a dict with
+        ``final_coords``, ``slide_path``, and ``tessellate_h5_path`` (plus any
+        additional aggregation paths when a second extraction step is still needed).
     """
     result = _tessellate_and_filter(
         slide_path=slide_path,
@@ -241,7 +242,12 @@ def process_slide_tessellation_and_filtering(
             mode="w",
         )
         save_torch_tensor(output_pt_path, filtered_features)
-        return None  # No further processing needed
+        # Return tessellation info so the caller can still create visualizations.
+        return {
+            "final_coords": final_coords,
+            "slide_path": slide_path,
+            "tessellate_h5_path": tessellate_h5_path,
+        }
 
     # Final extraction step
     if two_step_mode and cfg.aggregation_method != "identity":

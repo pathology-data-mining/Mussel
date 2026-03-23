@@ -25,7 +25,7 @@ def create_mock_h5_file(h5_path, num_patches=10):
         coords_dset.attrs["patch_size_to_resize_to_for_desired_mpp"] = 224
 
 
-def test_extract_patch_features_batch_basic(tmp_path, use_gpu):
+def test_extract_patch_features_batch_basic(tmp_path, use_gpu, num_workers):
     """Test basic batch extraction of patch features from multiple slides."""
     # Create mock input files
     num_slides = 3
@@ -74,7 +74,7 @@ def test_extract_patch_features_batch_basic(tmp_path, use_gpu):
             model_path=None,
             batch_size=32,
             use_gpu=use_gpu,
-            num_workers=0,
+            num_workers=num_workers,
         )
 
         # Verify model was loaded only once
@@ -104,7 +104,7 @@ def test_extract_patch_features_batch_empty_list():
     assert result == [], "Should return empty list for empty input"
 
 
-def test_extract_patch_features_batch_single_slide(tmp_path, use_gpu):
+def test_extract_patch_features_batch_single_slide(tmp_path, use_gpu, num_workers):
     """Test batch extraction with a single slide (edge case)."""
     # Create mock input file
     patch_h5_path = tmp_path / "slide_coords.h5"
@@ -141,7 +141,7 @@ def test_extract_patch_features_batch_single_slide(tmp_path, use_gpu):
             model_path=None,
             batch_size=32,
             use_gpu=use_gpu,
-            num_workers=0,
+            num_workers=num_workers,
         )
 
         # Even with one slide, model should be loaded only once

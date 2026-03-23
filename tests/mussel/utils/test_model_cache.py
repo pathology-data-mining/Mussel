@@ -88,67 +88,70 @@ def test_model_download_lock_fallback_cache_dirs():
                     assert locks_dir.exists()
 
 
+def _worker_download_with_lock(cache_dir, results_queue, process_id):
+    """Worker process that tries to download model."""
+    with model_download_lock("concurrent-model", cache_dir=cache_dir, timeout=10) as should_download:
+        if should_download:
+            time.sleep(0.1)
+        results_queue.put((process_id, should_download))
+
+
 def test_model_download_lock_concurrent_access():
     """Test that concurrent processes don't both download the model"""
-    def download_with_lock(cache_dir, results_queue, process_id):
-        """Worker process that tries to download model"""
-        with model_download_lock("concurrent-model", cache_dir=cache_dir, timeout=10) as should_download:
-            if should_download:
-                # Simulate download time
-                time.sleep(0.1)
-            results_queue.put((process_id, should_download))
-    
+    ctx = multiprocessing.get_context("fork")
     with tempfile.TemporaryDirectory() as tmpdir:
         # Start 3 concurrent processes
-        results_queue = multiprocessing.Queue()
+        results_queue = ctx.Queue()
         processes = []
-        
+
         for i in range(3):
-            p = multiprocessing.Process(
-                target=download_with_lock,
+            p = ctx.Process(
+                target=_worker_download_with_lock,
                 args=(tmpdir, results_queue, i)
             )
             p.start()
             processes.append(p)
-        
+
         # Wait for all to complete
         for p in processes:
             p.join(timeout=15)
             assert p.exitcode == 0, f"Process failed with exit code {p.exitcode}"
-        
+
         # Collect results
         results = []
         while not results_queue.empty():
             results.append(results_queue.get())
-        
+
         assert len(results) == 3, "All processes should complete"
-        
+
         # Exactly one process should have downloaded
         download_count = sum(1 for _, should_download in results if should_download)
         assert download_count == 1, f"Expected 1 download, got {download_count}"
 
 
+def _worker_hold_lock_forever(cache_dir, ready_event):
+    """Worker that holds lock indefinitely."""
+    with model_download_lock("timeout-model", cache_dir=cache_dir, timeout=60):
+        ready_event.set()
+        time.sleep(10)
+
+
 def test_model_download_lock_timeout():
     """Test that lock times out if held too long"""
-    def hold_lock_forever(cache_dir, ready_event):
-        """Worker that holds lock indefinitely"""
-        with model_download_lock("timeout-model", cache_dir=cache_dir, timeout=60):
-            ready_event.set()  # Signal that we have the lock
-            time.sleep(10)  # Hold it for a long time
-    
+    ctx = multiprocessing.get_context("fork")
     with tempfile.TemporaryDirectory() as tmpdir:
-        ready_event = multiprocessing.Event()
-        
+        ready_event = ctx.Event()
+
         # Start process that holds lock
-        holder = multiprocessing.Process(
-            target=hold_lock_forever,
+        holder = ctx.Process(
+            target=_worker_hold_lock_forever,
             args=(tmpdir, ready_event)
         )
         holder.start()
-        
+
         # Wait for holder to acquire lock
         assert ready_event.wait(timeout=5), "Holder should acquire lock"
-        
+
         # Try to acquire with short timeout
         start = time.time()
         with model_download_lock("timeout-model", cache_dir=tmpdir, timeout=2) as should_download:
@@ -157,7 +160,7 @@ def test_model_download_lock_timeout():
             assert should_download is True
             assert elapsed >= 2, "Should wait for timeout duration"
             assert elapsed < 4, "Should not wait much longer than timeout"
-        
+
         # Cleanup
         holder.terminate()
         holder.join(timeout=5)
@@ -183,31 +186,33 @@ def test_model_download_lock_lock_release():
             assert should_download is True
 
 
+def _worker_create_done_file_after_delay(cache_dir, delay):
+    """Worker that creates done file after a delay."""
+    time.sleep(delay)
+    locks_dir = Path(cache_dir) / ".locks"
+    locks_dir.mkdir(parents=True, exist_ok=True)
+    done_file = locks_dir / "race-model.done"
+    done_file.touch()
+
+
 def test_model_download_lock_done_file_race_condition():
     """Test that done file is checked after lock acquisition"""
-    def create_done_file_after_delay(cache_dir, delay):
-        """Worker that creates done file after a delay"""
-        time.sleep(delay)
-        locks_dir = Path(cache_dir) / ".locks"
-        locks_dir.mkdir(parents=True, exist_ok=True)
-        done_file = locks_dir / "race-model.done"
-        done_file.touch()
-    
+    ctx = multiprocessing.get_context("fork")
     with tempfile.TemporaryDirectory() as tmpdir:
         # Start process that will create done file while we wait for lock
-        creator = multiprocessing.Process(
-            target=create_done_file_after_delay,
+        creator = ctx.Process(
+            target=_worker_create_done_file_after_delay,
             args=(tmpdir, 0.2)
         )
         creator.start()
-        
+
         # This should detect done file even though it was created while waiting
         time.sleep(0.1)  # Let creator get ahead
         with model_download_lock("race-model", cache_dir=tmpdir, timeout=5) as should_download:
             # Since done file exists, we should not download
             # (either detected before lock or after lock acquisition)
             pass  # Result depends on timing, but should not crash
-        
+
         creator.join(timeout=5)
 
 

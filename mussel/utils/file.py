@@ -1,11 +1,16 @@
 import logging
-import pickle
 import os
+import pickle
+import tempfile
+import warnings
 from contextlib import ExitStack
+from functools import wraps
 from pathlib import Path
 from typing import List, Optional
 
 import h5py
+import numpy as np
+import torch
 
 logger = logging.getLogger(__name__)
 
@@ -81,7 +86,6 @@ def safe_path_join(base_path, *parts):
         return result
     else:
         # For local paths, use Path
-        from pathlib import Path
         return str(Path(base_path) / Path(*parts))
 
 
@@ -104,7 +108,6 @@ def get_slide_id_from_path(slide_path: str, slide_id: Optional[str] = None) -> s
         >>> get_slide_id_from_path("/path/to/slide.svs", "custom_id")
         'custom_id'
     """
-    from pathlib import Path
     return slide_id if slide_id else Path(slide_path).stem
 
 
@@ -129,7 +132,6 @@ def get_slide_ids_from_paths(
         >>> get_slide_ids_from_paths(["/a/s1.svs"], ["custom"])
         ['custom']
     """
-    from pathlib import Path
     return slide_ids if slide_ids else [Path(sp).stem for sp in slide_paths]
 
 
@@ -149,7 +151,6 @@ def ensure_directory_exists(path, is_file_path: bool = False):
         >>> ensure_directory_exists("/path/to/file.txt", is_file_path=True)
         PosixPath('/path/to')
     """
-    from pathlib import Path
     dir_path = Path(path).parent if is_file_path else Path(path)
     dir_path.mkdir(parents=True, exist_ok=True)
     return dir_path
@@ -285,9 +286,6 @@ def load_features_from_h5(
         Tuple of ``(features, coords)`` where features is a ``torch.Tensor``
         and coords is a ``numpy.ndarray``.
     """
-    import numpy as np
-    import torch
-
     with h5py.File(h5_path, "r") as h5:
         if pt_path and os.path.exists(pt_path):
             features = torch.load(pt_path, weights_only=True)
@@ -334,8 +332,6 @@ def save_hdf5(
     # For remote paths, use a temporary local file
     local_path = None  # Initialize to ensure it exists for finally block
     if is_remote:
-        import tempfile
-
         local_path = tempfile.NamedTemporaryFile(delete=False, suffix=".h5").name
         actual_path = local_path
     else:
@@ -432,14 +428,10 @@ def save_torch_tensor(output_path, tensor, ssl_verify=True):
     Returns:
         The output path.
     """
-    import torch
-
     is_remote = _is_remote_path(output_path)
 
     local_path = None  # Initialize to ensure it exists for finally block
     if is_remote:
-        import tempfile
-
         local_path = tempfile.NamedTemporaryFile(delete=False, suffix=".pt").name
         try:
             torch.save(tensor, local_path)
@@ -475,8 +467,6 @@ def download_slide(slide_path, local_dir=None, ssl_verify=True):
         return slide_path, False
 
     # Download remote file
-    import tempfile
-
     if local_dir is None:
         local_dir = tempfile.mkdtemp(prefix="mussel_slides_")
     else:
@@ -505,8 +495,6 @@ def _download_azure_directory_with_sdk(container_name, prefix, local_path):
         prefix: Blob prefix (directory path)
         local_path: Local destination directory
     """
-    import warnings
-
     if not AZURE_SDK_AVAILABLE:
         raise ImportError("azure-storage-blob is required for Azure downloads")
 
@@ -576,8 +564,6 @@ def _download_azure_files_directory(share_name, prefix, local_path):
         prefix: Directory prefix within the share
         local_path: Local destination directory
     """
-    import warnings
-
     if not AZURE_FILES_SDK_AVAILABLE:
         raise ImportError("azure-storage-file-share is required for Azure Files downloads")
 
@@ -652,8 +638,6 @@ def _download_azure_files_file(share_name, file_path, local_path):
         file_path: Path to the file within the share
         local_path: Local destination file path
     """
-    import warnings
-
     if not AZURE_FILES_SDK_AVAILABLE:
         raise ImportError("azure-storage-file-share is required for Azure Files downloads")
 
@@ -849,8 +833,6 @@ def resolve_remote_paths(*attrs, auto_detect=True, suffixes=None, ssl_verify=Tru
         def process_slides(cfg):
             ...
     """
-    from functools import wraps
-
     # Default suffixes for auto-detection
     if suffixes is None:
         suffixes = ["_path", "_dir", "_pkl", "_file", "_model"]
