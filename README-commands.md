@@ -83,7 +83,7 @@ The following models are currently supported,
 | Phikon         | PHIKON        | public | https://huggingface.co/owkin/phikon |
 | Phikon-v2      | PHIKON_V2     | public | https://huggingface.co/owkin/phikon-v2 |
 | Midnight-12k   | MIDNIGHT12K   | public | https://huggingface.co/kaiko-ai/midnight |
-| GPFM           | GPFM          | 🔒 gated | https://huggingface.co/majiabo/GPFM |
+| GPFM           | GPFM          | public   | https://huggingface.co/majiabo/GPFM |
 | Hibou-L        | HIBOU_L       | 🔒 gated | https://huggingface.co/histai/hibou-L |
 | UNI            | UNI           | 🔒 gated | https://huggingface.co/MahmoodLab/UNI |
 | UNI2           | UNI2          | 🔒 gated | https://huggingface.co/MahmoodLab/UNI2-h |
@@ -130,7 +130,8 @@ export HF_TOKEN=hf_...
 - **Prov-GigaPath**: GIGAPATH, GIGAPATH_SLIDE
 - **Google**: GOOGLEPATH
 - **HistAI**: HIBOU_L
-- **GPFM** (majiabo): GPFM (repo access may be restricted)
+
+**Public models** (no token needed): RESNET50, CLIP, PHIKON, PHIKON_V2, MIDNIGHT12K, GPFM
 
 **Local-checkpoint-only models**: CTRANSPATH and CHIEF_SLIDE require manually downloaded checkpoints (no HuggingFace download). Pass the checkpoint path via `model_path=`.
 

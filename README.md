@@ -64,7 +64,7 @@ PyTorch is required for the following patch encoders:
 | UNI | `UNI` | 🔒 gated | [MahmoodLab/UNI](https://huggingface.co/MahmoodLab/UNI) |
 | UNI2 | `UNI2` | 🔒 gated | [MahmoodLab/UNI2-h](https://huggingface.co/MahmoodLab/UNI2-h) |
 | CONCH v1.5 | `CONCH1_5` | 🔒 gated | [MahmoodLab/TITAN](https://huggingface.co/MahmoodLab/TITAN) |
-| GPFM | `GPFM` | 🔒 gated | [majiabo/GPFM](https://huggingface.co/majiabo/GPFM) |
+| GPFM | `GPFM` | public | [majiabo/GPFM](https://huggingface.co/majiabo/GPFM) |
 | Hibou-L | `HIBOU_L` | 🔒 gated | [histai/hibou-L](https://huggingface.co/histai/hibou-L) |
 
 And the following slide encoders (aggregate patch features into a single slide embedding):
