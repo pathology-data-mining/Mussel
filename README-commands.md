@@ -70,36 +70,37 @@ a PyTorch (.pt) file, with embeddings for each tile.
 
 The following models are currently supported,
 
-| Model          | model_type    | Reference |
-|----------------|---------------|-----------|
-| ResNet-50      | RESNET50      | https://huggingface.co/microsoft/resnet-50 |
-| TransPath      | CTRANSPATH    | https://github.com/Xiyue-Wang/TransPath |
-| Prov-GigaPath  | GIGAPATH      | https://github.com/prov-gigapath/prov-gigapath |
-| Virchow        | VIRCHOW       | https://huggingface.co/paige-ai/Virchow |
-| Virchow2       | VIRCHOW2      | https://huggingface.co/paige-ai/Virchow2 |
-| H-Optimus-0    | OPTIMUS       | https://huggingface.co/bioptimus/H-optimus-0 |
-| H-Optimus-1    | H_OPTIMUS_1   | https://huggingface.co/bioptimus/H-optimus-1 |
-| H0-mini        | H0_MINI       | https://huggingface.co/bioptimus/H0-mini |
-| Phikon         | PHIKON        | https://huggingface.co/owkin/phikon |
-| Phikon-v2      | PHIKON_V2     | https://huggingface.co/owkin/phikon-v2 |
-| Midnight-12k   | MIDNIGHT12K   | https://huggingface.co/kaiko-ai/midnight |
-| GPFM           | GPFM          | https://huggingface.co/majiabo/GPFM |
-| Hibou-L        | HIBOU_L       | https://huggingface.co/histai/hibou-L |
-| UNI            | UNI           | https://huggingface.co/MahmoodLab/UNI |
-| UNI2           | UNI2          | https://huggingface.co/MahmoodLab/UNI2 |
-| OpenCLIP       | CLIP          | https://github.com/mlfoundations/open_clip |
-| GooglePath     | GOOGLEPATH    | https://huggingface.co/google/path-foundation |
-| Conch v1.5     | CONCH1_5      | https://huggingface.co/MahmoodLab/conchv1_5 |
+| Model          | model_type    | Access | Reference |
+|----------------|---------------|--------|-----------|
+| ResNet-50      | RESNET50      | public | https://huggingface.co/microsoft/resnet-50 |
+| TransPath      | CTRANSPATH    | local ckpt | https://github.com/Xiyue-Wang/TransPath |
+| Prov-GigaPath  | GIGAPATH      | 🔒 gated | https://huggingface.co/prov-gigapath/prov-gigapath |
+| Virchow        | VIRCHOW       | 🔒 gated | https://huggingface.co/paige-ai/Virchow |
+| Virchow2       | VIRCHOW2      | 🔒 gated | https://huggingface.co/paige-ai/Virchow2 |
+| H-Optimus-0    | OPTIMUS       | 🔒 gated | https://huggingface.co/bioptimus/H-optimus-0 |
+| H-Optimus-1    | H_OPTIMUS_1   | 🔒 gated | https://huggingface.co/bioptimus/H-optimus-1 |
+| H0-mini        | H0_MINI       | 🔒 gated | https://huggingface.co/bioptimus/H0-mini |
+| Phikon         | PHIKON        | public | https://huggingface.co/owkin/phikon |
+| Phikon-v2      | PHIKON_V2     | public | https://huggingface.co/owkin/phikon-v2 |
+| Midnight-12k   | MIDNIGHT12K   | public | https://huggingface.co/kaiko-ai/midnight |
+| GPFM           | GPFM          | 🔒 gated | https://huggingface.co/majiabo/GPFM |
+| Hibou-L        | HIBOU_L       | 🔒 gated | https://huggingface.co/histai/hibou-L |
+| UNI            | UNI           | 🔒 gated | https://huggingface.co/MahmoodLab/UNI |
+| UNI2           | UNI2          | 🔒 gated | https://huggingface.co/MahmoodLab/UNI2-h |
+| OpenCLIP       | CLIP          | public | https://github.com/mlfoundations/open_clip |
+| GooglePath     | GOOGLEPATH    | 🔒 gated | https://huggingface.co/google/path-foundation |
+| Conch v1.5     | CONCH1_5      | 🔒 gated | https://huggingface.co/MahmoodLab/TITAN |
 
 **Slide encoders** (require patch-level features as input):
 
-| Model          | model_type      | Patch encoder required |
-|----------------|-----------------|------------------------|
-| Prov-GigaPath  | GIGAPATH_SLIDE  | GIGAPATH |
-| TITAN          | TITAN_SLIDE     | CONCH1_5 |
-| PRISM          | PRISM_SLIDE     | VIRCHOW |
-| FEATHER        | FEATHER_SLIDE   | CONCH1_5 |
-| MADELEINE      | MADELEINE_SLIDE | CONCH1_5 |
+| Model          | model_type      | Patch encoder required | Access |
+|----------------|-----------------|------------------------|--------|
+| Prov-GigaPath  | GIGAPATH_SLIDE  | GIGAPATH | 🔒 gated |
+| TITAN          | TITAN_SLIDE     | CONCH1_5 | 🔒 gated |
+| PRISM          | PRISM_SLIDE     | VIRCHOW  | 🔒 gated |
+| FEATHER        | FEATHER_SLIDE   | CONCH1_5 | 🔒 gated |
+| MADELEINE      | MADELEINE_SLIDE | CONCH1_5 | 🔒 gated |
+| CHIEF          | CHIEF_SLIDE     | CTRANSPATH | local ckpt |
 
 OpenCLIP is used by default, with the default model being [QuiltNet-B-16-PMB](https://huggingface.co/wisdomik/QuiltNet-B-16-PMB).  Use the `model_type` parameter to specify a different model.
 To use H-Optimus-0, for example,
@@ -113,12 +114,25 @@ extract_features \
     output_pt_path=948176_embed.pt
 ```
 
-Most of the supported models download from HuggingFace, except for CTransPath and the
-ResNet-50 model.  Three of the HuggingFace models (Prov-Gigapath, GooglePath, and Virchow)
-are "gated", and to use these you need to sign an agreement on the HuggingFace site and
-have your HuggingFace access token in the HF_TOKEN environment variable.
+Most models download automatically from HuggingFace. **🔒 Gated models** require you to visit the model page, sign the access agreement, and set your HuggingFace token:
 
-UNI and UNI2 are also gated models requiring an agreement and `HF_TOKEN`.
+```bash
+export HF_TOKEN=hf_...
+```
+
+**Public models** (no token needed): RESNET50, CLIP, PHIKON, PHIKON_V2, MIDNIGHT12K.
+
+**Gated models** — visit the link in the table above to request access:
+
+- **Mahmood Lab** (MahmoodLab): UNI, UNI2, CONCH1_5, TITAN_SLIDE, FEATHER_SLIDE, MADELEINE_SLIDE
+- **Paige AI** (paige-ai): VIRCHOW, VIRCHOW2, PRISM_SLIDE
+- **Bioptimus** (bioptimus): OPTIMUS, H_OPTIMUS_1, H0_MINI
+- **Prov-GigaPath**: GIGAPATH, GIGAPATH_SLIDE
+- **Google**: GOOGLEPATH
+- **HistAI**: HIBOU_L
+- **GPFM** (majiabo): GPFM (repo access may be restricted)
+
+**Local-checkpoint-only models**: CTRANSPATH and CHIEF_SLIDE require manually downloaded checkpoints (no HuggingFace download). Pass the checkpoint path via `model_path=`.
 
 Finally, you can generate features from a folder of pre-tiled images, specifying the
 folder using `patch_path` parameter.
