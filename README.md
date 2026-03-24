@@ -85,20 +85,15 @@ uv sync --extra tensorflow-cpu
 ```
 Again, this is what you'd install on a MacBook running on Apple Silicon.
 
-#### Neural segmentation (optional)
+#### Neural segmentation (`seg_model="hest"`)
 
-Mussel supports neural tissue segmentation as an alternative to the default HSV/Otsu method,
-using the HEST library's learned tissue segmenter.
-
-> **Note**: HEST is a large dependency (ultralytics/YOLOv8, scanpy, spatialdata, dask, etc.)
-> and is installed from GitHub, not PyPI. It requires Python ≥ 3.11 and a CUDA GPU for
-> practical performance.
+Mussel supports neural tissue segmentation via the HEST library as an alternative to the default HSV/Otsu method. Install the `neural-seg` extra:
 
 ```bash
 uv sync --extra neural-seg
 ```
 
-Once installed, pass `seg_config.seg_model=hest` to `tessellate` or `tessellate_extract_features`.
+Then pass `seg_config.seg_model=hest` to `tessellate` or `tessellate_extract_features`. HEST is installed from GitHub and requires a CUDA GPU for practical performance.
 
 ## Development Notes
 

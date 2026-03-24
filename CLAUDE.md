@@ -119,5 +119,5 @@ tessellate slide_path=slide.svs seg_config=biopsy   # config group preset
 - PyTorch and TensorFlow are mutually exclusive install extras (see `[tool.uv]` conflicts in `pyproject.toml`)
 - Custom packages `transpath` and `timm_ctranspath` come from MSK Mind GitHub repos
 - The `fastattn` extra pins specific torch/xformers/flash-attn versions for GigaPath support
-- `numpy<2` is required for compatibility
 - `transformers<4.46` is required for model compatibility
+- The `neural-seg` extra installs HEST from GitHub (`mahmoodlab/HEST`) for `seg_model="hest"` support

@@ -7,7 +7,7 @@ readme = "README.md"
 requires-python = ">=3.10, <3.12"  # NOTE: flash-attn prebuilt wheels (see lines 112–113) are only provided for 3.10/3.11; update wheel URLs if raising this upper bound.
 dependencies = [
   "pandas",
-  "numpy<2",
+  "numpy",
   "h5py",
   "matplotlib",
   "tiffslide",
@@ -38,7 +38,7 @@ dev = [
 ]
 
 [project.optional-dependencies]
-"neural-seg" = ["hest @ git+https://github.com/mahmoodlab/HEST.git"]
+"neural-seg" = ["hest @ git+https://github.com/mahmoodlab/HEST.git ; python_version >= '3.11'"]
 "tensorflow-gpu" = [
   "tensorflow[and-cuda]<=2.19.0",
   "keras",
@@ -99,6 +99,7 @@ conflicts = [
     { extra = "torch-cpu" },
     { extra = "torch-gpu" },
     { extra = "fastattn" },
+    { extra = "neural-seg" },
   ],
 ]
 

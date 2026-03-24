@@ -99,14 +99,10 @@ Selects the segmentation backend. Supported values: `"classic"` (default, HSV-ba
 
 The `"hest"` backend uses a learned tissue segmenter from the HEST library, which is more robust on challenging slides (e.g., frozen sections, adipose tissue, necrosis). Unknown values raise `ValueError`; the value is normalised to lowercase before comparison.
 
-> **Install note**: HEST is not available on PyPI under the name `hest` (that name is taken by an unrelated package). The `neural-seg` extra installs it directly from GitHub. HEST carries heavy transitive dependencies (YOLOv8/ultralytics, scanpy, spatialdata, dask, pytorch-lightning, pyvips) and requires Python ≥ 3.11 and a CUDA GPU for practical performance. It is intentionally kept as an optional extra.
+> **Install note**: HEST is not on PyPI — it is installed from GitHub via the `neural-seg` extra. It carries heavy transitive dependencies (YOLOv8/ultralytics, scanpy, spatialdata, dask, pytorch-lightning, pyvips) and requires a CUDA GPU for practical performance.
 
 ```bash
-# Install neural-seg extra (installs HEST from GitHub)
-pip install "mussel[neural-seg]"
-# or:
 uv sync --extra neural-seg
-
 tessellate slide_path=slide.svs seg_config.seg_model=hest
 ```
 
@@ -222,7 +218,7 @@ asset_dict = {"coords": np.array(coords, dtype=np.int64)}
 
 - **`tissue_area_threshold` scaling**: The default threshold (100) is scaled by the segmentation-level downsample factor, which on slides with coarse tissue can exceed actual contour areas → zero tissue found. Workaround: `tissue_area_threshold=1`. Pre-existing issue.
 - **`CHIEF_SLIDE`**: Requires a locally downloaded checkpoint path; raises `NotImplementedError` if no path is supplied.
-- **`seg_model="hest"`**: Requires `uv sync --extra neural-seg` (installs HEST from GitHub — not PyPI). Heavy dep: ultralytics, scanpy, spatialdata, dask, pytorch-lightning. Needs Python ≥ 3.11 and a CUDA GPU.
+- **`seg_model="hest"`**: Requires `uv sync --extra neural-seg` (installs HEST from GitHub). Heavy deps: ultralytics, scanpy, spatialdata, dask, pytorch-lightning. Needs a CUDA GPU.
 
 ---
 
