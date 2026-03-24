@@ -219,9 +219,43 @@ asset_dict = {"coords": np.array(coords, dtype=np.int64)}
 
 ---
 
+## Bug Fixed: `tissue_area_threshold` scaling
+
+**Root cause.** The threshold was previously scaled using a hardcoded `ref_patch_size=512`:
+
+```python
+scaled_ref_patch_area = int(ref_patch_size**2 / (scale[0] * scale[1]))
+tissue_area_threshold *= scaled_ref_patch_area
+```
+
+When the slide's pyramid lacks a 64× level and `get_best_level_for_downsample(64)` returns a coarser level (e.g., 4×), `scale=4` and the area term becomes `512² / 4² = 16,384 seg-px`. With the default `tissue_area_threshold=100` this produces a minimum of **1,638,400 seg-pixels**, which typically exceeds all contour areas → zero tissue found.
+
+**Fix.** Use `native_patch_size` (derived from `patch_size` and `mpp`) instead of `ref_patch_size`:
+
+```python
+native_patch_area = native_patch_size ** 2          # e.g. 256² = 65,536 native px
+seg_patch_area    = int(native_patch_area / (scale[0] * scale[1]))
+tissue_area_threshold *= seg_patch_area
+```
+
+The threshold is now **scale-invariant**: `tissue_area_threshold=N` always means "N patches of the requested size", producing the same minimum tissue area in µm² regardless of which pyramid level is used for segmentation.
+
+**Example** (patch_size=256, mpp=0.5, slide_mpp=0.5, ds=4):
+
+| Formula | seg_patch_area | threshold=1 | threshold=100 |
+|---|---:|---:|---:|
+| Old (`ref_patch_size=512`) | 16,384 seg-px | 16,384 | 1,638,400 |
+| **New** (`native_patch_size=256`) | **4,096 seg-px** | **4,096** | **409,600** |
+
+A tissue island of 8,100 seg-px (≈ 2 native patches) would be filtered by the old formula at `threshold=1` but is correctly retained by the fixed formula.
+
+`ref_patch_size` remains in the API for backward compatibility but is no longer used in area calculations.
+
+---
+
 ## Known Limitations
 
-- **`tissue_area_threshold` units**: The threshold is expressed in "requested patches" (at `patch_size` / `mpp`). With the default of 100 and 256 px patches at 0.5 MPP, the minimum tissue area is 100 × 256² native pixels ≈ 6.5 mm². Lower the threshold if small tissue fragments are being missed (e.g., `tissue_area_threshold=1`).
+- **`tissue_area_threshold` units**: The threshold is expressed in "requested patches" (at `patch_size` / `mpp`). With the default of 100 and 256 px patches at 0.5 MPP, the minimum tissue area is 100 × 256² native pixels ≈ 1.6 mm². Lower the threshold if small tissue fragments are being missed (e.g., `tissue_area_threshold=1`).
 - **`CHIEF_SLIDE`**: Requires a locally downloaded checkpoint path; raises `NotImplementedError` if no path is supplied.
 - **`seg_model="neural"`**: Requires `torch-gpu` or `torch-cpu` (no additional packages). Weights auto-downloaded from `MahmoodLab/hest-tissue-seg` on HuggingFace (~50 MB). GPU recommended for speed (~3 s on GPU vs ~20 s on CPU for a typical slide).
 
@@ -229,5 +263,5 @@ asset_dict = {"coords": np.array(coords, dtype=np.int64)}
 
 ## Test Coverage
 
-- **242 unit tests** pass (`uv run pytest tests/ -m "not slow"`)
+- **244 unit tests** pass (`uv run pytest tests/ -m "not slow"`)
 - **Comparison tests** (`@pytest.mark.slow`): patch count tolerance, coordinate bounds, no duplicates, overlap correctness, min_tissue_proportion behaviour
