@@ -38,19 +38,43 @@ cpus, as well, but it's very slow.)
 
 #### PyTorch
 
-PyTorch is required for the following models:
+PyTorch is required for the following patch encoders:
 
-* [ResNet-50](https://huggingface.co/microsoft/resnet-50)
-* [TransPath](https://github.com/Xiyue-Wang/TransPath)
-* [Prov-GigaPath](https://github.com/prov-gigapath/prov-gigapath)
-* [Virchow](https://huggingface.co/paige-ai/Virchow) / [Virchow2](https://huggingface.co/paige-ai/Virchow2)
-* [H-Optimus-0](https://huggingface.co/bioptimus/H-optimus-0) / [H-Optimus-1](https://huggingface.co/bioptimus/H-optimus-1) / [H0-mini](https://huggingface.co/bioptimus/H0-mini)
-* [Phikon](https://huggingface.co/owkin/phikon) / [Phikon-v2](https://huggingface.co/owkin/phikon-v2)
-* [Midnight-12k](https://huggingface.co/kaiko-ai/midnight)
-* [GPFM](https://huggingface.co/majiabo/GPFM)
-* [Hibou-L](https://huggingface.co/histai/hibou-L)
-* [UNI](https://huggingface.co/MahmoodLab/UNI) / [UNI2](https://huggingface.co/MahmoodLab/UNI2)
-* [OpenCLIP](https://github.com/mlfoundations/open_clip)
+| Model | `model_type` | Access | HuggingFace |
+|---|---|---|---|
+| ResNet-50 | `RESNET50` | public | built-in (torchvision) |
+| TransPath | `CTRANSPATH` | local ckpt | [Xiyue-Wang/TransPath](https://github.com/Xiyue-Wang/TransPath) |
+| OpenCLIP | `CLIP` | public | [wisdomik/QuiltNet-B-16-PMB](https://huggingface.co/wisdomik/QuiltNet-B-16-PMB) |
+| Phikon | `PHIKON` | public | [owkin/phikon](https://huggingface.co/owkin/phikon) |
+| Phikon-v2 | `PHIKON_V2` | public | [owkin/phikon-v2](https://huggingface.co/owkin/phikon-v2) |
+| Midnight-12k | `MIDNIGHT12K` | public | [kaiko-ai/midnight](https://huggingface.co/kaiko-ai/midnight) |
+| Prov-GigaPath | `GIGAPATH` | 🔒 gated | [prov-gigapath/prov-gigapath](https://huggingface.co/prov-gigapath/prov-gigapath) |
+| Virchow | `VIRCHOW` | 🔒 gated | [paige-ai/Virchow](https://huggingface.co/paige-ai/Virchow) |
+| Virchow2 | `VIRCHOW2` | 🔒 gated | [paige-ai/Virchow2](https://huggingface.co/paige-ai/Virchow2) |
+| H-Optimus-0 | `OPTIMUS` | 🔒 gated | [bioptimus/H-optimus-0](https://huggingface.co/bioptimus/H-optimus-0) |
+| H-Optimus-1 | `H_OPTIMUS_1` | 🔒 gated | [bioptimus/H-optimus-1](https://huggingface.co/bioptimus/H-optimus-1) |
+| H0-mini | `H0_MINI` | 🔒 gated | [bioptimus/H0-mini](https://huggingface.co/bioptimus/H0-mini) |
+| UNI | `UNI` | 🔒 gated | [MahmoodLab/UNI](https://huggingface.co/MahmoodLab/UNI) |
+| UNI2 | `UNI2` | 🔒 gated | [MahmoodLab/UNI2-h](https://huggingface.co/MahmoodLab/UNI2-h) |
+| CONCH v1.5 | `CONCH1_5` | 🔒 gated | [MahmoodLab/TITAN](https://huggingface.co/MahmoodLab/TITAN) |
+| GPFM | `GPFM` | 🔒 gated | [majiabo/GPFM](https://huggingface.co/majiabo/GPFM) |
+| Hibou-L | `HIBOU_L` | 🔒 gated | [histai/hibou-L](https://huggingface.co/histai/hibou-L) |
+
+And the following slide encoders (aggregate patch features into a single slide embedding):
+
+| Model | `model_type` | Patch encoder | Access | HuggingFace |
+|---|---|---|---|---|
+| Prov-GigaPath | `GIGAPATH_SLIDE` | `GIGAPATH` | 🔒 gated | [prov-gigapath/prov-gigapath](https://huggingface.co/prov-gigapath/prov-gigapath) |
+| TITAN | `TITAN_SLIDE` | `CONCH1_5` | 🔒 gated | [MahmoodLab/TITAN](https://huggingface.co/MahmoodLab/TITAN) |
+| PRISM | `PRISM_SLIDE` | `VIRCHOW` | 🔒 gated | [paige-ai/Prism](https://huggingface.co/paige-ai/Prism) |
+| FEATHER | `FEATHER_SLIDE` | `CONCH1_5` | 🔒 gated | [MahmoodLab/abmil.base.conch_v15.pc108-24k](https://huggingface.co/MahmoodLab/abmil.base.conch_v15.pc108-24k) |
+| MADELEINE | `MADELEINE_SLIDE` | `CONCH1_5` | 🔒 gated | [MahmoodLab/madeleine](https://huggingface.co/MahmoodLab/madeleine) |
+| CHIEF | `CHIEF_SLIDE` | `CTRANSPATH` | local ckpt | — |
+
+**🔒 Gated models** require signing an access agreement on the HuggingFace model page and setting your token:
+```bash
+export HF_TOKEN=hf_...
+```
 
 
 ##### GPU (CUDA)
@@ -70,7 +94,9 @@ Mussel doesn't currently support Apple Metal GPUs, so this is what you'd use to 
 #### TensorFlow
 TensorFlow is required to run the Google Path Foundation model,
 
-* [Google Path Foundation](https://huggingface.co/google/path-foundation)
+| Model | `model_type` | Access | HuggingFace |
+|---|---|---|---|
+| GooglePath | `GOOGLEPATH` | 🔒 gated | [google/path-foundation](https://huggingface.co/google/path-foundation) |
 
 ##### GPU (CUDA)
 To run the GooglePath with GPUs, create your dev environment with
