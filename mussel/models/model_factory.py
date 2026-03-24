@@ -1385,7 +1385,13 @@ class TransPathModel(TorchModel):
 
 
 class PhikonModel(TorchModel):
-    """Phikon model base class for owkin/phikon and owkin/phikon-v2."""
+    """Phikon model base class for owkin/phikon and owkin/phikon-v2.
+
+    These models use the HuggingFace Transformers format (ViT/DINOv2) and are
+    loaded via ``transformers.AutoModel`` rather than timm, since their
+    ``config.json`` uses the ``architectures`` key (Transformers style) which
+    timm 1.0.x cannot parse.
+    """
 
     _default_model_type = ModelType.PHIKON
 
@@ -1398,28 +1404,53 @@ class PhikonModel(TorchModel):
         """Initialize Phikon model.
 
         Args:
-            model_path: Path to model file or HuggingFace repo ID.
+            model_path: HuggingFace repo ID (``hf-hub:owkin/phikon``) or local path.
             use_gpu: Whether to use GPU (default: True).
             gpu_device_id: GPU device ID or list of IDs for multi-GPU (default: None).
         """
+        from transformers import AutoModel
+
         if model_path is None:
             model_path = self._default_model_type.path
-        model_obj = None
-        if model_path.startswith("hf-hub:"):
-            model_obj = timm.create_model(model_path, pretrained=True)
+        repo_id = model_path.replace("hf-hub:", "")
+        # ViTModel accepts add_pooling_layer; DINOv2/other models do not.
+        try:
+            model_obj = AutoModel.from_pretrained(repo_id, add_pooling_layer=False)
+        except TypeError:
+            model_obj = AutoModel.from_pretrained(repo_id)
         super().__init__(model_path, model_obj, use_gpu, gpu_device_id)
 
     def get_preprocessing_fun(self) -> Callable:
-        """Get preprocessing transforms for Phikon.
+        """ImageNet-normalised 224×224 transforms (standard for Phikon models)."""
+        from torchvision import transforms
 
-        Returns:
-            Preprocessing transforms resolved from model config.
-        """
-        return create_transform(**resolve_data_config(self.obj.pretrained_cfg, model=self.obj))
+        return transforms.Compose([
+            transforms.Resize(224),
+            transforms.CenterCrop(224),
+            transforms.ToTensor(),
+            transforms.Normalize(
+                mean=(0.485, 0.456, 0.406),
+                std=(0.229, 0.224, 0.225),
+            ),
+        ])
+
+    def get_model_fun(self) -> Callable:
+        """Return the CLS-token embedding from the transformer output."""
+        def model_fun(x):
+            with (
+                torch.no_grad(),
+                torch.inference_mode(),
+                torch.autocast(device_type=self.device.type, dtype=torch.float16),
+            ):
+                x = x.to(self.device, non_blocking=True)
+                out = self.obj(pixel_values=x)
+                return out.last_hidden_state[:, 0].cpu()
+
+        return model_fun
 
 
 class PhikonV2Model(PhikonModel):
-    """Phikon-v2 model - uses same architecture and preprocessing as Phikon."""
+    """Phikon-v2 model (owkin/phikon-v2, DINOv2 ViT-L/14)."""
 
     _default_model_type = ModelType.PHIKON_V2
 
@@ -1511,6 +1542,13 @@ class H0MiniModel(TorchModel):
 
 
 class Midnight12kModel(TorchModel):
+    """Midnight-12k (kaiko-ai/midnight) — DINOv2 ViT-g/14 trained on 12k pathology slides.
+
+    Loaded via ``transformers.AutoModel`` (no timm preprocessor_config available).
+    Input size: 518×518, ImageNet normalisation.
+    Output: CLS token, dim=1536.
+    """
+
     def __init__(
         self,
         model_path,
@@ -1520,24 +1558,45 @@ class Midnight12kModel(TorchModel):
         """Initialize Midnight-12k model.
 
         Args:
-            model_path: Path to model file or HuggingFace repo ID.
+            model_path: HuggingFace repo ID (``hf-hub:kaiko-ai/midnight``) or local path.
             use_gpu: Whether to use GPU (default: True).
             gpu_device_id: GPU device ID or list of IDs for multi-GPU (default: None).
         """
+        from transformers import AutoModel
+
         if model_path is None:
             model_path = ModelType.MIDNIGHT12K.path
-        model_obj = None
-        if model_path.startswith("hf-hub:"):
-            model_obj = timm.create_model(model_path, pretrained=True)
+        repo_id = model_path.replace("hf-hub:", "")
+        model_obj = AutoModel.from_pretrained(repo_id)
         super().__init__(model_path, model_obj, use_gpu, gpu_device_id)
 
     def get_preprocessing_fun(self) -> Callable:
-        """Get preprocessing transforms for Midnight-12k.
+        """518×518 resize + ImageNet normalisation (DINOv2 ViT-g/14 native input size)."""
+        from torchvision import transforms
 
-        Returns:
-            Preprocessing transforms resolved from model config.
-        """
-        return create_transform(**resolve_data_config(self.obj.pretrained_cfg, model=self.obj))
+        return transforms.Compose([
+            transforms.Resize(518),
+            transforms.CenterCrop(518),
+            transforms.ToTensor(),
+            transforms.Normalize(
+                mean=(0.485, 0.456, 0.406),
+                std=(0.229, 0.224, 0.225),
+            ),
+        ])
+
+    def get_model_fun(self) -> Callable:
+        """Return the CLS-token embedding from the DINOv2 output."""
+        def model_fun(x):
+            with (
+                torch.no_grad(),
+                torch.inference_mode(),
+                torch.autocast(device_type=self.device.type, dtype=torch.float16),
+            ):
+                x = x.to(self.device, non_blocking=True)
+                out = self.obj(pixel_values=x)
+                return out.last_hidden_state[:, 0].cpu()
+
+        return model_fun
 
 
 class GPFMModel(TorchModel):

@@ -144,16 +144,34 @@ class TestTimmBasedPreprocessing:
         self._assert_prep_callable(Uni2Model)
 
     def test_phikon_preprocessing(self):
+        """PhikonModel.get_preprocessing_fun() returns a torchvision Compose (no timm)."""
         from mussel.models.model_factory import PhikonModel
-        self._assert_prep_callable(PhikonModel)
+        from torchvision.transforms import Compose
+
+        m = _make_model(PhikonModel, MagicMock())
+        prep = m.get_preprocessing_fun()
+        assert callable(prep)
+        assert isinstance(prep, Compose)
 
     def test_phikon_v2_preprocessing(self):
+        """PhikonV2Model.get_preprocessing_fun() returns a torchvision Compose (no timm)."""
         from mussel.models.model_factory import PhikonV2Model
-        self._assert_prep_callable(PhikonV2Model)
+        from torchvision.transforms import Compose
+
+        m = _make_model(PhikonV2Model, MagicMock())
+        prep = m.get_preprocessing_fun()
+        assert callable(prep)
+        assert isinstance(prep, Compose)
 
     def test_midnight12k_preprocessing(self):
+        """Midnight12kModel.get_preprocessing_fun() returns a torchvision Compose (no timm)."""
         from mussel.models.model_factory import Midnight12kModel
-        self._assert_prep_callable(Midnight12kModel)
+        from torchvision.transforms import Compose
+
+        m = _make_model(Midnight12kModel, MagicMock())
+        prep = m.get_preprocessing_fun()
+        assert callable(prep)
+        assert isinstance(prep, Compose)
 
     def test_gpfm_preprocessing(self):
         from mussel.models.model_factory import GPFMModel
@@ -239,9 +257,6 @@ def test_titan_slide_preprocessing_is_none():
     ("OptimusModel", 768),
     ("HOptimus1Model", 1024),
     ("H0MiniModel", 512),
-    ("PhikonModel", 768),
-    ("PhikonV2Model", 1024),
-    ("Midnight12kModel", 768),
     ("GPFMModel", 1024),
     ("GigapathModel", 1536),
     ("TransPathModel", 768),
@@ -259,6 +274,37 @@ def test_standard_patch_encoder_model_fun(cls_name, embed_dim):
     result = model_fun(x)
     mock_model.assert_called_once()
     assert result.device.type == "cpu"
+
+
+# ---------------------------------------------------------------------------
+# Transformers-based patch encoders (PhikonModel, Midnight12kModel)
+# These models use AutoModel and their get_model_fun extracts last_hidden_state[:,0]
+# ---------------------------------------------------------------------------
+
+@pytest.mark.parametrize("cls_name,embed_dim", [
+    ("PhikonModel", 768),
+    ("PhikonV2Model", 1024),
+    ("Midnight12kModel", 1536),
+])
+def test_transformers_patch_encoder_model_fun(cls_name, embed_dim):
+    """PhikonModel / Midnight12kModel return last_hidden_state[:, 0] (CLS token)."""
+    import mussel.models.model_factory as mf
+    cls = getattr(mf, cls_name)
+    batch_size = 2
+    n_tokens = 197  # 14×14 patches + CLS
+    # Simulate a transformers model output with last_hidden_state
+    hidden = torch.rand(batch_size, n_tokens, embed_dim)
+    mock_output = MagicMock()
+    mock_output.last_hidden_state = hidden
+    mock_model = MagicMock(return_value=mock_output)
+    m = _make_model(cls, mock_model)
+    model_fun = m.get_model_fun()
+    x = _simple_patch_img()
+    result = model_fun(x)
+    assert result.device.type == "cpu"
+    assert result.shape == (batch_size, embed_dim), (
+        f"{cls_name}: expected ({batch_size}, {embed_dim}), got {tuple(result.shape)}"
+    )
 
 
 # ---------------------------------------------------------------------------
