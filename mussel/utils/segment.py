@@ -449,13 +449,18 @@ def segment_tissue(
         median_blur_ksize: Kernel size for median blur filter (default: 7).
         morphology_ex_kernel: Kernel size for morphological closing (0 to disable).
         use_otsu: Whether to use Otsu's method for automatic threshold (default: False).
-        tissue_area_threshold: Minimum tissue contour area in reference patches (default: 100).
-        hole_area_threshold: Maximum hole area in reference patches (default: 16).
+        tissue_area_threshold: Minimum tissue contour area in requested patches (default: 100).
+            A contour must cover at least this many patches (at ``patch_size`` and ``mpp``)
+            to be retained.  Because the threshold is expressed in terms of the actual
+            requested patch size and resolution, the value is scale-independent — it
+            produces the same minimum tissue size in µm² regardless of which pyramid
+            level is used for segmentation.
+        hole_area_threshold: Maximum hole area in requested patches (default: 16).
         max_num_holes: Maximum number of holes allowed per tissue contour (default: 10).
         patch_size: Target patch size in microns at desired MPP (default: 256).
         mpp: Target microns per pixel for patches (default: 0.5).
         step_size: Step size between patches in microns (defaults to patch_size).
-        ref_patch_size: Reference patch size for area calculations (default: 512).
+        ref_patch_size: Deprecated; no longer used for area calculations.
         exclude_ids: List of contour indices to exclude from processing.
         keep_ids: List of contour indices to keep (if empty, keeps all except excluded).
         output_h5_path: Optional path to save coordinates and attributes as HDF5.
@@ -606,9 +611,16 @@ def segment_tissue(
             )
 
         scale = level_downsamples[seg_level]
-        scaled_ref_patch_area = int(ref_patch_size**2 / (scale[0] * scale[1]))
-        tissue_area_threshold *= scaled_ref_patch_area
-        hole_area_threshold *= scaled_ref_patch_area
+        # tissue_area_threshold / hole_area_threshold are in units of requested patches.
+        # Convert to seg-level pixel area using the native patch size (derived from
+        # patch_size and mpp) rather than the legacy ref_patch_size.  This makes the
+        # threshold truly scale-independent: the same threshold value produces the same
+        # minimum-tissue-size in µm² regardless of which pyramid level is used for
+        # segmentation.
+        native_patch_area = native_patch_size ** 2
+        seg_patch_area = int(native_patch_area / (scale[0] * scale[1]))
+        tissue_area_threshold *= seg_patch_area
+        hole_area_threshold *= seg_patch_area
 
         # Find and filter contours
         contours, hierarchy = cv2.findContours(

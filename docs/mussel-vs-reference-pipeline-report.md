@@ -221,7 +221,7 @@ asset_dict = {"coords": np.array(coords, dtype=np.int64)}
 
 ## Known Limitations
 
-- **`tissue_area_threshold` scaling**: The default threshold (100) is scaled by the segmentation-level downsample factor, which on slides with coarse tissue can exceed actual contour areas → zero tissue found. Workaround: `tissue_area_threshold=1`. Pre-existing issue.
+- **`tissue_area_threshold` units**: The threshold is expressed in "requested patches" (at `patch_size` / `mpp`). With the default of 100 and 256 px patches at 0.5 MPP, the minimum tissue area is 100 × 256² native pixels ≈ 6.5 mm². Lower the threshold if small tissue fragments are being missed (e.g., `tissue_area_threshold=1`).
 - **`CHIEF_SLIDE`**: Requires a locally downloaded checkpoint path; raises `NotImplementedError` if no path is supplied.
 - **`seg_model="neural"`**: Requires `torch-gpu` or `torch-cpu` (no additional packages). Weights auto-downloaded from `MahmoodLab/hest-tissue-seg` on HuggingFace (~50 MB). GPU recommended for speed (~3 s on GPU vs ~20 s on CPU for a typical slide).
 
