@@ -545,6 +545,8 @@ def segment_tissue(
 
         img = np.array(wsi.read_region((0, 0), seg_level, wsi.level_dimensions[seg_level]))
 
+        level_downsamples = _assert_level_downsamples(wsi)
+
         # Validate and normalise seg_model
         supported_seg_models = {"classic", "neural", "hest"}  # "hest" is deprecated alias
         if seg_model is None:
@@ -568,7 +570,11 @@ def segment_tissue(
             )
 
         if seg_model == "neural":
-            img_otsu = _segment_tissue_neural(img, slide_mpp)
+            # The img is read at seg_level. Compute its actual MPP so that
+            # NeuralTissueSegmenter can rescale to the model's 1 µm/px target.
+            seg_level_ds = level_downsamples[seg_level][0]  # x-axis downsample
+            seg_level_mpp = slide_mpp * seg_level_ds
+            img_otsu = _segment_tissue_neural(img, seg_level_mpp)
         else:
             img_hsv = cv2.cvtColor(img, cv2.COLOR_RGB2HSV)  # Convert to HSV space
             img_med = cv2.medianBlur(
@@ -607,7 +613,6 @@ def segment_tissue(
                 "artifact removal."
             )
 
-        level_downsamples = _assert_level_downsamples(wsi)
         scale = level_downsamples[seg_level]
         scaled_ref_patch_area = int(ref_patch_size**2 / (scale[0] * scale[1]))
         tissue_area_threshold *= scaled_ref_patch_area

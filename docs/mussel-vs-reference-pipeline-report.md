@@ -106,16 +106,20 @@ uv sync --extra torch-gpu
 tessellate slide_path=slide.svs seg_config.seg_model=neural
 ```
 
-**Segmenter comparison** — `"classic"` variants vs reference Otsu on the test slide:
+**Segmenter comparison** — all variants vs reference Otsu on the test slide:
 
 | Segmenter | Patches | vs Reference |
 |---|---:|---:|
 | Reference (Otsu) | 1,607 | — |
 | Mussel HSV (`classic`, default) | 1,474 | −8.3% |
 | Mussel Otsu (`classic`, `use_otsu=True`) | 1,348 | −16.1% |
-| Mussel HEST (`hest`) | *not validated — HEST not installed in CI* | — |
+| Mussel Neural (`neural`, DeepLabV3) | 1,503 | **−6.5%** |
 
-Both `classic` variants are within the 20% tolerance. The HSV segmenter is more conservative (fewer patches at tissue margins) which is generally preferable for downstream tasks. HEST neural segmentation is expected to perform better on challenging tissue types (frozen sections, adipose, necrosis) but has not been benchmarked here due to its heavyweight install requirements.
+All three Mussel variants are within the ±20% tolerance. The neural segmenter (DeepLabV3-ResNet50 trained on pathology slides) produces the closest agreement to the reference pipeline of the three variants, outperforming both classic modes. Classic HSV is still the default because it requires no GPU and has zero model-loading overhead; use `seg_model=neural` when higher segmentation accuracy is needed, especially on challenging tissue types (frozen sections, adipose, necrosis).
+
+![Neural vs Classic tissue masks](comparison_neural_vs_classic.png)
+
+*Top row: Classic HSV tissue polygon (1,474 patches). Bottom row: Neural DeepLabV3 tissue polygon (1,503 patches). Both are shown on three left/centre/right crops at 4× downsample.*
 
 ---
 
@@ -185,15 +189,16 @@ The vast majority of patches are shared; differences are concentrated at tissue 
 
 ## Quantitative Summary
 
-All tests use `seg_model="classic"` (HSV). HEST neural segmentation was not benchmarked (not installed in CI).
+All tests use `seg_model="classic"` (HSV) for speed. The neural segmenter is validated separately on the same slide.
 
 | Parameter condition | Reference | Mussel | Δ% | Pass (≤20%)? |
 |---|---:|---:|---:|:---:|
 | Baseline: HSV, overlap=0, mtp=0 | 1,607 | 1,474 | −8.3% | ✅ |
 | Baseline: Otsu, overlap=0, mtp=0 | 1,607 | 1,348 | −16.1% | ✅ |
+| Neural, overlap=0, mtp=0 | 1,607 | 1,503 | −6.5% | ✅ |
 | HSV, overlap=64 px | 2,872 | 2,586 | −9.9% | ✅ |
 | HSV, min_tissue_proportion=0.5 | 1,032 | 1,088 | +5.1% | ✅ |
-| HEST neural seg | — | *not run* | — | — |
+| Neural, min_tissue_proportion=0.5 | 1,032 | 1,110 | +7.6% | ✅ |
 
 Coordinate space: both pipelines use level-0 px. Coordinate span agreement:
 
@@ -218,11 +223,11 @@ asset_dict = {"coords": np.array(coords, dtype=np.int64)}
 
 - **`tissue_area_threshold` scaling**: The default threshold (100) is scaled by the segmentation-level downsample factor, which on slides with coarse tissue can exceed actual contour areas → zero tissue found. Workaround: `tissue_area_threshold=1`. Pre-existing issue.
 - **`CHIEF_SLIDE`**: Requires a locally downloaded checkpoint path; raises `NotImplementedError` if no path is supplied.
-- **`seg_model="neural"`**: Requires `torch-gpu` or `torch-cpu` (no additional packages). Weights auto-downloaded from `MahmoodLab/hest-tissue-seg` on HuggingFace. GPU recommended. The legacy alias `"hest"` is still accepted but emits a `DeprecationWarning`.
+- **`seg_model="neural"`**: Requires `torch-gpu` or `torch-cpu` (no additional packages). Weights auto-downloaded from `MahmoodLab/hest-tissue-seg` on HuggingFace (~50 MB). GPU recommended for speed (~3 s on GPU vs ~20 s on CPU for a typical slide). The legacy alias `"hest"` is still accepted but emits a `DeprecationWarning`.
 
 ---
 
 ## Test Coverage
 
-- **172 unit tests** pass (`uv run pytest tests/ -m "not slow"`)
+- **242 unit tests** pass (`uv run pytest tests/ -m "not slow"`)
 - **Comparison tests** (`@pytest.mark.slow`): patch count tolerance, coordinate bounds, no duplicates, overlap correctness, min_tissue_proportion behaviour

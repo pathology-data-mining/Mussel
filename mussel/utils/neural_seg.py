@@ -148,6 +148,8 @@ class NeuralTissueSegmenter:
         self._model = self._build_model(weights_path)
         self._model.eval()
         self._model = self._model.to(self.device)
+        if self.device.type == "cuda":
+            self._model = self._model.half()
         self._transform = transforms.Compose([
             transforms.ToTensor(),
             transforms.Normalize(mean=_IMAGENET_MEAN, std=_IMAGENET_STD),
