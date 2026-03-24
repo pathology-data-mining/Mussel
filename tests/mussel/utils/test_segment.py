@@ -497,9 +497,163 @@ def test_save_patches_png_closes_wsi_and_pool_on_exception(tmp_path):
 
 
 # ---------------------------------------------------------------------------
-# Tests for new segment_tissue parameters (overlap, min_tissue_proportion,
-# artifact_remover_fn, seg_model)
+# Tests for tissue_area_threshold scaling fix
 # ---------------------------------------------------------------------------
+
+
+class TestTissueAreaThresholdScaling:
+    """
+    Verify that tissue_area_threshold scales with native_patch_size
+    (derived from patch_size / mpp) rather than the legacy ref_patch_size=512.
+
+    The key invariant: a given tissue_area_threshold value should produce the
+    same minimum tissue size in µm² regardless of which pyramid level is used
+    for segmentation.
+    """
+
+    def _make_wsi(self, seg_level_ds: float, width=8192, height=8192):
+        """Mock WSI whose seg level has the given downsample factor."""
+        mock_wsi = MagicMock()
+        seg_w = max(1, int(width / seg_level_ds))
+        seg_h = max(1, int(height / seg_level_ds))
+        mock_wsi.level_dimensions = [(width, height), (seg_w, seg_h)]
+        mock_wsi.level_downsamples = [1.0, seg_level_ds]
+        mock_wsi.get_best_level_for_downsample.return_value = 1
+        # Pink/purple H&E-like colour → non-zero HSV saturation → detected by classic segmenter.
+        # A 20×20 seg-px island in the centre.
+        img = np.zeros((seg_h, seg_w, 3), dtype=np.uint8)
+        cy, cx = seg_h // 2, seg_w // 2
+        half = 10
+        img[cy - half : cy + half, cx - half : cx + half] = [210, 130, 160]
+        mock_wsi.read_region.return_value = img
+        return mock_wsi
+
+    def _run(self, mock_wsi, seg_level_ds, tissue_area_threshold, patch_size=256, mpp=0.5):
+        from mussel.utils.segment import segment_tissue
+
+        with (
+            patch("mussel.utils.segment.tiffslide.open_slide", return_value=mock_wsi),
+            patch("mussel.utils.segment.get_slide_mpp", return_value=mpp),
+            patch(
+                "mussel.utils.segment._assert_level_downsamples",
+                return_value=[(1.0, 1.0), (seg_level_ds, seg_level_ds)],
+            ),
+        ):
+            return segment_tissue(
+                "/fake/slide.svs",
+                patch_size=patch_size,
+                mpp=mpp,
+                seg_level=1,
+                tissue_area_threshold=tissue_area_threshold,
+            )
+
+    def test_small_tissue_found_at_low_threshold(self):
+        """
+        With threshold=1 a tissue region of exactly one native patch is found;
+        a region smaller than one patch is filtered out.
+        patch_size=256, mpp=0.5 → native_patch=512 px.
+        At ds=4: seg_patch_area = 512² / 16 = 16384 seg-px.
+        Island of 130×130=16900 seg-px (>16384) should pass;
+        island of 20×20=400 seg-px should not.
+        """
+        ds = 4.0
+        patch_size, mpp_val = 256, 0.5
+        native_patch = patch_size / mpp_val  # 512
+        seg_patch_area = int(native_patch ** 2 / ds ** 2)  # 16384
+
+        def _make_wsi_with_island(island_px):
+            slide_w, slide_h = 16384, 16384
+            seg_w = int(slide_w / ds)
+            seg_h = int(slide_h / ds)
+            mock_wsi = MagicMock()
+            mock_wsi.level_dimensions = [(slide_w, slide_h), (seg_w, seg_h)]
+            mock_wsi.level_downsamples = [1.0, ds]
+            mock_wsi.get_best_level_for_downsample.return_value = 1
+            img = np.zeros((seg_h, seg_w, 3), dtype=np.uint8)
+            cy, cx = seg_h // 2, seg_w // 2
+            half = island_px // 2
+            img[cy - half : cy + half, cx - half : cx + half] = [210, 130, 160]
+            mock_wsi.read_region.return_value = img
+            return mock_wsi
+
+        # Island bigger than one patch → found
+        big_wsi = _make_wsi_with_island(island_px=int(seg_patch_area ** 0.5) + 5)
+        result = self._run(big_wsi, ds, tissue_area_threshold=1, patch_size=patch_size, mpp=mpp_val)
+        assert result is not None, "Island > 1 native patch should be found at threshold=1"
+
+        # Island much smaller than one patch → filtered
+        small_wsi = _make_wsi_with_island(island_px=10)
+        result = self._run(small_wsi, ds, tissue_area_threshold=1, patch_size=patch_size, mpp=mpp_val)
+        assert result is None, "Island << 1 native patch should be filtered at threshold=1"
+
+    def test_threshold_scales_with_native_patch_size_not_ref_patch_size(self):
+        """
+        Demonstrate that the fix uses native_patch_size instead of ref_patch_size=512.
+
+        Setup: patch_size=256, mpp=slide_mpp=0.5 → native_patch_size=256 px, ds=4
+          New formula: seg_patch_area = 256² / 4² = 4096 seg-px  (threshold=1 → 4096 px)
+          Old formula: seg_patch_area = 512² / 4² = 16384 seg-px  (threshold=1 → 16384 px)
+
+        An island of 90×90 = 8100 seg-px lies between the two thresholds:
+          - New formula: 8100 > 4096 → island is found ✓
+          - Old formula: 8100 < 16384 → island would be filtered (the bug)
+        """
+        ds = 4.0
+        slide_w, slide_h = 8192, 8192
+        seg_w = int(slide_w / ds)   # 2048
+        seg_h = int(slide_h / ds)   # 2048
+        mock_wsi = MagicMock()
+        mock_wsi.level_dimensions = [(slide_w, slide_h), (seg_w, seg_h)]
+        mock_wsi.level_downsamples = [1.0, ds]
+        mock_wsi.get_best_level_for_downsample.return_value = 1
+        img = np.zeros((seg_h, seg_w, 3), dtype=np.uint8)
+        island_half = 45  # 90×90 = 8100 seg-px
+        cy, cx = seg_h // 2, seg_w // 2
+        img[cy - island_half : cy + island_half,
+            cx - island_half : cx + island_half] = [210, 130, 160]
+        mock_wsi.read_region.return_value = img
+
+        result = self._run(mock_wsi, ds, tissue_area_threshold=1, patch_size=256, mpp=0.5)
+        # New formula: threshold = 4096 seg-px < 8100 → should be found
+        assert result is not None, (
+            "Island of 8100 seg-px should pass threshold=1 under the fixed formula "
+            "(seg_patch_area=4096); old ref_patch_size=512 formula would give 16384 and filter it"
+        )
+
+    def test_threshold_invariant_across_seg_levels(self):
+        """
+        threshold=1 always means '1 requested patch of tissue minimum'.
+        A tissue region of exactly 1 native patch size should be found at any seg level.
+        We use a large tissue region (many patches) to confirm it's not accidentally filtered.
+        """
+        patch_size, mpp = 256, 0.5
+        native_patch = patch_size / mpp  # = 512 native pixels
+
+        for ds in [4.0, 8.0]:
+            # Place a tissue region of 4×4 native patches (2048×2048 native px)
+            native_tissue_px = int(4 * native_patch)
+            mock_wsi = MagicMock()
+            slide_w, slide_h = 16384, 16384
+            seg_w = max(1, int(slide_w / ds))
+            seg_h = max(1, int(slide_h / ds))
+            mock_wsi.level_dimensions = [(slide_w, slide_h), (seg_w, seg_h)]
+            mock_wsi.level_downsamples = [1.0, ds]
+            mock_wsi.get_best_level_for_downsample.return_value = 1
+            img = np.zeros((seg_h, seg_w, 3), dtype=np.uint8)
+            seg_tissue = int(native_tissue_px / ds)
+            cy, cx = seg_h // 2, seg_w // 2
+            half = seg_tissue // 2
+            img[cy - half : cy + half, cx - half : cx + half] = [210, 130, 160]
+            mock_wsi.read_region.return_value = img
+
+            result = self._run(mock_wsi, ds, tissue_area_threshold=1, patch_size=patch_size, mpp=mpp)
+            assert result is not None, (
+                f"4×4 patch tissue region should be found at threshold=1, ds={ds}"
+            )
+            _, _, coords, _ = result
+            assert len(coords) > 0, f"Expected patches at ds={ds}"
+
+
 
 
 def _make_mock_wsi_with_tissue(width=4096, height=4096):
