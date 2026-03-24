@@ -41,7 +41,7 @@ class SegConfig:
     min_tissue_proportion (float): Minimum fraction of patch area that must be tissue (0.0–1.0). Patches below this are discarded.
     remove_artifacts (bool): If True, apply artifact removal to the tissue mask before patching (requires artifact_remover_fn).
     remove_penmarks (bool): If True, apply pen mark removal to the tissue mask before patching (requires artifact_remover_fn).
-    seg_model (str): Segmentation backend: "classic" (default, HSV/Otsu) or "hest" (neural, requires ``pip install hest``).
+    seg_model (str): Segmentation backend: "classic" (default, HSV/Otsu) or "neural" (deep-learning, requires torch).
     """
 
     # Default patch size constant - used to detect when automatic patch size selection should apply
@@ -66,7 +66,7 @@ class SegConfig:
     min_tissue_proportion: float = 0.0  # Minimum fraction of patch that must be tissue (0.0-1.0). Patches below this are discarded.
     remove_artifacts: bool = False  # If True, apply artifact removal to the tissue mask before patching.
     remove_penmarks: bool = False  # If True, apply pen mark removal to the tissue mask before patching.
-    seg_model: str = "classic"  # Segmentation model: "classic" (Otsu/threshold) or "hest" (neural, requires hest package).
+    seg_model: str = "classic"  # Segmentation model: "classic" (Otsu/threshold) or "neural" (deep-learning, requires torch).
 
 
 @dataclass

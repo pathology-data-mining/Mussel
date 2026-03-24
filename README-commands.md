@@ -51,7 +51,7 @@ tessellate \
 | `seg_config.min_tissue_proportion` | `0.0` | Discard patches where the tissue fraction is below this value (0.0–1.0). |
 | `seg_config.remove_artifacts` | `false` | Enable artifact removal (requires `artifact_remover_fn` hook). |
 | `seg_config.remove_penmarks` | `false` | Enable pen-mark removal (requires `artifact_remover_fn` hook). |
-| `seg_config.seg_model` | `"classic"` | Segmentation backend: `"classic"` (HSV/Otsu) or `"hest"` (neural; requires `uv sync --extra neural-seg`). |
+| `seg_config.seg_model` | `"classic"` | Segmentation backend: `"classic"` (HSV/Otsu) or `"neural"` (DeepLabV3; requires `torch-gpu` or `torch-cpu`; weights auto-downloaded from HuggingFace). |
 
 Example with 50% overlap and tissue filtering:
 ```bash

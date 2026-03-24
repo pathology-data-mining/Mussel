@@ -383,40 +383,28 @@ def _filter_contours(
     return foreground_contours, hole_contours
 
 
-def _segment_tissue_hest(img: np.ndarray) -> np.ndarray:
-    """Generate a binary tissue mask using the HEST neural segmentor.
+def _segment_tissue_neural(img: np.ndarray, slide_mpp: float) -> np.ndarray:
+    """Generate a binary tissue mask using Mussel's native neural segmentor.
 
-    Uses the HEST library's trained deep-learning tissue segmentor, which is
-    more robust than classical HSV/Otsu approaches for challenging slides.
-    Requires ``pip install hest`` (or ``uv sync --extra neural-seg``).
+    Uses a DeepLabV3-ResNet50 model (pre-trained on histopathology slides) to
+    segment tissue from background.  The model and inference pipeline are
+    implemented directly in Mussel — no HEST or TRIDENT package is required.
+    PyTorch and torchvision must be installed (``uv sync --extra torch-gpu``).
+
+    Weights are downloaded automatically from ``MahmoodLab/hest-tissue-seg``
+    on HuggingFace on first use and cached in the HuggingFace cache directory.
 
     Args:
-        img: RGB image array at the segmentation pyramid level, shape (H, W, 3).
+        img: RGB uint8 image array at the segmentation pyramid level, shape (H, W, 3).
+        slide_mpp: Microns per pixel of ``img``.  Used to rescale the image to
+            the model's native 1 µm/px operating resolution.
 
     Returns:
-        Binary mask array (uint8, values 0 or 255), shape (H, W).
-
-    Raises:
-        ImportError: If the ``hest`` package is not installed.
-        RuntimeError: If HEST segmentation fails unexpectedly.
+        Binary uint8 mask, shape (H, W), values 0 (background) or 255 (tissue).
     """
-    try:
-        from hest.segmentation.tissue_seg import TissueSegmenter  # type: ignore[import]
-    except ImportError as exc:
-        raise ImportError(
-            "Neural segmentation (seg_model='hest') requires the hest package. "
-            "Install it with: pip install hest\n"
-            "Or if using uv: uv sync --extra neural-seg"
-        ) from exc
-
-    segmenter = TissueSegmenter()
-    # HEST segmenter expects an RGB uint8 numpy array and returns a binary mask
-    # where foreground (tissue) pixels are 255 and background is 0.
-    mask = segmenter.segment(img)
-    # Normalise to uint8 0/255 in case the segmenter returns bool or float 0/1
-    if mask.dtype == bool or mask.max() <= 1:
-        mask = (mask * 255).astype(np.uint8)
-    return mask.astype(np.uint8)
+    from mussel.utils.neural_seg import NeuralTissueSegmenter
+    segmenter = NeuralTissueSegmenter()
+    return segmenter.segment(img, slide_mpp=slide_mpp)
 
 
 @timed
@@ -558,21 +546,29 @@ def segment_tissue(
         img = np.array(wsi.read_region((0, 0), seg_level, wsi.level_dimensions[seg_level]))
 
         # Validate and normalise seg_model
-        supported_seg_models = {"classic", "hest"}
+        supported_seg_models = {"classic", "neural", "hest"}  # "hest" is deprecated alias
         if seg_model is None:
             seg_model = "classic"
         elif not isinstance(seg_model, str):
             raise ValueError(f"seg_model must be a string, got {type(seg_model)!r}")
         else:
             seg_model = seg_model.strip().lower()
+        if seg_model == "hest":
+            import warnings
+            warnings.warn(
+                "seg_model='hest' is deprecated; use seg_model='neural' instead.",
+                DeprecationWarning,
+                stacklevel=2,
+            )
+            seg_model = "neural"
         if seg_model not in supported_seg_models:
             raise ValueError(
                 f"Unsupported seg_model {seg_model!r}. "
-                f"Supported values: {sorted(supported_seg_models)}"
+                f"Supported values: {sorted(supported_seg_models - {'hest'})}"
             )
 
-        if seg_model == "hest":
-            img_otsu = _segment_tissue_hest(img)
+        if seg_model == "neural":
+            img_otsu = _segment_tissue_neural(img, slide_mpp)
         else:
             img_hsv = cv2.cvtColor(img, cv2.COLOR_RGB2HSV)  # Convert to HSV space
             img_med = cv2.medianBlur(

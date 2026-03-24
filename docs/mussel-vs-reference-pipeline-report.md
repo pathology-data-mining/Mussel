@@ -95,15 +95,15 @@ Both pipelines remove ~30% of patches. Mussel retains slightly more (HSV segment
 
 ### 4. Tessellation: `seg_model`
 
-Selects the segmentation backend. Supported values: `"classic"` (default, HSV-based) and `"hest"` (requires the `neural-seg` extra).
+Selects the segmentation backend. Supported values: `"classic"` (default, HSV-based) and `"neural"` (deep-learning).
 
-The `"hest"` backend uses a learned tissue segmenter from the HEST library, which is more robust on challenging slides (e.g., frozen sections, adipose tissue, necrosis). Unknown values raise `ValueError`; the value is normalised to lowercase before comparison.
+The `"neural"` backend uses a DeepLabV3-ResNet50 model trained on histopathology slides (pre-trained weights from `MahmoodLab/hest-tissue-seg` on HuggingFace, downloaded automatically on first use). It is more robust on challenging slides (e.g., frozen sections, adipose tissue, necrosis). Unknown values raise `ValueError`; the value is normalised to lowercase before comparison. The legacy alias `"hest"` emits a `DeprecationWarning` and redirects to `"neural"`.
 
-> **Install note**: HEST is not on PyPI — it is installed from GitHub via the `neural-seg` extra. It carries heavy transitive dependencies (YOLOv8/ultralytics, scanpy, spatialdata, dask, pytorch-lightning, pyvips) and requires a CUDA GPU for practical performance.
+No extra packages are required — neural segmentation is built into Mussel and works with any `torch-gpu` or `torch-cpu` install. A CUDA GPU is recommended but CPU inference is supported.
 
 ```bash
-uv sync --extra neural-seg
-tessellate slide_path=slide.svs seg_config.seg_model=hest
+uv sync --extra torch-gpu
+tessellate slide_path=slide.svs seg_config.seg_model=neural
 ```
 
 **Segmenter comparison** — `"classic"` variants vs reference Otsu on the test slide:
@@ -218,7 +218,7 @@ asset_dict = {"coords": np.array(coords, dtype=np.int64)}
 
 - **`tissue_area_threshold` scaling**: The default threshold (100) is scaled by the segmentation-level downsample factor, which on slides with coarse tissue can exceed actual contour areas → zero tissue found. Workaround: `tissue_area_threshold=1`. Pre-existing issue.
 - **`CHIEF_SLIDE`**: Requires a locally downloaded checkpoint path; raises `NotImplementedError` if no path is supplied.
-- **`seg_model="hest"`**: Requires `uv sync --extra neural-seg` (installs HEST from GitHub). Heavy deps: ultralytics, scanpy, spatialdata, dask, pytorch-lightning. Needs a CUDA GPU.
+- **`seg_model="neural"`**: Requires `torch-gpu` or `torch-cpu` (no additional packages). Weights auto-downloaded from `MahmoodLab/hest-tissue-seg` on HuggingFace. GPU recommended. The legacy alias `"hest"` is still accepted but emits a `DeprecationWarning`.
 
 ---
 

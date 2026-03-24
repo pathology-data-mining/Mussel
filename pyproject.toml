@@ -38,7 +38,6 @@ dev = [
 ]
 
 [project.optional-dependencies]
-"neural-seg" = ["hest @ git+https://github.com/mahmoodlab/HEST.git ; python_version >= '3.11'"]
 "tensorflow-gpu" = [
   "tensorflow[and-cuda]<=2.19.0",
   "keras",
@@ -93,13 +92,13 @@ dev = [
 
 [tool.uv]
 conflicts = [
+  # These are mutually exclusive: torch/tensorflow and fastattn pin incompatible torch versions.
   [
     { extra = "tensorflow-gpu" },
     { extra = "tensorflow-cpu" },
     { extra = "torch-cpu" },
     { extra = "torch-gpu" },
     { extra = "fastattn" },
-    { extra = "neural-seg" },
   ],
 ]
 

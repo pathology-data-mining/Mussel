@@ -779,16 +779,18 @@ class TestSegmentTissueSegModel:
     """Tests for the seg_model parameter in segment_tissue."""
 
     def test_seg_model_classic_is_default(self):
-        """seg_model defaults to 'classic' — no error without hest."""
+        """seg_model defaults to 'classic' — no error without torch."""
         from mussel.utils.segment import segment_tissue
         import inspect
 
         sig = inspect.signature(segment_tissue)
         assert sig.parameters["seg_model"].default == "classic"
 
-    def test_seg_model_hest_raises_without_hest_package(self):
-        """seg_model='hest' raises ImportError/ModuleNotFoundError if hest is absent."""
+    def test_seg_model_neural_calls_neural_segmenter(self):
+        """seg_model='neural' delegates to _segment_tissue_neural."""
         mock_wsi = _make_mock_wsi_with_tissue()
+        fake_mask = np.zeros((64, 64), dtype=np.uint8)
+        fake_mask[16:48, 16:48] = 255
 
         with (
             patch("mussel.utils.segment.tiffslide.open_slide", return_value=mock_wsi),
@@ -798,13 +800,44 @@ class TestSegmentTissueSegModel:
                 return_value=[(1.0, 1.0), (4.0, 4.0)],
             ),
             patch(
-                "mussel.utils.segment._segment_tissue_hest",
-                side_effect=ImportError("No module named 'hest'"),
-            ),
+                "mussel.utils.segment._segment_tissue_neural",
+                return_value=fake_mask,
+            ) as mock_neural,
         ):
             from mussel.utils.segment import segment_tissue
 
-            with pytest.raises(ImportError):
+            segment_tissue(
+                "/fake/slide.svs",
+                patch_size=256,
+                mpp=0.5,
+                tissue_area_threshold=1,
+                seg_model="neural",
+            )
+            mock_neural.assert_called_once()
+
+    def test_seg_model_hest_alias_warns_and_uses_neural(self):
+        """seg_model='hest' emits DeprecationWarning and uses neural path."""
+        import warnings
+        mock_wsi = _make_mock_wsi_with_tissue()
+        fake_mask = np.zeros((64, 64), dtype=np.uint8)
+        fake_mask[16:48, 16:48] = 255
+
+        with (
+            patch("mussel.utils.segment.tiffslide.open_slide", return_value=mock_wsi),
+            patch("mussel.utils.segment.get_slide_mpp", return_value=0.5),
+            patch(
+                "mussel.utils.segment._assert_level_downsamples",
+                return_value=[(1.0, 1.0), (4.0, 4.0)],
+            ),
+            patch(
+                "mussel.utils.segment._segment_tissue_neural",
+                return_value=fake_mask,
+            ) as mock_neural,
+        ):
+            from mussel.utils.segment import segment_tissue
+
+            with warnings.catch_warnings(record=True) as w:
+                warnings.simplefilter("always")
                 segment_tissue(
                     "/fake/slide.svs",
                     patch_size=256,
@@ -812,27 +845,7 @@ class TestSegmentTissueSegModel:
                     tissue_area_threshold=1,
                     seg_model="hest",
                 )
-
-    def test_hest_float_mask_normalised_correctly(self):
-        """_segment_tissue_hest normalises float masks without truncation.
-
-        The fix changes (mask.astype(uint8)) * 255 to (mask * 255).astype(uint8)
-        so that float values like 0.5 produce 127 instead of 0.
-        """
-        from mussel.utils.segment import _segment_tissue_hest
-        import numpy as np
-
-        # Simulate a float confidence mask returned by HEST
-        float_mask = np.array([[0.0, 0.5], [0.75, 1.0]], dtype=np.float32)
-
-        with patch(
-            "mussel.utils.segment._segment_tissue_hest",
-            wraps=lambda img: (float_mask * 255).astype(np.uint8),
-        ) as mock_fn:
-            result = mock_fn(np.zeros((4, 4, 3), dtype=np.uint8))
-
-        # 0.5 * 255 = 127, not 0
-        assert result[0, 1] == 127, "Float 0.5 should map to ~127, not 0"
-        assert result[1, 1] == 255
+            mock_neural.assert_called_once()
+            assert any("deprecated" in str(warning.message).lower() for warning in w)
 
 

@@ -120,4 +120,4 @@ tessellate slide_path=slide.svs seg_config=biopsy   # config group preset
 - Custom packages `transpath` and `timm_ctranspath` come from MSK Mind GitHub repos
 - The `fastattn` extra pins specific torch/xformers/flash-attn versions for GigaPath support
 - `transformers<4.46` is required for model compatibility
-- The `neural-seg` extra installs HEST from GitHub (`mahmoodlab/HEST`) for `seg_model="hest"` support
+- Neural tissue segmentation (`seg_model="neural"`) is built into Mussel and requires only `torch-gpu` or `torch-cpu`; weights are auto-downloaded from `MahmoodLab/hest-tissue-seg` on HuggingFace

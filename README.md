@@ -85,15 +85,20 @@ uv sync --extra tensorflow-cpu
 ```
 Again, this is what you'd install on a MacBook running on Apple Silicon.
 
-#### Neural segmentation (`seg_model="hest"`)
+#### Neural segmentation (`seg_model="neural"`)
 
-Mussel supports neural tissue segmentation via the HEST library as an alternative to the default HSV/Otsu method. Install the `neural-seg` extra:
+Mussel includes built-in neural tissue segmentation using a DeepLabV3 model
+(pre-trained weights from `MahmoodLab/hest-tissue-seg` on HuggingFace,
+downloaded automatically on first use). No extra packages are required — it
+works with any `torch-gpu` or `torch-cpu` install:
 
 ```bash
-uv sync --extra neural-seg
+uv sync --extra torch-gpu
 ```
 
-Then pass `seg_config.seg_model=hest` to `tessellate` or `tessellate_extract_features`. HEST is installed from GitHub and requires a CUDA GPU for practical performance.
+Then pass `seg_config.seg_model=neural` to `tessellate` or
+`tessellate_extract_features`. A CUDA GPU is recommended for practical
+performance but CPU inference is supported.
 
 ## Development Notes
 
