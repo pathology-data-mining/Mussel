@@ -432,7 +432,7 @@ def segment_tissue(
     remove_artifacts: bool = False,
     remove_penmarks: bool = False,
     artifact_remover_fn=None,  # Optional callable: takes (mask_img: np.ndarray) -> np.ndarray
-    seg_model: str = "classic",  # "classic" (HSV/Otsu) or "hest" (neural)
+    seg_model: str = "classic",  # "classic" (HSV/Otsu) or "neural" (DeepLabV3)
 ):
     """Segment tissue regions in a whole-slide image and generate tissue patches.
     
@@ -548,25 +548,17 @@ def segment_tissue(
         level_downsamples = _assert_level_downsamples(wsi)
 
         # Validate and normalise seg_model
-        supported_seg_models = {"classic", "neural", "hest"}  # "hest" is deprecated alias
+        supported_seg_models = {"classic", "neural"}
         if seg_model is None:
             seg_model = "classic"
         elif not isinstance(seg_model, str):
             raise ValueError(f"seg_model must be a string, got {type(seg_model)!r}")
         else:
             seg_model = seg_model.strip().lower()
-        if seg_model == "hest":
-            import warnings
-            warnings.warn(
-                "seg_model='hest' is deprecated; use seg_model='neural' instead.",
-                DeprecationWarning,
-                stacklevel=2,
-            )
-            seg_model = "neural"
         if seg_model not in supported_seg_models:
             raise ValueError(
                 f"Unsupported seg_model {seg_model!r}. "
-                f"Supported values: {sorted(supported_seg_models - {'hest'})}"
+                f"Supported values: {sorted(supported_seg_models)}"
             )
 
         if seg_model == "neural":

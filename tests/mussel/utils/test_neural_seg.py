@@ -159,30 +159,6 @@ class TestSegmentTissueNeuralIntegration:
             result = seg_module._segment_tissue_neural(img, slide_mpp=4.0)
             mock_fn.assert_called_once_with(img, slide_mpp=4.0)
 
-    def test_hest_alias_warns_and_uses_neural(self):
-        """seg_model='hest' should emit DeprecationWarning and fall through to 'neural'."""
-        import warnings
-        from unittest.mock import patch as mpatch
-
-        fake_mask = np.zeros((64, 64), dtype=np.uint8)
-
-        with mpatch("mussel.utils.segment._segment_tissue_neural",
-                    return_value=fake_mask):
-            with warnings.catch_warnings(record=True) as w:
-                warnings.simplefilter("always")
-                # Directly test the aliasing logic without actually running segment_tissue
-                import mussel.utils.segment as seg_module
-                seg_model = "hest"
-                seg_model = seg_model.strip().lower()
-                if seg_model == "hest":
-                    warnings.warn(
-                        "seg_model='hest' is deprecated; use seg_model='neural' instead.",
-                        DeprecationWarning,
-                    )
-                    seg_model = "neural"
-                assert seg_model == "neural"
-                assert any("deprecated" in str(warning.message).lower() for warning in w)
-
 
 # ---------------------------------------------------------------------------
 # Weight download — mocked

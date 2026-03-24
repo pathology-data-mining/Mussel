@@ -97,7 +97,7 @@ Both pipelines remove ~30% of patches. Mussel retains slightly more (HSV segment
 
 Selects the segmentation backend. Supported values: `"classic"` (default, HSV-based) and `"neural"` (deep-learning).
 
-The `"neural"` backend uses a DeepLabV3-ResNet50 model trained on histopathology slides (pre-trained weights from `MahmoodLab/hest-tissue-seg` on HuggingFace, downloaded automatically on first use). It is more robust on challenging slides (e.g., frozen sections, adipose tissue, necrosis). Unknown values raise `ValueError`; the value is normalised to lowercase before comparison. The legacy alias `"hest"` emits a `DeprecationWarning` and redirects to `"neural"`.
+The `"neural"` backend uses a DeepLabV3-ResNet50 model trained on histopathology slides (pre-trained weights from `MahmoodLab/hest-tissue-seg` on HuggingFace, downloaded automatically on first use). It is more robust on challenging slides (e.g., frozen sections, adipose tissue, necrosis). Unknown values raise `ValueError`; the value is normalised to lowercase before comparison.
 
 No extra packages are required — neural segmentation is built into Mussel and works with any `torch-gpu` or `torch-cpu` install. A CUDA GPU is recommended but CPU inference is supported.
 
@@ -223,7 +223,7 @@ asset_dict = {"coords": np.array(coords, dtype=np.int64)}
 
 - **`tissue_area_threshold` scaling**: The default threshold (100) is scaled by the segmentation-level downsample factor, which on slides with coarse tissue can exceed actual contour areas → zero tissue found. Workaround: `tissue_area_threshold=1`. Pre-existing issue.
 - **`CHIEF_SLIDE`**: Requires a locally downloaded checkpoint path; raises `NotImplementedError` if no path is supplied.
-- **`seg_model="neural"`**: Requires `torch-gpu` or `torch-cpu` (no additional packages). Weights auto-downloaded from `MahmoodLab/hest-tissue-seg` on HuggingFace (~50 MB). GPU recommended for speed (~3 s on GPU vs ~20 s on CPU for a typical slide). The legacy alias `"hest"` is still accepted but emits a `DeprecationWarning`.
+- **`seg_model="neural"`**: Requires `torch-gpu` or `torch-cpu` (no additional packages). Weights auto-downloaded from `MahmoodLab/hest-tissue-seg` on HuggingFace (~50 MB). GPU recommended for speed (~3 s on GPU vs ~20 s on CPU for a typical slide).
 
 ---
 

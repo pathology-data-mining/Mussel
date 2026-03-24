@@ -41,7 +41,7 @@ def test_seg_config_min_tissue_proportion_set():
     assert cfg.min_tissue_proportion == 0.5
 
 
-def test_seg_config_seg_model_hest():
-    """SegConfig accepts seg_model='hest'."""
-    cfg = SegConfig(seg_model="hest")
-    assert cfg.seg_model == "hest"
+def test_seg_config_seg_model_neural():
+    """SegConfig accepts seg_model='neural'."""
+    cfg = SegConfig(seg_model="neural")
+    assert cfg.seg_model == "neural"
