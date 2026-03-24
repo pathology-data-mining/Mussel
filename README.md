@@ -38,6 +38,13 @@ cpus, as well, but it's very slow.)
 
 #### PyTorch
 
+Install PyTorch support first, then models are downloaded automatically on first use:
+
+```bash
+uv sync --extra torch-gpu   # GPU (CUDA) — recommended
+uv sync --extra torch-cpu   # CPU only (Mac or CPU-only Linux)
+```
+
 PyTorch is required for the following patch encoders:
 
 | Model | `model_type` | Access | HuggingFace |
@@ -76,40 +83,18 @@ And the following slide encoders (aggregate patch features into a single slide e
 export HF_TOKEN=hf_...
 ```
 
-
-##### GPU (CUDA)
-If you need to run a PyTorch model on GPUs, you can create the Mussel dev environment with
-the command
-```bash
-uv sync --extra torch-gpu
-```
-
-##### CPU
-If you just want CPU support for a PyTorch model, you can create your Mussel environment with 
-```bash
-uv sync --extra torch-cpu
-```
-Mussel doesn't currently support Apple Metal GPUs, so this is what you'd use to install on a modern MacBook.
-
 #### TensorFlow
-TensorFlow is required to run the Google Path Foundation model,
+
+TensorFlow is required for GooglePath only:
 
 | Model | `model_type` | Access | HuggingFace |
 |---|---|---|---|
 | GooglePath | `GOOGLEPATH` | 🔒 gated | [google/path-foundation](https://huggingface.co/google/path-foundation) |
 
-##### GPU (CUDA)
-To run the GooglePath with GPUs, create your dev environment with
 ```bash
-uv sync --extra tensorflow-gpu
+uv sync --extra tensorflow-gpu   # GPU (CUDA)
+uv sync --extra tensorflow-cpu   # CPU only (e.g. Mac)
 ```
-
-##### CPU
-If you just want CPU support for working with GooglePath, create your Mussel environment with 
-```bash
-uv sync --extra tensorflow-cpu
-```
-Again, this is what you'd install on a MacBook running on Apple Silicon.
 
 #### Neural segmentation (`seg_model="neural"`)
 
@@ -159,9 +144,7 @@ Mussel can process slides stored on the cloud or remote object stores via the `t
 
 ### Run unit tests
 
-Make sure that the dev dependencies are installed. (They should be installed by default).   (Note that the tests in
-this repo expect you to have installed the `torch-gpu` version of the project, and only
-the default model, `CLIP`, is used for feature extraction.)
+Make sure that the dev dependencies are installed. (They should be installed by default.)
 
 ```bash
 uv run pytest tests
