@@ -9,6 +9,25 @@
 
 ---
 
+## Visualizations
+
+### Tissue Mask (Baseline)
+![Tissue mask comparison](comparison_tissue_mask.png)
+
+### Patch Grid (Baseline — 256 px, no overlap)
+![Patch grid comparison](comparison_patch_grid.png)
+
+### Patch Grid with Overlap=64 px
+![Overlap comparison](comparison_overlap.png)
+
+### Patch Grid with min_tissue_proportion=0.5
+![Min tissue proportion comparison](comparison_mtp.png)
+
+### Combined Summary
+![Combined 2×2 summary](comparison_summary.png)
+
+---
+
 ## Summary
 
 Mussel's tessellation produces patch grids that are **within 10% of the reference pipeline** across all tested parameter combinations. All coordinates are valid (within slide bounds, no duplicates). Minor systematic differences stem from segmentation algorithm differences (HSV threshold vs Otsu) and segmentation level (Mussel uses level 3 / ~32× downsample; reference uses 10× thumbnail).
