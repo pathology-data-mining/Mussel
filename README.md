@@ -87,8 +87,12 @@ Again, this is what you'd install on a MacBook running on Apple Silicon.
 
 #### Neural segmentation (optional)
 
-Mussel supports neural tissue segmentation as an alternative to the default HSV/Otsu method.
-This requires the `hest` package:
+Mussel supports neural tissue segmentation as an alternative to the default HSV/Otsu method,
+using the HEST library's learned tissue segmenter.
+
+> **Note**: HEST is a large dependency (ultralytics/YOLOv8, scanpy, spatialdata, dask, etc.)
+> and is installed from GitHub, not PyPI. It requires Python ≥ 3.11 and a CUDA GPU for
+> practical performance.
 
 ```bash
 uv sync --extra neural-seg

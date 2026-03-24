@@ -38,7 +38,7 @@ dev = [
 ]
 
 [project.optional-dependencies]
-"neural-seg" = ["hest"]
+"neural-seg" = ["hest @ git+https://github.com/mahmoodlab/HEST.git"]
 "tensorflow-gpu" = [
   "tensorflow[and-cuda]<=2.19.0",
   "keras",

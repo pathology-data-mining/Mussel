@@ -1,7 +1,7 @@
 # Mussel v1.2.0 — New Features & Validation Report
 
 **Branch**: `trident-features` · **Version**: 1.2.0  
-**Validation slide**: `948176.svs` (85,656 × 19,917 px, native MPP 0.5026 ≈ 20C�)  
+**Validation slide**: `948176.svs` (85,656 × 19,917 px, native MPP 0.5026 ≈ 20C�)  
 **Reference pipeline**: external WSI patching tool (Otsu segmentation)
 
 ---
@@ -97,12 +97,18 @@ Both pipelines remove ~30% of patches. Mussel retains slightly more (HSV segment
 
 Selects the segmentation backend. Supported values: `"classic"` (default, HSV-based) and `"hest"` (requires the `neural-seg` extra).
 
+The `"hest"` backend uses a learned tissue segmenter from the HEST library, which is more robust on challenging slides (e.g., frozen sections, adipose tissue, necrosis). Unknown values raise `ValueError`; the value is normalised to lowercase before comparison.
+
+> **Install note**: HEST is not available on PyPI under the name `hest` (that name is taken by an unrelated package). The `neural-seg` extra installs it directly from GitHub. HEST carries heavy transitive dependencies (YOLOv8/ultralytics, scanpy, spatialdata, dask, pytorch-lightning, pyvips) and requires Python ≥ 3.11 and a CUDA GPU for practical performance. It is intentionally kept as an optional extra.
+
 ```bash
+# Install neural-seg extra (installs HEST from GitHub)
 pip install "mussel[neural-seg]"
+# or:
+uv sync --extra neural-seg
+
 tessellate slide_path=slide.svs seg_config.seg_model=hest
 ```
-
-The `"hest"` backend uses a learned tissue segmenter from the HEST library, which is more robust on challenging slides (e.g., frozen sections, adipose tissue, necrosis). Unknown values raise `ValueError`; the value is normalised to lowercase before comparison.
 
 **Baseline comparison** — classic HSV segmenter vs reference Otsu:
 
@@ -212,7 +218,7 @@ asset_dict = {"coords": np.array(coords, dtype=np.int64)}
 
 - **`tissue_area_threshold` scaling**: The default threshold (100) is scaled by the segmentation-level downsample factor, which on slides with coarse tissue can exceed actual contour areas → zero tissue found. Workaround: `tissue_area_threshold=1`. Pre-existing issue.
 - **`CHIEF_SLIDE`**: Requires a locally downloaded checkpoint path; raises `NotImplementedError` if no path is supplied.
-- **`seg_model="hest"`**: Requires `pip install "mussel[neural-seg]"` and a CUDA-capable GPU for reasonable performance.
+- **`seg_model="hest"`**: Requires `uv sync --extra neural-seg` (installs HEST from GitHub — not PyPI). Heavy dep: ultralytics, scanpy, spatialdata, dask, pytorch-lightning. Needs Python ≥ 3.11 and a CUDA GPU.
 
 ---
 
