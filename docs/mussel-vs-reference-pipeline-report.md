@@ -11,20 +11,31 @@
 
 ## Visualizations
 
-### Tissue Mask (Baseline)
-![Tissue mask comparison](comparison_tissue_mask.png)
+### Full-Slide Overview (16× downsample)
+![Overview](comparison_overview.png)
 
-### Patch Grid (Baseline — 256 px, no overlap)
-![Patch grid comparison](comparison_patch_grid.png)
+### Tissue Mask — Three Zoomed Crops (4× downsample, patch = 64 px)
+Mussel (HSV segmentation, blue) vs Reference (Otsu, red) across left, centre, and right tissue regions.
 
-### Patch Grid with Overlap=64 px
+![Tissue mask zoomed](comparison_tissue_mask.png)
+
+### Patch Grid — Baseline (256 px, no overlap)
+Side-by-side at 4× downsample. Individual patches are clearly visible at 64 px.
+
+![Patch grid zoomed](comparison_patch_grid.png)
+
+### Patch Grid — overlap=64 px (step=192 px)
 ![Overlap comparison](comparison_overlap.png)
 
-### Patch Grid with min_tissue_proportion=0.5
-![Min tissue proportion comparison](comparison_mtp.png)
+### Effect of min_tissue_proportion=0.5 (Centre Crop)
+Top row: all patches. Bottom row: after filtering patches with <50% tissue coverage.
 
-### Combined Summary
-![Combined 2×2 summary](comparison_summary.png)
+![Min tissue proportion](comparison_mtp.png)
+
+### Patch Agreement — Shared vs Pipeline-Specific (Centre Crop)
+Green = patches present in both pipelines · Blue = Mussel-only · Red = Reference-only.
+
+![Differential](comparison_diff.png)
 
 ---
 
