@@ -698,7 +698,7 @@ def segment_tissue(
             "seg_model": seg_model,
         }
         if output_h5_path:
-            asset_dict = {"coords": np.array(coords)}
+            asset_dict = {"coords": np.array(coords, dtype=np.int64)}
             attr_dict = {"coords": attrs}
             save_hdf5(output_h5_path, asset_dict, attr_dict, mode="w")
             logger.info(f"Writing to {output_h5_path}")
