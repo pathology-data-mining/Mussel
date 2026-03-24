@@ -110,15 +110,16 @@ uv sync --extra neural-seg
 tessellate slide_path=slide.svs seg_config.seg_model=hest
 ```
 
-**Baseline comparison** — classic HSV segmenter vs reference Otsu:
+**Segmenter comparison** — `"classic"` variants vs reference Otsu on the test slide:
 
 | Segmenter | Patches | vs Reference |
 |---|---:|---:|
 | Reference (Otsu) | 1,607 | — |
-| Mussel HSV (classic) | 1,474 | −8.3% |
-| Mussel Otsu | 1,348 | −16.1% |
+| Mussel HSV (`classic`, default) | 1,474 | −8.3% |
+| Mussel Otsu (`classic`, `use_otsu=True`) | 1,348 | −16.1% |
+| Mussel HEST (`hest`) | *not validated — HEST not installed in CI* | — |
 
-Both Mussel segmenters are within the 20% tolerance. The HSV segmenter is more conservative (fewer patches at tissue margins) which is generally preferable for downstream tasks.
+Both `classic` variants are within the 20% tolerance. The HSV segmenter is more conservative (fewer patches at tissue margins) which is generally preferable for downstream tasks. HEST neural segmentation is expected to perform better on challenging tissue types (frozen sections, adipose, necrosis) but has not been benchmarked here due to its heavyweight install requirements.
 
 ---
 
@@ -188,12 +189,15 @@ The vast majority of patches are shared; differences are concentrated at tissue 
 
 ## Quantitative Summary
 
+All tests use `seg_model="classic"` (HSV). HEST neural segmentation was not benchmarked (not installed in CI).
+
 | Parameter condition | Reference | Mussel | Δ% | Pass (≤20%)? |
 |---|---:|---:|---:|:---:|
-| Baseline (HSV, overlap=0, mtp=0) | 1,607 | 1,474 | −8.3% | ✅ |
-| Baseline (Otsu, overlap=0, mtp=0) | 1,607 | 1,348 | −16.1% | ✅ |
-| overlap=64 px | 2,872 | 2,586 | −9.9% | ✅ |
-| min_tissue_proportion=0.5 | 1,032 | 1,088 | +5.1% | ✅ |
+| Baseline: HSV, overlap=0, mtp=0 | 1,607 | 1,474 | −8.3% | ✅ |
+| Baseline: Otsu, overlap=0, mtp=0 | 1,607 | 1,348 | −16.1% | ✅ |
+| HSV, overlap=64 px | 2,872 | 2,586 | −9.9% | ✅ |
+| HSV, min_tissue_proportion=0.5 | 1,032 | 1,088 | +5.1% | ✅ |
+| HEST neural seg | — | *not run* | — | — |
 
 Coordinate space: both pipelines use level-0 px. Coordinate span agreement:
 
