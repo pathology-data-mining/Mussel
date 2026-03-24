@@ -1090,6 +1090,9 @@ class MadeleineSlideEncoderModel(TorchModel):
         model_to_save = self.obj.module if hasattr(self.obj, "module") else self.obj
         model_to_save.save_pretrained(save_path)
         logger.info(f"Saved Madeleine slide encoder to {save_path}")
+
+
+class OptimusModel(TorchModel):
     def __init__(
         self,
         model_path,
@@ -1121,7 +1124,7 @@ class MadeleineSlideEncoderModel(TorchModel):
         Returns:
             Composed transforms for H-Optimus-0 input preprocessing.
         """
-        preprocessing = transforms.Compose(
+        return transforms.Compose(
             [
                 transforms.Resize(
                     224, interpolation=transforms.InterpolationMode.BICUBIC
@@ -1133,7 +1136,6 @@ class MadeleineSlideEncoderModel(TorchModel):
                 ),
             ]
         )
-        return preprocessing
 
 
 class VirchowModel(TorchModel):
