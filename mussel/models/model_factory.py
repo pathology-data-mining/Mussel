@@ -990,38 +990,131 @@ class FeatherSlideEncoderModel(TorchModel):
         logger.info(f"Saved Feather slide encoder to {save_path}")
 
 
+class _AttnNetGated(nn.Module):
+    """Gated attention network used by CHIEF (hms-dbmi/CHIEF)."""
+
+    def __init__(self, L: int = 1024, D: int = 256, dropout: bool = False):
+        super().__init__()
+        self.attention_a = nn.Sequential(
+            nn.Linear(L, D), nn.Tanh(), *([] if not dropout else [nn.Dropout(0.25)])
+        )
+        self.attention_b = nn.Sequential(
+            nn.Linear(L, D), nn.Sigmoid(), *([] if not dropout else [nn.Dropout(0.25)])
+        )
+        self.attention_c = nn.Linear(D, 1)
+
+    def forward(self, x):
+        A = self.attention_a(x) * self.attention_b(x)
+        return self.attention_c(A), x  # (N,1), (N,L)
+
+
+class _CHIEFSlideModel(nn.Module):
+    """CHIEF WSI-level encoder (size_arg='small', hms-dbmi/CHIEF).
+
+    Reproduces the CHIEF class from the original repo without the
+    ``torch.load('./model_weight/Text_emdding.pth')`` call in ``__init__``
+    (the organ_embedding is already stored in the pretrained checkpoint).
+
+    Input:  patch features  [N, 768]  (from CTRANSPATH)
+    Output: slide embedding [1, 768]  (``result['WSI_feature']``, attention-pooled)
+    """
+
+    def __init__(self, n_classes: int = 2, dropout: bool = True):
+        super().__init__()
+        # size_arg="small" → [768, 512, 256]
+        L_in, L_hidden, D_attn = 768, 512, 256
+        self.fc = nn.Sequential(
+            nn.Linear(L_in, L_hidden),
+            nn.ReLU(),
+            *([] if not dropout else [nn.Dropout(0.25)]),
+        )
+        self.attention_net = _AttnNetGated(L=L_hidden, D=D_attn, dropout=dropout)
+        self.classifiers = nn.Linear(L_hidden, n_classes)
+        self.instance_classifiers = nn.ModuleList(
+            [nn.Linear(L_hidden, 2) for _ in range(n_classes)]
+        )
+        self.att_head = nn.Sequential(nn.Linear(L_hidden, D_attn), nn.ReLU(), nn.Sigmoid())
+        self.text_to_vision = nn.Sequential(
+            nn.Linear(768, L_hidden), nn.ReLU(), nn.Dropout(p=0.25)
+        )
+        # Placeholder; overwritten by load_state_dict from checkpoint
+        self.register_buffer("organ_embedding", torch.zeros(19, 768))
+
+    def forward(self, h, anatomical_site: int = 0):
+        h_ori = h
+        h_proj = self.fc(h)
+        A, h_proj = self.attention_net(h_proj)
+        A = torch.softmax(A.transpose(1, 0), dim=1)  # [1, N]
+        slide_embeddings = torch.mm(A, h_ori)  # [1, 768]
+        return slide_embeddings
+
+
 class CHIEFSlideEncoderModel(TorchModel):
+    _GDRIVE_FOLDER_ID = "1uRv9A1HuTW5m_pJoyMzdN31bE1i-tDaV"
+    _CHECKPOINT_FILENAME = "CHIEF_pretraining.pth"
+
     def __init__(
         self,
         model_path,
         use_gpu: bool = True,
         gpu_device_id: int | List[int] | None = None,
     ):
-        """Initialize CHIEF slide encoder model (stub — requires local checkpoint).
+        """Initialize CHIEF slide encoder model (hms-dbmi/CHIEF).
 
-        CHIEF (HMS DBMI) requires a local checkpoint that is not available on HuggingFace.
+        If ``model_path`` is None the checkpoint is downloaded automatically
+        from the CHIEF Google Drive folder using ``gdown``.  Access to the
+        folder must first be requested at
+        https://drive.google.com/drive/folders/1uRv9A1HuTW5m_pJoyMzdN31bE1i-tDaV
 
         Args:
-            model_path: Path to local CHIEF checkpoint.
+            model_path: Path to ``CHIEF_pretraining.pth``, or None to auto-download.
             use_gpu: Whether to use GPU (default: True).
             gpu_device_id: GPU device ID or list of IDs for multi-GPU (default: None).
-
-        Raises:
-            ValueError: If model_path is missing or does not exist.
-            NotImplementedError: Always, as CHIEF is not yet fully implemented.
         """
-        if not model_path or not Path(model_path).exists():
-            raise ValueError(
-                "CHIEF_SLIDE requires a local checkpoint path. "
-                "Download the CHIEF model from https://github.com/hms-dbmi/CHIEF "
-                "and provide the path via slide_model_path=<path>."
-            )
-        raise NotImplementedError(
-            "CHIEF_SLIDE is not yet fully implemented. "
-            "Please open an issue if you need CHIEF support."
-        )
+        if model_path is None:
+            model_path = self._download_checkpoint()
 
-    def get_model_fun(self): ...
+        model_obj = _CHIEFSlideModel()
+        td = torch.load(model_path, weights_only=True, map_location="cpu")
+        result = model_obj.load_state_dict(td, strict=False)
+        missing = [k for k in result.missing_keys if not k.endswith("num_batches_tracked")]
+        if missing:
+            raise RuntimeError(f"CHIEF checkpoint is missing keys: {missing}")
+        super().__init__(model_path, model_obj, use_gpu, gpu_device_id)
+
+    @classmethod
+    def _download_checkpoint(cls) -> str:
+        """Download CHIEF_pretraining.pth from Google Drive folder."""
+        from huggingface_hub import constants as hf_constants
+
+        cache_dir = Path(hf_constants.HF_HUB_CACHE) / "chief"
+        dest = cache_dir / cls._CHECKPOINT_FILENAME
+        if dest.exists():
+            logger.info("CHIEF checkpoint already cached at %s", dest)
+            return str(dest)
+        import gdown
+
+        cache_dir.mkdir(parents=True, exist_ok=True)
+        url = f"https://drive.google.com/drive/folders/{cls._GDRIVE_FOLDER_ID}"
+        logger.info("Downloading CHIEF weights from Google Drive → %s", cache_dir)
+        gdown.download_folder(url, output=str(cache_dir), quiet=False, use_cookies=False)
+        if not dest.exists():
+            raise FileNotFoundError(
+                f"{cls._CHECKPOINT_FILENAME} not found after download. "
+                "Ensure you have been granted access to the CHIEF Google Drive folder: "
+                f"{url}"
+            )
+        return str(dest)
+
+    def get_model_fun(self):
+        """Return callable that aggregates patch features into a slide embedding."""
+        model = self.obj
+
+        def model_fun(features_tensor):
+            with torch.no_grad():
+                return model(features_tensor).squeeze().cpu()
+
+        return model_fun
 
     def get_preprocessing_fun(self):
         """Slide encoders work on patch features; no image preprocessing needed."""

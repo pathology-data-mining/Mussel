@@ -76,24 +76,20 @@ And the following slide encoders (aggregate patch features into a single slide e
 | PRISM | `PRISM_SLIDE` | `VIRCHOW` | 🔒 gated | [paige-ai/Prism](https://huggingface.co/paige-ai/Prism) |
 | FEATHER | `FEATHER_SLIDE` | `CONCH1_5` | 🔒 gated | [MahmoodLab/abmil.base.conch_v15.pc108-24k](https://huggingface.co/MahmoodLab/abmil.base.conch_v15.pc108-24k) |
 | MADELEINE | `MADELEINE_SLIDE` | `CLIP` | 🔒 gated | [MahmoodLab/madeleine](https://huggingface.co/MahmoodLab/madeleine) |
-| CHIEF | `CHIEF_SLIDE` | `CTRANSPATH` | ⬇ manual | [hms-dbmi/CHIEF](https://github.com/hms-dbmi/CHIEF) |
+| CHIEF | `CHIEF_SLIDE` | `CTRANSPATH` | ⬇ access req. | [hms-dbmi/CHIEF](https://github.com/hms-dbmi/CHIEF) |
 
 **🔒 Gated models** require signing an access agreement on the HuggingFace model page and setting your token:
 ```bash
 export HF_TOKEN=hf_...
 ```
 
-**⬇ Models requiring manual download** cannot be fetched automatically. Download the checkpoint file and pass its path as `model_path=`:
+**⬇ Models requiring access request** are downloaded automatically once access is granted:
 
-| Model | Download | File |
+| Model | Request access | Notes |
 |---|---|---|
-| CHIEF (`CHIEF_SLIDE`) | [hms-dbmi/CHIEF releases](https://github.com/hms-dbmi/CHIEF/releases) | `chief.pth` (or as named in the release) |
+| CHIEF (`CHIEF_SLIDE`) | [Google Drive folder](https://drive.google.com/drive/folders/1uRv9A1HuTW5m_pJoyMzdN31bE1i-tDaV) | Request via [hms-dbmi/CHIEF](https://github.com/hms-dbmi/CHIEF); `gdown` downloads automatically on first use |
 
-```bash
-extract_features slide_path=slide.svs model_type=CHIEF_SLIDE model_path=/path/to/chief.pth
-```
-
-TransPath (`CTRANSPATH`) is downloaded automatically from Google Drive on first use (cached in the HuggingFace hub cache directory).
+TransPath (`CTRANSPATH`) and CHIEF (`CHIEF_SLIDE`) are downloaded automatically via `gdown` on first use (cached in the HuggingFace hub cache directory).
 
 #### TensorFlow
 
