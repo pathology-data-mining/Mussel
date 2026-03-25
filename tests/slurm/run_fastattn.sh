@@ -2,11 +2,13 @@
 # SLURM job: integration tests for fastattn-based models (Prov-GigaPath slide encoder).
 #
 # Submit from the repo root:
-#   sbatch tests/slurm/test_fastattn.sh
+#   sbatch tests/slurm/run_fastattn.sh
 #
 # Note: fastattn pins torch==2.1.2 and requires flash-attn compiled for your
-# CUDA version. The job installs into an isolated venv (.venv-fastattn) to
-# avoid conflicts with the main torch-gpu environment.
+# CUDA version. The job installs into an isolated venv at ~/venvs/mussel-fastattn
+# to avoid conflicts with the main torch-gpu environment.
+#
+# Logs go to ~/logs/slurm/ (writable from all compute nodes).
 #
 #SBATCH --job-name=mussel-test-fastattn
 #SBATCH --partition=hpc
@@ -14,14 +16,17 @@
 #SBATCH --cpus-per-task=4
 #SBATCH --mem=32G
 #SBATCH --time=2:00:00
-#SBATCH --output=logs/slurm/test_fastattn_%j.out
-#SBATCH --error=logs/slurm/test_fastattn_%j.err
 
 set -euo pipefail
 
 REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$REPO_DIR"
-mkdir -p logs/slurm
+
+# Redirect output to $HOME which is writable from compute nodes
+mkdir -p "$HOME/logs/slurm"
+exec > >(tee "$HOME/logs/slurm/test_fastattn_${SLURM_JOB_ID:-local}.log") 2>&1
+
+echo "=== mussel fastattn model tests ==="
 echo "Node:   $(hostname)"
 echo "GPUs:   ${CUDA_VISIBLE_DEVICES:-<unset>}"
 echo "Python: $(python3 --version 2>&1)"
@@ -37,10 +42,11 @@ if [[ -z "${HF_TOKEN:-}" ]]; then
     echo "WARNING: HF_TOKEN not set — prov-gigapath/prov-gigapath is gated and will fail."
 fi
 
-# Use an isolated venv to avoid conflicts with the main torch-gpu environment.
+# Use an isolated venv in $HOME to avoid conflicts with the main torch-gpu environment
+# and to ensure the venv is writable from compute nodes.
 # flash-attn must be compiled for the CUDA version on this node; set
 # FLASH_ATTENTION_SKIP_CUDA_BUILD=0 to allow recompilation if needed.
-export UV_PROJECT_ENVIRONMENT=".venv-fastattn"
+export UV_PROJECT_ENVIRONMENT="$HOME/venvs/mussel-fastattn"
 export FLASH_ATTENTION_SKIP_CUDA_BUILD="${FLASH_ATTENTION_SKIP_CUDA_BUILD:-0}"
 
 echo "--- Installing fastattn extra into ${UV_PROJECT_ENVIRONMENT} ---"
