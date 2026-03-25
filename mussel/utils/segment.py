@@ -667,7 +667,7 @@ def segment_tissue(
             filtered = [
                 (g, c) for g, c in zip(grid, coords)
                 if prepared_polygon.intersects(g)
-                and g.intersection(polygon).area / g.area >= min_tissue_proportion
+                and prepared_polygon.intersection(g).area / g.area >= min_tissue_proportion
             ]
             if filtered:
                 grid, coords = zip(*filtered)
