@@ -1,7 +1,7 @@
 # Mussel v1.2.0 — New Features & Validation Report
 
 **Branch**: `trident-features` · **Version**: 1.2.0  
-**Validation slide**: `948176.svs` (85,656 × 19,917 px, native MPP 0.5026 ≈ 20C�)  
+**Validation slide**: `948176.svs` (85,656 × 19,917 px, native MPP 0.5026 ≈ 20×)  
 **Reference pipeline**: external WSI patching tool (Otsu segmentation)
 
 ---

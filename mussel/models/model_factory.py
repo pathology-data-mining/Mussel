@@ -941,11 +941,9 @@ class FeatherSlideEncoderModel(TorchModel):
         """
         if model_path is None:
             model_path = ModelType.FEATHER_SLIDE.path
-        model_obj = None
-        if not Path(model_path).is_file():
-            from transformers import AutoModel
-            with model_download_lock(model_path) as _:
-                model_obj = AutoModel.from_pretrained(model_path, trust_remote_code=True)
+        from transformers import AutoModel
+        with model_download_lock(model_path) as _:
+            model_obj = AutoModel.from_pretrained(model_path, trust_remote_code=True)
         super().__init__(model_path, model_obj, use_gpu, gpu_device_id)
 
     def get_model_fun(self) -> Callable:
@@ -1045,11 +1043,9 @@ class MadeleineSlideEncoderModel(TorchModel):
         """
         if model_path is None:
             model_path = ModelType.MADELEINE_SLIDE.path
-        model_obj = None
-        if not Path(model_path).is_file():
-            from transformers import AutoModel
-            with model_download_lock(model_path) as _:
-                model_obj = AutoModel.from_pretrained(model_path, trust_remote_code=True)
+        from transformers import AutoModel
+        with model_download_lock(model_path) as _:
+            model_obj = AutoModel.from_pretrained(model_path, trust_remote_code=True)
         super().__init__(model_path, model_obj, use_gpu, gpu_device_id)
 
     def get_model_fun(self) -> Callable:
@@ -1436,11 +1432,13 @@ class PhikonModel(TorchModel):
 
     def get_model_fun(self) -> Callable:
         """Return the CLS-token embedding from the transformer output."""
+        autocast_dtype = torch.float16 if self.device.type == "cuda" else torch.bfloat16
+
         def model_fun(x):
             with (
                 torch.no_grad(),
                 torch.inference_mode(),
-                torch.autocast(device_type=self.device.type, dtype=torch.float16),
+                torch.autocast(device_type=self.device.type, dtype=autocast_dtype),
             ):
                 x = x.to(self.device, non_blocking=True)
                 out = self.obj(pixel_values=x)
@@ -1586,11 +1584,13 @@ class Midnight12kModel(TorchModel):
 
     def get_model_fun(self) -> Callable:
         """Return the CLS-token embedding from the DINOv2 output."""
+        autocast_dtype = torch.float16 if self.device.type == "cuda" else torch.bfloat16
+
         def model_fun(x):
             with (
                 torch.no_grad(),
                 torch.inference_mode(),
-                torch.autocast(device_type=self.device.type, dtype=torch.float16),
+                torch.autocast(device_type=self.device.type, dtype=autocast_dtype),
             ):
                 x = x.to(self.device, non_blocking=True)
                 out = self.obj(pixel_values=x)

@@ -424,8 +424,8 @@ def segment_tissue(
     mpp: float = 0.5,
     step_size: Optional[int] = None,
     ref_patch_size: int = 512,
-    exclude_ids: List[int] = None,
-    keep_ids: List[int] = None,
+    exclude_ids: Optional[List[int]] = None,
+    keep_ids: Optional[List[int]] = None,
     output_h5_path: Optional[str] = None,
     overlap: int = 0,
     min_tissue_proportion: float = 0.0,
@@ -457,9 +457,9 @@ def segment_tissue(
             level is used for segmentation.
         hole_area_threshold: Maximum hole area in requested patches (default: 16).
         max_num_holes: Maximum number of holes allowed per tissue contour (default: 10).
-        patch_size: Target patch size in microns at desired MPP (default: 256).
+        patch_size: Target patch size in pixels at desired MPP (default: 256).
         mpp: Target microns per pixel for patches (default: 0.5).
-        step_size: Step size between patches in microns (defaults to patch_size).
+        step_size: Step size between patches in pixels at desired MPP (defaults to patch_size).
         ref_patch_size: Deprecated; no longer used for area calculations.
         exclude_ids: List of contour indices to exclude from processing.
         keep_ids: List of contour indices to keep (if empty, keeps all except excluded).
