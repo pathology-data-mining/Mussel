@@ -26,3 +26,4 @@ tmp*
 *~
 *.swp
 mussel.egg-info/
+logs/slurm/
