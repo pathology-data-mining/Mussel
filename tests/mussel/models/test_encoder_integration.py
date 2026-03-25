@@ -51,7 +51,7 @@ _PATCH_ENCODER_DIM: dict[ModelType, int] = {
     ModelType.VIRCHOW2:    2560,
     ModelType.OPTIMUS:     1536,
     ModelType.CLIP:         512,
-    ModelType.GOOGLEPATH:  1024,
+    ModelType.GOOGLEPATH:   384,   # ViT-S/16 (embed_dim=384)
     ModelType.CONCH1_5:     768,
     ModelType.UNI:         1024,
     ModelType.UNI2:        1536,

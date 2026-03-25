@@ -35,7 +35,7 @@ _TF_PATCH_ENCODERS = [
 ]
 
 _EXPECTED_DIM = {
-    ModelType.GOOGLEPATH: 1024,
+    ModelType.GOOGLEPATH: 384,
 }
 
 
