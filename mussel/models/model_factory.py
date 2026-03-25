@@ -1490,6 +1490,9 @@ class _ConvStem(nn.Module):
 
 
 class TransPathModel(TorchModel):
+    _GDRIVE_FILE_ID = "1DoDx_70_TLj98gTf6YTXnu4tFhsFocDX"
+    _CACHE_FILENAME = "ctranspath.pth"
+
     def __init__(
         self,
         model_path,
@@ -1498,16 +1501,17 @@ class TransPathModel(TorchModel):
     ):
         """Initialize TransPath model.
 
+        If ``model_path`` is None the checkpoint is downloaded automatically
+        from Google Drive (https://drive.google.com/file/d/1DoDx_70_TLj98gTf6YTXnu4tFhsFocDX)
+        and cached in the HuggingFace hub cache directory.
+
         Args:
-            model_path: Path to model weights file.
+            model_path: Path to local weights file, or None to auto-download.
             use_gpu: Whether to use GPU (default: True).
             gpu_device_id: GPU device ID or list of IDs for multi-GPU (default: None).
-
-        Raises:
-            ValueError: If model_path is not provided.
         """
         if model_path is None:
-            raise ValueError("model_path must be provided for TransPath model")
+            model_path = self._download_checkpoint()
 
         model_obj = timm.create_model(
             "swin_tiny_patch4_window7_224",
@@ -1526,6 +1530,24 @@ class TransPathModel(TorchModel):
         # ctranspath uses standard ImageNet normalization — preprocessing is
         # handled by the feature-extraction pipeline (preprocessing=None → ImageNet default)
         super().__init__(model_path, model_obj, use_gpu, gpu_device_id)
+
+    @classmethod
+    def _download_checkpoint(cls) -> str:
+        """Download ctranspath.pth from Google Drive, caching in the HF hub cache dir."""
+        from huggingface_hub import constants as hf_constants
+
+        cache_dir = Path(hf_constants.HF_HUB_CACHE) / "transpath"
+        cache_dir.mkdir(parents=True, exist_ok=True)
+        dest = cache_dir / cls._CACHE_FILENAME
+        if dest.exists():
+            logger.info("TransPath checkpoint already cached at %s", dest)
+            return str(dest)
+        import gdown
+
+        url = f"https://drive.google.com/uc?id={cls._GDRIVE_FILE_ID}"
+        logger.info("Downloading TransPath checkpoint from Google Drive → %s", dest)
+        gdown.download(url, str(dest), quiet=False)
+        return str(dest)
 
 
 class PhikonModel(TorchModel):

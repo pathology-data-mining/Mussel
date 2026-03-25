@@ -50,7 +50,7 @@ PyTorch is required for the following patch encoders:
 | Model | `model_type` | Access | HuggingFace |
 |---|---|---|---|
 | ResNet-50 | `RESNET50` | public | built-in (torchvision) |
-| TransPath | `CTRANSPATH` | ⬇ manual | [Xiyue-Wang/TransPath](https://github.com/Xiyue-Wang/TransPath) |
+| TransPath | `CTRANSPATH` | public | [Xiyue-Wang/TransPath](https://github.com/Xiyue-Wang/TransPath) |
 | OpenCLIP | `CLIP` | public | [wisdomik/QuiltNet-B-16-PMB](https://huggingface.co/wisdomik/QuiltNet-B-16-PMB) |
 | Phikon | `PHIKON` | public | [owkin/phikon](https://huggingface.co/owkin/phikon) |
 | Phikon-v2 | `PHIKON_V2` | public | [owkin/phikon-v2](https://huggingface.co/owkin/phikon-v2) |
@@ -87,12 +87,13 @@ export HF_TOKEN=hf_...
 
 | Model | Download | File |
 |---|---|---|
-| TransPath (`CTRANSPATH`) | [Google Drive](https://drive.google.com/file/d/1DoDx_70_TLj98gTf6YTXnu4tFhsFocDX/view) via [Xiyue-Wang/TransPath](https://github.com/Xiyue-Wang/TransPath) | `ctranspath.pth` |
 | CHIEF (`CHIEF_SLIDE`) | [hms-dbmi/CHIEF releases](https://github.com/hms-dbmi/CHIEF/releases) | `chief.pth` (or as named in the release) |
 
 ```bash
-extract_features slide_path=slide.svs model_type=CTRANSPATH model_path=/path/to/ctranspath.pth
+extract_features slide_path=slide.svs model_type=CHIEF_SLIDE model_path=/path/to/chief.pth
 ```
+
+TransPath (`CTRANSPATH`) is downloaded automatically from Google Drive on first use (cached in the HuggingFace hub cache directory).
 
 #### TensorFlow
 
