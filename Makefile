@@ -52,12 +52,12 @@ help:
 
 # Installation targets
 install:
-	@echo "Installing Mussel..."
-	uv sync
+	@echo "Installing Mussel (CPU torch)..."
+	uv sync --extra torch-cpu
 
 install-dev:
 	@echo "Installing Mussel with development dependencies..."
-	uv sync --group dev
+	uv sync --extra torch-cpu --group dev
 
 install-gpu:
 	@echo "Installing Mussel with GPU support..."

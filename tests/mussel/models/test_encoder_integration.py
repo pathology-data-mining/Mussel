@@ -52,7 +52,7 @@ _PATCH_ENCODER_DIM: dict[ModelType, int] = {
     ModelType.OPTIMUS:     1536,
     ModelType.CLIP:         512,
     ModelType.GOOGLEPATH:  1024,
-    ModelType.CONCH1_5:     512,
+    ModelType.CONCH1_5:     768,
     ModelType.UNI:         1024,
     ModelType.UNI2:        1536,
     ModelType.PHIKON:       768,
@@ -60,14 +60,20 @@ _PATCH_ENCODER_DIM: dict[ModelType, int] = {
     ModelType.H_OPTIMUS_1: 1536,
     ModelType.H0_MINI:     1152,
     ModelType.MIDNIGHT12K: 1536,   # DINOv2 ViT-g/14
-    ModelType.GPFM:        1536,
+    ModelType.GPFM:        1024,   # ViT-L/14 (embed_dim=1024, num_classes=0)
     ModelType.HIBOU_L:     1024,
 }
 
+# Per-slide-encoder override for the INPUT patch feature dimension.
+# Used when a slide encoder was trained on a different patch encoder than the
+# one listed in SLIDE_ENCODER_COMPATIBILITY (e.g. MADELEINE was trained on
+# CONCH v1.0 at 512-dim, but SLIDE_ENCODER_COMPATIBILITY maps it to CONCH1_5
+# which now outputs 768-dim).
+_SLIDE_ENCODER_INPUT_DIM: dict[ModelType, int] = {
+    ModelType.MADELEINE_SLIDE: 512,  # trained on CONCH v1.0 (512-dim), not CONCH1.5 (768-dim)
+}
 
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
+
 
 def _skip_on_load_failure(fn):
     """Decorator: run fn and pytest.skip on any model-load/network error."""
@@ -79,11 +85,12 @@ def _skip_on_load_failure(fn):
             return fn(*args, **kwargs)
         except Exception as exc:
             msg = str(exc).lower()
-            # HF gated model, missing file, or network issues → skip
+            # HF gated model, missing file, network issues, or dynamic module download failures → skip
             if any(kw in msg for kw in [
                 "401", "403", "access", "gated", "permission", "not found",
                 "no such file", "checkpoint", "notimplemented", "cannot open",
                 "connection", "timeout", "huggingface", "hf hub",
+                "no module named 'transformers_modules",
             ]):
                 pytest.skip(f"Model unavailable: {exc}")
             raise  # unexpected error → real failure
@@ -174,7 +181,9 @@ def test_slide_encoder_aggregates_features(tmp_path, slide_model_type, use_gpu):
     - Output can be saved and reloaded as a torch tensor.
     """
     required_patch_enc = get_required_patch_encoder(slide_model_type)
-    patch_dim = _PATCH_ENCODER_DIM.get(required_patch_enc)
+    # Use per-slide-encoder input dim override if available (e.g. MADELEINE was trained
+    # on CONCH v1.0 at 512-dim, not the current CONCH1.5 at 768-dim).
+    patch_dim = _SLIDE_ENCODER_INPUT_DIM.get(slide_model_type) or _PATCH_ENCODER_DIM.get(required_patch_enc)
     if patch_dim is None:
         pytest.skip(f"Feature dim for {required_patch_enc.name} not in _PATCH_ENCODER_DIM")
 

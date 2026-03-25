@@ -18,8 +18,6 @@ dependencies = [
   # NOTE: Upper bound kept in sync with the fastattn extra, which pins transformers==4.36.2
   # and a narrow huggingface-hub range. Relax this once the fastattn stack is updated/tested.
   "transformers<4.46",
-  "transpath@git+https://github.com/msk-mind/TransPath/",
-  "timm_ctranspath@git+https://github.com/msk-mind/timm-ctranspath",
   "shapely>=2.0.7",
   "einops>=0.8.1",
   "einops-exts>=0.0.4",

@@ -16,7 +16,7 @@ import torch.nn as nn
 from huggingface_hub import hf_hub_download
 from timm.data import resolve_data_config
 from timm.data.transforms_factory import create_transform
-from timm.layers import SwiGLUPacked
+from timm.layers import Format, SwiGLUPacked, nchw_to
 from torchvision import transforms
 from transformers import AutoModel
 
@@ -139,7 +139,9 @@ SLIDE_ENCODER_COMPATIBILITY = {
     ModelType.PRISM_SLIDE: ModelType.VIRCHOW,
     ModelType.FEATHER_SLIDE: ModelType.CONCH1_5,
     ModelType.CHIEF_SLIDE: ModelType.CTRANSPATH,
-    ModelType.MADELEINE_SLIDE: ModelType.CONCH1_5,
+    # MADELEINE was trained with CONCH v1.0 (512-dim) features; CLIP is the
+    # available 512-dim encoder in ModelType and is used here as a dimension proxy.
+    ModelType.MADELEINE_SLIDE: ModelType.CLIP,
     # Add more slide encoder -> patch encoder mappings as they become available
 }
 
@@ -941,25 +943,27 @@ class FeatherSlideEncoderModel(TorchModel):
         """
         if model_path is None:
             model_path = ModelType.FEATHER_SLIDE.path
+        import os
+        from huggingface_hub import snapshot_download
         from transformers import AutoModel
+        hf_token = os.environ.get("HF_TOKEN")
         with model_download_lock(model_path) as _:
-            model_obj = AutoModel.from_pretrained(model_path, trust_remote_code=True)
+            local_path = snapshot_download(model_path, token=hf_token)
+            model_obj = AutoModel.from_pretrained(local_path, trust_remote_code=True)
         super().__init__(model_path, model_obj, use_gpu, gpu_device_id)
 
     def get_model_fun(self) -> Callable:
         """Get model inference function for Feather slide encoder.
 
         Returns:
-            Callable that takes patch_features, coords, and patch_size, returns slide-level features.
+            Callable that takes patch_features [B, N, D] and returns slide-level features.
         """
 
-        def model_fun(patch_features, coords, patch_size):
+        def model_fun(patch_features):
             with torch.no_grad(), torch.inference_mode():
                 patch_features = patch_features.to(self.device, non_blocking=True)
-                result = self.obj(patch_features.unsqueeze(0))
-                if isinstance(result, (list, tuple)):
-                    result = result[0]
-                return result.squeeze().cpu()
+                h, _ = self.obj.forward_features(patch_features, return_attention=False)
+                return h.squeeze().cpu()
 
         return model_fun
 
@@ -1024,6 +1028,70 @@ class CHIEFSlideEncoderModel(TorchModel):
         return None
 
 
+class _MadeleineGatedAttnHead(nn.Module):
+    """Single gated-attention head for the Madeleine WSI embedder."""
+
+    def __init__(self, dim: int = 512):
+        super().__init__()
+        self.attention_a = nn.Sequential(nn.Linear(dim, dim), nn.Tanh())
+        self.attention_b = nn.Sequential(nn.Linear(dim, dim), nn.Sigmoid())
+        self.attention_c = nn.Linear(dim, 1)
+
+    def forward(self, h: torch.Tensor) -> torch.Tensor:
+        # h: [B, N, dim]
+        a = self.attention_a(h)
+        b = self.attention_b(h)
+        A = torch.softmax(self.attention_c(a * b), dim=1)  # [B, N, 1]
+        return (A * h).sum(dim=1)                          # [B, dim]
+
+
+class _MadeleineModel(nn.Module):
+    """Minimal MADELEINE architecture matching the MahmoodLab/madeleine checkpoint.
+
+    Architecture (reconstructed from state-dict inspection):
+      - pre_attn MLP: Linear(in_dim→hidden)–Norm–Act–Drop ×2 then Linear(hidden→n_heads*hidden)–Norm
+      - n_heads gated-attention heads, each operating on a hidden-dim slice
+      - projector: Linear(n_heads*hidden → hidden)   [alignment head, unused at inference]
+      - token_projector: Linear(n_heads*hidden → 128) [retrieval embedding, used at inference]
+
+    Note: MADELEINE was trained on CONCH v1.0 features (in_dim=512).
+    """
+
+    def __init__(self, in_dim: int = 512, hidden_dim: int = 512,
+                 n_heads: int = 4, dropout: float = 0.25):
+        super().__init__()
+        expanded = hidden_dim * n_heads
+
+        self.wsi_embedders = nn.ModuleDict({
+            "pre_attn": nn.Sequential(
+                nn.Linear(in_dim, hidden_dim),
+                nn.LayerNorm(hidden_dim),
+                nn.GELU(),
+                nn.Dropout(dropout),
+                nn.Linear(hidden_dim, hidden_dim),
+                nn.LayerNorm(hidden_dim),
+                nn.GELU(),
+                nn.Dropout(dropout),
+                nn.Linear(hidden_dim, expanded),
+                nn.LayerNorm(expanded),
+            ),
+            "attn": nn.ModuleList([_MadeleineGatedAttnHead(hidden_dim) for _ in range(n_heads)]),
+        })
+        self.projector = nn.Linear(expanded, hidden_dim)
+        self.token_projector = nn.Linear(expanded, 128)
+
+    def forward(self, h: torch.Tensor) -> torch.Tensor:
+        # h: [B, N, in_dim]
+        h = self.wsi_embedders["pre_attn"](h)           # [B, N, n_heads*hidden]
+        B, N, D = h.shape
+        n_heads = len(self.wsi_embedders["attn"])
+        head_dim = D // n_heads
+        h = h.view(B, N, n_heads, head_dim)
+        heads = [self.wsi_embedders["attn"][i](h[:, :, i, :]) for i in range(n_heads)]
+        feats = torch.cat(heads, dim=-1)                 # [B, n_heads*hidden]
+        return self.token_projector(feats)               # [B, 128]
+
+
 class MadeleineSlideEncoderModel(TorchModel):
     def __init__(
         self,
@@ -1033,35 +1101,50 @@ class MadeleineSlideEncoderModel(TorchModel):
     ):
         """Initialize Madeleine slide encoder model.
 
-        Madeleine (MahmoodLab/madeleine) is a multimodal slide encoder that aggregates
-        CONCH 1.5 patch features into slide-level representations.
+        Madeleine (MahmoodLab/madeleine) is a multimodal slide encoder trained on
+        CONCH v1.0 patch features (512-dim).  The repo provides a raw ``model.pt``
+        state-dict (DDP-wrapped) rather than a standard HuggingFace model, so we
+        build the architecture explicitly and load the weights manually.
 
         Args:
-            model_path: HuggingFace repo ID or local directory.
+            model_path: HuggingFace repo ID (``MahmoodLab/madeleine``) or local
+                directory containing ``model.pt`` and ``model_config.json``.
             use_gpu: Whether to use GPU (default: True).
             gpu_device_id: GPU device ID or list of IDs for multi-GPU (default: None).
         """
+        import json, os
         if model_path is None:
             model_path = ModelType.MADELEINE_SLIDE.path
-        from transformers import AutoModel
+
+        hf_token = os.environ.get("HF_TOKEN")
         with model_download_lock(model_path) as _:
-            model_obj = AutoModel.from_pretrained(model_path, trust_remote_code=True)
+            cfg_path = hf_hub_download(model_path, "model_config.json", token=hf_token)
+            pt_path  = hf_hub_download(model_path, "model.pt",          token=hf_token)
+
+        cfg = json.load(open(cfg_path))
+        model_obj = _MadeleineModel(
+            in_dim=cfg.get("patch_embedding_dim", 512),
+            hidden_dim=cfg.get("wsi_encoder_hidden_dim", 512),
+            n_heads=cfg.get("n_heads", 4),
+        )
+        # Checkpoint was saved with DDP wrapper — strip the "module." prefix
+        state_dict = torch.load(pt_path, map_location="cpu", weights_only=False)
+        state_dict = {k[len("module."):]: v for k, v in state_dict.items()}
+        model_obj.load_state_dict(state_dict, strict=True)
+        model_obj.eval()
         super().__init__(model_path, model_obj, use_gpu, gpu_device_id)
 
     def get_model_fun(self) -> Callable:
         """Get model inference function for Madeleine slide encoder.
 
         Returns:
-            Callable that takes patch_features, coords, and patch_size, returns slide-level features.
+            Callable that takes patch_features [B, N, D] and returns slide-level features [B, 128].
         """
 
-        def model_fun(patch_features, coords, patch_size):
+        def model_fun(patch_features):
             with torch.no_grad(), torch.inference_mode():
                 patch_features = patch_features.to(self.device, non_blocking=True)
-                result = self.obj(patch_features.unsqueeze(0))
-                if isinstance(result, (list, tuple)):
-                    result = result[0]
-                return result.squeeze().cpu()
+                return self.obj(patch_features).squeeze().cpu()
 
         return model_fun
 
@@ -1070,7 +1153,7 @@ class MadeleineSlideEncoderModel(TorchModel):
         return None
 
     def save(self, save_path: str):
-        """Save Madeleine slide encoder model to disk using HuggingFace's save_pretrained.
+        """Save Madeleine slide encoder model to disk.
 
         Args:
             save_path: Path to save the model (must be a directory, not a file).
@@ -1083,8 +1166,7 @@ class MadeleineSlideEncoderModel(TorchModel):
                 f"MADELEINE_SLIDE model must be saved to a directory, not a file ({save_path})."
             )
         Path(save_path).mkdir(parents=True, exist_ok=True)
-        model_to_save = self.obj.module if hasattr(self.obj, "module") else self.obj
-        model_to_save.save_pretrained(save_path)
+        torch.save(self.obj.state_dict(), Path(save_path) / "model.pt")
         logger.info(f"Saved Madeleine slide encoder to {save_path}")
 
 
@@ -1350,6 +1432,63 @@ class ClipModel(TorchModel):
         return self.preprocessing
 
 
+class _ConvStem(nn.Module):
+    """ConvStem patch embedding for CTransPath (Xiyue-Wang/TransPath).
+
+    Reimplements the custom embed layer from the original TransPath repo using
+    native timm (>= 0.9).  Modern timm's SwinTransformer passes
+    ``output_fmt='NHWC'`` to the embed layer and reads ``patch_embed.grid_size``,
+    so this class mirrors the ``PatchEmbed`` interface.
+    """
+
+    def __init__(
+        self,
+        img_size=224,
+        patch_size=4,
+        in_chans=3,
+        embed_dim=768,
+        norm_layer=None,
+        flatten=True,
+        output_fmt=None,
+        **kwargs,
+    ):
+        super().__init__()
+        assert patch_size == 4
+        assert embed_dim % 8 == 0
+        img_size = (img_size, img_size) if isinstance(img_size, int) else tuple(img_size)
+        patch_size_t = (patch_size, patch_size) if isinstance(patch_size, int) else tuple(patch_size)
+        self.img_size = img_size
+        self.patch_size = patch_size_t
+        self.grid_size = (img_size[0] // patch_size_t[0], img_size[1] // patch_size_t[1])
+        self.num_patches = self.grid_size[0] * self.grid_size[1]
+        if output_fmt is not None:
+            self.flatten = False
+            self.output_fmt = Format(output_fmt)
+        else:
+            self.flatten = flatten
+            self.output_fmt = Format.NCHW
+        stem: List[nn.Module] = []
+        input_dim, output_dim = 3, embed_dim // 8
+        for _ in range(2):
+            stem += [
+                nn.Conv2d(input_dim, output_dim, 3, stride=2, padding=1, bias=False),
+                nn.BatchNorm2d(output_dim),
+                nn.ReLU(inplace=True),
+            ]
+            input_dim, output_dim = output_dim, output_dim * 2
+        stem.append(nn.Conv2d(input_dim, embed_dim, 1))
+        self.proj = nn.Sequential(*stem)
+        self.norm = norm_layer(embed_dim) if norm_layer else nn.Identity()
+
+    def forward(self, x):
+        x = self.proj(x)
+        if self.flatten:
+            x = x.flatten(2).transpose(1, 2)  # NCHW -> NLC
+        elif self.output_fmt != Format.NCHW:
+            x = nchw_to(x, self.output_fmt)  # e.g. NHWC for SwinTransformer
+        return self.norm(x)
+
+
 class TransPathModel(TorchModel):
     def __init__(
         self,
@@ -1369,14 +1508,23 @@ class TransPathModel(TorchModel):
         """
         if model_path is None:
             raise ValueError("model_path must be provided for TransPath model")
-        from transpath.ctran import ctranspath
 
-        model_obj = ctranspath()
-        model_obj.head = nn.Identity()
+        model_obj = timm.create_model(
+            "swin_tiny_patch4_window7_224",
+            embed_layer=_ConvStem,
+            pretrained=False,
+            num_classes=0,
+        )
         td = torch.load(model_path, weights_only=True)
-        model_obj.load_state_dict(td["model"], strict=True)
-        # ctranspath() module has required torch transforms built in so
-        # preprocessing should be None here
+        # strict=False: old checkpoints contain non-persistent buffers
+        # (e.g. relative_position_index) that new timm no longer stores.
+        # We verify no parameter/buffer keys are missing from the model.
+        result = model_obj.load_state_dict(td["model"], strict=False)
+        missing = [k for k in result.missing_keys if not k.endswith("num_batches_tracked")]
+        if missing:
+            raise RuntimeError(f"TransPath checkpoint is missing keys: {missing}")
+        # ctranspath uses standard ImageNet normalization — preprocessing is
+        # handled by the feature-extraction pipeline (preprocessing=None → ImageNet default)
         super().__init__(model_path, model_obj, use_gpu, gpu_device_id)
 
 
@@ -1608,25 +1756,49 @@ class GPFMModel(TorchModel):
     ):
         """Initialize GPFM model.
 
+        GPFM (majiabo/GPFM) is a ViT-L/14 model whose HF repo only contains a raw
+        ``GPFM.pth`` state-dict (no timm config.json).  We create the architecture
+        explicitly and load the weights manually.
+
         Args:
-            model_path: Path to model file or HuggingFace repo ID.
+            model_path: Path to a local ``.pth`` file or HuggingFace repo ID
+                (``hf-hub:majiabo/GPFM``).
             use_gpu: Whether to use GPU (default: True).
             gpu_device_id: GPU device ID or list of IDs for multi-GPU (default: None).
         """
+        import os
         if model_path is None:
             model_path = ModelType.GPFM.path
-        model_obj = None
+
         if model_path.startswith("hf-hub:"):
-            model_obj = timm.create_model(model_path, pretrained=True)
+            repo_id = model_path[len("hf-hub:"):]
+            hf_token = os.environ.get("HF_TOKEN")
+            with model_download_lock(model_path) as _:
+                pth_path = hf_hub_download(repo_id, "GPFM.pth", token=hf_token)
+        else:
+            pth_path = model_path
+
+        # GPFM is a ViT-L/14 trained at 224px
+        # (embed_dim=1024, depth=24, num_heads=16, patch_size=14, img_size=224 → 257 pos tokens)
+        model_obj = timm.create_model(
+            "vit_large_patch14_dinov2",
+            pretrained=False,
+            num_classes=0,
+            img_size=224,
+        )
+        state_dict = torch.load(pth_path, map_location="cpu", weights_only=True)
+        model_obj.load_state_dict(state_dict, strict=True)
         super().__init__(model_path, model_obj, use_gpu, gpu_device_id)
 
     def get_preprocessing_fun(self) -> Callable:
-        """Get preprocessing transforms for GPFM.
+        """Get preprocessing transforms for GPFM (224px input).
 
-        Returns:
-            Preprocessing transforms resolved from model config.
+        GPFM was trained at 224px despite being based on a DINOv2 ViT-L/14 architecture
+        (which defaults to 518px). Override input_size to match training.
         """
-        return create_transform(**resolve_data_config(self.obj.pretrained_cfg, model=self.obj))
+        cfg = resolve_data_config(self.obj.pretrained_cfg, model=self.obj)
+        cfg["input_size"] = (3, 224, 224)
+        return create_transform(**cfg)
 
 
 class HibouLModel(TorchModel):

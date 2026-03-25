@@ -50,7 +50,7 @@ PyTorch is required for the following patch encoders:
 | Model | `model_type` | Access | HuggingFace |
 |---|---|---|---|
 | ResNet-50 | `RESNET50` | public | built-in (torchvision) |
-| TransPath | `CTRANSPATH` | local ckpt | [Xiyue-Wang/TransPath](https://github.com/Xiyue-Wang/TransPath) |
+| TransPath | `CTRANSPATH` | ⬇ manual | [Xiyue-Wang/TransPath](https://github.com/Xiyue-Wang/TransPath) |
 | OpenCLIP | `CLIP` | public | [wisdomik/QuiltNet-B-16-PMB](https://huggingface.co/wisdomik/QuiltNet-B-16-PMB) |
 | Phikon | `PHIKON` | public | [owkin/phikon](https://huggingface.co/owkin/phikon) |
 | Phikon-v2 | `PHIKON_V2` | public | [owkin/phikon-v2](https://huggingface.co/owkin/phikon-v2) |
@@ -75,12 +75,23 @@ And the following slide encoders (aggregate patch features into a single slide e
 | TITAN | `TITAN_SLIDE` | `CONCH1_5` | 🔒 gated | [MahmoodLab/TITAN](https://huggingface.co/MahmoodLab/TITAN) |
 | PRISM | `PRISM_SLIDE` | `VIRCHOW` | 🔒 gated | [paige-ai/Prism](https://huggingface.co/paige-ai/Prism) |
 | FEATHER | `FEATHER_SLIDE` | `CONCH1_5` | 🔒 gated | [MahmoodLab/abmil.base.conch_v15.pc108-24k](https://huggingface.co/MahmoodLab/abmil.base.conch_v15.pc108-24k) |
-| MADELEINE | `MADELEINE_SLIDE` | `CONCH1_5` | 🔒 gated | [MahmoodLab/madeleine](https://huggingface.co/MahmoodLab/madeleine) |
-| CHIEF | `CHIEF_SLIDE` | `CTRANSPATH` | local ckpt | — |
+| MADELEINE | `MADELEINE_SLIDE` | `CLIP` | 🔒 gated | [MahmoodLab/madeleine](https://huggingface.co/MahmoodLab/madeleine) |
+| CHIEF | `CHIEF_SLIDE` | `CTRANSPATH` | ⬇ manual | [hms-dbmi/CHIEF](https://github.com/hms-dbmi/CHIEF) |
 
 **🔒 Gated models** require signing an access agreement on the HuggingFace model page and setting your token:
 ```bash
 export HF_TOKEN=hf_...
+```
+
+**⬇ Models requiring manual download** cannot be fetched automatically. Download the checkpoint file and pass its path as `model_path=`:
+
+| Model | Download | File |
+|---|---|---|
+| TransPath (`CTRANSPATH`) | [Google Drive](https://drive.google.com/file/d/1DoDx_70_TLj98gTf6YTXnu4tFhsFocDX/view) via [Xiyue-Wang/TransPath](https://github.com/Xiyue-Wang/TransPath) | `ctranspath.pth` |
+| CHIEF (`CHIEF_SLIDE`) | [hms-dbmi/CHIEF releases](https://github.com/hms-dbmi/CHIEF/releases) | `chief.pth` (or as named in the release) |
+
+```bash
+extract_features slide_path=slide.svs model_type=CTRANSPATH model_path=/path/to/ctranspath.pth
 ```
 
 #### TensorFlow
