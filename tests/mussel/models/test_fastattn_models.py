@@ -1,10 +1,10 @@
 """Integration tests for fastattn-based models (requires ``--extra fastattn``).
 
-Run via SLURM (see ``tests/slurm/test_fastattn.sh``) or manually after installing
+Run via SLURM (see ``tests/slurm/run_fastattn.sh``) or manually after installing
 the fastattn extra:
 
-    UV_PROJECT_ENVIRONMENT=.venv-fastattn uv sync --extra fastattn
-    UV_PROJECT_ENVIRONMENT=.venv-fastattn uv run pytest \\
+    UV_PROJECT_ENVIRONMENT=~/venvs/mussel-fastattn uv sync --extra fastattn
+    UV_PROJECT_ENVIRONMENT=~/venvs/mussel-fastattn uv run pytest \\
         tests/mussel/models/test_fastattn_models.py --use-gpu -v
 
 These tests are skipped automatically when gigapath is not installed.
@@ -12,6 +12,7 @@ These tests are skipped automatically when gigapath is not installed.
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 import numpy as np
@@ -19,7 +20,26 @@ import pytest
 
 gigapath = pytest.importorskip("gigapath", reason="fastattn extra not installed")
 
-from mussel.models.model_factory import ModelType, get_required_patch_encoder
+# Skip this entire module if flash-attn's CUDA extension can't load (e.g. GLIBC
+# version mismatch on the compute node).  The slide_encoder sub-module triggers
+# that import; the top-level gigapath package does not.
+try:
+    import gigapath.slide_encoder as _slide_encoder  # noqa: F401
+    _HAS_SLIDE_ENCODER = True
+except (ImportError, RuntimeError) as _exc:
+    _HAS_SLIDE_ENCODER = False
+    _SLIDE_ENCODER_SKIP_REASON = f"gigapath.slide_encoder not available: {_exc}"
+
+# Verify that torch/numpy interop works (torch 2.1.2 requires numpy<2).
+import torch as _torch
+try:
+    _torch.zeros(1).numpy()
+    _HAS_TORCH_NUMPY = True
+except Exception as _exc:
+    _HAS_TORCH_NUMPY = False
+    _TORCH_NUMPY_SKIP_REASON = f"torch/numpy incompatibility: {_exc}"
+
+from mussel.models.model_factory import ModelType
 from mussel.utils.feature_extract import extract_patch_features, _apply_slide_aggregation
 
 # ---------------------------------------------------------------------------
@@ -50,6 +70,9 @@ def test_gigapath_patch_encoder_extracts_features(tmp_path, use_gpu):
     - Feature dimension is 1536.
     - Features are finite and non-zero.
     """
+    if not _HAS_TORCH_NUMPY:
+        pytest.skip(_TORCH_NUMPY_SKIP_REASON)
+
     output_h5 = str(tmp_path / "GIGAPATH.h5")
 
     extract_patch_features(
@@ -88,6 +111,8 @@ def test_gigapath_slide_encoder_aggregates_features(tmp_path, use_gpu):
     Checks:
     - Output is a 1-D finite non-zero numpy array.
     """
+    if not _HAS_SLIDE_ENCODER:
+        pytest.skip(_SLIDE_ENCODER_SKIP_REASON)
     rng = np.random.default_rng(42)
     n_patches, patch_size_native = 32, 512
     fake_features = rng.standard_normal((n_patches, _GIGAPATH_PATCH_DIM)).astype(np.float32)
@@ -118,6 +143,10 @@ def test_gigapath_slide_encoder_aggregates_features(tmp_path, use_gpu):
 @pytest.mark.timeout(900)
 def test_gigapath_end_to_end(tmp_path, use_gpu):
     """End-to-end: patch encode with GIGAPATH then slide aggregate with GIGAPATH_SLIDE."""
+    if not _HAS_TORCH_NUMPY:
+        pytest.skip(_TORCH_NUMPY_SKIP_REASON)
+    if not _HAS_SLIDE_ENCODER:
+        pytest.skip(_SLIDE_ENCODER_SKIP_REASON)
     output_h5 = str(tmp_path / "GIGAPATH_e2e.h5")
 
     extract_patch_features(
