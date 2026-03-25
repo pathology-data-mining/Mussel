@@ -5,8 +5,8 @@
 #   sbatch tests/slurm/run_fastattn.sh
 #
 # Note: fastattn pins torch==2.1.2 and requires flash-attn compiled for your
-# CUDA version. The job installs into an isolated venv at ~/venvs/mussel-fastattn
-# to avoid conflicts with the main torch-gpu environment.
+# CUDA version. A dedicated venv is created at ~/venvs/mussel-fastattn to
+# avoid conflicts with the main torch-gpu environment.
 #
 # Logs go to ~/logs/slurm/ (writable from all compute nodes).
 #
@@ -19,14 +19,17 @@
 
 set -euo pipefail
 
-REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+# $SLURM_SUBMIT_DIR is the directory from which sbatch was called (repo root).
+# Fallback for running the script interactively.
+REPO_DIR="${SLURM_SUBMIT_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)}"
 cd "$REPO_DIR"
 
-# Redirect output to $HOME which is writable from compute nodes
+# Redirect output to $HOME which is writable from all compute nodes.
 mkdir -p "$HOME/logs/slurm"
 exec > >(tee "$HOME/logs/slurm/test_fastattn_${SLURM_JOB_ID:-local}.log") 2>&1
 
 echo "=== mussel fastattn model tests ==="
+echo "Repo:   $REPO_DIR"
 echo "Node:   $(hostname)"
 echo "GPUs:   ${CUDA_VISIBLE_DEVICES:-<unset>}"
 echo "Python: $(python3 --version 2>&1)"
@@ -42,8 +45,8 @@ if [[ -z "${HF_TOKEN:-}" ]]; then
     echo "WARNING: HF_TOKEN not set — prov-gigapath/prov-gigapath is gated and will fail."
 fi
 
-# Use an isolated venv in $HOME to avoid conflicts with the main torch-gpu environment
-# and to ensure the venv is writable from compute nodes.
+# Use an isolated venv in $HOME to avoid conflicts with the main torch-gpu
+# environment and to ensure the venv is writable from compute nodes.
 # flash-attn must be compiled for the CUDA version on this node; set
 # FLASH_ATTENTION_SKIP_CUDA_BUILD=0 to allow recompilation if needed.
 export UV_PROJECT_ENVIRONMENT="$HOME/venvs/mussel-fastattn"

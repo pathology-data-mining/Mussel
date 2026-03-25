@@ -17,14 +17,17 @@
 
 set -euo pipefail
 
-REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+# $SLURM_SUBMIT_DIR is the directory from which sbatch was called (repo root).
+# Fallback for running the script interactively.
+REPO_DIR="${SLURM_SUBMIT_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)}"
 cd "$REPO_DIR"
 
-# Redirect output to $HOME which is writable from compute nodes
+# Redirect output to $HOME which is writable from all compute nodes.
 mkdir -p "$HOME/logs/slurm"
 exec > >(tee "$HOME/logs/slurm/test_tensorflow_${SLURM_JOB_ID:-local}.log") 2>&1
 
 echo "=== mussel TensorFlow model tests ==="
+echo "Repo:   $REPO_DIR"
 echo "Node:   $(hostname)"
 echo "GPUs:   ${CUDA_VISIBLE_DEVICES:-<unset>}"
 echo "Python: $(python3 --version 2>&1)"
@@ -36,8 +39,8 @@ if [[ -f ~/.hf_cred.env ]]; then
     source ~/.hf_cred.env
 fi
 
-# Use an isolated venv in $HOME to avoid conflicts with the main torch-gpu environment
-# and to ensure the venv is writable from compute nodes.
+# Use an isolated venv in $HOME to avoid conflicts with the main torch-gpu
+# environment and to ensure the venv is writable from compute nodes.
 export UV_PROJECT_ENVIRONMENT="$HOME/venvs/mussel-tensorflow"
 
 echo "--- Installing tensorflow-gpu extra into ${UV_PROJECT_ENVIRONMENT} ---"
