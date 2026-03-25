@@ -1008,45 +1008,58 @@ class _AttnNetGated(nn.Module):
         return self.attention_c(A), x  # (N,1), (N,L)
 
 
+class _CHIEFAttHead(nn.Module):
+    """Attention head used by CHIEF — named fc1/fc2 to match checkpoint keys."""
+
+    def __init__(self, L: int, D: int):
+        super().__init__()
+        self.fc1 = nn.Linear(L, D)
+        self.fc2 = nn.Linear(D, 1)
+
+    def forward(self, x):
+        return torch.sigmoid(self.fc2(torch.relu(self.fc1(x))))
+
+
 class _CHIEFSlideModel(nn.Module):
     """CHIEF WSI-level encoder (size_arg='small', hms-dbmi/CHIEF).
 
-    Reproduces the CHIEF class from the original repo without the
-    ``torch.load('./model_weight/Text_emdding.pth')`` call in ``__init__``
-    (the organ_embedding is already stored in the pretrained checkpoint).
+    Module structure mirrors the checkpoint key layout exactly:
+      attention_net = Sequential(Linear@0, ReLU@1, Dropout@2, AttnNetGated@3)
+      att_head      = _CHIEFAttHead (fc1, fc2)
 
     Input:  patch features  [N, 768]  (from CTRANSPATH)
-    Output: slide embedding [1, 768]  (``result['WSI_feature']``, attention-pooled)
+    Output: slide embedding [1, 768]  (attention-pooled original patch features)
     """
 
     def __init__(self, n_classes: int = 2, dropout: bool = True):
         super().__init__()
-        # size_arg="small" → [768, 512, 256]
         L_in, L_hidden, D_attn = 768, 512, 256
-        self.fc = nn.Sequential(
+        # attention_net indices match checkpoint: 0=Linear, 1=ReLU, 2=Dropout, 3=AttnNetGated
+        self.attention_net = nn.Sequential(
             nn.Linear(L_in, L_hidden),
             nn.ReLU(),
-            *([] if not dropout else [nn.Dropout(0.25)]),
+            nn.Dropout(0.25) if dropout else nn.Identity(),
+            _AttnNetGated(L=L_hidden, D=D_attn, dropout=dropout),
         )
-        self.attention_net = _AttnNetGated(L=L_hidden, D=D_attn, dropout=dropout)
         self.classifiers = nn.Linear(L_hidden, n_classes)
         self.instance_classifiers = nn.ModuleList(
             [nn.Linear(L_hidden, 2) for _ in range(n_classes)]
         )
-        self.att_head = nn.Sequential(nn.Linear(L_hidden, D_attn), nn.ReLU(), nn.Sigmoid())
+        self.att_head = _CHIEFAttHead(L_hidden, D_attn)
         self.text_to_vision = nn.Sequential(
             nn.Linear(768, L_hidden), nn.ReLU(), nn.Dropout(p=0.25)
         )
-        # Placeholder; overwritten by load_state_dict from checkpoint
         self.register_buffer("organ_embedding", torch.zeros(19, 768))
 
-    def forward(self, h, anatomical_site: int = 0):
-        h_ori = h
-        h_proj = self.fc(h)
-        A, h_proj = self.attention_net(h_proj)
+    def forward(self, h):
+        h_ori = h.float()
+        # Run fc layers then gated attention manually (Sequential can't return tuples)
+        h_proj = self.attention_net[0](h_ori)
+        h_proj = self.attention_net[1](h_proj)
+        h_proj = self.attention_net[2](h_proj)
+        A, _ = self.attention_net[3](h_proj)
         A = torch.softmax(A.transpose(1, 0), dim=1)  # [1, N]
-        slide_embeddings = torch.mm(A, h_ori)  # [1, 768]
-        return slide_embeddings
+        return torch.mm(A, h_ori)  # [1, 768]
 
 
 class CHIEFSlideEncoderModel(TorchModel):
@@ -1108,11 +1121,12 @@ class CHIEFSlideEncoderModel(TorchModel):
 
     def get_model_fun(self):
         """Return callable that aggregates patch features into a slide embedding."""
-        model = self.obj
 
         def model_fun(features_tensor):
             with torch.no_grad():
-                return model(features_tensor).squeeze().cpu()
+                # features_tensor arrives as [1, N, D] (batch dim from _apply_slide_aggregation)
+                h = features_tensor.squeeze(0).to(self.device, non_blocking=True).float()
+                return self.obj(h).squeeze().cpu()
 
         return model_fun
 
@@ -1236,7 +1250,7 @@ class MadeleineSlideEncoderModel(TorchModel):
 
         def model_fun(patch_features):
             with torch.no_grad(), torch.inference_mode():
-                patch_features = patch_features.to(self.device, non_blocking=True)
+                patch_features = patch_features.to(self.device, non_blocking=True).float()
                 return self.obj(patch_features).squeeze().cpu()
 
         return model_fun
@@ -1613,10 +1627,18 @@ class TransPathModel(TorchModel):
             num_classes=0,
         )
         td = torch.load(model_path, weights_only=True)
-        # strict=False: old checkpoints contain non-persistent buffers
+        # Remap downsample key indices: old timm placed the PatchMerging at the
+        # END of stage i (layers.{i}.downsample), new timm places it at the
+        # START of stage i+1 (layers.{i+1}.downsample).
+        import re as _re
+        remapped = {}
+        for k, v in td["model"].items():
+            m = _re.match(r"^layers\.(\d+)\.(downsample\..+)$", k)
+            remapped[f"layers.{int(m.group(1))+1}.{m.group(2)}" if m else k] = v
+        # strict=False: old checkpoints may contain non-persistent buffers
         # (e.g. relative_position_index) that new timm no longer stores.
-        # We verify no parameter/buffer keys are missing from the model.
-        result = model_obj.load_state_dict(td["model"], strict=False)
+        # Missing keys are checked to ensure all model parameters are covered.
+        result = model_obj.load_state_dict(remapped, strict=False)
         missing = [k for k in result.missing_keys if not k.endswith("num_batches_tracked")]
         if missing:
             raise RuntimeError(f"TransPath checkpoint is missing keys: {missing}")

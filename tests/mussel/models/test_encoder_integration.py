@@ -91,6 +91,9 @@ def _skip_on_load_failure(fn):
                 "no such file", "checkpoint", "notimplemented", "cannot open",
                 "connection", "timeout", "huggingface", "hf hub",
                 "no module named 'transformers_modules",
+                "no module named 'tensorflow",
+                "no module named 'fastattn",
+                "no module named 'gigapath",
             ]):
                 pytest.skip(f"Model unavailable: {exc}")
             raise  # unexpected error → real failure
