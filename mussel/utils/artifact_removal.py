@@ -74,9 +74,11 @@ class GrandQCArtifactRemover:
         remove_penmarks_only: bool = False,
         device: Optional[str] = None,
         batch_size: int = 8,
+        max_input_mpp: float = 8.0,
     ) -> None:
         self.remove_penmarks_only = remove_penmarks_only
         self.batch_size = batch_size
+        self.max_input_mpp = max_input_mpp
         self._device: Optional[str] = device
         self._model = None
         self._transforms = None
@@ -156,10 +158,19 @@ class GrandQCArtifactRemover:
         h, w = img.shape[:2]
         img_rgb = img[:, :, :3]  # drop alpha channel if present
 
-        # Rescale thumbnail to GrandQC's training resolution (1 µm/px = 10×).
+        scale = mpp / _GRANDQC_TARGET_MPP
+        if scale > self.max_input_mpp / _GRANDQC_TARGET_MPP:
+            logger.warning(
+                "GrandQCArtifactRemover: input MPP %.2f µm/px is %.1f× coarser than "
+                "the model's target %.1f µm/px (max_input_mpp=%.1f). "
+                "The thumbnail lacks sufficient detail for reliable artifact detection. "
+                "Returning original mask unchanged. Pass a thumbnail at ≤ %.1f µm/px.",
+                mpp, scale, _GRANDQC_TARGET_MPP, self.max_input_mpp, self.max_input_mpp,
+            )
+            return mask.copy()
+
         # scale < 1 → img is higher-res than target → downsample (INTER_AREA).
         # scale > 1 → img is lower-res than target → upsample (INTER_LINEAR).
-        scale = mpp / _GRANDQC_TARGET_MPP
         if abs(scale - 1.0) > 0.05:
             proc_h = max(1, round(h * scale))
             proc_w = max(1, round(w * scale))

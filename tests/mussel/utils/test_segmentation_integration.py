@@ -90,7 +90,7 @@ def test_neural_segmentation_produces_valid_patches(tmp_path, use_gpu):
 
     with h5py.File(output_h5, "r") as f:
         h5_coords = f["coords"][:]
-        seg_model_attr = f.attrs.get("seg_model", "")
+        seg_model_attr = f["coords"].attrs.get("seg_model", "")
 
     assert seg_model_attr == "neural", (
         f"Expected seg_model='neural' in HDF5 attrs, got {seg_model_attr!r}"
@@ -233,7 +233,12 @@ def test_grandqc_artifact_remover_integrated_with_segment_tissue(tmp_path, use_g
     n_removed = len(_unpack_segment_result(with_removal) or [])
 
     assert n_baseline > 0, "Baseline produced no patches"
-    assert n_removed > 0, "Artifact removal zeroed all patches on a clean slide"
+    assert n_removed > 0, (
+        "Artifact removal zeroed all patches — if the seg_level thumbnail is too coarse "
+        "for GrandQC (> max_input_mpp), the mask is returned unchanged so this should not happen"
+    )
+    # Removal can only subtract; if the thumbnail was too coarse for GrandQC the
+    # remover returns the mask unchanged (n_removed == n_baseline is valid).
     assert n_removed <= n_baseline, (
         f"Artifact removal produced MORE patches than baseline "
         f"({n_removed} > {n_baseline})"
