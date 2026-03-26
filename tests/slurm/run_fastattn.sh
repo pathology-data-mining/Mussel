@@ -56,9 +56,7 @@ uv sync --extra fastattn
 # using the system CUDA toolkit and GCC; the resulting .so will be linked
 # against glibc 2.28 and will persist in the venv for future runs.
 # ---------------------------------------------------------------------------
-VENV_PYTHON="${UV_PROJECT_ENVIRONMENT}/bin/python"
-
-if ! "$VENV_PYTHON" -c "import flash_attn" 2>/dev/null; then
+if ! "${UV_PROJECT_ENVIRONMENT}/bin/python" -c "import flash_attn" 2>/dev/null; then
     echo ""
     echo "--- Pre-built flash-attn incompatible (likely GLIBC mismatch); compiling from source ---"
     echo "    MAX_JOBS=${MAX_JOBS}  (parallel ninja workers)"
@@ -75,13 +73,13 @@ if ! "$VENV_PYTHON" -c "import flash_attn" 2>/dev/null; then
     echo "    CUDA_HOME=${CUDA_HOME}"
     nvcc --version | head -1
 
-    # Install flash-attn from source.  --no-build-isolation uses the venv's
-    # torch so setup.py can probe the CUDA arch list automatically.
-    # Use "python -m pip" since uv venvs don't always install the pip script.
-    "$VENV_PYTHON" -m pip install "flash-attn==2.5.9" \
+    # Install flash-attn from source.  --no-build-isolation lets setup.py use
+    # the venv's torch to auto-detect CUDA arch.  UV_PROJECT_ENVIRONMENT is
+    # already exported so 'uv pip install' targets the correct venv.
+    uv pip install "flash-attn==2.5.9" \
         --no-build-isolation \
-        --force-reinstall \
-        --no-binary :all: \
+        --reinstall-package flash-attn \
+        --no-binary flash-attn \
         --verbose
     echo "--- flash-attn compiled from source ---"
 fi
