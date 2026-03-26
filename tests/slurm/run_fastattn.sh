@@ -1,12 +1,15 @@
 #!/bin/bash
-# SLURM job: integration tests for fastattn-based models (Prov-GigaPath slide encoder).
+# SLURM job: integration tests for fastattn-based models (Prov-GigaPath).
 #
 # Submit from the repo root:
 #   sbatch tests/slurm/run_fastattn.sh
 #
-# On first run the job will compile flash-attn from source (~15 min) if the
-# pre-built wheel is incompatible with the cluster's GLIBC.  Subsequent runs
-# reuse the compiled .so and skip compilation entirely.
+# GLIBC compatibility strategy (RHEL 8, GLIBC 2.28):
+#   The pre-built flash_attn_2_cuda.so requires GLIBC_2.32 (__libc_single_threaded)
+#   and GLIBCXX_3.4.29 / CXXABI_1.3.13 (from libstdc++).  We satisfy these via:
+#     - LD_PRELOAD: ~/libcompat/libglibc_compat.so  (provides __libc_single_threaded@GLIBC_2.32)
+#     - LD_LIBRARY_PATH: NVIDIA Nsight's bundled libstdc++ (has GLIBCXX_3.4.30, CXXABI_1.3.13)
+#   The compat stub is built on first run and cached at ~/libcompat/.
 #
 # Logs go to ~/logs/slurm/ (writable from all compute nodes).
 #
@@ -15,7 +18,7 @@
 #SBATCH --gres=gpu:1
 #SBATCH --cpus-per-task=4
 #SBATCH --mem=32G
-#SBATCH --time=3:00:00
+#SBATCH --time=2:00:00
 
 set -euo pipefail
 
@@ -42,47 +45,62 @@ if [[ -z "${HF_TOKEN:-}" ]]; then
 fi
 
 export UV_PROJECT_ENVIRONMENT="$HOME/venvs/mussel-fastattn"
-# Allow flash-attn source compilation in parallel
-export MAX_JOBS="${SLURM_CPUS_PER_TASK:-4}"
 
 echo "--- Installing fastattn extra into ${UV_PROJECT_ENVIRONMENT} ---"
 uv sync --extra fastattn
 
 # ---------------------------------------------------------------------------
-# flash-attn source compilation fallback
+# GLIBC / libstdc++ compatibility shims
 #
-# Pre-built wheels from the lock file target glibc >= 2.32 (Ubuntu 20.04+).
-# RHEL 8 nodes have glibc 2.28.  If the binary can't load, recompile it here
-# using the system CUDA toolkit and GCC; the resulting .so will be linked
-# against glibc 2.28 and will persist in the venv for future runs.
+# The pre-built flash_attn_2_cuda.so requires:
+#   - __libc_single_threaded@GLIBC_2.32  (in libc.so.6 >= 2.32)
+#   - GLIBCXX_3.4.29 / CXXABI_1.3.13    (in libstdc++.so.6 from GCC 11+)
+#
+# On RHEL 8 (GLIBC 2.28, GCC 8.5) we provide these as follows:
+#   1. Build a tiny stub library that exports __libc_single_threaded@GLIBC_2.32
+#      (safe to set to 0 = multi-threaded; only disables a micro-optimisation)
+#   2. Prepend NVIDIA Nsight's newer libstdc++ (ships with CUDA toolkit) via
+#      LD_LIBRARY_PATH so the dynamic linker finds GLIBCXX_3.4.29+
 # ---------------------------------------------------------------------------
-if ! "${UV_PROJECT_ENVIRONMENT}/bin/python" -c "import flash_attn" 2>/dev/null; then
+COMPAT_DIR="$HOME/libcompat"
+COMPAT_SO="$COMPAT_DIR/libglibc_compat.so"
+NSIGHT_LIBDIR="/opt/nvidia/nsight-systems/2024.4.2/host-linux-x64"
+
+if [[ ! -f "$COMPAT_SO" ]]; then
     echo ""
-    echo "--- Pre-built flash-attn incompatible (likely GLIBC mismatch); compiling from source ---"
-    echo "    MAX_JOBS=${MAX_JOBS}  (parallel ninja workers)"
+    echo "--- Building GLIBC compat stub (one-time) ---"
+    mkdir -p "$COMPAT_DIR"
 
-    # Prefer the highest available CUDA version so the compiled extension
-    # is compatible with the runtime driver.
-    for CUDA_VER in 12.3 12 11.8; do
-        if [[ -x "/usr/local/cuda-${CUDA_VER}/bin/nvcc" ]]; then
-            export CUDA_HOME="/usr/local/cuda-${CUDA_VER}"
-            break
-        fi
-    done
-    export PATH="${CUDA_HOME}/bin:${PATH}"
-    echo "    CUDA_HOME=${CUDA_HOME}"
-    nvcc --version | head -1
+    cat > "$COMPAT_DIR/glibc_compat.c" << 'CEOF'
+/* Provides __libc_single_threaded@GLIBC_2.32 on GLIBC < 2.32 nodes.
+   Value 0 (multi-threaded) is conservative and always safe. */
+volatile int __libc_single_threaded = 0;
+CEOF
 
-    # Install flash-attn from source.  --no-build-isolation lets setup.py use
-    # the venv's torch to auto-detect CUDA arch.  flash-attn publishes only
-    # binary wheels on PyPI so we must fetch the source tarball from GitHub.
-    uv pip install \
-        --python "${UV_PROJECT_ENVIRONMENT}/bin/python" \
-        "https://github.com/Dao-AILab/flash-attention/archive/refs/tags/v2.5.9.tar.gz" \
-        --no-build-isolation \
-        --verbose
-    echo "--- flash-attn compiled from source ---"
+    cat > "$COMPAT_DIR/glibc_compat.map" << 'MEOF'
+GLIBC_2.32 {
+    global:
+        __libc_single_threaded;
+};
+MEOF
+
+    gcc -shared -fPIC -o "$COMPAT_SO" \
+        "$COMPAT_DIR/glibc_compat.c" \
+        -Wl,--version-script="$COMPAT_DIR/glibc_compat.map"
+    echo "    Built: $COMPAT_SO"
 fi
+
+# Apply shims for this session
+export LD_PRELOAD="$COMPAT_SO"
+if [[ -d "$NSIGHT_LIBDIR" ]]; then
+    export LD_LIBRARY_PATH="$NSIGHT_LIBDIR${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+    echo "    Using Nsight libstdc++ from: $NSIGHT_LIBDIR"
+fi
+
+# Verify flash_attn loads before running tests
+echo ""
+echo "--- Verifying flash_attn loads ---"
+"${UV_PROJECT_ENVIRONMENT}/bin/python" -c "import flash_attn; print('flash_attn', flash_attn.__version__)"
 
 echo ""
 echo "--- Running fastattn model tests ---"
