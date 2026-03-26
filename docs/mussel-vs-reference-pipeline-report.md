@@ -423,7 +423,7 @@ Tests run as a 38-task SLURM array (`tests/slurm/run_integration.sh`), one GPU p
 **34 tasks, 28 passed, 6 skipped, 0 failed** (job 3056582 — encoder tests only).  
 All skips are expected: 2 models require HF access not yet granted (`H0_MINI`, `PRISM_SLIDE`), 2 GigaPath slide-encoder tests run in the dedicated fastattn tasks instead of the torch-gpu tasks, and `GOOGLEPATH` runs in the tensorflow task.
 
-Tasks 34–37 (neural segmentation + artifact removal) were added after job 3056582 and are pending a resubmission.
+Tasks 34–37 (neural segmentation + artifact removal) were added after job 3056582 and validated in job 3056660 — all 4 passed.
 
 ### Snapshot regression baselines
 
@@ -447,4 +447,6 @@ Four new tests in `tests/mussel/utils/test_segmentation_integration.py` validate
 | `test_grandqc_artifact_remover_runs_on_real_slide` | GrandQC weights load; output mask same shape and dtype as input; values ∈ {0, 1}; at least some tissue retained |
 | `test_grandqc_artifact_remover_integrated_with_segment_tissue` | Full `segment_tissue(remove_artifacts=True, artifact_remover_fn=GrandQCArtifactRemover())` pipeline runs without error; patch count with removal ≤ baseline (removal only subtracts); HDF5 output is valid |
 
-These tests run as tasks 34–37 of the SLURM array using the `torch-gpu` extra (no separate venv required). Pending first run.
+These tests run as tasks 34–37 of the SLURM array using the `torch-gpu` extra (no separate venv required). All 4 passed (job 3056660, A100, CUDA 12.6).
+
+**Note:** `test_grandqc_artifact_remover_integrated_with_segment_tissue` calls `segment_tissue` at its default `seg_level` (64× downsample, ~16 µm/px). This exceeds `GrandQCArtifactRemover.max_input_mpp=8.0`, so the remover logs a warning and returns the mask unchanged — the test validates the pipeline completes without error and that patch count with removal ≤ baseline. To exercise actual artifact classification in production, provide a thumbnail at ≤ 8 µm/px (see `test_grandqc_artifact_remover_runs_on_real_slide` for an example reading at ~1 µm/px).
