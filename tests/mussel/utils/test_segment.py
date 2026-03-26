@@ -840,11 +840,11 @@ class TestSegmentTissueArtifactRemover:
     """Tests for the artifact_remover_fn hook in segment_tissue."""
 
     def test_artifact_remover_fn_is_called(self):
-        """artifact_remover_fn is invoked on the binary tissue mask when remove_artifacts=True."""
-        called_with = []
+        """artifact_remover_fn is invoked with (img, mask) when remove_artifacts=True."""
+        calls = []
 
-        def fake_remover(mask):
-            called_with.append(mask.shape)
+        def fake_remover(img, mask):
+            calls.append((img.shape, mask.shape))
             return mask  # pass-through
 
         mock_wsi = _make_mock_wsi_with_tissue()
@@ -858,19 +858,25 @@ class TestSegmentTissueArtifactRemover:
             artifact_remover_fn=fake_remover,
         )
 
-        assert len(called_with) == 1, "artifact_remover_fn should be called exactly once"
-        h, w = called_with[0]
-        # The mask is at the segmentation level (level 1 thumbnail: 1024x1024)
-        assert h > 0 and w > 0
+        assert len(calls) == 1, "artifact_remover_fn should be called exactly once"
+        img_shape, mask_shape = calls[0]
+        # img is RGB (H, W, C) and mask is binary (H, W) at seg_level
+        assert len(img_shape) == 3 and img_shape[2] in (3, 4), (
+            f"Expected RGB img, got shape {img_shape}"
+        )
+        assert len(mask_shape) == 2, f"Expected 2D mask, got shape {mask_shape}"
+        assert img_shape[:2] == mask_shape, (
+            f"img and mask spatial dims must match: {img_shape[:2]} vs {mask_shape}"
+        )
 
     def test_artifact_remover_fn_not_called_when_flags_false(self, caplog):
         """artifact_remover_fn with no flag set should warn and not call the function."""
         import logging
 
-        called_with = []
+        calls = []
 
-        def fake_remover(mask):
-            called_with.append(mask.shape)
+        def fake_remover(img, mask):
+            calls.append(mask.shape)
             return mask
 
         mock_wsi = _make_mock_wsi_with_tissue()
@@ -885,7 +891,7 @@ class TestSegmentTissueArtifactRemover:
                 # remove_artifacts and remove_penmarks both default to False
             )
 
-        assert len(called_with) == 0, "artifact_remover_fn should NOT be called when flags are False"
+        assert len(calls) == 0, "artifact_remover_fn should NOT be called when flags are False"
         assert any("artifact_remover_fn" in msg for msg in caplog.messages), (
             "Expected warning about artifact_remover_fn provided but flags are False"
         )

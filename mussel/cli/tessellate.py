@@ -39,9 +39,11 @@ class SegConfig:
     keep_ids (List[int]): List of contour IDs to keep.
     exclude_ids (List[int]): List of contour IDs to exclude.
     min_tissue_proportion (float): Minimum fraction of patch area that must be tissue (0.0–1.0). Patches below this are discarded.
-    remove_artifacts (bool): If True, apply artifact removal to the tissue mask before patching (requires artifact_remover_fn).
-    remove_penmarks (bool): If True, apply pen mark removal to the tissue mask before patching (requires artifact_remover_fn).
+    remove_artifacts (bool): If True, apply artifact removal before patching (requires artifact_remover_fn).
+    remove_penmarks (bool): If True, apply pen mark removal before patching (requires artifact_remover_fn).
     seg_model (str): Segmentation backend: "classic" (default, HSV/Otsu) or "neural" (deep-learning, requires torch).
+    artifact_remover_fn: Optional callable ``(img: np.ndarray, mask: np.ndarray) -> np.ndarray``
+        where ``img`` is the RGB thumbnail and ``mask`` is the binary tissue mask. Returns corrected mask.
     """
 
     # Default patch size constant - used to detect when automatic patch size selection should apply

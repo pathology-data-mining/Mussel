@@ -431,7 +431,7 @@ def segment_tissue(
     min_tissue_proportion: float = 0.0,
     remove_artifacts: bool = False,
     remove_penmarks: bool = False,
-    artifact_remover_fn=None,  # Optional callable: takes (mask_img: np.ndarray) -> np.ndarray
+    artifact_remover_fn=None,  # Optional callable: takes (img: np.ndarray, mask: np.ndarray) -> np.ndarray
     seg_model: str = "classic",  # "classic" (HSV/Otsu) or "neural" (DeepLabV3)
 ):
     """Segment tissue regions in a whole-slide image and generate tissue patches.
@@ -469,8 +469,10 @@ def segment_tissue(
             Patches below this threshold are discarded. Defaults to 0.0 (no filtering).
         remove_artifacts: If True, apply artifact removal before patching (requires artifact_remover_fn).
         remove_penmarks: If True, apply pen mark removal before patching (requires artifact_remover_fn).
-        artifact_remover_fn: Optional callable ``(mask_img: np.ndarray) -> np.ndarray`` applied to
-            the binary tissue mask after morphological closing. Used for artifact/pen-mark removal.
+        artifact_remover_fn: Optional callable ``(img: np.ndarray, mask: np.ndarray) -> np.ndarray``
+            called after morphological closing. ``img`` is the RGB thumbnail at ``seg_level``
+            and ``mask`` is the binary tissue mask (uint8, 0/1). The callable should return a
+            corrected binary mask of the same shape. Used for artifact/pen-mark removal.
         
     Returns:
         tuple: A 4-tuple containing:
@@ -596,7 +598,7 @@ def segment_tissue(
         # Optional artifact/pen mark removal via pluggable callable
         if artifact_remover_fn is not None:
             if remove_artifacts or remove_penmarks:
-                img_otsu = artifact_remover_fn(img_otsu)
+                img_otsu = artifact_remover_fn(img, img_otsu)
             else:
                 logger.warning(
                     "artifact_remover_fn was provided but neither remove_artifacts nor "
