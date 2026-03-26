@@ -74,14 +74,12 @@ if ! "${UV_PROJECT_ENVIRONMENT}/bin/python" -c "import flash_attn" 2>/dev/null; 
     nvcc --version | head -1
 
     # Install flash-attn from source.  --no-build-isolation lets setup.py use
-    # the venv's torch to auto-detect CUDA arch.  Pass --python explicitly
-    # because uv pip install doesn't honour UV_PROJECT_ENVIRONMENT.
+    # the venv's torch to auto-detect CUDA arch.  flash-attn publishes only
+    # binary wheels on PyPI so we must fetch the source tarball from GitHub.
     uv pip install \
         --python "${UV_PROJECT_ENVIRONMENT}/bin/python" \
-        "flash-attn==2.5.9" \
+        "https://github.com/Dao-AILab/flash-attention/archive/refs/tags/v2.5.9.tar.gz" \
         --no-build-isolation \
-        --reinstall \
-        --no-binary flash-attn \
         --verbose
     echo "--- flash-attn compiled from source ---"
 fi
