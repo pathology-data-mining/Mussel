@@ -1,10 +1,13 @@
 #!/bin/bash
 # SLURM job array: one task per integration test, each gets its own GPU.
 #
+# One-time setup (output dir must exist before submitting):
+#   mkdir -p ~/logs/slurm
+#
 # Submit from the repo root:
 #   sbatch tests/slurm/run_integration.sh
 #
-# Each task logs to ~/logs/slurm/test_integration_<jobid>_<taskid>_<model>.log
+# Each task logs to ~/logs/slurm/test_integration_<jobid>_<taskid>.out
 #
 #SBATCH --job-name=mussel-test-integration
 #SBATCH --partition=hpc
@@ -13,6 +16,7 @@
 #SBATCH --mem=32G
 #SBATCH --time=0:30:00
 #SBATCH --array=0-29
+#SBATCH --output=/gpfs/cdsi_ess/home/limr/logs/slurm/test_integration_%A_%a.out
 
 set -euo pipefail
 
@@ -55,9 +59,6 @@ LABEL=$(echo "$TEST_NODE" | sed 's/.*\[//;s/\]//')
 
 REPO_DIR="${SLURM_SUBMIT_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)}"
 cd "$REPO_DIR"
-
-mkdir -p "$HOME/logs/slurm"
-exec > >(tee "$HOME/logs/slurm/test_integration_${SLURM_JOB_ID}_${SLURM_ARRAY_TASK_ID}_${LABEL}.log") 2>&1
 
 echo "=== mussel integration test: ${LABEL} ==="
 echo "Repo:   $REPO_DIR"
