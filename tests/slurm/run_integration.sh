@@ -1,5 +1,6 @@
 #!/bin/bash
-# SLURM job array: one task per integration test, each gets its own GPU.
+# SLURM job array: one task per model integration test.
+# Covers torch-gpu, fastattn, and tensorflow extras in a single array.
 #
 # One-time setup (output dir must exist before submitting):
 #   mkdir -p ~/logs/slurm
@@ -15,13 +16,16 @@
 #SBATCH --cpus-per-task=4
 #SBATCH --mem=32G
 #SBATCH --time=0:30:00
-#SBATCH --array=0-29
+#SBATCH --array=0-33
 #SBATCH --output=/gpfs/cdsi_ess/home/limr/logs/slurm/test_integration_%A_%a.out
 
 set -euo pipefail
 
-# One entry per test — keep in sync with test_encoder_integration.py parametrization.
+# Parallel arrays: test node ID, uv extra, and optional venv override.
+# Venv is empty for torch-gpu (uses repo .venv); set for fastattn/tensorflow
+# to avoid conflicts with the torch-gpu environment.
 TESTS=(
+    # --- torch-gpu (tasks 0-29) ---
     "tests/mussel/models/test_encoder_integration.py::test_patch_encoder_extracts_features[RESNET50]"
     "tests/mussel/models/test_encoder_integration.py::test_patch_encoder_extracts_features[CTRANSPATH]"
     "tests/mussel/models/test_encoder_integration.py::test_patch_encoder_extracts_features[GIGAPATH]"
@@ -52,10 +56,45 @@ TESTS=(
     "tests/mussel/models/test_encoder_integration.py::test_end_to_end_patch_then_slide_encode[CTRANSPATH-CHIEF_SLIDE]"
     "tests/mussel/models/test_encoder_integration.py::test_end_to_end_patch_then_slide_encode[CONCH1_5-FEATHER_SLIDE]"
     "tests/mussel/models/test_encoder_integration.py::test_end_to_end_patch_then_slide_encode[CLIP-MADELEINE_SLIDE]"
+    # --- fastattn (tasks 30-32) ---
+    "tests/mussel/models/test_fastattn_models.py::test_gigapath_patch_encoder_extracts_features"
+    "tests/mussel/models/test_fastattn_models.py::test_gigapath_slide_encoder_aggregates_features"
+    "tests/mussel/models/test_fastattn_models.py::test_gigapath_end_to_end"
+    # --- tensorflow (task 33) ---
+    "tests/mussel/models/test_tensorflow_models.py::test_tensorflow_patch_encoder_extracts_features[GOOGLEPATH]"
+)
+
+EXTRAS=(
+    # torch-gpu (tasks 0-29)
+    torch-gpu torch-gpu torch-gpu torch-gpu torch-gpu
+    torch-gpu torch-gpu torch-gpu torch-gpu torch-gpu
+    torch-gpu torch-gpu torch-gpu torch-gpu torch-gpu
+    torch-gpu torch-gpu torch-gpu torch-gpu torch-gpu
+    torch-gpu torch-gpu torch-gpu torch-gpu torch-gpu
+    torch-gpu torch-gpu torch-gpu torch-gpu torch-gpu
+    # fastattn (tasks 30-32)
+    fastattn fastattn fastattn
+    # tensorflow (task 33)
+    tensorflow-gpu
+)
+
+VENVS=(
+    # torch-gpu (tasks 0-29): use repo .venv (empty = no override)
+    "" "" "" "" ""  "" "" "" "" ""
+    "" "" "" "" ""  "" "" "" "" ""
+    "" "" "" "" ""  "" "" "" "" ""
+    # fastattn (tasks 30-32)
+    "$HOME/venvs/mussel-fastattn"
+    "$HOME/venvs/mussel-fastattn"
+    "$HOME/venvs/mussel-fastattn"
+    # tensorflow (task 33)
+    "$HOME/venvs/mussel-tensorflow"
 )
 
 TEST_NODE="${TESTS[$SLURM_ARRAY_TASK_ID]}"
-LABEL=$(echo "$TEST_NODE" | sed 's/.*\[//;s/\]//')
+EXTRA="${EXTRAS[$SLURM_ARRAY_TASK_ID]}"
+VENV="${VENVS[$SLURM_ARRAY_TASK_ID]}"
+LABEL=$(echo "$TEST_NODE" | sed 's/.*:://;s/\[/_/;s/\]//')
 
 REPO_DIR="${SLURM_SUBMIT_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)}"
 cd "$REPO_DIR"
@@ -65,6 +104,7 @@ echo "Repo:   $REPO_DIR"
 echo "Node:   $(hostname)"
 echo "GPUs:   ${CUDA_VISIBLE_DEVICES:-<unset>}"
 echo "Python: $(python3 --version 2>&1)"
+echo "Extra:  $EXTRA"
 echo "Date:   $(date)"
 echo ""
 
@@ -72,7 +112,11 @@ if [[ -f ~/.hf_cred.env ]]; then
     source ~/.hf_cred.env
 fi
 
-uv sync --extra torch-gpu
+if [[ -n "$VENV" ]]; then
+    export UV_PROJECT_ENVIRONMENT="$VENV"
+fi
+
+uv sync --extra "$EXTRA"
 
 echo ""
 echo "--- Running: ${TEST_NODE} ---"
@@ -80,7 +124,7 @@ uv run pytest "$TEST_NODE" \
     --use-gpu \
     -v \
     --tb=short \
-    --timeout=300
+    --timeout=600
 
 EXIT_CODE=$?
 echo ""
