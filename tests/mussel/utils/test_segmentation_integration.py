@@ -248,3 +248,107 @@ def test_grandqc_artifact_remover_integrated_with_segment_tissue(tmp_path, use_g
         coords = f["coords"][:]
     assert coords.shape[1] == 2
 
+
+
+# ---------------------------------------------------------------------------
+# Pen mark removal — S3 slide (not committed to repo)
+# ---------------------------------------------------------------------------
+
+_PENMARK_SLIDE_S3 = "s3://mskmind-bkt/reef-slides/1007867.svs"
+_PENMARK_SLIDE_AWS_PROFILE = "ecs"
+# Cache path — avoids re-downloading 930 MB on every run.
+_PENMARK_SLIDE_CACHE = Path.home() / ".cache" / "mussel-test-slides" / "1007867.svs"
+
+
+def _download_penmark_slide() -> str:
+    """Download the pen-mark slide from S3 to a local cache; return local path."""
+    if _PENMARK_SLIDE_CACHE.exists():
+        return str(_PENMARK_SLIDE_CACHE)
+
+    try:
+        import boto3
+    except ImportError:
+        pytest.skip("boto3 not installed — cannot download S3 slide")
+
+    try:
+        session = boto3.Session(profile_name=_PENMARK_SLIDE_AWS_PROFILE)
+        s3 = session.client("s3")
+        # Quick head-object to verify access before downloading
+        s3.head_object(Bucket="mskmind-bkt", Key="reef-slides/1007867.svs")
+    except Exception as exc:
+        pytest.skip(f"S3 slide not accessible (profile={_PENMARK_SLIDE_AWS_PROFILE}): {exc}")
+
+    _PENMARK_SLIDE_CACHE.parent.mkdir(parents=True, exist_ok=True)
+    import logging
+    logging.getLogger(__name__).info(
+        "Downloading %s to %s ...", _PENMARK_SLIDE_S3, _PENMARK_SLIDE_CACHE
+    )
+    s3.download_file("mskmind-bkt", "reef-slides/1007867.svs", str(_PENMARK_SLIDE_CACHE))
+    return str(_PENMARK_SLIDE_CACHE)
+
+
+@pytest.mark.slow
+@pytest.mark.integration
+@pytest.mark.timeout(1200)
+def test_grandqc_penmark_removal_reduces_mask_on_marked_slide(use_gpu):
+    """GrandQC with remove_penmarks_only=True removes pen marks from 1007867.svs.
+
+    The slide contains visible pen markings.  After removal, fewer pixels should
+    be classified as tissue than before.
+
+    Checks:
+    - Output mask shape and dtype are preserved.
+    - At least some tissue is retained (slide has real tissue too).
+    - Pen mark removal reduces the mask (fewer tissue pixels after than before).
+    """
+    import tiffslide
+
+    from mussel.utils import GrandQCArtifactRemover
+    from mussel.utils.segment import get_slide_mpp
+
+    local_path = _download_penmark_slide()
+
+    device = "cuda" if _use_gpu_available(use_gpu) else "cpu"
+    remover = GrandQCArtifactRemover(
+        remove_penmarks_only=True,
+        device=device,
+        batch_size=4,
+    )
+
+    with tiffslide.TiffSlide(local_path) as wsi:
+        slide_mpp = get_slide_mpp(wsi, local_path)
+        # Read at ~1 µm/px — GrandQC's native resolution.
+        target_ds = max(1.0, 1.0 / slide_mpp)
+        seg_level = wsi.get_best_level_for_downsample(target_ds)
+        level_dims = wsi.level_dimensions[seg_level]
+        img = np.array(wsi.read_region((0, 0), seg_level, level_dims))[:, :, :3]
+        img_mpp = float(slide_mpp * wsi.level_downsamples[seg_level])
+
+    # Start with an all-tissue mask; removal should zero pen-marked regions.
+    mask = np.ones((img.shape[0], img.shape[1]), dtype=np.uint8)
+    result = remover(img, mask, img_mpp)
+
+    assert result.shape == mask.shape
+    assert result.dtype == mask.dtype
+    assert set(np.unique(result)).issubset({0, 1}), (
+        f"Non-binary values in output: {np.unique(result)}"
+    )
+
+    tissue_before = int(mask.sum())
+    tissue_after = int(result.sum())
+
+    assert tissue_after > 0, (
+        "GrandQC zeroed the entire mask — model may not have loaded correctly"
+    )
+    assert tissue_after < tissue_before, (
+        f"Pen mark removal did not reduce the mask "
+        f"(before={tissue_before}, after={tissue_after}). "
+        "Expected pen marks on this slide to be detected and removed."
+    )
+
+    reduction_pct = 100.0 * (tissue_before - tissue_after) / tissue_before
+    import logging
+    logging.getLogger(__name__).info(
+        "Pen mark removal: %.1f%% of pixels removed (%d → %d)",
+        reduction_pct, tissue_before, tissue_after,
+    )

@@ -15,8 +15,8 @@
 #SBATCH --gres=gpu:1
 #SBATCH --cpus-per-task=4
 #SBATCH --mem=32G
-#SBATCH --time=0:30:00
-#SBATCH --array=0-37
+#SBATCH --time=0:45:00
+#SBATCH --array=0-38
 #SBATCH --output=/gpfs/cdsi_ess/home/limr/logs/slurm/test_integration_%A_%a.out
 
 set -euo pipefail
@@ -67,6 +67,8 @@ TESTS=(
     "tests/mussel/utils/test_segmentation_integration.py::test_neural_segmentation_patch_count_close_to_hsv"
     "tests/mussel/utils/test_segmentation_integration.py::test_grandqc_artifact_remover_runs_on_real_slide"
     "tests/mussel/utils/test_segmentation_integration.py::test_grandqc_artifact_remover_integrated_with_segment_tissue"
+    # --- pen mark slide from S3 (task 38) ---
+    "tests/mussel/utils/test_segmentation_integration.py::test_grandqc_penmark_removal_reduces_mask_on_marked_slide"
 )
 
 EXTRAS=(
@@ -83,6 +85,8 @@ EXTRAS=(
     tensorflow-gpu
     # neural seg + artifact removal (tasks 34-37)
     torch-gpu torch-gpu torch-gpu torch-gpu
+    # penmark slide from S3 (task 38)
+    torch-gpu
 )
 
 VENVS=(
@@ -98,6 +102,8 @@ VENVS=(
     "$HOME/venvs/mussel-tensorflow"
     # neural seg + artifact removal (tasks 34-37): use repo .venv
     "" "" "" ""
+    # penmark slide from S3 (task 38): use repo .venv
+    ""
 )
 
 TEST_NODE="${TESTS[$SLURM_ARRAY_TASK_ID]}"
@@ -123,6 +129,11 @@ fi
 
 if [[ -n "$VENV" ]]; then
     export UV_PROJECT_ENVIRONMENT="$VENV"
+fi
+
+# Task 38 needs AWS credentials to download the pen-mark slide from S3.
+if [[ "${SLURM_ARRAY_TASK_ID}" == "38" ]]; then
+    export AWS_PROFILE=ecs
 fi
 
 uv sync --extra "$EXTRA"
