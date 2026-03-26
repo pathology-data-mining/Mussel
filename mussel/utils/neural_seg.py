@@ -27,6 +27,8 @@ from typing import Optional
 
 import numpy as np
 
+from mussel.models.base import IMAGENET_MEAN, IMAGENET_STD
+
 logger = logging.getLogger(__name__)
 
 # HuggingFace repo hosting the pre-trained tissue segmentation checkpoint.
@@ -36,8 +38,6 @@ _CKPT_FILENAME = "deeplabv3_seg_v4.ckpt"
 # Model inference constants (match the training configuration).
 _INPUT_SIZE = 512       # patch size in pixels
 _TARGET_MPP = 1.0       # inference resolution: 1 µm/px (~10x)
-_IMAGENET_MEAN = (0.485, 0.456, 0.406)
-_IMAGENET_STD = (0.229, 0.224, 0.225)
 
 
 class NeuralTissueSegmenter:
@@ -152,7 +152,7 @@ class NeuralTissueSegmenter:
             self._model = self._model.half()
         self._transform = transforms.Compose([
             transforms.ToTensor(),
-            transforms.Normalize(mean=_IMAGENET_MEAN, std=_IMAGENET_STD),
+            transforms.Normalize(mean=IMAGENET_MEAN, std=IMAGENET_STD),
         ])
         logger.info(f"NeuralTissueSegmenter loaded on {self.device}")
 

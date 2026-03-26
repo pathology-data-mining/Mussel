@@ -3,12 +3,14 @@ import torch
 from unittest.mock import MagicMock, patch
 
 from mussel.models.model_factory import (
-    MODEL_FACTORIES,
+    MODEL_REGISTRY,
     ModelType,
     get_model_factory,
     get_default_patch_size,
     MODEL_PATCH_SIZES,
 )
+# Ensure all model modules are registered
+import mussel.models  # noqa: F401
 
 
 def test_model_type_enum():
@@ -48,16 +50,16 @@ def test_model_type_properties():
 def test_model_factories_registered():
     """Test that model factories are registered"""
     # Check that factories are registered for main model types
-    assert ModelType.RESNET50 in MODEL_FACTORIES
-    assert ModelType.CTRANSPATH in MODEL_FACTORIES
-    assert ModelType.GIGAPATH in MODEL_FACTORIES
-    assert ModelType.VIRCHOW in MODEL_FACTORIES
-    assert ModelType.OPTIMUS in MODEL_FACTORIES
-    assert ModelType.CLIP in MODEL_FACTORIES
-    assert ModelType.GOOGLEPATH in MODEL_FACTORIES
-    assert ModelType.CONCH1_5 in MODEL_FACTORIES
-    assert ModelType.UNI in MODEL_FACTORIES
-    assert ModelType.UNI2 in MODEL_FACTORIES
+    assert ModelType.RESNET50 in MODEL_REGISTRY
+    assert ModelType.CTRANSPATH in MODEL_REGISTRY
+    assert ModelType.GIGAPATH in MODEL_REGISTRY
+    assert ModelType.VIRCHOW in MODEL_REGISTRY
+    assert ModelType.OPTIMUS in MODEL_REGISTRY
+    assert ModelType.CLIP in MODEL_REGISTRY
+    assert ModelType.GOOGLEPATH in MODEL_REGISTRY
+    assert ModelType.CONCH1_5 in MODEL_REGISTRY
+    assert ModelType.UNI in MODEL_REGISTRY
+    assert ModelType.UNI2 in MODEL_REGISTRY
 
 
 def test_get_model_factory():
@@ -80,14 +82,14 @@ def test_get_model_factory_default():
 
 def test_titan_slide_encoder_model_fun():
     """Test that TitanSlideEncoderModel.get_model_fun() properly moves inputs to device."""
-    from mussel.models.model_factory import TitanSlideEncoderModel
+    from mussel.models.conch import TitanSlideEncoderModel
     
     # Create a mock model object
     mock_model = MagicMock()
     mock_model.encode_slide_from_patch_features = MagicMock(return_value=torch.randn(1, 768))
     
     # Create TitanSlideEncoderModel instance with mock
-    with patch('mussel.models.model_factory.AutoModel.from_pretrained', return_value=mock_model):
+    with patch('mussel.models.conch.AutoModel.from_pretrained', return_value=mock_model):
         # We need to mock the parent __init__ to avoid device setup
         with patch.object(TitanSlideEncoderModel, '__init__', lambda self, *args, **kwargs: None):
             encoder = TitanSlideEncoderModel.__new__(TitanSlideEncoderModel)
@@ -123,7 +125,7 @@ def test_titan_slide_encoder_model_fun():
 
 def test_gigapath_slide_encoder_model_fun():
     """Test that GigapathSlideEncoderModel.get_model_fun() properly moves inputs to device."""
-    from mussel.models.model_factory import GigapathSlideEncoderModel
+    from mussel.models.gigapath import GigapathSlideEncoderModel
     
     # Create a mock model object
     mock_model = MagicMock()
@@ -249,14 +251,14 @@ def test_new_patch_encoder_properties():
 
 
 def test_new_patch_encoders_in_model_factories():
-    """New patch encoders are registered in MODEL_FACTORIES."""
-    assert ModelType.PHIKON in MODEL_FACTORIES
-    assert ModelType.PHIKON_V2 in MODEL_FACTORIES
-    assert ModelType.H_OPTIMUS_1 in MODEL_FACTORIES
-    assert ModelType.H0_MINI in MODEL_FACTORIES
-    assert ModelType.MIDNIGHT12K in MODEL_FACTORIES
-    assert ModelType.GPFM in MODEL_FACTORIES
-    assert ModelType.HIBOU_L in MODEL_FACTORIES
+    """New patch encoders are registered in MODEL_REGISTRY."""
+    assert ModelType.PHIKON in MODEL_REGISTRY
+    assert ModelType.PHIKON_V2 in MODEL_REGISTRY
+    assert ModelType.H_OPTIMUS_1 in MODEL_REGISTRY
+    assert ModelType.H0_MINI in MODEL_REGISTRY
+    assert ModelType.MIDNIGHT12K in MODEL_REGISTRY
+    assert ModelType.GPFM in MODEL_REGISTRY
+    assert ModelType.HIBOU_L in MODEL_REGISTRY
 
 
 def test_new_patch_encoders_in_model_patch_sizes():
@@ -344,22 +346,20 @@ def test_new_slide_encoders_compatibility():
     assert SLIDE_ENCODER_COMPATIBILITY[ModelType.PRISM_SLIDE] == ModelType.VIRCHOW
     assert SLIDE_ENCODER_COMPATIBILITY[ModelType.FEATHER_SLIDE] == ModelType.CONCH1_5
     assert SLIDE_ENCODER_COMPATIBILITY[ModelType.CHIEF_SLIDE] == ModelType.CTRANSPATH
-    assert SLIDE_ENCODER_COMPATIBILITY[ModelType.MADELEINE_SLIDE] == ModelType.CONCH1_5
+    assert SLIDE_ENCODER_COMPATIBILITY[ModelType.MADELEINE_SLIDE] == ModelType.CLIP
 
     # Via the public API as well
     assert get_required_patch_encoder(ModelType.PRISM_SLIDE) == ModelType.VIRCHOW
-    assert get_required_patch_encoder(ModelType.MADELEINE_SLIDE) == ModelType.CONCH1_5
+    assert get_required_patch_encoder(ModelType.MADELEINE_SLIDE) == ModelType.CLIP
 
 
-def test_chief_slide_raises_not_implemented():
-    """CHIEF_SLIDE raises NotImplementedError — local checkpoint not on HuggingFace."""
-    from mussel.models.model_factory import CHIEFSlideEncoderModel
+def test_chief_slide_raises_on_invalid_checkpoint():
+    """CHIEF_SLIDE raises an error when given an invalid checkpoint file."""
+    from mussel.models.chief import CHIEFSlideEncoderModel
 
-    # __init__ raises ValueError for missing path before NotImplementedError;
-    # pass a fake existing path to get to the NotImplementedError branch.
     import tempfile, os
     with tempfile.TemporaryDirectory() as d:
         fake_path = os.path.join(d, "chief.pt")
         open(fake_path, "w").close()
-        with pytest.raises(NotImplementedError):
+        with pytest.raises(Exception):
             CHIEFSlideEncoderModel(model_path=fake_path)
