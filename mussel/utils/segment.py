@@ -431,7 +431,7 @@ def segment_tissue(
     min_tissue_proportion: float = 0.0,
     remove_artifacts: bool = False,
     remove_penmarks: bool = False,
-    artifact_remover_fn=None,  # Optional callable: takes (img: np.ndarray, mask: np.ndarray) -> np.ndarray
+    artifact_remover_fn=None,  # Optional callable: (img, mask, mpp) -> mask
     seg_model: str = "classic",  # "classic" (HSV/Otsu) or "neural" (DeepLabV3)
 ):
     """Segment tissue regions in a whole-slide image and generate tissue patches.
@@ -469,10 +469,15 @@ def segment_tissue(
             Patches below this threshold are discarded. Defaults to 0.0 (no filtering).
         remove_artifacts: If True, apply artifact removal before patching (requires artifact_remover_fn).
         remove_penmarks: If True, apply pen mark removal before patching (requires artifact_remover_fn).
-        artifact_remover_fn: Optional callable ``(img: np.ndarray, mask: np.ndarray) -> np.ndarray``
-            called after morphological closing. ``img`` is the RGB thumbnail at ``seg_level``
-            and ``mask`` is the binary tissue mask (uint8, 0/1). The callable should return a
-            corrected binary mask of the same shape. Used for artifact/pen-mark removal.
+        artifact_remover_fn: Optional callable
+            ``(img: np.ndarray, mask: np.ndarray, mpp: float) -> np.ndarray``
+            called after morphological closing. ``img`` is the RGB thumbnail at
+            ``seg_level``, ``mask`` is the binary tissue mask (uint8, 0/1), and
+            ``mpp`` is the microns-per-pixel of ``img``. The callable should
+            return a corrected binary mask of the same shape. Used for
+            artifact/pen-mark removal.  See
+            :class:`~mussel.utils.artifact_removal.GrandQCArtifactRemover` for
+            a ready-made implementation.
         
     Returns:
         tuple: A 4-tuple containing:
@@ -595,10 +600,13 @@ def segment_tissue(
                 kernel = np.ones((morphology_ex_kernel, morphology_ex_kernel), np.uint8)
                 img_otsu = cv2.morphologyEx(img_otsu, cv2.MORPH_CLOSE, kernel)
 
-        # Optional artifact/pen mark removal via pluggable callable
+        # Optional artifact/pen mark removal via pluggable callable.
+        # Compute the thumbnail's MPP so the remover can rescale to its model's
+        # native resolution (e.g. GrandQC expects 10× / 1 µm-per-pixel input).
         if artifact_remover_fn is not None:
             if remove_artifacts or remove_penmarks:
-                img_otsu = artifact_remover_fn(img, img_otsu)
+                img_mpp = slide_mpp * level_downsamples[seg_level][0]
+                img_otsu = artifact_remover_fn(img, img_otsu, img_mpp)
             else:
                 logger.warning(
                     "artifact_remover_fn was provided but neither remove_artifacts nor "

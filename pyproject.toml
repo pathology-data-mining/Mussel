@@ -54,8 +54,8 @@ dev = [
   "torchvision",
   "open-clip-torch",
 ]
-"torch-cpu" = ["torch < 2.6", "torchvision", "open-clip-torch"]
-"torch-gpu" = ["torch < 2.6", "torchvision", "open-clip-torch"]
+"torch-cpu" = ["torch < 2.6", "torchvision", "open-clip-torch", "segmentation-models-pytorch"]
+"torch-gpu" = ["torch < 2.6", "torchvision", "open-clip-torch", "segmentation-models-pytorch"]
 "fastattn" = [
   "gigapath@git+https://github.com/prov-gigapath/prov-gigapath",
   "fairscale",

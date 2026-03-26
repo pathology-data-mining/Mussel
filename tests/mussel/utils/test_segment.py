@@ -843,8 +843,8 @@ class TestSegmentTissueArtifactRemover:
         """artifact_remover_fn is invoked with (img, mask) when remove_artifacts=True."""
         calls = []
 
-        def fake_remover(img, mask):
-            calls.append((img.shape, mask.shape))
+        def fake_remover(img, mask, mpp):
+            calls.append((img.shape, mask.shape, mpp))
             return mask  # pass-through
 
         mock_wsi = _make_mock_wsi_with_tissue()
@@ -859,8 +859,7 @@ class TestSegmentTissueArtifactRemover:
         )
 
         assert len(calls) == 1, "artifact_remover_fn should be called exactly once"
-        img_shape, mask_shape = calls[0]
-        # img is RGB (H, W, C) and mask is binary (H, W) at seg_level
+        img_shape, mask_shape, mpp = calls[0]
         assert len(img_shape) == 3 and img_shape[2] in (3, 4), (
             f"Expected RGB img, got shape {img_shape}"
         )
@@ -868,6 +867,7 @@ class TestSegmentTissueArtifactRemover:
         assert img_shape[:2] == mask_shape, (
             f"img and mask spatial dims must match: {img_shape[:2]} vs {mask_shape}"
         )
+        assert isinstance(mpp, float) and mpp > 0, f"Expected positive float mpp, got {mpp}"
 
     def test_artifact_remover_fn_not_called_when_flags_false(self, caplog):
         """artifact_remover_fn with no flag set should warn and not call the function."""
@@ -875,7 +875,7 @@ class TestSegmentTissueArtifactRemover:
 
         calls = []
 
-        def fake_remover(img, mask):
+        def fake_remover(img, mask, mpp):
             calls.append(mask.shape)
             return mask
 

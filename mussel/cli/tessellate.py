@@ -42,8 +42,10 @@ class SegConfig:
     remove_artifacts (bool): If True, apply artifact removal before patching (requires artifact_remover_fn).
     remove_penmarks (bool): If True, apply pen mark removal before patching (requires artifact_remover_fn).
     seg_model (str): Segmentation backend: "classic" (default, HSV/Otsu) or "neural" (deep-learning, requires torch).
-    artifact_remover_fn: Optional callable ``(img: np.ndarray, mask: np.ndarray) -> np.ndarray``
-        where ``img`` is the RGB thumbnail and ``mask`` is the binary tissue mask. Returns corrected mask.
+    artifact_remover_fn: Optional callable ``(img, mask, mpp) -> mask`` where ``img`` is the RGB
+        thumbnail, ``mask`` is the binary tissue mask, and ``mpp`` is the thumbnail's microns-per-pixel.
+        Returns a corrected binary mask. Use :class:`~mussel.utils.artifact_removal.GrandQCArtifactRemover`
+        for a ready-made GrandQC-based implementation.
     """
 
     # Default patch size constant - used to detect when automatic patch size selection should apply
