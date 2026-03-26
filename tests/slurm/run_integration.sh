@@ -86,7 +86,7 @@ EXTRAS=(
     # neural seg + artifact removal (tasks 34-37)
     torch-gpu torch-gpu torch-gpu torch-gpu
     # penmark slide from S3 (task 38)
-    torch-gpu
+    "torch-gpu distributed"
 )
 
 VENVS=(
@@ -136,7 +136,12 @@ if [[ "${SLURM_ARRAY_TASK_ID}" == "38" ]]; then
     export AWS_PROFILE=ecs
 fi
 
-uv sync --extra "$EXTRA"
+# Build --extra flags (EXTRA may be space-separated for multiple extras)
+SYNC_ARGS=()
+for e in $EXTRA; do
+    SYNC_ARGS+=(--extra "$e")
+done
+uv sync "${SYNC_ARGS[@]}"
 
 echo ""
 echo "--- Running: ${TEST_NODE} ---"
