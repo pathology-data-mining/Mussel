@@ -16,7 +16,7 @@
 #SBATCH --cpus-per-task=4
 #SBATCH --mem=32G
 #SBATCH --time=0:30:00
-#SBATCH --array=0-33
+#SBATCH --array=0-37
 #SBATCH --output=/gpfs/cdsi_ess/home/limr/logs/slurm/test_integration_%A_%a.out
 
 set -euo pipefail
@@ -62,6 +62,11 @@ TESTS=(
     "tests/mussel/models/test_fastattn_models.py::test_gigapath_end_to_end"
     # --- tensorflow (task 33) ---
     "tests/mussel/models/test_tensorflow_models.py::test_tensorflow_patch_encoder_extracts_features[GOOGLEPATH]"
+    # --- neural segmentation + artifact removal (tasks 34-37) ---
+    "tests/mussel/utils/test_segmentation_integration.py::test_neural_segmentation_produces_valid_patches"
+    "tests/mussel/utils/test_segmentation_integration.py::test_neural_segmentation_patch_count_close_to_hsv"
+    "tests/mussel/utils/test_segmentation_integration.py::test_grandqc_artifact_remover_runs_on_real_slide"
+    "tests/mussel/utils/test_segmentation_integration.py::test_grandqc_artifact_remover_integrated_with_segment_tissue"
 )
 
 EXTRAS=(
@@ -76,6 +81,8 @@ EXTRAS=(
     fastattn fastattn fastattn
     # tensorflow (task 33)
     tensorflow-gpu
+    # neural seg + artifact removal (tasks 34-37)
+    torch-gpu torch-gpu torch-gpu torch-gpu
 )
 
 VENVS=(
@@ -89,6 +96,8 @@ VENVS=(
     "$HOME/venvs/mussel-fastattn"
     # tensorflow (task 33)
     "$HOME/venvs/mussel-tensorflow"
+    # neural seg + artifact removal (tasks 34-37): use repo .venv
+    "" "" "" ""
 )
 
 TEST_NODE="${TESTS[$SLURM_ARRAY_TASK_ID]}"

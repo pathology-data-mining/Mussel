@@ -333,15 +333,16 @@ A tissue island of 8,100 seg-px (≈ 2 native patches) would be filtered by the 
 
 ### Test suites
 
-Integration tests load real model weights (from HuggingFace or local checkpoints) and run inference on the same validation slide (`948176.svs`). Three separate test files cover all supported install extras:
+Integration tests load real model weights (from HuggingFace or local checkpoints) and run inference on the same validation slide (`948176.svs`). Four separate test files cover all supported install extras:
 
-| Test file | Extra | Models covered |
+| Test file | Extra | What is covered |
 |---|---|---|
 | `test_encoder_integration.py` | `torch-gpu` | All patch & slide encoders except GIGAPATH (flash-attn), GOOGLEPATH (TF) |
 | `test_fastattn_models.py` | `fastattn` | GIGAPATH patch encoder, GIGAPATH slide encoder, end-to-end |
 | `test_tensorflow_models.py` | `tensorflow-gpu` | GOOGLEPATH |
+| `test_segmentation_integration.py` | `torch-gpu` | Neural segmentation (DeepLabV3), GrandQC artifact removal |
 
-Each test verifies:
+Each encoder test verifies:
 1. **Model loads** from HuggingFace / local checkpoint without error
 2. **Feature shape** matches expected dimension for the model
 3. **Statistical sanity**: L2 norm in expected range, inter-patch variance > 0, fewer than 10% dead (zero) dimensions
@@ -350,7 +351,14 @@ Each test verifies:
 
 ### SLURM job array
 
-Tests run as a 34-task SLURM array (`tests/slurm/run_integration.sh`), one GPU per task, so all models can be tested in parallel without GPU contention. Tasks 0–29 use `torch-gpu`, tasks 30–32 use `fastattn` (separate venv, torch 2.11.0+cu126 + flash-attn manylinux_2_28), task 33 uses `tensorflow-gpu`.
+Tests run as a 38-task SLURM array (`tests/slurm/run_integration.sh`), one GPU per task, so all models can be tested in parallel without GPU contention.
+
+| Tasks | Extra | Content |
+|---|---|---|
+| 0–29 | `torch-gpu` | Patch encoders, slide encoders, e2e pairs |
+| 30–32 | `fastattn` | GigaPath (separate venv, torch 2.11+flash-attn manylinux_2_28) |
+| 33 | `tensorflow-gpu` | GooglePath |
+| 34–37 | `torch-gpu` | Neural segmentation + GrandQC artifact removal |
 
 ### Results (SLURM job 3056582, A100, CUDA 12.6)
 
@@ -412,9 +420,31 @@ Tests run as a 34-task SLURM array (`tests/slurm/run_integration.sh`), one GPU p
 
 ### Summary
 
-**34 tasks, 28 passed, 6 skipped, 0 failed.**  
+**34 tasks, 28 passed, 6 skipped, 0 failed** (job 3056582 — encoder tests only).  
 All skips are expected: 2 models require HF access not yet granted (`H0_MINI`, `PRISM_SLIDE`), 2 GigaPath slide-encoder tests run in the dedicated fastattn tasks instead of the torch-gpu tasks, and `GOOGLEPATH` runs in the tensorflow task.
+
+Tasks 34–37 (neural segmentation + artifact removal) were added after job 3056582 and are pending a resubmission.
 
 ### Snapshot regression baselines
 
 Golden feature snapshots (`tests/testdata/snapshots/*.npy`) were generated on the same A100 hardware and committed as regression baselines for 16 patch encoders (all passed models except GOOGLEPATH which requires the TF extra). Each snapshot stores features for all 48 test patches at the model's native dimension. Future runs are validated with `rtol=1e-3, atol=1e-4`.
+
+### Neural segmentation & artifact removal integration tests
+
+Four new tests in `tests/mussel/utils/test_segmentation_integration.py` validate the end-to-end behaviour of the two deep-learning-backed quality-control components on `948176.svs`. Both components download real weights from `MahmoodLab/hest-tissue-seg` on HuggingFace at test time.
+
+#### Neural segmentation — `test_segmentation_integration.py`
+
+| Test | What is checked |
+|---|---|
+| `test_neural_segmentation_produces_valid_patches` | DeepLabV3 weights load; `seg_model="neural"` produces > 0 patches; patch count > 50% of HSV baseline (1,474); all coordinates within slide bounds; HDF5 `seg_model` attr == `"neural"` |
+| `test_neural_segmentation_patch_count_close_to_hsv` | Classic and neural segmenters both run on the same slide; neural / classic patch ratio is within [0.5, 2.0] |
+
+#### GrandQC artifact removal — `test_segmentation_integration.py`
+
+| Test | What is checked |
+|---|---|
+| `test_grandqc_artifact_remover_runs_on_real_slide` | GrandQC weights load; output mask same shape and dtype as input; values ∈ {0, 1}; at least some tissue retained |
+| `test_grandqc_artifact_remover_integrated_with_segment_tissue` | Full `segment_tissue(remove_artifacts=True, artifact_remover_fn=GrandQCArtifactRemover())` pipeline runs without error; patch count with removal ≤ baseline (removal only subtracts); HDF5 output is valid |
+
+These tests run as tasks 34–37 of the SLURM array using the `torch-gpu` extra (no separate venv required). Pending first run.
