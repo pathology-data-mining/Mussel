@@ -420,7 +420,7 @@ Tests run as a 38-task SLURM array (`tests/slurm/run_integration.sh`), one GPU p
 
 ### Summary
 
-**38 tasks, 32 passed, 6 skipped, 0 failed** (jobs 3056582 + 3056660 + 3056665).  
+**39 tasks, 32 passed, 6 skipped, 0 failed** (jobs 3056582 + 3056660 + 3056665).  
 All skips are expected: 2 models require HF access not yet granted (`H0_MINI`, `PRISM_SLIDE`), 2 GigaPath slide-encoder tests run in the dedicated fastattn tasks instead of the torch-gpu tasks, and `GOOGLEPATH` runs in the tensorflow task.
 
 Tasks 34–37 (neural segmentation + artifact removal) all passed (job 3056660).  
@@ -459,3 +459,13 @@ These tests run as tasks 34–37 of the SLURM array using the `torch-gpu` extra 
 | `test_grandqc_penmark_removal_reduces_mask_on_marked_slide` | `s3://mskmind-bkt/reef-slides/1007867.svs` | ✅ PASSED (job 3056665, 2m 21s) |
 
 Slide `1007867.svs` contains visible pen markings. With `remove_penmarks_only=True`, GrandQC detects and removes them — the output mask has fewer tissue pixels than the all-ones input, confirming the model correctly identifies pen marks. The slide is not committed to the repository; it is downloaded from S3 on first run and cached at `~/.cache/mussel-test-slides/`. Task 38 installs both `torch-gpu` and `distributed` extras (`boto3` lives in `distributed`) and sets `AWS_PROFILE=ecs`.
+
+Segmentation masks were visualised at two scales using `docs/generate_penmark_figures.py`. Tissue was first isolated with Otsu thresholding; GrandQC (`remove_penmarks_only=True`) ran at level 1 (~2 µm/px). **5.8%** of tissue pixels were classified as pen and suppressed.
+
+**Full-slide overview** (before / after / removed, ~4× downsample):
+
+![Pen mark removal — full-slide overview](penmark_overview.png)
+
+**Three crops centred on the densest pen-mark regions** (left: before with tissue overlay, centre: after, right: removed pixels in red):
+
+![Pen mark removal — crops](penmark_crop.png)
