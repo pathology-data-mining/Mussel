@@ -25,7 +25,6 @@ COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
 
 ARG BACKEND=torch-gpu
 ENV BACKEND=$BACKEND
-ENV UV_SYSTEM_PYTHON=1
 
 # Install build dependencies
 RUN apt-get update && apt-get install -y \
@@ -45,10 +44,10 @@ RUN --mount=type=cache,target=/root/.cache/uv \
   --mount=type=bind,source=pyproject.toml,target=pyproject.toml \
   uv sync --frozen --no-install-project --extra $BACKEND --extra distributed
 
-# Copy and install the project
+# Copy and install the project into the venv
 COPY . /app
 RUN --mount=type=cache,target=/root/.cache/uv \
-  uv pip install --system . --no-deps --force-reinstall
+  uv pip install --no-deps .
 
 # Stage 2: Runtime
 FROM nvidia/cuda:12.1.1-cudnn8-devel-ubuntu22.04
@@ -94,10 +93,11 @@ RUN curl -fsSL "https://github.com/tianon/gosu/releases/download/1.17/gosu-$(dpk
   chmod +x /usr/local/bin/gosu && \
   gosu nobody true
 
-# Copy Python packages from builder (Ubuntu packages install to /usr/lib)
-COPY --from=builder /usr/lib/python3.11 /usr/lib/python3.11
-COPY --from=builder /usr/local/lib/python3.11 /usr/local/lib/python3.11
-COPY --from=builder /usr/local/bin /usr/local/bin
+# Copy venv from builder
+COPY --from=builder /app/.venv /app/.venv
+
+ENV VIRTUAL_ENV="/app/.venv"
+ENV PATH="/app/.venv/bin:$PATH"
 
 # Copy only necessary application files (not the entire /app directory)
 WORKDIR /app
