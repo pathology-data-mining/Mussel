@@ -68,6 +68,12 @@ def pytest_addoption(parser: pytest.Parser) -> None:
         default=4,
         help="Number of DataLoader workers for slow integration tests (default: 4).",
     )
+    parser.addoption(
+        "--update-snapshots",
+        action="store_true",
+        default=False,
+        help="Regenerate golden snapshot .npy files for snapshot regression tests.",
+    )
 
 
 @pytest.fixture
@@ -80,6 +86,12 @@ def use_gpu(request: pytest.FixtureRequest) -> bool:
 def num_workers(request: pytest.FixtureRequest) -> int:
     """Return the number of DataLoader workers for integration tests."""
     return request.config.getoption("--num-workers")
+
+
+@pytest.fixture
+def update_snapshots(request: pytest.FixtureRequest) -> bool:
+    """Return True if --update-snapshots was passed."""
+    return request.config.getoption("--update-snapshots")
 
 
 @pytest.fixture(autouse=True)

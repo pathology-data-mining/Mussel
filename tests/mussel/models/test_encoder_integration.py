@@ -164,6 +164,24 @@ def test_patch_encoder_extracts_features(tmp_path, model_type, use_gpu):
             f"{model_type.name}: expected dim {expected_d}, got {d}"
         )
 
+    # --- Statistical sanity checks ---
+    norms = np.linalg.norm(features, axis=1)
+    assert norms.mean() > 1e-3, (
+        f"{model_type.name}: mean L2 norm {norms.mean():.4f} unexpectedly small"
+    )
+    assert norms.mean() < 1e4, (
+        f"{model_type.name}: mean L2 norm {norms.mean():.4f} unexpectedly large"
+    )
+    if n > 1:
+        inter_patch_std = features.std(axis=0)
+        assert inter_patch_std.mean() > 1e-8, (
+            f"{model_type.name}: features show no variation across patches"
+        )
+        dead_frac = float((inter_patch_std == 0).mean())
+        assert dead_frac < 0.10, (
+            f"{model_type.name}: {dead_frac:.1%} of feature dims are dead (zero variance)"
+        )
+
 
 # ---------------------------------------------------------------------------
 # Slide encoder integration tests
@@ -309,3 +327,119 @@ def test_end_to_end_patch_then_slide_encode(
     assert isinstance(result, np.ndarray)
     assert result.size > 0
     assert np.all(np.isfinite(result)), f"{slide_model_type.name}: non-finite values in result"
+
+
+# ---------------------------------------------------------------------------
+# Determinism tests
+# ---------------------------------------------------------------------------
+
+_SNAPSHOT_DIR = _TESTDATA / "snapshots"
+
+
+@pytest.mark.slow
+@pytest.mark.integration
+@pytest.mark.timeout(600)
+@pytest.mark.parametrize("model_type", _PATCH_ENCODER_TYPES, ids=lambda m: m.name)
+def test_patch_encoder_is_deterministic(tmp_path, model_type, use_gpu):
+    """Running the same patch encoder twice on the same input yields identical features.
+
+    The ``reset_seed`` autouse fixture sets seed=42 before each test.  We reset
+    it again manually before the second run so both inferences start from an
+    identical state.
+    """
+
+    def _run(output_h5: str) -> None:
+        torch.manual_seed(42)
+        if torch.cuda.is_available():
+            torch.cuda.manual_seed_all(42)
+        extract_patch_features(
+            patch_h5_path=_PATCH_H5,
+            slide_path=_SLIDE_PATH,
+            output_h5_path=output_h5,
+            model_type=model_type,
+            batch_size=16,
+            use_gpu=use_gpu,
+            num_workers=0,
+            pin_memory=False,
+            is_test_run=True,
+        )
+
+    @_skip_on_load_failure
+    def run():
+        import h5py
+
+        h5_a = str(tmp_path / "run_a.h5")
+        h5_b = str(tmp_path / "run_b.h5")
+        _run(h5_a)
+        _run(h5_b)
+        with h5py.File(h5_a, "r") as fa, h5py.File(h5_b, "r") as fb:
+            feat_a = fa["features"][:]
+            feat_b = fb["features"][:]
+        assert np.allclose(feat_a, feat_b, rtol=1e-4, atol=1e-5), (
+            f"{model_type.name}: outputs differ between runs (non-deterministic)"
+        )
+
+    run()
+
+
+# ---------------------------------------------------------------------------
+# Snapshot regression tests
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.slow
+@pytest.mark.integration
+@pytest.mark.timeout(600)
+@pytest.mark.parametrize("model_type", _PATCH_ENCODER_TYPES, ids=lambda m: m.name)
+def test_patch_encoder_matches_snapshot(tmp_path, model_type, use_gpu, update_snapshots):
+    """Features match a previously saved golden snapshot (regression test).
+
+    On first run (or with ``--update-snapshots``) the current output is saved
+    to ``tests/testdata/snapshots/<MODEL>.npy`` and the test is skipped.
+    On subsequent runs the saved snapshot is compared with ``np.allclose``.
+
+    Generate / refresh snapshots::
+
+        uv run pytest tests/mussel/models/test_encoder_integration.py \\
+            -k test_patch_encoder_matches_snapshot --use-gpu --update-snapshots
+    """
+    snapshot_path = _SNAPSHOT_DIR / f"{model_type.name}.npy"
+
+    @_skip_on_load_failure
+    def run():
+        import h5py
+
+        output_h5 = str(tmp_path / f"{model_type.name}.h5")
+        extract_patch_features(
+            patch_h5_path=_PATCH_H5,
+            slide_path=_SLIDE_PATH,
+            output_h5_path=output_h5,
+            model_type=model_type,
+            batch_size=16,
+            use_gpu=use_gpu,
+            num_workers=0,
+            pin_memory=False,
+            is_test_run=True,
+        )
+        with h5py.File(output_h5, "r") as f:
+            features = f["features"][:]
+
+        if update_snapshots or not snapshot_path.exists():
+            _SNAPSHOT_DIR.mkdir(parents=True, exist_ok=True)
+            np.save(snapshot_path, features)
+            if not update_snapshots:
+                pytest.skip(
+                    f"Snapshot saved to {snapshot_path.name}; re-run to compare."
+                )
+            return
+
+        golden = np.load(snapshot_path)
+        assert features.shape == golden.shape, (
+            f"{model_type.name}: shape {features.shape} != snapshot {golden.shape}"
+        )
+        assert np.allclose(features, golden, rtol=1e-3, atol=1e-4), (
+            f"{model_type.name}: features differ from snapshot "
+            "(model weights or preprocessing changed?)"
+        )
+
+    run()
