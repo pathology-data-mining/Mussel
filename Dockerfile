@@ -104,10 +104,6 @@ WORKDIR /app
 # Copy only the installed package from site-packages, not all source files
 RUN mkdir -p /app
 
-# Copy scripts directory for Azure Batch
-COPY scripts /app/scripts
-RUN chmod +x /app/scripts/azure_batch/*.sh
-
 COPY entrypoint.sh /usr/local/bin/entrypoint.sh
 RUN chmod +x /usr/local/bin/entrypoint.sh
 
