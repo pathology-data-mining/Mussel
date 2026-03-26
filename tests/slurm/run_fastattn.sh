@@ -74,11 +74,13 @@ if ! "${UV_PROJECT_ENVIRONMENT}/bin/python" -c "import flash_attn" 2>/dev/null; 
     nvcc --version | head -1
 
     # Install flash-attn from source.  --no-build-isolation lets setup.py use
-    # the venv's torch to auto-detect CUDA arch.  UV_PROJECT_ENVIRONMENT is
-    # already exported so 'uv pip install' targets the correct venv.
-    uv pip install "flash-attn==2.5.9" \
+    # the venv's torch to auto-detect CUDA arch.  Pass --python explicitly
+    # because uv pip install doesn't honour UV_PROJECT_ENVIRONMENT.
+    uv pip install \
+        --python "${UV_PROJECT_ENVIRONMENT}/bin/python" \
+        "flash-attn==2.5.9" \
         --no-build-isolation \
-        --reinstall-package flash-attn \
+        --reinstall \
         --no-binary flash-attn \
         --verbose
     echo "--- flash-attn compiled from source ---"
