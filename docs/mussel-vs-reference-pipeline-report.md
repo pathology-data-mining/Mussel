@@ -139,13 +139,25 @@ tessellate_extract_features wsi_dir=/data/cohort output_dir=/data/out search_nes
 
 ---
 
-### 6. Artifact Removal Hook: `artifact_remover_fn`
+### 6. Artifact Removal: `artifact_remover_fn` + `GrandQCArtifactRemover`
 
-A pluggable callable that receives and returns the binary tissue mask, enabling custom artifact or pen-mark suppression. Only called when `remove_artifacts=True` or `remove_penmarks=True` is also set; warns if the function is provided but neither flag is set.
+#### Hook protocol
+
+`segment_tissue()` accepts a pluggable `artifact_remover_fn(img, mask, mpp) -> mask` callable. It is called once per slide after the initial tissue mask is computed and receives:
+
+| Argument | Type | Description |
+|---|---|---|
+| `img` | `np.ndarray (H, W, C)` | RGB thumbnail at the segmentation level |
+| `mask` | `np.ndarray (H, W)` uint8 | Binary tissue mask (1 = tissue) |
+| `mpp` | `float` | Microns-per-pixel of `img` |
+
+The function must return a corrected binary mask of the same shape and dtype. It is only called when `remove_artifacts=True` or `remove_penmarks=True`; if neither flag is set, a warning is emitted.
+
+Custom implementation example:
 
 ```python
-def remove_blue_pen(mask: np.ndarray) -> np.ndarray:
-    # Custom logic to suppress blue pen marks
+def remove_blue_pen(img: np.ndarray, mask: np.ndarray, mpp: float) -> np.ndarray:
+    # Custom logic to suppress blue pen marks using the RGB thumbnail
     ...
     return cleaned_mask
 
@@ -155,6 +167,54 @@ segment_tissue(
     artifact_remover_fn=remove_blue_pen,
 )
 ```
+
+#### Built-in implementation: `GrandQCArtifactRemover`
+
+Mussel ships a production-ready implementation based on **GrandQC** ([Nature Communications 2024](https://www.nature.com/articles/s41467-024-54769-y)). The model is a U-Net with an EfficientNet-B0 encoder trained to classify WSI pixels into eight classes:
+
+| Class | Label |
+|---|---|
+| 0 | Unlabeled |
+| 1 | Normal Tissue |
+| 2 | Fold |
+| 3 | Dark Spot |
+| 4 | Pen Marking |
+| 5 | Edge / Air Bubble |
+| 6 | Out-of-Focus |
+| 7 | Background |
+
+Weights are downloaded automatically from `MahmoodLab/hest-tissue-seg` on HuggingFace on first use. Requires `torch-gpu` or `torch-cpu`.
+
+```python
+from mussel.utils import GrandQCArtifactRemover
+from mussel.utils.segment import segment_tissue
+
+# Remove all non-normal-tissue classes (folds, pen marks, OOF, etc.)
+remover = GrandQCArtifactRemover()
+segment_tissue(
+    slide_path="slide.svs",
+    remove_artifacts=True,
+    artifact_remover_fn=remover,
+)
+
+# Remove only pen marks and background, keep folds
+remover_pm = GrandQCArtifactRemover(remove_penmarks_only=True)
+segment_tissue(
+    slide_path="slide.svs",
+    remove_penmarks=True,
+    artifact_remover_fn=remover_pm,
+)
+```
+
+`GrandQCArtifactRemover` parameters:
+
+| Parameter | Default | Description |
+|---|---|---|
+| `remove_penmarks_only` | `False` | If `True`, only classes 4 (pen) and 7 (background) are suppressed |
+| `device` | auto (CUDA if available) | Torch device string |
+| `batch_size` | `8` | 512 × 512 tiles per forward pass |
+
+The model runs at 1 µm/px (10×). The thumbnail is automatically up- or down-sampled to the target resolution using `mpp`, and the prediction is resampled back to the original mask dimensions before applying.
 
 ---
 
@@ -255,6 +315,7 @@ A tissue island of 8,100 seg-px (≈ 2 native patches) would be filtered by the 
 
 ## Known Limitations
 
+- **`GrandQCArtifactRemover`**: Requires the `torch-gpu` or `torch-cpu` extra and `segmentation-models-pytorch` (included automatically). Weights auto-downloaded from `MahmoodLab/hest-tissue-seg` on HuggingFace (~50 MB). GPU is recommended but CPU inference is supported.
 - **`tissue_area_threshold` units**: The threshold is expressed in "requested patches" (at `patch_size` / `mpp`). With the default of 100 and 256 px patches at 0.5 MPP, the minimum tissue area is 100 × 256² native pixels ≈ 1.6 mm². Lower the threshold if small tissue fragments are being missed (e.g., `tissue_area_threshold=1`).
 - **`CHIEF_SLIDE`**: Requires a locally downloaded checkpoint path; raises `NotImplementedError` if no path is supplied.
 - **`seg_model="neural"`**: Requires `torch-gpu` or `torch-cpu` (no additional packages). Weights auto-downloaded from `MahmoodLab/hest-tissue-seg` on HuggingFace (~50 MB). GPU recommended for speed (~3 s on GPU vs ~20 s on CPU for a typical slide).
