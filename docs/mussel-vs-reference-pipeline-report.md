@@ -324,5 +324,97 @@ A tissue island of 8,100 seg-px (≈ 2 native patches) would be filtered by the 
 
 ## Test Coverage
 
-- **244 unit tests** pass (`uv run pytest tests/ -m "not slow"`)
+- **254 unit tests** pass (`uv run pytest tests/ -m "not slow and not integration"`)
 - **Comparison tests** (`@pytest.mark.slow`): patch count tolerance, coordinate bounds, no duplicates, overlap correctness, min_tissue_proportion behaviour
+
+---
+
+## Integration Testing
+
+### Test suites
+
+Integration tests load real model weights (from HuggingFace or local checkpoints) and run inference on the same validation slide (`948176.svs`). Three separate test files cover all supported install extras:
+
+| Test file | Extra | Models covered |
+|---|---|---|
+| `test_encoder_integration.py` | `torch-gpu` | All patch & slide encoders except GIGAPATH (flash-attn), GOOGLEPATH (TF) |
+| `test_fastattn_models.py` | `fastattn` | GIGAPATH patch encoder, GIGAPATH slide encoder, end-to-end |
+| `test_tensorflow_models.py` | `tensorflow-gpu` | GOOGLEPATH |
+
+Each test verifies:
+1. **Model loads** from HuggingFace / local checkpoint without error
+2. **Feature shape** matches expected dimension for the model
+3. **Statistical sanity**: L2 norm in expected range, inter-patch variance > 0, fewer than 10% dead (zero) dimensions
+4. **Determinism**: two forward passes on identical input produce bit-exact output
+5. **Snapshot regression**: features match a golden `.npy` file committed at `tests/testdata/snapshots/`
+
+### SLURM job array
+
+Tests run as a 34-task SLURM array (`tests/slurm/run_integration.sh`), one GPU per task, so all models can be tested in parallel without GPU contention. Tasks 0–29 use `torch-gpu`, tasks 30–32 use `fastattn` (separate venv, torch 2.11.0+cu126 + flash-attn manylinux_2_28), task 33 uses `tensorflow-gpu`.
+
+### Results (SLURM job 3056582, A100, CUDA 12.6)
+
+#### Patch encoders — `test_patch_encoder_extracts_features`
+
+| Model | `model_type` | Dim | Result | Skip reason |
+|---|---|---:|---|---|
+| ResNet-50 | `RESNET50` | 1024 | ✅ PASSED | — |
+| CTransPath | `CTRANSPATH` | 768 | ✅ PASSED | — |
+| GigaPath\* | `GIGAPATH` | 1536 | ✅ PASSED | — |
+| Virchow | `VIRCHOW` | 2560 | ✅ PASSED | — |
+| Virchow 2 | `VIRCHOW2` | 2560 | ✅ PASSED | — |
+| H-Optimus-0 | `OPTIMUS` | 1536 | ✅ PASSED | — |
+| CLIP (ViT-L/14) | `CLIP` | 512 | ✅ PASSED | — |
+| GooglePath | `GOOGLEPATH` | 384 | ✅ PASSED† | — |
+| CONCH v1.5 | `CONCH1_5` | 768 | ✅ PASSED | — |
+| UNI | `UNI` | 1024 | ✅ PASSED | — |
+| UNI 2 | `UNI2` | 1536 | ✅ PASSED | — |
+| Phikon | `PHIKON` | 768 | ✅ PASSED | — |
+| Phikon v2 | `PHIKON_V2` | 1024 | ✅ PASSED | — |
+| H-Optimus-1 | `H_OPTIMUS_1` | 1536 | ✅ PASSED | — |
+| H0-mini | `H0_MINI` | 1152 | ⚪ SKIPPED | Gated HF repo (pending access) |
+| Midnight-12k | `MIDNIGHT12K` | 1536 | ✅ PASSED | — |
+| GPFM | `GPFM` | 1024 | ✅ PASSED | — |
+| Hibou-L | `HIBOU_L` | 1024 | ✅ PASSED | — |
+
+\* GigaPath tested via `fastattn` extra (task 30); requires torch 2.11+flash-attn 2.6.3 (manylinux_2_28) to satisfy GLIBC ≥ 2.28 on RHEL 8.  
+† GooglePath tested via `tensorflow-gpu` extra (task 33); skipped in the `torch-gpu` tasks as expected.
+
+#### Slide encoders — `test_slide_encoder_aggregates_features`
+
+| Model | `slide_model_type` | Required patch encoder | Result | Skip reason |
+|---|---|---|---|---|
+| TITAN | `TITAN_SLIDE` | `CONCH1_5` | ✅ PASSED | — |
+| CHIEF | `CHIEF_SLIDE` | `CTRANSPATH` | ✅ PASSED | — |
+| FEATHER | `FEATHER_SLIDE` | `CONCH1_5` | ✅ PASSED | — |
+| MADELEINE | `MADELEINE_SLIDE` | `CONCH1_5` | ✅ PASSED | — |
+| Prism | `PRISM_SLIDE` | `VIRCHOW` | ⚪ SKIPPED | Gated HF repo (pending access) |
+| GigaPath slide | `GIGAPATH_SLIDE` | `GIGAPATH` | ⚪ SKIPPED | Requires `fastattn` extra |
+
+#### End-to-end — `test_end_to_end_patch_then_slide_encode`
+
+| Pair | Result | Skip reason |
+|---|---|---|
+| `CONCH1_5` → `TITAN_SLIDE` | ✅ PASSED | — |
+| `CONCH1_5` → `FEATHER_SLIDE` | ✅ PASSED | — |
+| `CTRANSPATH` → `CHIEF_SLIDE` | ✅ PASSED | — |
+| `CLIP` → `MADELEINE_SLIDE` | ✅ PASSED | — |
+| `VIRCHOW` → `PRISM_SLIDE` | ⚪ SKIPPED | Gated HF repo |
+| `GIGAPATH` → `GIGAPATH_SLIDE` | ⚪ SKIPPED | Requires `fastattn` extra |
+
+#### GigaPath end-to-end (fastattn extra, task 32)
+
+| Test | Result |
+|---|---|
+| `test_gigapath_patch_encoder_extracts_features` | ✅ PASSED |
+| `test_gigapath_slide_encoder_aggregates_features` | ✅ PASSED |
+| `test_gigapath_end_to_end` | ✅ PASSED |
+
+### Summary
+
+**34 tasks, 28 passed, 6 skipped, 0 failed.**  
+All skips are expected: 2 models require HF access not yet granted (`H0_MINI`, `PRISM_SLIDE`), 2 GigaPath slide-encoder tests run in the dedicated fastattn tasks instead of the torch-gpu tasks, and `GOOGLEPATH` runs in the tensorflow task.
+
+### Snapshot regression baselines
+
+Golden feature snapshots (`tests/testdata/snapshots/*.npy`) were generated on the same A100 hardware and committed as regression baselines for 16 patch encoders (all passed models except GOOGLEPATH which requires the TF extra). Each snapshot stores features for all 48 test patches at the model's native dimension. Future runs are validated with `rtol=1e-3, atol=1e-4`.
