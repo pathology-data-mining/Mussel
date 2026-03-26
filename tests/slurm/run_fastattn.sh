@@ -57,7 +57,6 @@ uv sync --extra fastattn
 # against glibc 2.28 and will persist in the venv for future runs.
 # ---------------------------------------------------------------------------
 VENV_PYTHON="${UV_PROJECT_ENVIRONMENT}/bin/python"
-VENV_PIP="${UV_PROJECT_ENVIRONMENT}/bin/pip"
 
 if ! "$VENV_PYTHON" -c "import flash_attn" 2>/dev/null; then
     echo ""
@@ -78,7 +77,8 @@ if ! "$VENV_PYTHON" -c "import flash_attn" 2>/dev/null; then
 
     # Install flash-attn from source.  --no-build-isolation uses the venv's
     # torch so setup.py can probe the CUDA arch list automatically.
-    "$VENV_PIP" install "flash-attn==2.5.9" \
+    # Use "python -m pip" since uv venvs don't always install the pip script.
+    "$VENV_PYTHON" -m pip install "flash-attn==2.5.9" \
         --no-build-isolation \
         --force-reinstall \
         --no-binary :all: \
