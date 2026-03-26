@@ -14,9 +14,11 @@ Run (GPU recommended):
 
 from __future__ import annotations
 
+import functools
 import os
 from pathlib import Path
 
+import h5py
 import numpy as np
 import pytest
 import torch
@@ -77,7 +79,6 @@ _SLIDE_ENCODER_INPUT_DIM: dict[ModelType, int] = {
 
 def _skip_on_load_failure(fn):
     """Decorator: run fn and pytest.skip on any model-load/network error."""
-    import functools
 
     @functools.wraps(fn)
     def wrapper(*args, **kwargs):
@@ -137,7 +138,6 @@ def test_patch_encoder_extracts_features(tmp_path, model_type, use_gpu):
 
     run()
 
-    import h5py
     with h5py.File(output_h5, "r") as f:
         assert "features" in f, "Output HDF5 missing 'features'"
         assert "coords" in f, "Output HDF5 missing 'coords'"
@@ -304,7 +304,6 @@ def test_end_to_end_patch_then_slide_encode(
 
     run_patch()
 
-    import h5py
     with h5py.File(patch_h5_out, "r") as f:
         features = f["features"][:]
         coords = f["coords"][:]
@@ -366,8 +365,6 @@ def test_patch_encoder_is_deterministic(tmp_path, model_type, use_gpu):
 
     @_skip_on_load_failure
     def run():
-        import h5py
-
         h5_a = str(tmp_path / "run_a.h5")
         h5_b = str(tmp_path / "run_b.h5")
         _run(h5_a)
@@ -407,8 +404,6 @@ def test_patch_encoder_matches_snapshot(tmp_path, model_type, use_gpu, update_sn
 
     @_skip_on_load_failure
     def run():
-        import h5py
-
         output_h5 = str(tmp_path / f"{model_type.name}.h5")
         extract_patch_features(
             patch_h5_path=_PATCH_H5,
