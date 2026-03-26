@@ -8,45 +8,54 @@ set -e
 USER_ID="${MUSSEL_UID:-1000}"
 GROUP_ID="${MUSSEL_GID:-1000}"
 
-# Create a user with the specified UID/GID if running as root and custom UID is requested
+# Run user-switching logic whenever the container starts as root with a non-root UID
 if [ "$(id -u)" = "0" ] && [ "$USER_ID" != "0" ]; then
-  # Create group if it doesn't exist
-  if ! getent group mussel >/dev/null 2>&1; then
+  # Validate that USER_ID and GROUP_ID are numeric
+  if ! echo "$USER_ID" | grep -qE '^[0-9]+$' || ! echo "$GROUP_ID" | grep -qE '^[0-9]+$'; then
+    echo "ERROR: MUSSEL_UID and MUSSEL_GID must be numeric (got UID='$USER_ID' GID='$GROUP_ID')" >&2
+    exit 1
+  fi
+
+  # Create group if neither the name nor the GID is already in use
+  if ! getent group mussel >/dev/null 2>&1 && ! getent group "$GROUP_ID" >/dev/null 2>&1; then
     groupadd -g "$GROUP_ID" mussel
   fi
 
-  # Create user if it doesn't exist
-  if ! id -u mussel >/dev/null 2>&1; then
+  # Create user if neither the name nor the UID is already in use
+  if ! id -u mussel >/dev/null 2>&1 && ! getent passwd "$USER_ID" >/dev/null 2>&1; then
     useradd -u "$USER_ID" -g "$GROUP_ID" -m -s /bin/bash mussel
   fi
 
-  # Ensure writable cache directories
-  mkdir -p /.cache /tmp
-  chown -R mussel:mussel /.cache /tmp || true
-  chmod -R 777 /.cache /tmp
+  # Ensure Mussel-specific cache/output dirs are writable; leave /tmp sticky bit intact
+  mkdir -p /.cache/mussel /tmp/mussel /tmp/output
+  chown -R mussel:mussel /.cache/mussel /tmp/mussel /tmp/output || true
+  chmod 777 /.cache/mussel /tmp/mussel /tmp/output || true
+  chmod 1777 /tmp || true
 
   # Ensure output directory exists and is writable (Azure Batch expects this)
   if [ -n "$AZ_BATCH_TASK_WORKING_DIR" ]; then
     mkdir -p "$AZ_BATCH_TASK_WORKING_DIR/output"
+    chown -R mussel:mussel "$AZ_BATCH_TASK_WORKING_DIR/output" || true
     chmod -R 777 "$AZ_BATCH_TASK_WORKING_DIR/output" || true
   fi
-  mkdir -p /tmp/output
-  chmod 777 /tmp/output || true
-  
-  # Ensure cache directories are writable by mussel user if they're set
-  if [ -n "$TMPDIR" ] && [ -d "$TMPDIR" ]; then
-    chown -R mussel:mussel "$TMPDIR" 2>/dev/null || chmod -R 777 "$TMPDIR" 2>/dev/null || true
+
+  # Ensure Mussel-specific subdirs are writable for optional cache env vars
+  if [ -n "$TMPDIR" ]; then
+    mkdir -p "$TMPDIR"
+    chown mussel:mussel "$TMPDIR" 2>/dev/null || chmod 777 "$TMPDIR" 2>/dev/null || true
   fi
-  if [ -n "$TORCH_HOME" ] && [ -d "$TORCH_HOME" ]; then
+  if [ -n "$TORCH_HOME" ]; then
+    mkdir -p "$TORCH_HOME"
     chown -R mussel:mussel "$TORCH_HOME" 2>/dev/null || chmod -R 777 "$TORCH_HOME" 2>/dev/null || true
   fi
-  if [ -n "$HF_HOME" ] && [ -d "$HF_HOME" ]; then
+  if [ -n "$HF_HOME" ]; then
+    mkdir -p "$HF_HOME"
     chown -R mussel:mussel "$HF_HOME" 2>/dev/null || chmod -R 777 "$HF_HOME" 2>/dev/null || true
   fi
 
-  # Switch to the created user and execute the command
+  # Switch to the mussel user and execute the command
   exec gosu mussel "$@"
 else
-  # Not root or no custom UID requested - run directly
+  # Not root or UID is 0 — run directly
   exec "$@"
 fi
