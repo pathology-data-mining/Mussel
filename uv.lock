@@ -2000,7 +2000,7 @@ requires-dist = [
     { name = "lifelines", marker = "extra == 'fastattn'" },
     { name = "matplotlib" },
     { name = "ninja", marker = "extra == 'fastattn'", specifier = "==1.11.1.1" },
-    { name = "numpy", specifier = "<2" },
+    { name = "numpy" },
     { name = "omegaconf", marker = "extra == 'fastattn'" },
     { name = "open-clip-torch", marker = "extra == 'fastattn'" },
     { name = "open-clip-torch", marker = "extra == 'tensorflow-cpu'" },
