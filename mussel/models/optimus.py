@@ -115,3 +115,18 @@ class H0MiniModel(TorchModel):
 
     def get_preprocessing_fun(self) -> Callable:
         return _bioptimus_preprocessing()
+
+    def get_model_fun(self) -> Callable:
+        """Return inference function that extracts CLS token features.
+
+        H0-mini uses global_pool='' so the model returns all tokens as
+        (batch, num_tokens, embed_dim). We extract index 0 (CLS token)
+        to get (batch, embed_dim) consistent with other patch encoders.
+        """
+        base_fn = super().get_model_fun()
+
+        def model_fun(x):
+            out = base_fn(x)  # (N, 261, 768)
+            return out[:, 0]  # CLS token -> (N, 768)
+
+        return model_fun
