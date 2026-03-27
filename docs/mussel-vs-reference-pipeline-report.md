@@ -380,7 +380,7 @@ Tests run as a 38-task SLURM array (`tests/slurm/run_integration.sh`), one GPU p
 | Phikon | `PHIKON` | 768 | ✅ PASSED | — |
 | Phikon v2 | `PHIKON_V2` | 1024 | ✅ PASSED | — |
 | H-Optimus-1 | `H_OPTIMUS_1` | 1536 | ✅ PASSED | — |
-| H0-mini | `H0_MINI` | 1152 | ⚪ SKIPPED | Gated HF repo (pending access) |
+| H0-mini | `H0_MINI` | 768 | ✅ PASSED | — |
 | Midnight-12k | `MIDNIGHT12K` | 1536 | ✅ PASSED | — |
 | GPFM | `GPFM` | 1024 | ✅ PASSED | — |
 | Hibou-L | `HIBOU_L` | 1024 | ✅ PASSED | — |
@@ -420,8 +420,8 @@ Tests run as a 38-task SLURM array (`tests/slurm/run_integration.sh`), one GPU p
 
 ### Summary
 
-**39 tasks, 32 passed, 6 skipped, 0 failed** (jobs 3056582 + 3056660 + 3056665).  
-All skips are expected: 2 models require HF access not yet granted (`H0_MINI`, `PRISM_SLIDE`), 2 GigaPath slide-encoder tests run in the dedicated fastattn tasks instead of the torch-gpu tasks, and `GOOGLEPATH` runs in the tensorflow task.
+**39 tasks, 33 passed, 5 skipped, 0 failed** (jobs 3056582 + 3056660 + 3056665 + 3056688).  
+All remaining skips are expected: `PRISM_SLIDE` requires gated HF access, 2 GigaPath slide-encoder tests run in the dedicated fastattn tasks instead of the torch-gpu tasks, and `GOOGLEPATH` runs in the tensorflow task.
 
 Tasks 34–37 (neural segmentation + artifact removal) all passed (job 3056660).  
 Task 38 (pen mark removal on S3 slide) passed (job 3056665, 2m 21s including S3 download).
