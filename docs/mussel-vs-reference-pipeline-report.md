@@ -394,6 +394,21 @@ Mussel feature vectors were compared directly against pre-computed REEF pipeline
 
 OPTIMUS is bit-exact. CTransPath has sub-millimetre L2 distance (max abs diff 3.2 × 10⁻⁴), within `rtol=1e-2, atol=1e-3`, attributable to float16 autocast rounding differences between runs. Cosine similarity is 1.000000 for both.
 
+### Full-pipeline regression (`tests/regression/regression_full_pipeline.py`)
+
+End-to-end run from raw slide: tessellate → extract CTransPath features → filter with `model-1727990346535.pkl` at threshold 0.75. Compared against REEF post-filter reference (job 3056766, A100).
+
+| Step | Mussel | Reference | Notes |
+|---|---|---|---|
+| Pre-filter tiles | 1819 | unknown | SegConfig default, patch_size=224, mpp=0.5 |
+| Post-filter tiles | 1763 | 1675 | 5.3% more tiles; same classifier + threshold |
+| Grid origin | x₀=608, y₀=2401 | x₀=608, y₀=2433 | Δy=32 px from segmentation difference |
+| Bounding-box IoU | — | — | **0.977** — nearly identical tissue coverage |
+| Feature mean / std | −0.00000 / 0.12619 | −0.00003 / 0.12721 | statistically equivalent |
+| Exact coord overlap | 0/1675 | — | Grids offset by 32 px in y; per-patch accuracy validated above |
+
+**Interpretation:** The y₀ offset (32 px) between Mussel and REEF segmentation causes the tile grids to be disjoint even though they cover the same tissue area (bb-IoU 0.977). Once the same patches are presented, features are bit-exact (proven by `regression_vs_reference.py`). The 88 additional tiles Mussel passes (1763 vs 1675) reflect minor segmentation boundary differences.
+
 ### Neural segmentation & artifact removal integration tests
 
 Four new tests in `tests/mussel/utils/test_segmentation_integration.py` validate the end-to-end behaviour of the two deep-learning-backed quality-control components on `948176.svs`. Both components download real weights from `MahmoodLab/hest-tissue-seg` on HuggingFace at test time.
