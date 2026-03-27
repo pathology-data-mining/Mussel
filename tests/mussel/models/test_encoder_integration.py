@@ -60,7 +60,7 @@ _PATCH_ENCODER_DIM: dict[ModelType, int] = {
     ModelType.PHIKON:       768,
     ModelType.PHIKON_V2:   1024,   # DINOv2 ViT-L/14
     ModelType.H_OPTIMUS_1: 1536,
-    ModelType.H0_MINI:     1152,
+    ModelType.H0_MINI:      768,
     ModelType.MIDNIGHT12K: 1536,   # DINOv2 ViT-g/14
     ModelType.GPFM:        1024,   # ViT-L/14 (embed_dim=1024, num_classes=0)
     ModelType.HIBOU_L:     1024,
