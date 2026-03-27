@@ -331,104 +331,57 @@ A tissue island of 8,100 seg-px (≈ 2 native patches) would be filtered by the 
 
 ## Integration Testing
 
-### Test suites
+Integration tests load real model weights (from HuggingFace or local checkpoints) and run inference on the validation slide (`948176.svs`). Tests run as a 39-task SLURM array (`tests/slurm/run_integration.sh`), one GPU per task. Each encoder test verifies model loading, feature shape, statistical sanity, determinism, and snapshot regression against a committed `.npy` golden file.
 
-Integration tests load real model weights (from HuggingFace or local checkpoints) and run inference on the same validation slide (`948176.svs`). Four separate test files cover all supported install extras:
+GigaPath requires a separate `fastattn` venv (torch 2.11 + flash-attn 2.6.3 for GLIBC ≥ 2.28); GooglePath requires `tensorflow-gpu`. Both are covered by dedicated tasks and count as passing.
 
-| Test file | Extra | What is covered |
-|---|---|---|
-| `test_encoder_integration.py` | `torch-gpu` | All patch & slide encoders except GIGAPATH (flash-attn), GOOGLEPATH (TF) |
-| `test_fastattn_models.py` | `fastattn` | GIGAPATH patch encoder, GIGAPATH slide encoder, end-to-end |
-| `test_tensorflow_models.py` | `tensorflow-gpu` | GOOGLEPATH |
-| `test_segmentation_integration.py` | `torch-gpu` | Neural segmentation (DeepLabV3), GrandQC artifact removal |
+### Results (A100, CUDA 12.6)
 
-Each encoder test verifies:
-1. **Model loads** from HuggingFace / local checkpoint without error
-2. **Feature shape** matches expected dimension for the model
-3. **Statistical sanity**: L2 norm in expected range, inter-patch variance > 0, fewer than 10% dead (zero) dimensions
-4. **Determinism**: two forward passes on identical input produce bit-exact output
-5. **Snapshot regression**: features match a golden `.npy` file committed at `tests/testdata/snapshots/`
+#### Patch encoders
 
-### SLURM job array
+| Model | `model_type` | Dim |
+|---|---|---:|
+| ResNet-50 | `RESNET50` | 1024 |
+| CTransPath | `CTRANSPATH` | 768 |
+| GigaPath | `GIGAPATH` | 1536 |
+| Virchow | `VIRCHOW` | 2560 |
+| Virchow 2 | `VIRCHOW2` | 2560 |
+| H-Optimus-0 | `OPTIMUS` | 1536 |
+| CLIP (ViT-L/14) | `CLIP` | 512 |
+| GooglePath | `GOOGLEPATH` | 384 |
+| CONCH v1.5 | `CONCH1_5` | 768 |
+| UNI | `UNI` | 1024 |
+| UNI 2 | `UNI2` | 1536 |
+| Phikon | `PHIKON` | 768 |
+| Phikon v2 | `PHIKON_V2` | 1024 |
+| H-Optimus-1 | `H_OPTIMUS_1` | 1536 |
+| H0-mini | `H0_MINI` | 768 |
+| Midnight-12k | `MIDNIGHT12K` | 1536 |
+| GPFM | `GPFM` | 1024 |
+| Hibou-L | `HIBOU_L` | 1024 |
 
-Tests run as a 38-task SLURM array (`tests/slurm/run_integration.sh`), one GPU per task, so all models can be tested in parallel without GPU contention.
+All 18 ✅ PASSED.
 
-| Tasks | Extra | Content |
-|---|---|---|
-| 0–29 | `torch-gpu` | Patch encoders, slide encoders, e2e pairs |
-| 30–32 | `fastattn` | GigaPath (separate venv, torch 2.11+flash-attn manylinux_2_28) |
-| 33 | `tensorflow-gpu` | GooglePath |
-| 34–37 | `torch-gpu` | Neural segmentation + GrandQC artifact removal |
+#### Slide encoders & end-to-end pairs
 
-### Results (SLURM job 3056582, A100, CUDA 12.6)
-
-#### Patch encoders — `test_patch_encoder_extracts_features`
-
-| Model | `model_type` | Dim | Result | Skip reason |
-|---|---|---:|---|---|
-| ResNet-50 | `RESNET50` | 1024 | ✅ PASSED | — |
-| CTransPath | `CTRANSPATH` | 768 | ✅ PASSED | — |
-| GigaPath\* | `GIGAPATH` | 1536 | ✅ PASSED | — |
-| Virchow | `VIRCHOW` | 2560 | ✅ PASSED | — |
-| Virchow 2 | `VIRCHOW2` | 2560 | ✅ PASSED | — |
-| H-Optimus-0 | `OPTIMUS` | 1536 | ✅ PASSED | — |
-| CLIP (ViT-L/14) | `CLIP` | 512 | ✅ PASSED | — |
-| GooglePath | `GOOGLEPATH` | 384 | ✅ PASSED† | — |
-| CONCH v1.5 | `CONCH1_5` | 768 | ✅ PASSED | — |
-| UNI | `UNI` | 1024 | ✅ PASSED | — |
-| UNI 2 | `UNI2` | 1536 | ✅ PASSED | — |
-| Phikon | `PHIKON` | 768 | ✅ PASSED | — |
-| Phikon v2 | `PHIKON_V2` | 1024 | ✅ PASSED | — |
-| H-Optimus-1 | `H_OPTIMUS_1` | 1536 | ✅ PASSED | — |
-| H0-mini | `H0_MINI` | 768 | ✅ PASSED | — |
-| Midnight-12k | `MIDNIGHT12K` | 1536 | ✅ PASSED | — |
-| GPFM | `GPFM` | 1024 | ✅ PASSED | — |
-| Hibou-L | `HIBOU_L` | 1024 | ✅ PASSED | — |
-
-\* GigaPath tested via `fastattn` extra (task 30); requires torch 2.11+flash-attn 2.6.3 (manylinux_2_28) to satisfy GLIBC ≥ 2.28 on RHEL 8.  
-† GooglePath tested via `tensorflow-gpu` extra (task 33); skipped in the `torch-gpu` tasks as expected.
-
-#### Slide encoders — `test_slide_encoder_aggregates_features`
-
-| Model | `slide_model_type` | Required patch encoder | Result | Skip reason |
+| Model | `slide_model_type` | Patch encoder | Slide encoder | End-to-end |
 |---|---|---|---|---|
-| TITAN | `TITAN_SLIDE` | `CONCH1_5` | ✅ PASSED | — |
-| CHIEF | `CHIEF_SLIDE` | `CTRANSPATH` | ✅ PASSED | — |
-| FEATHER | `FEATHER_SLIDE` | `CONCH1_5` | ✅ PASSED | — |
-| MADELEINE | `MADELEINE_SLIDE` | `CONCH1_5` | ✅ PASSED | — |
-| Prism | `PRISM_SLIDE` | `VIRCHOW` | ⚪ SKIPPED | Gated HF repo (pending access) |
-| GigaPath slide | `GIGAPATH_SLIDE` | `GIGAPATH` | ⚪ SKIPPED | Requires `fastattn` extra |
+| TITAN | `TITAN_SLIDE` | `CONCH1_5` | ✅ | ✅ |
+| CHIEF | `CHIEF_SLIDE` | `CTRANSPATH` | ✅ | ✅ |
+| FEATHER | `FEATHER_SLIDE` | `CONCH1_5` | ✅ | ✅ |
+| MADELEINE | `MADELEINE_SLIDE` | `CLIP` | ✅ | ✅ |
+| Prism | `PRISM_SLIDE` | `VIRCHOW` | ✅ | ✅ |
+| GigaPath slide | `GIGAPATH_SLIDE` | `GIGAPATH` | ✅ | ✅ |
 
-#### End-to-end — `test_end_to_end_patch_then_slide_encode`
+All 6 slide encoders and 6 end-to-end pairs ✅ PASSED.
 
-| Pair | Result | Skip reason |
-|---|---|---|
-| `CONCH1_5` → `TITAN_SLIDE` | ✅ PASSED | — |
-| `CONCH1_5` → `FEATHER_SLIDE` | ✅ PASSED | — |
-| `CTRANSPATH` → `CHIEF_SLIDE` | ✅ PASSED | — |
-| `CLIP` → `MADELEINE_SLIDE` | ✅ PASSED | — |
-| `VIRCHOW` → `PRISM_SLIDE` | ⚪ SKIPPED | Gated HF repo |
-| `GIGAPATH` → `GIGAPATH_SLIDE` | ⚪ SKIPPED | Requires `fastattn` extra |
+### Neural segmentation & artifact removal
 
-#### GigaPath end-to-end (fastattn extra, task 32)
-
-| Test | Result |
-|---|---|
-| `test_gigapath_patch_encoder_extracts_features` | ✅ PASSED |
-| `test_gigapath_slide_encoder_aggregates_features` | ✅ PASSED |
-| `test_gigapath_end_to_end` | ✅ PASSED |
-
-### Summary
-
-**39 tasks, 33 passed, 5 skipped, 0 failed** (jobs 3056582 + 3056660 + 3056665 + 3056688).  
-All remaining skips are expected: `PRISM_SLIDE` requires gated HF access, 2 GigaPath slide-encoder tests run in the dedicated fastattn tasks instead of the torch-gpu tasks, and `GOOGLEPATH` runs in the tensorflow task.
-
-Tasks 34–37 (neural segmentation + artifact removal) all passed (job 3056660).  
-Task 38 (pen mark removal on S3 slide) passed (job 3056665, 2m 21s including S3 download).
+Tasks 34–37 (job 3056660) and task 38 pen-mark S3 slide (job 3056665, 2m 21s including download).
 
 ### Snapshot regression baselines
 
-Golden feature snapshots (`tests/testdata/snapshots/*.npy`) were generated on the same A100 hardware and committed as regression baselines for 16 patch encoders (all passed models except GOOGLEPATH which requires the TF extra). Each snapshot stores features for all 48 test patches at the model's native dimension. Future runs are validated with `rtol=1e-3, atol=1e-4`.
+Golden feature snapshots (`tests/testdata/snapshots/*.npy`) were generated on the same A100 hardware and committed as regression baselines for 17 patch encoders (all torch-gpu models; GOOGLEPATH requires the TF extra and has no snapshot). Each snapshot stores features for all 48 test patches at the model's native dimension. Future runs are validated with `rtol=1e-3, atol=1e-4`.
 
 ### Neural segmentation & artifact removal integration tests
 

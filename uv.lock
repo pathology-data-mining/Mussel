@@ -380,6 +380,32 @@ wheels = [
 ]
 
 [[package]]
+name = "backports-datetime-fromisoformat"
+version = "2.0.3"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/71/81/eff3184acb1d9dc3ce95a98b6f3c81a49b4be296e664db8e1c2eeabef3d9/backports_datetime_fromisoformat-2.0.3.tar.gz", hash = "sha256:b58edc8f517b66b397abc250ecc737969486703a66eb97e01e6d51291b1a139d", size = 23588, upload-time = "2024-12-28T20:18:15.017Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/42/4b/d6b051ca4b3d76f23c2c436a9669f3be616b8cf6461a7e8061c7c4269642/backports_datetime_fromisoformat-2.0.3-cp310-cp310-macosx_11_0_arm64.whl", hash = "sha256:5f681f638f10588fa3c101ee9ae2b63d3734713202ddfcfb6ec6cea0778a29d4", size = 27561, upload-time = "2024-12-28T20:16:47.974Z" },
+    { url = "https://files.pythonhosted.org/packages/6d/40/e39b0d471e55eb1b5c7c81edab605c02f71c786d59fb875f0a6f23318747/backports_datetime_fromisoformat-2.0.3-cp310-cp310-macosx_11_0_universal2.whl", hash = "sha256:cd681460e9142f1249408e5aee6d178c6d89b49e06d44913c8fdfb6defda8d1c", size = 34448, upload-time = "2024-12-28T20:16:50.712Z" },
+    { url = "https://files.pythonhosted.org/packages/f2/28/7a5c87c5561d14f1c9af979231fdf85d8f9fad7a95ff94e56d2205e2520a/backports_datetime_fromisoformat-2.0.3-cp310-cp310-macosx_11_0_x86_64.whl", hash = "sha256:ee68bc8735ae5058695b76d3bb2aee1d137c052a11c8303f1e966aa23b72b65b", size = 27093, upload-time = "2024-12-28T20:16:52.994Z" },
+    { url = "https://files.pythonhosted.org/packages/80/ba/f00296c5c4536967c7d1136107fdb91c48404fe769a4a6fd5ab045629af8/backports_datetime_fromisoformat-2.0.3-cp310-cp310-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:8273fe7932db65d952a43e238318966eab9e49e8dd546550a41df12175cc2be4", size = 52836, upload-time = "2024-12-28T20:16:55.283Z" },
+    { url = "https://files.pythonhosted.org/packages/e3/92/bb1da57a069ddd601aee352a87262c7ae93467e66721d5762f59df5021a6/backports_datetime_fromisoformat-2.0.3-cp310-cp310-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:39d57ea50aa5a524bb239688adc1d1d824c31b6094ebd39aa164d6cadb85de22", size = 52798, upload-time = "2024-12-28T20:16:56.64Z" },
+    { url = "https://files.pythonhosted.org/packages/df/ef/b6cfd355982e817ccdb8d8d109f720cab6e06f900784b034b30efa8fa832/backports_datetime_fromisoformat-2.0.3-cp310-cp310-musllinux_1_2_aarch64.whl", hash = "sha256:ac6272f87693e78209dc72e84cf9ab58052027733cd0721c55356d3c881791cf", size = 52891, upload-time = "2024-12-28T20:16:58.887Z" },
+    { url = "https://files.pythonhosted.org/packages/37/39/b13e3ae8a7c5d88b68a6e9248ffe7066534b0cfe504bf521963e61b6282d/backports_datetime_fromisoformat-2.0.3-cp310-cp310-musllinux_1_2_x86_64.whl", hash = "sha256:44c497a71f80cd2bcfc26faae8857cf8e79388e3d5fbf79d2354b8c360547d58", size = 52955, upload-time = "2024-12-28T20:17:00.028Z" },
+    { url = "https://files.pythonhosted.org/packages/1e/e4/70cffa3ce1eb4f2ff0c0d6f5d56285aacead6bd3879b27a2ba57ab261172/backports_datetime_fromisoformat-2.0.3-cp310-cp310-win_amd64.whl", hash = "sha256:6335a4c9e8af329cb1ded5ab41a666e1448116161905a94e054f205aa6d263bc", size = 29323, upload-time = "2024-12-28T20:17:01.125Z" },
+    { url = "https://files.pythonhosted.org/packages/62/f5/5bc92030deadf34c365d908d4533709341fb05d0082db318774fdf1b2bcb/backports_datetime_fromisoformat-2.0.3-cp311-cp311-macosx_11_0_arm64.whl", hash = "sha256:e2e4b66e017253cdbe5a1de49e0eecff3f66cd72bcb1229d7db6e6b1832c0443", size = 27626, upload-time = "2024-12-28T20:17:03.448Z" },
+    { url = "https://files.pythonhosted.org/packages/28/45/5885737d51f81dfcd0911dd5c16b510b249d4c4cf6f4a991176e0358a42a/backports_datetime_fromisoformat-2.0.3-cp311-cp311-macosx_11_0_universal2.whl", hash = "sha256:43e2d648e150777e13bbc2549cc960373e37bf65bd8a5d2e0cef40e16e5d8dd0", size = 34588, upload-time = "2024-12-28T20:17:04.459Z" },
+    { url = "https://files.pythonhosted.org/packages/bc/6d/bd74de70953f5dd3e768c8fc774af942af0ce9f211e7c38dd478fa7ea910/backports_datetime_fromisoformat-2.0.3-cp311-cp311-macosx_11_0_x86_64.whl", hash = "sha256:4ce6326fd86d5bae37813c7bf1543bae9e4c215ec6f5afe4c518be2635e2e005", size = 27162, upload-time = "2024-12-28T20:17:06.752Z" },
+    { url = "https://files.pythonhosted.org/packages/47/ba/1d14b097f13cce45b2b35db9898957578b7fcc984e79af3b35189e0d332f/backports_datetime_fromisoformat-2.0.3-cp311-cp311-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:d7c8fac333bf860208fd522a5394369ee3c790d0aa4311f515fcc4b6c5ef8d75", size = 54482, upload-time = "2024-12-28T20:17:08.15Z" },
+    { url = "https://files.pythonhosted.org/packages/25/e9/a2a7927d053b6fa148b64b5e13ca741ca254c13edca99d8251e9a8a09cfe/backports_datetime_fromisoformat-2.0.3-cp311-cp311-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:24a4da5ab3aa0cc293dc0662a0c6d1da1a011dc1edcbc3122a288cfed13a0b45", size = 54362, upload-time = "2024-12-28T20:17:10.605Z" },
+    { url = "https://files.pythonhosted.org/packages/c1/99/394fb5e80131a7d58c49b89e78a61733a9994885804a0bb582416dd10c6f/backports_datetime_fromisoformat-2.0.3-cp311-cp311-musllinux_1_2_aarch64.whl", hash = "sha256:58ea11e3bf912bd0a36b0519eae2c5b560b3cb972ea756e66b73fb9be460af01", size = 54162, upload-time = "2024-12-28T20:17:12.301Z" },
+    { url = "https://files.pythonhosted.org/packages/88/25/1940369de573c752889646d70b3fe8645e77b9e17984e72a554b9b51ffc4/backports_datetime_fromisoformat-2.0.3-cp311-cp311-musllinux_1_2_x86_64.whl", hash = "sha256:8a375c7dbee4734318714a799b6c697223e4bbb57232af37fbfff88fb48a14c6", size = 54118, upload-time = "2024-12-28T20:17:13.609Z" },
+    { url = "https://files.pythonhosted.org/packages/b7/46/f275bf6c61683414acaf42b2df7286d68cfef03e98b45c168323d7707778/backports_datetime_fromisoformat-2.0.3-cp311-cp311-win_amd64.whl", hash = "sha256:ac677b1664c4585c2e014739f6678137c8336815406052349c85898206ec7061", size = 29329, upload-time = "2024-12-28T20:17:16.124Z" },
+    { url = "https://files.pythonhosted.org/packages/be/03/7eaa9f9bf290395d57fd30d7f1f2f9dff60c06a31c237dc2beb477e8f899/backports_datetime_fromisoformat-2.0.3-pp310-pypy310_pp73-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:90e202e72a3d5aae673fcc8c9a4267d56b2f532beeb9173361293625fe4d2039", size = 28980, upload-time = "2024-12-28T20:18:06.554Z" },
+    { url = "https://files.pythonhosted.org/packages/47/80/a0ecf33446c7349e79f54cc532933780341d20cff0ee12b5bfdcaa47067e/backports_datetime_fromisoformat-2.0.3-pp310-pypy310_pp73-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:2df98ef1b76f5a58bb493dda552259ba60c3a37557d848e039524203951c9f06", size = 28449, upload-time = "2024-12-28T20:18:07.77Z" },
+]
+
+[[package]]
 name = "beautifulsoup4"
 version = "4.14.3"
 source = { registry = "https://pypi.org/simple" }
@@ -795,6 +821,20 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/3e/cc/f2b03b24894faaaa425cf46508e6b1f449d908841f61aeb7c14f0b18a3f3/einops-exts-0.0.4.tar.gz", hash = "sha256:616f145b3411f8e9e3be5da5c968bbe372e55c249de11faa909c7a4b74580a6c", size = 3548, upload-time = "2023-01-05T20:02:43.986Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/78/01/8da8dd078b354a89602a875d310a0d725dad92b5b4d61069576e0a0e02e4/einops_exts-0.0.4-py3-none-any.whl", hash = "sha256:6d310a4c858e459ebff8288580f90255d354cfa3bde22a53b59baae64b48cb95", size = 3925, upload-time = "2023-01-05T20:02:42.796Z" },
+]
+
+[[package]]
+name = "environs"
+version = "14.6.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "marshmallow" },
+    { name = "python-dotenv" },
+    { name = "typing-extensions", marker = "python_full_version < '3.11' or (extra == 'extra-6-mussel-fastattn' and extra == 'extra-6-mussel-tensorflow-cpu') or (extra == 'extra-6-mussel-fastattn' and extra == 'extra-6-mussel-tensorflow-gpu') or (extra == 'extra-6-mussel-fastattn' and extra == 'extra-6-mussel-torch-cpu') or (extra == 'extra-6-mussel-fastattn' and extra == 'extra-6-mussel-torch-gpu') or (extra == 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-tensorflow-gpu') or (extra == 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-torch-cpu') or (extra == 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-torch-gpu') or (extra == 'extra-6-mussel-tensorflow-gpu' and extra == 'extra-6-mussel-torch-cpu') or (extra == 'extra-6-mussel-tensorflow-gpu' and extra == 'extra-6-mussel-torch-gpu') or (extra == 'extra-6-mussel-torch-cpu' and extra == 'extra-6-mussel-torch-gpu')" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/fb/c7/94f97e6e74482a50b5fc798856b6cc06e8d072ab05a0b74cb5d87bd0d065/environs-14.6.0.tar.gz", hash = "sha256:ed2767588deb503209ffe4dd9bb2b39311c2e4e7e27ce2c64bf62ca83328d068", size = 35563, upload-time = "2026-02-20T04:02:08.869Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/97/a8/c070e1340636acb38d4e6a7e45c46d168a462b48b9b3257e14ca0e5af79b/environs-14.6.0-py3-none-any.whl", hash = "sha256:f8fb3d6c6a55872b0c6db077a28f5a8c7b8984b7c32029613d44cef95cfc0812", size = 17205, upload-time = "2026-02-20T04:02:07.299Z" },
 ]
 
 [[package]]
@@ -1681,6 +1721,19 @@ wheels = [
 ]
 
 [[package]]
+name = "marshmallow"
+version = "4.2.3"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "backports-datetime-fromisoformat", marker = "python_full_version < '3.11' or (extra == 'extra-6-mussel-fastattn' and extra == 'extra-6-mussel-tensorflow-cpu') or (extra == 'extra-6-mussel-fastattn' and extra == 'extra-6-mussel-tensorflow-gpu') or (extra == 'extra-6-mussel-fastattn' and extra == 'extra-6-mussel-torch-cpu') or (extra == 'extra-6-mussel-fastattn' and extra == 'extra-6-mussel-torch-gpu') or (extra == 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-tensorflow-gpu') or (extra == 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-torch-cpu') or (extra == 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-torch-gpu') or (extra == 'extra-6-mussel-tensorflow-gpu' and extra == 'extra-6-mussel-torch-cpu') or (extra == 'extra-6-mussel-tensorflow-gpu' and extra == 'extra-6-mussel-torch-gpu') or (extra == 'extra-6-mussel-torch-cpu' and extra == 'extra-6-mussel-torch-gpu')" },
+    { name = "typing-extensions", marker = "python_full_version < '3.11' or (extra == 'extra-6-mussel-fastattn' and extra == 'extra-6-mussel-tensorflow-cpu') or (extra == 'extra-6-mussel-fastattn' and extra == 'extra-6-mussel-tensorflow-gpu') or (extra == 'extra-6-mussel-fastattn' and extra == 'extra-6-mussel-torch-cpu') or (extra == 'extra-6-mussel-fastattn' and extra == 'extra-6-mussel-torch-gpu') or (extra == 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-tensorflow-gpu') or (extra == 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-torch-cpu') or (extra == 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-torch-gpu') or (extra == 'extra-6-mussel-tensorflow-gpu' and extra == 'extra-6-mussel-torch-cpu') or (extra == 'extra-6-mussel-tensorflow-gpu' and extra == 'extra-6-mussel-torch-gpu') or (extra == 'extra-6-mussel-torch-cpu' and extra == 'extra-6-mussel-torch-gpu')" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/7f/ed/ecdd3a8259680dc9626ed5971b110c9be560962e11f7b0319b45ec2092b1/marshmallow-4.2.3.tar.gz", hash = "sha256:3e3fef6b3603721a25a723b8caedfa488369bddaf9bc03b40b9442c90aebd22b", size = 222932, upload-time = "2026-03-25T23:27:18.237Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/58/2e/ce3278954d44903ccf8606c2a16e6b3ad8e10146c21de1b7b9b0f5812b23/marshmallow-4.2.3-py3-none-any.whl", hash = "sha256:c84fd89817ecea690bde1eb925036070e5e9883148217585adc56d5cfbc082b8", size = 48876, upload-time = "2026-03-25T23:27:16.907Z" },
+]
+
+[[package]]
 name = "matplotlib"
 version = "3.10.3"
 source = { registry = "https://pypi.org/simple" }
@@ -1875,6 +1928,7 @@ dependencies = [
     { name = "configargparse" },
     { name = "einops" },
     { name = "einops-exts" },
+    { name = "environs" },
     { name = "gdown" },
     { name = "geopandas" },
     { name = "h5py" },
@@ -1883,6 +1937,7 @@ dependencies = [
     { name = "numpy" },
     { name = "opencv-python-headless" },
     { name = "pandas" },
+    { name = "sacremoses" },
     { name = "scikit-learn" },
     { name = "setuptools" },
     { name = "shapely" },
@@ -1984,6 +2039,7 @@ requires-dist = [
     { name = "configargparse", specifier = ">=1.7.1" },
     { name = "einops", specifier = ">=0.8.1" },
     { name = "einops-exts", specifier = ">=0.0.4" },
+    { name = "environs" },
     { name = "fairscale", marker = "extra == 'fastattn'" },
     { name = "flash-attn", marker = "python_full_version == '3.10.*' and extra == 'fastattn'", url = "https://github.com/mjun0812/flash-attention-prebuild-wheels/releases/download/v0.9.4/flash_attn-2.6.3%2Bcu128torch2.11-cp311-cp311-manylinux_2_24_x86_64.manylinux_2_28_x86_64.whl" },
     { name = "flash-attn", marker = "(python_full_version < '3.10' and extra == 'fastattn') or (python_full_version >= '3.12' and extra == 'fastattn')", specifier = "==2.6.3" },
@@ -2012,6 +2068,7 @@ requires-dist = [
     { name = "opencv-python-headless" },
     { name = "pandas" },
     { name = "s3fs", marker = "extra == 'distributed'" },
+    { name = "sacremoses" },
     { name = "scikit-learn" },
     { name = "scikit-survival", marker = "extra == 'fastattn'" },
     { name = "segmentation-models-pytorch", marker = "extra == 'torch-cpu'" },
@@ -3587,6 +3644,15 @@ wheels = [
 ]
 
 [[package]]
+name = "python-dotenv"
+version = "1.2.2"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/82/ed/0301aeeac3e5353ef3d94b6ec08bbcabd04a72018415dcb29e588514bba8/python_dotenv-1.2.2.tar.gz", hash = "sha256:2c371a91fbd7ba082c2c1dc1f8bf89ca22564a087c2c287cd9b662adde799cf3", size = 50135, upload-time = "2026-03-01T16:00:26.196Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/0b/d7/1959b9648791274998a9c3526f6d0ec8fd2233e4d4acce81bbae76b44b2a/python_dotenv-1.2.2-py3-none-any.whl", hash = "sha256:1d8214789a24de455a8b8bd8ae6fe3c6b69a5e3d64aa8a8e5d68e694bbcb285a", size = 22101, upload-time = "2026-03-01T16:00:25.09Z" },
+]
+
+[[package]]
 name = "pytz"
 version = "2025.2"
 source = { registry = "https://pypi.org/simple" }
@@ -3767,6 +3833,21 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/62/74/8d69dcb7a9efe8baa2046891735e5dfe433ad558ae23d9e3c14c633d1d58/s3transfer-0.14.0.tar.gz", hash = "sha256:eff12264e7c8b4985074ccce27a3b38a485bb7f7422cc8046fee9be4983e4125", size = 151547, upload-time = "2025-09-09T19:23:31.089Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/48/f0/ae7ca09223a81a1d890b2557186ea015f6e0502e9b8cb8e1813f1d8cfa4e/s3transfer-0.14.0-py3-none-any.whl", hash = "sha256:ea3b790c7077558ed1f02a3072fb3cb992bbbd253392f4b6e9e8976941c7d456", size = 85712, upload-time = "2025-09-09T19:23:30.041Z" },
+]
+
+[[package]]
+name = "sacremoses"
+version = "0.1.1"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "click" },
+    { name = "joblib" },
+    { name = "regex" },
+    { name = "tqdm" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/1d/51/fbdc4af4f6e85d26169e28be3763fe50ddfd0d4bf8b871422b0788dcc4d2/sacremoses-0.1.1.tar.gz", hash = "sha256:b6fd5d3a766b02154ed80b962ddca91e1fd25629c0978c7efba21ebccf663934", size = 883188, upload-time = "2023-10-30T15:56:20.187Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/0b/f0/89ee2bc9da434bd78464f288fdb346bc2932f2ee80a90b2a4bbbac262c74/sacremoses-0.1.1-py3-none-any.whl", hash = "sha256:31e04c98b169bfd902144824d191825cd69220cdb4ae4bcf1ec58a7db5587b1a", size = 897476, upload-time = "2023-10-30T15:56:18.121Z" },
 ]
 
 [[package]]
