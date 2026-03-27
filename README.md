@@ -18,6 +18,34 @@ Supported systems:
 * Mac OS (x86 and ARM) (cpu only)
 * Linux (x86) (cpu and gpu)
 
+### Supported slide formats
+
+Mussel reads whole-slide images via [tiffslide](https://github.com/Bayer-Group/tiffslide)
+(backed by [tifffile](https://github.com/cgohlke/tifffile)).
+The following formats are supported:
+
+| Extension | Format | Scanner / Vendor |
+|-----------|--------|-----------------|
+| `.svs` | Aperio SVS | Leica (Aperio) |
+| `.ndpi` | Hamamatsu NDPI | Hamamatsu |
+| `.scn` | Leica SCN | Leica |
+| `.tif` / `.tiff` | TIFF, BigTIFF, OME-TIFF | Generic / various |
+| `.mrxs` | MIRAX | 3DHISTECH |
+| `.vms` | Hamamatsu VMS | Hamamatsu |
+| `.vmu` | Hamamatsu VMU | Hamamatsu |
+| `.bif` | Ventana BIF | Roche (Ventana) |
+| `.qptiff` | PerkinElmer / Akoya QPTIFF | PerkinElmer / Akoya |
+| `.czi` | Carl Zeiss CZI | Zeiss |
+
+**MPP (microns per pixel) retrieval** — Mussel reads MPP from slide metadata
+using the following fallback chain:
+1. `tiffslide.mpp-x` — standard property populated by tiffslide for all supported formats
+2. `aperio.MPP` — vendor-specific Aperio/Leica property (`.svs`)
+3. `openslide.mpp-x` — legacy OpenSlide-style property
+4. Magnification-based estimate: scans `aperio.AppMag`, `openslide.objective-power`,
+   and `tiffslide.objective-power`; computes MPP as `10.0 / magnification`
+5. Configurable default (0.5 µm/px, typical for 20× TCGA slides) with a warning log
+
 ### Pre-requisites
 - [uv](https://docs.astral.sh/uv/)
     ```bash

@@ -38,10 +38,9 @@ def get_slide_mpp(wsi, slide_path: Optional[str] = None, default_mpp: float = 0.
         # Try standard tiffslide property first
         slide_mpp_value = wsi.properties.get(tiffslide.PROPERTY_NAME_MPP_X)
         
-        # If not found, try alternative property names
+        # If not found, try vendor-specific property names that tiffslide may not normalise
         if slide_mpp_value is None:
-            # Try common alternative property names
-            for key in ['tiffslide.mpp-x', 'aperio.MPP', 'openslide.mpp-x']:
+            for key in ['aperio.MPP', 'openslide.mpp-x']:
                 slide_mpp_value = wsi.properties.get(key)
                 if slide_mpp_value is not None:
                     logger.info(f"Found MPP in alternate property: {key}")
@@ -50,7 +49,7 @@ def get_slide_mpp(wsi, slide_path: Optional[str] = None, default_mpp: float = 0.
         if slide_mpp_value is None:
             # Try to estimate MPP from magnification if available
             magnification = None
-            for key in ['aperio.AppMag', 'openslide.objective-power', 'tiffslide.objective-power']:
+            for key in ['aperio.AppMag', 'openslide.objective-power', tiffslide.PROPERTY_NAME_OBJECTIVE_POWER]:
                 mag_value = wsi.properties.get(key)
                 if mag_value is not None:
                     try:

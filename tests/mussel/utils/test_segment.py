@@ -20,20 +20,6 @@ class TestGetSlideMPP:
         
         assert mpp == 0.25
     
-    def test_get_slide_mpp_tiffslide_alternate_property(self):
-        """Test MPP retrieval from tiffslide.mpp-x property"""
-        import tiffslide
-        
-        wsi = MagicMock()
-        wsi.properties = {
-            tiffslide.PROPERTY_NAME_MPP_X: None,
-            'tiffslide.mpp-x': "0.5"
-        }
-        
-        mpp = get_slide_mpp(wsi)
-        
-        assert mpp == 0.5
-    
     def test_get_slide_mpp_aperio_property(self):
         """Test MPP retrieval from aperio.MPP property"""
         import tiffslide
@@ -41,7 +27,6 @@ class TestGetSlideMPP:
         wsi = MagicMock()
         wsi.properties = {
             tiffslide.PROPERTY_NAME_MPP_X: None,
-            'tiffslide.mpp-x': None,
             'aperio.MPP': "0.25"
         }
         
@@ -56,7 +41,6 @@ class TestGetSlideMPP:
         wsi = MagicMock()
         wsi.properties = {
             tiffslide.PROPERTY_NAME_MPP_X: None,
-            'tiffslide.mpp-x': None,
             'aperio.MPP': None,
             'openslide.mpp-x': "1.0"
         }
@@ -105,7 +89,7 @@ class TestGetSlideMPP:
             tiffslide.PROPERTY_NAME_MPP_X: None,
             'aperio.AppMag': None,
             'openslide.objective-power': None,
-            'tiffslide.objective-power': "10"
+            tiffslide.PROPERTY_NAME_OBJECTIVE_POWER: "10"
         }
         
         mpp = get_slide_mpp(wsi)
