@@ -4,6 +4,7 @@ import logging
 from typing import Callable, List
 
 import timm
+import torch
 from torchvision import transforms
 
 from mussel.models.base import TorchModel
@@ -105,7 +106,10 @@ class H0MiniModel(TorchModel):
         model_obj = None
         if model_path.startswith("hf-hub:"):
             model_obj = timm.create_model(
-                model_path, pretrained=True, init_values=1e-5, dynamic_img_size=False
+                model_path,
+                pretrained=True,
+                mlp_layer=timm.layers.SwiGLUPacked,
+                act_layer=torch.nn.SiLU,
             )
         super().__init__(model_path, model_obj, use_gpu, gpu_device_id)
 
