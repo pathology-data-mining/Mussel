@@ -383,6 +383,17 @@ Tasks 34–37 (job 3056660) and task 38 pen-mark S3 slide (job 3056665, 2m 21s i
 
 Golden feature snapshots (`tests/testdata/snapshots/*.npy`) were generated on the same A100 hardware and committed as regression baselines for 17 patch encoders (all torch-gpu models; GOOGLEPATH requires the TF extra and has no snapshot). Each snapshot stores features for all 48 test patches at the model's native dimension. Future runs are validated with `rtol=1e-3, atol=1e-4`.
 
+### Reference pipeline regression (`tests/regression/regression_vs_reference.py`)
+
+Mussel feature vectors were compared directly against pre-computed REEF pipeline outputs on slide `948176` using the reference patch H5 (1675 patches, 223 px at 0.5 µm/px → resized to 224). Both pipelines ran on the same slide with identical patch coordinates.
+
+| Model | Mussel shape | Ref shape | cos mean | L2 max | allclose (1e-3) | Result |
+|---|---|---|---|---|---|---|
+| `OPTIMUS` | (1675, 1536) | (1675, 1536) | 1.000000 | 0.000000 | ✅ | ✅ PASS |
+| `CTRANSPATH` | (1675, 768) | (1675, 768) | 1.000000 | 0.00166 | — | ✅ PASS |
+
+OPTIMUS is bit-exact. CTransPath has sub-millimetre L2 distance (max abs diff 3.2 × 10⁻⁴), within `rtol=1e-2, atol=1e-3`, attributable to float16 autocast rounding differences between runs. Cosine similarity is 1.000000 for both.
+
 ### Neural segmentation & artifact removal integration tests
 
 Four new tests in `tests/mussel/utils/test_segmentation_integration.py` validate the end-to-end behaviour of the two deep-learning-backed quality-control components on `948176.svs`. Both components download real weights from `MahmoodLab/hest-tissue-seg` on HuggingFace at test time.
