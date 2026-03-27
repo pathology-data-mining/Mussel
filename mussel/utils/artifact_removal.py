@@ -123,12 +123,11 @@ class GrandQCArtifactRemover:
         model.eval()
         model = model.to(self.device)
         self._model = model
+        from mussel.models.base import IMAGENET_MEAN, IMAGENET_STD
+
         self._transforms = transforms.Compose([
             transforms.ToTensor(),
-            transforms.Normalize(
-                mean=[0.485, 0.456, 0.406],
-                std=[0.229, 0.224, 0.225],
-            ),
+            transforms.Normalize(mean=IMAGENET_MEAN, std=IMAGENET_STD),
         ])
 
     def __call__(
