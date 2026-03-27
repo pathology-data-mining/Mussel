@@ -56,13 +56,13 @@ class PRISMSlideEncoderModel(TorchModel):
         """Get model inference function for PRISM slide encoder.
 
         Returns:
-            Callable that takes patch_features, coords, and patch_size, returns slide-level features.
+            Callable that takes patch_features tensor (1, N, D) and returns slide-level features.
         """
 
-        def model_fun(patch_features, coords, patch_size):
+        def model_fun(patch_features):
             with torch.no_grad(), torch.inference_mode():
                 patch_features = patch_features.to(self.device, non_blocking=True)
-                result = self.obj.encode_slide(patch_features.unsqueeze(0))
+                result = self.obj.encode_slide(patch_features)
                 if isinstance(result, (list, tuple)):
                     result = result[0]
                 return result.squeeze().cpu()

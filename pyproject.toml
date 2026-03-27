@@ -24,6 +24,8 @@ dependencies = [
   "einops-exts>=0.0.4",
   "setuptools",
   "configargparse>=1.7.1",
+  "environs",
+  "sacremoses",
 ]
 
 [dependency-groups]
