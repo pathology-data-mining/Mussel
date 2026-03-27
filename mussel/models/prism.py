@@ -62,10 +62,8 @@ class PRISMSlideEncoderModel(TorchModel):
         def model_fun(patch_features):
             with torch.no_grad(), torch.inference_mode():
                 patch_features = patch_features.to(self.device, non_blocking=True)
-                result = self.obj.encode_slide(patch_features)
-                if isinstance(result, (list, tuple)):
-                    result = result[0]
-                return result.squeeze().cpu()
+                result = self.obj.slide_representations(patch_features)
+                return result["image_embedding"].squeeze(0).cpu()  # (1280,)
 
         return model_fun
 
