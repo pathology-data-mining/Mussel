@@ -39,12 +39,21 @@ The following formats are supported:
 
 **MPP (microns per pixel) retrieval** — Mussel reads MPP from slide metadata
 using the following fallback chain:
-1. `tiffslide.mpp-x` — standard property populated by tiffslide for all supported formats
-2. `aperio.MPP` — vendor-specific Aperio/Leica property (`.svs`)
-3. `openslide.mpp-x` — legacy OpenSlide-style property
-4. Magnification-based estimate: scans `aperio.AppMag`, `openslide.objective-power`,
+1. `slide_mpp_override` CLI parameter — if provided, used directly; all metadata reading is skipped
+2. `tiffslide.mpp-x` — standard property populated by tiffslide for all supported formats
+3. `aperio.MPP` — vendor-specific Aperio/Leica property (`.svs`)
+4. `openslide.mpp-x` — legacy OpenSlide-style property
+5. Magnification-based estimate: scans `aperio.AppMag`, `openslide.objective-power`,
    and `tiffslide.objective-power`; computes MPP as `10.0 / magnification`
-5. Configurable default (0.5 µm/px, typical for 20× TCGA slides) with a warning log
+6. Configurable default (0.5 µm/px, typical for 20× TCGA slides) with a warning log
+
+When slides lack MPP metadata and the default 0.5 µm/px doesn't match the actual
+scanner resolution, pass the known value explicitly:
+```bash
+tessellate slide_path=slide.svs seg_config.slide_mpp_override=1.0 ...
+tessellate_extract_features slide_path=slide.svs seg_config.slide_mpp_override=0.25 ...
+export_tiles slide_path=slide.svs slide_mpp_override=0.5 ...
+```
 
 ### Pre-requisites
 - [uv](https://docs.astral.sh/uv/)

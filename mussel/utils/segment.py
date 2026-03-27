@@ -22,18 +22,29 @@ Image.MAX_IMAGE_PIXELS = None
 logger = logging.getLogger(__name__)
 
 
-def get_slide_mpp(wsi, slide_path: Optional[str] = None, default_mpp: float = 0.5) -> float:
+def get_slide_mpp(
+    wsi,
+    slide_path: Optional[str] = None,
+    default_mpp: float = 0.5,
+    slide_mpp_override: Optional[float] = None,
+) -> float:
     """
     Get MPP (microns per pixel) from slide metadata with fallback handling.
-    
+
     Args:
         wsi: TiffSlide object
         slide_path: Optional path to slide for logging
         default_mpp: Default MPP to use if metadata not found (default: 0.5 for 20x TCGA slides)
-        
+        slide_mpp_override: If provided, skip all metadata reading and return this value directly.
+            Use this when the slide lacks MPP metadata and you know the correct value.
+
     Returns:
         MPP value as float
     """
+    if slide_mpp_override is not None:
+        logger.info(f"Using slide_mpp_override: {slide_mpp_override}")
+        return float(slide_mpp_override)
+
     try:
         # Try standard tiffslide property first
         slide_mpp_value = wsi.properties.get(tiffslide.PROPERTY_NAME_MPP_X)
@@ -432,6 +443,7 @@ def segment_tissue(
     remove_penmarks: bool = False,
     artifact_remover_fn=None,  # Optional callable: (img, mask, mpp) -> mask
     seg_model: str = "classic",  # "classic" (HSV/Otsu) or "neural" (DeepLabV3)
+    slide_mpp_override: Optional[float] = None,
 ):
     """Segment tissue regions in a whole-slide image and generate tissue patches.
     
@@ -547,7 +559,7 @@ def segment_tissue(
             )
 
         # Get MPP with fallback handling
-        slide_mpp = get_slide_mpp(wsi, slide_path)
+        slide_mpp = get_slide_mpp(wsi, slide_path, slide_mpp_override=slide_mpp_override)
 
         native_step_size = get_native_size(step_size, mpp, slide_mpp)
         native_patch_size = get_native_size(patch_size, mpp, slide_mpp)
@@ -833,6 +845,7 @@ def save_patches_png(
     white_threshold=15,
     black_threshold=50,
     num_workers=4,
+    slide_mpp_override: Optional[float] = None,
 ):
     """
     Save patches as png
@@ -842,7 +855,7 @@ def save_patches_png(
     
     try:
         # Get MPP with fallback handling
-        slide_mpp = get_slide_mpp(wsi, slide_path)
+        slide_mpp = get_slide_mpp(wsi, slide_path, slide_mpp_override=slide_mpp_override)
         
         native_patch_size = get_native_size(patch_size, mpp, slide_mpp)
 

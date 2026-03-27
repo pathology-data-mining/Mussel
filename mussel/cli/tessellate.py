@@ -42,6 +42,9 @@ class SegConfig:
     remove_artifacts (bool): If True, apply artifact removal before patching (requires artifact_remover_fn).
     remove_penmarks (bool): If True, apply pen mark removal before patching (requires artifact_remover_fn).
     seg_model (str): Segmentation backend: "classic" (default, HSV/Otsu) or "neural" (deep-learning, requires torch).
+    slide_mpp_override (float): If set, use this value (µm/px) as the slide's native MPP instead of
+        reading it from slide metadata. Use this when the slide lacks MPP tags and the
+        metadata-based fallback produces incorrect results.
     artifact_remover_fn: Optional callable ``(img, mask, mpp) -> mask`` where ``img`` is the RGB
         thumbnail, ``mask`` is the binary tissue mask, and ``mpp`` is the thumbnail's microns-per-pixel.
         Returns a corrected binary mask. Use :class:`~mussel.utils.artifact_removal.GrandQCArtifactRemover`
@@ -71,6 +74,7 @@ class SegConfig:
     remove_artifacts: bool = False  # If True, apply artifact removal to the tissue mask before patching.
     remove_penmarks: bool = False  # If True, apply pen mark removal to the tissue mask before patching.
     seg_model: str = "classic"  # Segmentation model: "classic" (Otsu/threshold) or "neural" (deep-learning, requires torch).
+    slide_mpp_override: Optional[float] = None  # If set, use this as the slide's native MPP instead of reading from metadata.
 
 
 @dataclass
@@ -233,10 +237,12 @@ def main(
             coords,
             save_dir=cfg.output_png_dir,
             num_workers=cfg.num_workers,
+            mpp=cfg.seg_config.mpp,
             patch_size=cfg.seg_config.patch_size,
             filter_black_white=cfg.png_config.filter_black_white,
             white_threshold=cfg.png_config.white_threshold,
             black_threshold=cfg.png_config.black_threshold,
+            slide_mpp_override=cfg.seg_config.slide_mpp_override,
         )
 
     if cfg.output_thumbnail_path:

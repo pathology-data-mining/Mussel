@@ -20,6 +20,27 @@ class TestGetSlideMPP:
         
         assert mpp == 0.25
     
+    def test_get_slide_mpp_override_bypasses_metadata(self):
+        """slide_mpp_override short-circuits all metadata reading"""
+        wsi = MagicMock()
+        # Use a MagicMock for properties so we can assert .get is never called.
+        wsi.properties = MagicMock()
+
+        mpp = get_slide_mpp(wsi, slide_mpp_override=1.0)
+
+        assert mpp == 1.0
+        wsi.properties.get.assert_not_called()
+
+    def test_get_slide_mpp_override_returned_as_float(self):
+        """slide_mpp_override is coerced to float"""
+        wsi = MagicMock()
+        wsi.properties = {}
+
+        mpp = get_slide_mpp(wsi, slide_mpp_override=1)
+
+        assert mpp == 1.0
+        assert isinstance(mpp, float)
+    
     def test_get_slide_mpp_aperio_property(self):
         """Test MPP retrieval from aperio.MPP property"""
         import tiffslide

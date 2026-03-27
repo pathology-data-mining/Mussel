@@ -10,6 +10,7 @@ import os
 import time
 from concurrent import futures
 from dataclasses import dataclass
+from typing import Optional
 
 import h5py
 import hydra
@@ -34,6 +35,8 @@ class ExportTilesConfig:
     patch_size (int): Size of the patches to export (in pixels).
     mpp (float): Microns per pixel of the slide.
     num_workers (int): Number of worker threads to use for exporting tiles.
+    slide_mpp_override (float): If set, use this value (µm/px) as the slide's native MPP instead of
+        reading it from slide metadata.
     """
 
     slide_path: str = MISSING
@@ -42,6 +45,7 @@ class ExportTilesConfig:
     patch_size: int = 256
     mpp: float = 0.5
     num_workers: int = 16
+    slide_mpp_override: Optional[float] = None
 
 
 desc_doc = """== ${hydra.help.app_name} ==
@@ -73,6 +77,7 @@ def main(cfg: ExportTilesConfig):
         patch_size=cfg.patch_size,
         mpp=cfg.mpp,
         num_workers=cfg.num_workers,
+        slide_mpp_override=cfg.slide_mpp_override,
     )
 
 
