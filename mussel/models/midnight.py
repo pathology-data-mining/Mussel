@@ -55,18 +55,9 @@ class Midnight12kModel(TorchModel):
             ]
         )
 
-    def get_model_fun(self) -> Callable:
-        """Return the CLS-token embedding from the DINOv2 output."""
-        autocast_dtype = torch.float16 if self.device.type == "cuda" else torch.bfloat16
+    @property
+    def autocast_dtype(self) -> torch.dtype:
+        return torch.float16 if self.device.type == "cuda" else torch.bfloat16
 
-        def model_fun(x):
-            with (
-                torch.no_grad(),
-                torch.inference_mode(),
-                torch.autocast(device_type=self.device.type, dtype=autocast_dtype),
-            ):
-                x = x.to(self.device, non_blocking=True)
-                out = self.obj(pixel_values=x)
-                return out.last_hidden_state[:, 0].float().cpu()
-
-        return model_fun
+    def _forward(self, x: torch.Tensor) -> torch.Tensor:
+        return self.obj(pixel_values=x).last_hidden_state[:, 0]

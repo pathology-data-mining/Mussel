@@ -70,31 +70,11 @@ class GigapathModel(TorchModel):
             ]
         )
 
-    def get_model_fun(self) -> Callable:
-        """Get model inference function for GigaPath tile encoder.
-
-        GigaPath ViT returns (batch, num_tokens, embed_dim). We extract the CLS token.
-
-        Returns:
-            Callable that processes a batch and returns embeddings.
-        """
-
-        def model_fun(batch):
-            """Run inference and extract CLS token."""
-            with (
-                torch.no_grad(),
-                torch.inference_mode(),
-                torch.autocast(device_type=self.device.type, dtype=torch.float16),
-            ):
-                batch = batch.to(self.device, non_blocking=True)
-                output = self.obj(batch)
-                # GigaPath ViT output is (batch, num_tokens, embed_dim)
-                # Extract CLS token (first token)
-                if len(output.shape) == 3:
-                    output = output[:, 0, :]  # Take CLS token
-                return output.float().cpu()
-
-        return model_fun
+    def _forward(self, x: torch.Tensor) -> torch.Tensor:
+        output = self.obj(x)  # (N, num_tokens, embed_dim) or (N, embed_dim)
+        if output.dim() == 3:
+            output = output[:, 0]  # CLS token
+        return output
 
 
 @register_model(ModelType.GIGAPATH_SLIDE)

@@ -53,48 +53,16 @@ class VirchowModel(TorchModel):
         """
         return _timm_preprocessing(self.obj)
 
-    def get_model_fun(self) -> Callable:
-        """Get model inference function that concatenates class token with average pooled patch tokens.
+    def _forward(self, x: torch.Tensor) -> torch.Tensor:
+        """Concatenate CLS token with average-pooled patch tokens.
 
-        For Virchow, we concatenate the class token (CLS) with the average of patch tokens
-        as recommended in: https://huggingface.co/paige-ai/Virchow#image-embeddings
-
-        Returns:
-            Callable that runs inference and returns concatenated embeddings.
+        As recommended in https://huggingface.co/paige-ai/Virchow#image-embeddings,
+        the embedding is CLS ++ mean(patch_tokens), doubling the embed dim.
         """
-
-        def model_fun(x):
-            """Run inference with mixed precision and concatenate class + avg patch tokens."""
-            with (
-                torch.no_grad(),
-                torch.inference_mode(),
-                torch.autocast(device_type=self.device.type, dtype=torch.float16),
-            ):
-                x = x.to(self.device, non_blocking=True)
-                if self.use_gpu:
-                    try:
-                        x = x.to(memory_format=torch.channels_last)
-                    except Exception:
-                        pass  # Some tensor shapes may not support channels_last
-
-                output = self.obj(x)
-
-                # Virchow returns [batch, num_tokens, embed_dim]
-                # First token is CLS, rest are patch tokens
-                class_token = output[:, 0]  # [batch, embed_dim]
-                patch_tokens = output[:, 1:]  # [batch, num_patches, embed_dim]
-
-                # Average pool the patch tokens
-                avg_patch_tokens = patch_tokens.mean(dim=1)  # [batch, embed_dim]
-
-                # Concatenate class token with averaged patch tokens
-                concatenated = torch.cat(
-                    [class_token, avg_patch_tokens], dim=1
-                )  # [batch, embed_dim * 2]
-
-                return concatenated.float().cpu()
-
-        return model_fun
+        output = self.obj(x)  # (N, num_tokens, embed_dim)
+        class_token = output[:, 0]           # (N, embed_dim)
+        avg_patch_tokens = output[:, 1:].mean(dim=1)  # (N, embed_dim)
+        return torch.cat([class_token, avg_patch_tokens], dim=1)  # (N, embed_dim*2)
 
 
 @register_model(ModelType.VIRCHOW2)

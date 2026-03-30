@@ -213,6 +213,33 @@ class TorchModel(Model):
         # torch.compile is disabled for now due to compatibility issues.
         # Consider re-enabling after testing individual models with it.
 
+    @property
+    def autocast_dtype(self) -> torch.dtype:
+        """dtype used for autocast during inference.
+
+        Subclasses may override to select bfloat16 on CPU (e.g. for HuggingFace
+        models whose CPU kernels are optimised for bfloat16 rather than float16).
+        """
+        return torch.float16
+
+    def _forward(self, x: torch.Tensor) -> torch.Tensor:
+        """Run the model forward pass.
+
+        Called inside the autocast / no_grad context established by
+        :meth:`get_model_fun`.  Subclasses override this method to implement
+        model-specific output extraction (e.g. CLS-token selection, token
+        concatenation) without repeating the surrounding boilerplate.
+
+        Args:
+            x: Input tensor already on the correct device (and optionally in
+               channels-last memory format).
+
+        Returns:
+            Output tensor (may still be in the autocast dtype; the caller
+            converts to float32 via ``.float()``).
+        """
+        return self.obj(x)
+
     def get_model_fun(self) -> Callable:
         """Get model inference function with automatic mixed precision.
 
@@ -221,20 +248,18 @@ class TorchModel(Model):
         """
 
         def model_fun(x):
-            """Run inference with mixed precision."""
             with (
                 torch.no_grad(),
                 torch.inference_mode(),
-                torch.autocast(device_type=self.device.type, dtype=torch.float16),
+                torch.autocast(device_type=self.device.type, dtype=self.autocast_dtype),
             ):
                 x = x.to(self.device, non_blocking=True)
-                # Convert to channels_last for better GPU utilization if possible
                 if self.use_gpu:
                     try:
                         x = x.to(memory_format=torch.channels_last)
                     except Exception:
-                        pass  # Some tensor shapes may not support channels_last
-                return self.obj(x).float().cpu()
+                        pass
+                return self._forward(x).float().cpu()
 
         return model_fun
 

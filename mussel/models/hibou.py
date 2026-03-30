@@ -64,19 +64,5 @@ class HibouLModel(TorchModel):
 
         return preprocess
 
-    def get_model_fun(self) -> Callable:
-        """Get model inference function for Hibou-L.
-
-        Extracts the CLS token from the last hidden state.
-
-        Returns:
-            Callable that runs inference and returns CLS token embeddings.
-        """
-
-        def model_fun(x):
-            with torch.no_grad(), torch.inference_mode():
-                x = x.to(self.device, non_blocking=True)
-                output = self.obj(pixel_values=x)
-                return output.last_hidden_state[:, 0].float().cpu()
-
-        return model_fun
+    def _forward(self, x: torch.Tensor) -> torch.Tensor:
+        return self.obj(pixel_values=x).last_hidden_state[:, 0]
