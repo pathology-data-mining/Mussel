@@ -234,7 +234,7 @@ class TorchModel(Model):
                         x = x.to(memory_format=torch.channels_last)
                     except Exception:
                         pass  # Some tensor shapes may not support channels_last
-                return self.obj(x).cpu()
+                return self.obj(x).float().cpu()
 
         return model_fun
 

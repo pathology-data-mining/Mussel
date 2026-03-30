@@ -92,7 +92,7 @@ class GigapathModel(TorchModel):
                 # Extract CLS token (first token)
                 if len(output.shape) == 3:
                     output = output[:, 0, :]  # Take CLS token
-                return output.cpu()
+                return output.float().cpu()
 
         return model_fun
 
@@ -186,7 +186,7 @@ class GigapathSlideEncoderModel(TorchModel):
                 result = self.obj(features, coords)
                 if isinstance(result, list):
                     result = result[0]
-                return result.squeeze(0).cpu()
+                return result.squeeze(0).float().cpu()
 
         return model_fun
 

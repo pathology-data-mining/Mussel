@@ -92,7 +92,7 @@ class VirchowModel(TorchModel):
                     [class_token, avg_patch_tokens], dim=1
                 )  # [batch, embed_dim * 2]
 
-                return concatenated.cpu()
+                return concatenated.float().cpu()
 
         return model_fun
 

@@ -175,6 +175,7 @@ class TitanSlideEncoderModel(TorchModel):
                         patch_features, coords, patch_size
                     )
                     .squeeze()
+                    .float()
                     .cpu()
                 )
 

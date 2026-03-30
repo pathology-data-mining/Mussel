@@ -67,6 +67,6 @@ class Midnight12kModel(TorchModel):
             ):
                 x = x.to(self.device, non_blocking=True)
                 out = self.obj(pixel_values=x)
-                return out.last_hidden_state[:, 0].cpu()
+                return out.last_hidden_state[:, 0].float().cpu()
 
         return model_fun

@@ -77,6 +77,6 @@ class HibouLModel(TorchModel):
             with torch.no_grad(), torch.inference_mode():
                 x = x.to(self.device, non_blocking=True)
                 output = self.obj(pixel_values=x)
-                return output.last_hidden_state[:, 0].cpu()
+                return output.last_hidden_state[:, 0].float().cpu()
 
         return model_fun
