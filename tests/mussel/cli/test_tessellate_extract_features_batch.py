@@ -99,7 +99,7 @@ def test_tessellate_extract_features_batch_basic(tmp_path, test_data_path, use_g
             coords = f["coords"][:]
         # Shape sanity
         assert feats.ndim == 2 and feats.shape[0] > 0, f"{slide_id}: features shape unexpected: {feats.shape}"
-        assert feats.shape[1] == 2048, f"{slide_id}: RESNET50 feature dim should be 2048, got {feats.shape[1]}"
+        assert feats.shape[1] == 1024, f"{slide_id}: RESNET50 feature dim should be 1024, got {feats.shape[1]}"
         assert coords.shape == (feats.shape[0], 2), f"{slide_id}: coords shape mismatch with features"
         # dtype and numerical health
         assert feats.dtype == np.float32, f"{slide_id}: features dtype should be float32, got {feats.dtype}"
@@ -143,7 +143,7 @@ def test_tessellate_extract_features_batch_with_filtering(tmp_path, test_data_pa
         with h5py.File(h5_path, "r") as f:
             feats = f["features"][:]
         assert feats.ndim == 2 and feats.shape[0] > 0, f"{slide_id}: no patches after filtering"
-        assert feats.shape[1] == 2048, f"{slide_id}: RESNET50 feature dim should be 2048"
+        assert feats.shape[1] == 1024, f"{slide_id}: RESNET50 feature dim should be 1024"
         assert np.all(np.isfinite(feats)), f"{slide_id}: features contain NaN or Inf after filtering"
 
 

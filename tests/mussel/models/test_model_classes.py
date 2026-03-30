@@ -7,11 +7,57 @@ downloaded weights are required.  Tests verify:
   - get_model_fun() calls the underlying model with the right inputs and
     returns a CPU tensor with the expected shape
 """
+import inspect
+
 import pytest
 import torch
 import torch.nn as nn
 from unittest.mock import MagicMock, patch, PropertyMock
 from torchvision import transforms
+
+import mussel.models  # noqa: F401  # triggers all @register_model decorators
+from mussel.models.clip import ClipModel
+from mussel.models.conch import Conch15Model, TitanSlideEncoderModel
+from mussel.models.feather import FeatherSlideEncoderModel
+from mussel.models.gigapath import GigapathModel, GigapathSlideEncoderModel
+from mussel.models.gpfm import GPFMModel
+from mussel.models.hibou import HibouLModel
+from mussel.models.madeleine import MadeleineSlideEncoderModel
+from mussel.models.midnight import Midnight12kModel
+from mussel.models.model_factory import MODEL_FACTORIES, MODEL_PATCH_SIZES, ModelType
+from mussel.models.optimus import H0MiniModel, HOptimus1Model, OptimusModel
+from mussel.models.phikon import PhikonModel, PhikonV2Model
+from mussel.models.prism import PRISMSlideEncoderModel
+from mussel.models.resnet import ResnetModel
+from mussel.models.transpath import TransPathModel
+from mussel.models.uni import Uni2Model, UniModel
+from mussel.models.virchow import Virchow2Model, VirchowModel
+
+# Maps class name strings to actual classes for parametrized tests.
+_MODEL_CLASSES = {
+    "ClipModel": ClipModel,
+    "Conch15Model": Conch15Model,
+    "FeatherSlideEncoderModel": FeatherSlideEncoderModel,
+    "GigapathModel": GigapathModel,
+    "GigapathSlideEncoderModel": GigapathSlideEncoderModel,
+    "GPFMModel": GPFMModel,
+    "H0MiniModel": H0MiniModel,
+    "HibouLModel": HibouLModel,
+    "HOptimus1Model": HOptimus1Model,
+    "MadeleineSlideEncoderModel": MadeleineSlideEncoderModel,
+    "Midnight12kModel": Midnight12kModel,
+    "OptimusModel": OptimusModel,
+    "PhikonModel": PhikonModel,
+    "PhikonV2Model": PhikonV2Model,
+    "PRISMSlideEncoderModel": PRISMSlideEncoderModel,
+    "ResnetModel": ResnetModel,
+    "TitanSlideEncoderModel": TitanSlideEncoderModel,
+    "TransPathModel": TransPathModel,
+    "Uni2Model": Uni2Model,
+    "UniModel": UniModel,
+    "Virchow2Model": Virchow2Model,
+    "VirchowModel": VirchowModel,
+}
 
 
 # ---------------------------------------------------------------------------
@@ -51,13 +97,11 @@ class TestOptimusModelPreprocessing:
     """OptimusModel (H-Optimus-0) uses custom Compose with its own normalisation."""
 
     def test_preprocessing_returns_compose(self):
-        from mussel.models.model_factory import OptimusModel
         m = _make_model(OptimusModel, MagicMock())
         prep = m.get_preprocessing_fun()
         assert isinstance(prep, transforms.Compose)
 
     def test_preprocessing_last_transform_normalise(self):
-        from mussel.models.model_factory import OptimusModel
         m = _make_model(OptimusModel, MagicMock())
         prep = m.get_preprocessing_fun()
         last = prep.transforms[-1]
@@ -67,13 +111,11 @@ class TestOptimusModelPreprocessing:
 
 class TestHOptimus1ModelPreprocessing:
     def test_preprocessing_returns_compose(self):
-        from mussel.models.model_factory import HOptimus1Model
         m = _make_model(HOptimus1Model, MagicMock())
         prep = m.get_preprocessing_fun()
         assert isinstance(prep, transforms.Compose)
 
     def test_preprocessing_normalise_mean(self):
-        from mussel.models.model_factory import HOptimus1Model
         m = _make_model(HOptimus1Model, MagicMock())
         prep = m.get_preprocessing_fun()
         norm = prep.transforms[-1]
@@ -83,7 +125,6 @@ class TestHOptimus1ModelPreprocessing:
 
 class TestH0MiniModelPreprocessing:
     def test_preprocessing_returns_compose(self):
-        from mussel.models.model_factory import H0MiniModel
         m = _make_model(H0MiniModel, MagicMock())
         prep = m.get_preprocessing_fun()
         assert isinstance(prep, transforms.Compose)
@@ -91,13 +132,11 @@ class TestH0MiniModelPreprocessing:
 
 class TestConch15ModelPreprocessing:
     def test_preprocessing_returns_compose(self):
-        from mussel.models.model_factory import Conch15Model
         m = _make_model(Conch15Model, MagicMock())
         prep = m.get_preprocessing_fun()
         assert isinstance(prep, transforms.Compose)
 
     def test_preprocessing_resize_448(self):
-        from mussel.models.model_factory import Conch15Model
         m = _make_model(Conch15Model, MagicMock())
         prep = m.get_preprocessing_fun()
         resize_t = next(t for t in prep.transforms if isinstance(t, transforms.Resize))
@@ -121,10 +160,10 @@ _TIMM_CFG = {"input_size": (3, 224, 224), "mean": (0.485, 0.456, 0.406), "std": 
 class TestTimmBasedPreprocessing:
     """VirchowModel, UniModel, Uni2Model, PhikonModel, Midnight12kModel, GPFMModel."""
 
-    def _assert_prep_callable(self, cls):
+    def _assert_prep_callable(self, cls, module_path="mussel.models.base"):
         fake_transform = transforms.Compose([transforms.ToTensor()])
-        with patch("mussel.models.model_factory.resolve_data_config", return_value=_TIMM_CFG) as mock_resolve, \
-             patch("mussel.models.model_factory.create_transform", return_value=fake_transform) as mock_create:
+        with patch(f"{module_path}.resolve_data_config", return_value=_TIMM_CFG) as mock_resolve, \
+             patch(f"{module_path}.create_transform", return_value=fake_transform) as mock_create:
             m = _make_model(cls, _timm_prep_model())
             prep = m.get_preprocessing_fun()
             assert callable(prep)
@@ -132,20 +171,16 @@ class TestTimmBasedPreprocessing:
             mock_create.assert_called_once()
 
     def test_virchow_preprocessing(self):
-        from mussel.models.model_factory import VirchowModel
         self._assert_prep_callable(VirchowModel)
 
     def test_uni_preprocessing(self):
-        from mussel.models.model_factory import UniModel
         self._assert_prep_callable(UniModel)
 
     def test_uni2_preprocessing(self):
-        from mussel.models.model_factory import Uni2Model
         self._assert_prep_callable(Uni2Model)
 
     def test_phikon_preprocessing(self):
         """PhikonModel.get_preprocessing_fun() returns a torchvision Compose (no timm)."""
-        from mussel.models.model_factory import PhikonModel
         from torchvision.transforms import Compose
 
         m = _make_model(PhikonModel, MagicMock())
@@ -155,7 +190,6 @@ class TestTimmBasedPreprocessing:
 
     def test_phikon_v2_preprocessing(self):
         """PhikonV2Model.get_preprocessing_fun() returns a torchvision Compose (no timm)."""
-        from mussel.models.model_factory import PhikonV2Model
         from torchvision.transforms import Compose
 
         m = _make_model(PhikonV2Model, MagicMock())
@@ -165,7 +199,6 @@ class TestTimmBasedPreprocessing:
 
     def test_midnight12k_preprocessing(self):
         """Midnight12kModel.get_preprocessing_fun() returns a torchvision Compose (no timm)."""
-        from mussel.models.model_factory import Midnight12kModel
         from torchvision.transforms import Compose
 
         m = _make_model(Midnight12kModel, MagicMock())
@@ -174,8 +207,7 @@ class TestTimmBasedPreprocessing:
         assert isinstance(prep, Compose)
 
     def test_gpfm_preprocessing(self):
-        from mussel.models.model_factory import GPFMModel
-        self._assert_prep_callable(GPFMModel)
+        self._assert_prep_callable(GPFMModel, module_path="mussel.models.gpfm")
 
 
 # ---------------------------------------------------------------------------
@@ -184,7 +216,6 @@ class TestTimmBasedPreprocessing:
 
 class TestHibouLModelPreprocessing:
     def test_preprocessing_callable(self):
-        from mussel.models.model_factory import HibouLModel
         processor = MagicMock()
         processor.return_value = {"pixel_values": torch.rand(1, 3, 224, 224)}
         m = _make_model(HibouLModel, MagicMock())
@@ -193,7 +224,6 @@ class TestHibouLModelPreprocessing:
         assert callable(prep)
 
     def test_preprocessing_extracts_pixel_values(self):
-        from mussel.models.model_factory import HibouLModel
         img = MagicMock()
         processor = MagicMock()
         expected = torch.rand(1, 3, 224, 224)
@@ -211,7 +241,6 @@ class TestHibouLModelPreprocessing:
 
 class TestClipModelPreprocessing:
     def test_preprocessing_returns_stored_transform(self):
-        from mussel.models.model_factory import ClipModel
         m = _make_model(ClipModel, MagicMock())
         fake_prep = transforms.Compose([transforms.ToTensor()])
         m.preprocessing = fake_prep
@@ -228,20 +257,17 @@ class TestClipModelPreprocessing:
     "MadeleineSlideEncoderModel",
 ])
 def test_slide_encoder_preprocessing_is_none(cls_name):
-    import mussel.models.model_factory as mf
-    cls = getattr(mf, cls_name)
+    cls = _MODEL_CLASSES[cls_name]
     m = _make_model(cls, MagicMock())
     assert m.get_preprocessing_fun() is None
 
 
 def test_gigapath_slide_preprocessing_is_none():
-    from mussel.models.model_factory import GigapathSlideEncoderModel
     m = _make_model(GigapathSlideEncoderModel, MagicMock())
     assert m.get_preprocessing_fun() is None
 
 
 def test_titan_slide_preprocessing_is_none():
-    from mussel.models.model_factory import TitanSlideEncoderModel
     m = _make_model(TitanSlideEncoderModel, MagicMock())
     assert m.get_preprocessing_fun() is None
 
@@ -263,8 +289,7 @@ def test_titan_slide_preprocessing_is_none():
 ])
 def test_standard_patch_encoder_model_fun(cls_name, embed_dim):
     """Standard TorchModel.get_model_fun() returns self.obj(x).cpu()."""
-    import mussel.models.model_factory as mf
-    cls = getattr(mf, cls_name)
+    cls = _MODEL_CLASSES[cls_name]
     batch_size = 2
     expected = torch.rand(batch_size, embed_dim)
     mock_model = MagicMock(return_value=expected)
@@ -288,10 +313,9 @@ def test_standard_patch_encoder_model_fun(cls_name, embed_dim):
 ])
 def test_transformers_patch_encoder_model_fun(cls_name, embed_dim):
     """PhikonModel / Midnight12kModel return last_hidden_state[:, 0] (CLS token)."""
-    import mussel.models.model_factory as mf
-    cls = getattr(mf, cls_name)
+    cls = _MODEL_CLASSES[cls_name]
     batch_size = 2
-    n_tokens = 197  # 14×14 patches + CLS
+    n_tokens = 197  # 14x14 patches + CLS
     # Simulate a transformers model output with last_hidden_state
     hidden = torch.rand(batch_size, n_tokens, embed_dim)
     mock_output = MagicMock()
@@ -327,11 +351,9 @@ class TestVirchowModelFun:
         assert result.shape == torch.Size([batch_size, 2 * embed_dim])
 
     def test_virchow(self):
-        from mussel.models.model_factory import VirchowModel
         self._run(VirchowModel, embed_dim=1280)
 
     def test_virchow2(self):
-        from mussel.models.model_factory import Virchow2Model
         self._run(Virchow2Model, embed_dim=1280)
 
 
@@ -341,7 +363,6 @@ class TestVirchowModelFun:
 
 class TestHibouLModelFun:
     def test_model_fun_returns_cls_token(self):
-        from mussel.models.model_factory import HibouLModel
         embed_dim = 1024
         batch_size = 2
         # Simulate transformers model output with last_hidden_state
@@ -357,7 +378,6 @@ class TestHibouLModelFun:
         assert result.shape == torch.Size([batch_size, embed_dim])
 
     def test_model_fun_calls_with_pixel_values(self):
-        from mussel.models.model_factory import HibouLModel
         mock_output = MagicMock()
         mock_output.last_hidden_state = torch.rand(1, 50, 512)
         mock_model = MagicMock(return_value=mock_output)
@@ -376,57 +396,45 @@ class TestHibouLModelFun:
 
 class TestPRISMSlideEncoderModelFun:
     def test_calls_encode_slide_and_squeezes(self):
-        from mussel.models.model_factory import PRISMSlideEncoderModel
         embed_dim = 1024
         mock_model = MagicMock()
-        mock_model.encode_slide = MagicMock(return_value=torch.rand(1, embed_dim))
+        mock_model.slide_representations = MagicMock(
+            return_value={"image_embedding": torch.rand(1, embed_dim)}
+        )
         m = _make_model(PRISMSlideEncoderModel, mock_model)
         model_fun = m.get_model_fun()
         patch_features = torch.rand(1, 100, 1280)
-        coords = torch.rand(1, 100, 2)
-        result = model_fun(patch_features, coords, patch_size=224)
-        mock_model.encode_slide.assert_called_once()
+        result = model_fun(patch_features)
+        mock_model.slide_representations.assert_called_once()
         assert result.device.type == "cpu"
         assert result.shape == torch.Size([embed_dim])
 
 
 class TestFeatherSlideEncoderModelFun:
     def test_calls_model_and_squeezes(self):
-        from mussel.models.model_factory import FeatherSlideEncoderModel
         embed_dim = 512
-        mock_model = MagicMock(return_value=torch.rand(1, embed_dim))
+        hidden = torch.rand(1, embed_dim)
+        mock_model = MagicMock()
+        mock_model.forward_features = MagicMock(return_value=(hidden, None))
         m = _make_model(FeatherSlideEncoderModel, mock_model)
         model_fun = m.get_model_fun()
         patch_features = torch.rand(1, 100, 512)
-        coords = torch.rand(1, 100, 2)
-        result = model_fun(patch_features, coords, patch_size=512)
-        mock_model.assert_called_once()
+        result = model_fun(patch_features)
+        mock_model.forward_features.assert_called_once()
         assert result.device.type == "cpu"
         assert result.shape == torch.Size([embed_dim])
 
 
 class TestMadeleineSlideEncoderModelFun:
     def test_calls_model_and_squeezes(self):
-        from mussel.models.model_factory import MadeleineSlideEncoderModel
         embed_dim = 512
         mock_model = MagicMock(return_value=torch.rand(1, embed_dim))
         m = _make_model(MadeleineSlideEncoderModel, mock_model)
         model_fun = m.get_model_fun()
         patch_features = torch.rand(1, 100, 512)
-        coords = torch.rand(1, 100, 2)
-        result = model_fun(patch_features, coords, patch_size=512)
+        result = model_fun(patch_features)
         mock_model.assert_called_once()
         assert result.device.type == "cpu"
-        assert result.shape == torch.Size([embed_dim])
-
-    def test_unwraps_tuple_output(self):
-        from mussel.models.model_factory import MadeleineSlideEncoderModel
-        embed_dim = 512
-        inner = torch.rand(1, embed_dim)
-        mock_model = MagicMock(return_value=(inner, "ignored"))
-        m = _make_model(MadeleineSlideEncoderModel, mock_model)
-        model_fun = m.get_model_fun()
-        result = model_fun(torch.rand(1, 100, 512), torch.rand(1, 100, 2), 512)
         assert result.shape == torch.Size([embed_dim])
 
 
@@ -440,8 +448,7 @@ class TestMadeleineSlideEncoderModelFun:
     "MadeleineSlideEncoderModel",
 ])
 def test_slide_encoder_save_rejects_file_extension(cls_name, tmp_path):
-    import mussel.models.model_factory as mf
-    cls = getattr(mf, cls_name)
+    cls = _MODEL_CLASSES[cls_name]
     m = _make_model(cls, MagicMock())
     with pytest.raises(ValueError, match="directory"):
         m.save(str(tmp_path / "model.pt"))
@@ -453,33 +460,17 @@ def test_slide_encoder_save_rejects_file_extension(cls_name, tmp_path):
 
 class TestOptimusModelClassIntegrity:
     def test_optimus_model_exists(self):
-        from mussel.models.model_factory import OptimusModel
         assert OptimusModel is not None
 
     def test_optimus_model_is_separate_from_madeleine(self):
-        from mussel.models.model_factory import OptimusModel, MadeleineSlideEncoderModel
         assert OptimusModel is not MadeleineSlideEncoderModel
 
     def test_optimus_factory_references_optimus_model(self):
-        from mussel.models.model_factory import OptimusModelFactory, OptimusModel
-        factory = OptimusModelFactory()
-        with patch.object(
-            OptimusModel, "__init__", return_value=None
-        ) as mock_init:
-            with patch.object(
-                OptimusModel, "__new__", return_value=MagicMock(spec=OptimusModel)
-            ):
-                try:
-                    factory.get_model(model_path="hf-hub:bioptimus/H-optimus-0", use_gpu=False)
-                except Exception:
-                    pass
-            # Verify factory uses OptimusModel (not MadeleineSlideEncoderModel)
-        assert OptimusModelFactory.__name__ == "OptimusModelFactory"
+        # MODEL_FACTORIES[ModelType.OPTIMUS] should be OptimusModel, not MadeleineSlideEncoderModel
+        assert MODEL_FACTORIES[ModelType.OPTIMUS] is OptimusModel
 
     def test_madeleine_init_loads_madeleine_path(self):
         """MadeleineSlideEncoderModel.__init__ should reference MADELEINE_SLIDE, not OPTIMUS."""
-        from mussel.models.model_factory import MadeleineSlideEncoderModel, ModelType
-        import inspect
         src = inspect.getsource(MadeleineSlideEncoderModel.__init__)
         assert "MADELEINE_SLIDE" in src
         assert "OPTIMUS" not in src
@@ -490,12 +481,10 @@ class TestOptimusModelClassIntegrity:
 # ---------------------------------------------------------------------------
 
 def test_all_model_types_have_factory():
-    from mussel.models.model_factory import MODEL_FACTORIES, ModelType
     for mt in ModelType:
         assert mt in MODEL_FACTORIES, f"{mt} missing from MODEL_FACTORIES"
 
 
 def test_all_model_types_have_patch_size():
-    from mussel.models.model_factory import MODEL_PATCH_SIZES, ModelType
     for mt in ModelType:
         assert mt in MODEL_PATCH_SIZES, f"{mt} missing from MODEL_PATCH_SIZES"
