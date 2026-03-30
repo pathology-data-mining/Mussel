@@ -143,10 +143,23 @@ uv sync --extra tensorflow-cpu   # CPU only (e.g. Mac)
 
 #### Neural segmentation (`seg_model="neural"`)
 
-Mussel includes built-in neural tissue segmentation using a DeepLabV3 model
-(pre-trained weights from `MahmoodLab/hest-tissue-seg` on HuggingFace,
-downloaded automatically on first use). No extra packages are required — it
-works with any `torch-gpu` or `torch-cpu` install:
+Mussel includes built-in neural tissue segmentation using a **DeepLabV3-ResNet50**
+model (2-class: tissue vs background) trained on histopathology slides as part of the
+[HEST](https://github.com/mahmoodlab/HEST) project at the Mahmood Lab, Harvard Medical
+School.
+
+Pre-trained weights are hosted at
+[MahmoodLab/hest-tissue-seg](https://huggingface.co/MahmoodLab/hest-tissue-seg) on
+HuggingFace and are downloaded automatically on first use (no account or token
+required). The model operates at 1 µm/px; Mussel handles resampling automatically.
+
+> **Reference:** Chan *et al.*, "A Pathology Foundation Model for Cancer Diagnosis and
+> Prognosis Prediction", *Nature* 2025.
+> [[paper]](https://doi.org/10.1038/s41586-025-08690-5)
+> [[GitHub]](https://github.com/mahmoodlab/HEST)
+> [[HuggingFace model card]](https://huggingface.co/MahmoodLab/hest-tissue-seg)
+
+No extra packages are required — it works with any `torch-gpu` or `torch-cpu` install:
 
 ```bash
 uv sync --extra torch-gpu

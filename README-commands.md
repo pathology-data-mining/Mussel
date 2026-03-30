@@ -34,6 +34,10 @@ The example commands below use the test data provided in the `tests/testdata` fo
 Tessellate tiles a whole-slide image.  The tile coordinates and other metadata necessary
 for downstream steps are written to an HDF5 (.h5) file.
 
+Mussel reads tiles from the slide at the resolution specified by `seg_config.mpp`
+(default 0.5 µm/px, roughly 20×). The slide's native MPP is determined automatically
+from the file metadata; see [MPP fallback chain](#mpp-resolution) below.
+
 Example command (see defaults with `tessellate --help`):
 ```bash
 tessellate \
@@ -43,15 +47,54 @@ tessellate \
     num_workers=1
 ```
 
-**New segmentation and patching options:**
+#### Supported slide formats
+
+Mussel uses [tiffslide](https://github.com/bayer-science-for-a-better-life/tiffslide)
+(an OpenSlide-compatible library) to read whole-slide images. The following formats are
+supported:
+
+| Format | Extension | Vendor |
+|---|---|---|
+| Aperio SVS | `.svs` | Leica/Aperio |
+| Hamamatsu NDPI | `.ndpi` | Hamamatsu |
+| Leica SCN | `.scn` | Leica |
+| Generic TIFF | `.tif`, `.tiff` | Various |
+| MIRAX/3DHistech | `.mrxs` | 3DHistech |
+| Hamamatsu VMS | `.vms`, `.vmu` | Hamamatsu |
+| Ventana BIF | `.bif` | Ventana/Roche |
+| PerkinElmer QPTIFF | `.qptiff` | PerkinElmer |
+| Zeiss CZI | `.czi` | Zeiss |
+
+#### MPP resolution
+
+Mussel determines the slide's native microns-per-pixel (MPP) using the following
+fallback chain. The first value found is used:
+
+1. **`seg_config.slide_mpp_override`** — explicit CLI override; bypasses all metadata reading
+2. **`tiffslide.mpp-x`** — standard property populated by tiffslide for all supported formats
+3. **`aperio.MPP`** / **`openslide.mpp-x`** — legacy vendor properties
+4. **Magnification estimate** — derived from objective-power metadata as `10.0 / magnification`
+5. **Default 0.5 µm/px** — used as last resort with a warning logged
+
+If the slide has missing or corrupt MPP metadata, use the override:
+```bash
+tessellate slide_path=slide.svs seg_config.slide_mpp_override=0.5 ...
+tessellate_extract_features slide_path=slide.svs seg_config.slide_mpp_override=0.25 ...
+export_tiles slide_path=slide.svs slide_mpp_override=0.5 ...
+```
+
+#### Segmentation and patching options
 
 | Parameter | Default | Description |
 |---|---|---|
+| `seg_config.mpp` | `0.5` | Target resolution for tile extraction (µm/px). |
+| `seg_config.patch_size` | `256` | Tile size in pixels at the target MPP. |
 | `seg_config.overlap` | `0` | Patch overlap in absolute pixels. Sets `step_size = patch_size - overlap`. |
 | `seg_config.min_tissue_proportion` | `0.0` | Discard patches where the tissue fraction is below this value (0.0–1.0). |
 | `seg_config.remove_artifacts` | `false` | Enable artifact removal (requires `artifact_remover_fn` hook). |
 | `seg_config.remove_penmarks` | `false` | Enable pen-mark removal (requires `artifact_remover_fn` hook). |
-| `seg_config.seg_model` | `"classic"` | Segmentation backend: `"classic"` (HSV/Otsu) or `"neural"` (DeepLabV3; requires `torch-gpu` or `torch-cpu`; weights auto-downloaded from HuggingFace). |
+| `seg_config.seg_model` | `"classic"` | Segmentation backend: `"classic"` (HSV/Otsu) or `"neural"` (deep learning; see below). |
+| `seg_config.slide_mpp_override` | `null` | Override the slide's native MPP; useful when metadata is missing or wrong. |
 
 Example with 50% overlap and tissue filtering:
 ```bash
@@ -60,6 +103,51 @@ tessellate \
     output_h5_path=948176_coord.h5 \
     seg_config.overlap=128 \
     seg_config.min_tissue_proportion=0.5
+```
+
+#### Neural tissue segmentation (`seg_model="neural"`)
+
+By default Mussel uses a classic HSV/Otsu threshold pipeline (`seg_model="classic"`).
+Setting `seg_model="neural"` switches to a deep-learning segmenter that is more
+robust on challenging slides (stain variation, artefacts, pale tissue).
+
+The neural segmenter uses a **DeepLabV3-ResNet50** model (2-class: tissue vs background)
+trained on histopathology slides as part of the
+[HEST](https://github.com/mahmoodlab/HEST) project at the Mahmood Lab, Harvard Medical
+School. The pre-trained checkpoint is hosted on HuggingFace at
+[MahmoodLab/hest-tissue-seg](https://huggingface.co/MahmoodLab/hest-tissue-seg) and is
+downloaded automatically on first use (no account or token required).
+
+> **Reference:** Chan *et al.*, "A Pathology Foundation Model for Cancer Diagnosis and
+> Prognosis Prediction", *Nature* 2025.
+> [[paper]](https://doi.org/10.1038/s41586-025-08690-5)
+> [[GitHub]](https://github.com/mahmoodlab/HEST)
+> [[HuggingFace]](https://huggingface.co/MahmoodLab/hest-tissue-seg)
+
+The neural segmenter operates at 1 µm/px resolution (≈10×); images are auto-resampled
+before inference and the mask is rescaled back to the slide's native resolution. A CUDA
+GPU is recommended for practical performance but CPU inference is supported.
+
+No extra packages are required — neural segmentation works with any `torch-gpu` or
+`torch-cpu` install:
+
+```bash
+uv sync --extra torch-gpu   # or torch-cpu
+```
+
+To use it:
+```bash
+tessellate \
+    slide_path=tests/testdata/948176.svs \
+    output_h5_path=948176_coord.h5 \
+    seg_config.seg_model=neural
+
+tessellate_extract_features \
+    slide_path=tests/testdata/948176.svs \
+    output_h5_path=948176_feat.h5 \
+    output_pt_path=948176_embed.pt \
+    model_type=UNI2 \
+    seg_config.seg_model=neural
 ```
 
 ### `extract_features`
@@ -120,8 +208,6 @@ Most models download automatically from HuggingFace. **🔒 Gated models** requi
 export HF_TOKEN=hf_...
 ```
 
-**Public models** (no token needed): RESNET50, CLIP, PHIKON, PHIKON_V2, MIDNIGHT12K.
-
 **Gated models** — visit the link in the table above to request access:
 
 - **Mahmood Lab** (MahmoodLab): UNI, UNI2, CONCH1_5, TITAN_SLIDE, FEATHER_SLIDE, MADELEINE_SLIDE
@@ -176,6 +262,8 @@ tessellate_extract_features \
 ```
 
 Supported WSI extensions discovered during directory scan: `.svs`, `.ndpi`, `.tiff`, `.tif`, `.scn`, `.mrxs`, `.vms`, `.vmu`, `.bif`, `.qptiff`, `.czi`.
+All `seg_config.*` options (including `seg_model=neural` and `slide_mpp_override`) are
+also available on this command; see the [`tessellate` section](#tessellate) above.
 
 ### `annotate`
 
