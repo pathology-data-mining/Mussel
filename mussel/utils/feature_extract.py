@@ -35,6 +35,27 @@ from .timer import timed
 logger = logging.getLogger(__name__)
 
 
+def _make_dataloader(dataset, *, batch_size, num_workers, pin_memory, collate_fn=None, worker_init_fn=None, shuffle=False, prefetch_factor=None, persistent_workers=False):
+    """Create a DataLoader with spawn multiprocessing context when using workers.
+
+    Using ``multiprocessing_context="spawn"`` prevents CUDA context corruption
+    that occurs when workers are forked after CUDA has been initialised in the
+    parent process (common in tests and long-running batch jobs).
+    """
+    return DataLoader(
+        dataset=dataset,
+        batch_size=batch_size,
+        num_workers=num_workers,
+        pin_memory=pin_memory,
+        collate_fn=collate_fn,
+        worker_init_fn=worker_init_fn,
+        shuffle=shuffle,
+        persistent_workers=persistent_workers,
+        prefetch_factor=prefetch_factor,
+        multiprocessing_context="spawn" if num_workers > 0 else None,
+    )
+
+
 # =============================================================================
 # Feature Extraction Result and Dataset Processors
 # =============================================================================
@@ -848,7 +869,7 @@ def get_features(
         init_wsi_in_worker=num_workers > 0,
     )
 
-    loader = DataLoader(
+    loader = _make_dataloader(
         dataset=dataset,
         batch_size=batch_size,
         num_workers=num_workers,
@@ -857,7 +878,7 @@ def get_features(
         collate_fn=collate_features,
         shuffle=False,
         persistent_workers=num_workers > 0,
-        prefetch_factor=4 if num_workers > 0 else None,  # Increased from 2 to 4 for better GPU utilization
+        prefetch_factor=4 if num_workers > 0 else None,
     )
 
     result = process_dataset(
@@ -964,7 +985,7 @@ def extract_patch_features(
                 transform=preprocessing,
             )
 
-        loader = DataLoader(
+        loader = _make_dataloader(
             dataset=dataset,
             batch_size=batch_size,
             num_workers=num_workers,
@@ -983,7 +1004,7 @@ def extract_patch_features(
             init_wsi_in_worker=num_workers > 0,
         )
 
-        loader = DataLoader(
+        loader = _make_dataloader(
             dataset=dataset,
             batch_size=batch_size,
             num_workers=num_workers,
@@ -1101,7 +1122,7 @@ def extract_patch_features_batch(
             init_wsi_in_worker=num_workers > 0,
         )
 
-        loader = DataLoader(
+        loader = _make_dataloader(
             dataset=dataset,
             batch_size=batch_size,
             num_workers=num_workers,
@@ -1666,7 +1687,7 @@ def save_features(
                     transform=preprocessing,
                 )
 
-            loader = DataLoader(
+            loader = _make_dataloader(
                 dataset=dataset,
                 batch_size=batch_size,
                 num_workers=num_workers,
@@ -1685,7 +1706,7 @@ def save_features(
                 init_wsi_in_worker=num_workers > 0,
             )
 
-            loader = DataLoader(
+            loader = _make_dataloader(
                 dataset=dataset,
                 batch_size=batch_size,
                 num_workers=num_workers,
