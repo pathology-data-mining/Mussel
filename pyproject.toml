@@ -27,6 +27,7 @@ dependencies = [
   "environs",
   "sacremoses",
   "tqdm",
+  "pyarrow>=23.0.1",
 ]
 
 [dependency-groups]
