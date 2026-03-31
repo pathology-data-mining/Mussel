@@ -19,6 +19,7 @@ jobs:
   build-and-push:
     runs-on: ubuntu-latest
     strategy:
+      fail-fast: false
       matrix:
         backend:
           - torch-gpu
@@ -60,8 +61,8 @@ jobs:
         labels: ${{ steps.meta.outputs.labels }}
         build-args: |
           BACKEND=${{ matrix.backend }}
-        cache-from: type=gha
-        cache-to: type=gha,mode=max
+        cache-from: type=gha,scope=${{ matrix.backend }}
+        cache-to: type=gha,mode=max,scope=${{ matrix.backend }},ignore-error=true
 
     - name: Update Docker Hub description
       if: matrix.backend == 'torch-gpu'
