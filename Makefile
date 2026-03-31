@@ -1,4 +1,4 @@
-.PHONY: help install install-dev test test-fast test-slow test-all test-gpu test-fast-gpu test-slow-gpu test-parallel test-watch clean format lint type-check coverage docs build slurm-setup slurm-test-integration slurm-test-fastattn slurm-test-tensorflow slurm-generate-snapshots slurm-test-all slurm-status slurm-logs
+.PHONY: help install install-dev test test-fast test-slow test-all test-gpu test-fast-gpu test-slow-gpu test-parallel test-watch clean format lint type-check coverage docs build slurm-setup slurm-test-integration slurm-test-fastattn slurm-test-tensorflow slurm-generate-snapshots slurm-test-all slurm-status slurm-logs regression-patch regression-pipeline regression-all
 
 # Default target - show help
 help:
@@ -59,6 +59,11 @@ help:
 	@echo "  make slurm-test-all           Submit all SLURM test jobs"
 	@echo "  make slurm-status             Show running/pending SLURM jobs for this user"
 	@echo "  make slurm-logs               Tail the most recent SLURM log in ~/logs/slurm/"
+	@echo ""
+	@echo "Regression Tests (requires GPU + reference data on gpfs):"
+	@echo "  make regression-patch         Patch-level feature regression vs REEF (OPTIMUS + CTransPath)"
+	@echo "  make regression-pipeline      Full pipeline regression (tessellate→extract→filter vs REEF)"
+	@echo "  make regression-all           Run both regression tests"
 
 # Installation targets
 install:
@@ -333,3 +338,18 @@ slurm-logs:
 		echo "=== $$LATEST ==="; \
 		tail -50 "$$LATEST"; \
 	fi
+
+
+# Regression Tests
+REGRESSION_SCRIPTS := tests/regression
+
+regression-patch:
+	@echo "Running patch-level feature regression (OPTIMUS + CTransPath vs REEF)..."
+	@uv run python $(REGRESSION_SCRIPTS)/regression_vs_reference.py
+
+regression-pipeline:
+	@echo "Running full pipeline regression (tessellate->extract->filter vs REEF)..."
+	@uv run python $(REGRESSION_SCRIPTS)/regression_full_pipeline.py
+
+regression-all: regression-patch regression-pipeline
+	@echo "All regression tests complete"
