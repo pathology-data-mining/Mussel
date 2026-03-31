@@ -8,3 +8,24 @@ from .model_factory import (
     SLIDE_ENCODER_COMPATIBILITY,
     MODEL_PATCH_SIZES,
 )
+
+# Import model modules to trigger @register_model self-registration
+from . import (
+    clip,
+    chief,
+    conch,
+    feather,
+    gigapath,
+    googlepath,
+    gpfm,
+    hibou,
+    madeleine,
+    midnight,
+    optimus,
+    phikon,
+    prism,
+    resnet,
+    transpath,
+    uni,
+    virchow,
+)

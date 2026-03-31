@@ -49,6 +49,7 @@ from mussel.utils import (
     is_remote_path,
     safe_path_join,
 )
+from mussel.utils.file import collect_wsi_paths, WSI_EXTENSIONS
 
 # Private aliases used throughout this module
 _is_remote_path = is_remote_path
@@ -78,6 +79,9 @@ class TessellateExtractFeaturesConfig:
     Core Parameters (Batch Mode):
         slide_paths (List[str]): Paths to the whole-slide images to process.
         slide_ids (Optional[List[str]]): Optional slide IDs. If None, uses slide filenames without extension.
+        wsi_dir (Optional[str]): Directory to scan for WSI files (alternative to slide_paths).
+            Mutually exclusive with slide_path and slide_paths.
+        search_nested (bool): If True, recursively search wsi_dir subdirectories (default: False).
         output_dir (str): Directory to save output files. Each slide will have separate output files.
             Supports remote paths (az://, s3://, etc.) when fsspec is installed.
         output_h5_suffix (str): Suffix for output HDF5 files (default: "features.h5").
@@ -152,6 +156,8 @@ class TessellateExtractFeaturesConfig:
     # Batch mode parameters
     slide_paths: Optional[List[str]] = None
     slide_ids: Optional[List[str]] = None
+    wsi_dir: Optional[str] = None  # Directory to scan for WSI files (alternative to slide_paths)
+    search_nested: bool = False     # If True, recursively search wsi_dir subdirectories
     output_dir: Optional[str] = None
     output_h5_suffix: str = "features.h5"
     output_pt_suffix: str = "features.pt"
@@ -315,6 +321,25 @@ def main(
         multiprocessing.set_start_method("spawn", force=True)
     except RuntimeError:
         pass  # Already set
+
+    # If wsi_dir is provided, populate slide_paths from directory scan
+    # (check early before any seg_config access)
+    if cfg.wsi_dir is not None:
+        if cfg.slide_path is not None:
+            raise ValueError("Cannot specify both wsi_dir and slide_path.")
+        if cfg.slide_paths is not None:
+            raise ValueError("Cannot specify both wsi_dir and slide_paths.")
+        cfg.slide_paths = collect_wsi_paths(cfg.wsi_dir, cfg.search_nested)
+        if not cfg.slide_paths:
+            raise ValueError(
+                f"No WSI files found in wsi_dir={cfg.wsi_dir!r} "
+                f"(search_nested={cfg.search_nested}). "
+                f"Supported extensions: {sorted(WSI_EXTENSIONS)}"
+            )
+        logger.info(
+            f"Discovered {len(cfg.slide_paths)} slides in {cfg.wsi_dir}"
+            + (" (recursive)" if cfg.search_nested else "")
+        )
 
     # Apply model-specific defaults if not explicitly set
     # Hydra doesn't call __post_init__ on structured configs, so we do it here

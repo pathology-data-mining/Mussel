@@ -33,6 +33,8 @@ from .file import (
     ensure_directory_exists,
     load_classifier,
     load_features_from_h5,
+    collect_wsi_paths,
+    WSI_EXTENSIONS,
 )
 from .ml import collate_features
 from .segment import (
@@ -41,5 +43,6 @@ from .segment import (
     save_patches_png,
     segment_tissue,
 )
+from .artifact_removal import GrandQCArtifactRemover
 from .tile_export import export_tiles
 from .timer import timed

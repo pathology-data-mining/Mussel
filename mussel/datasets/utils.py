@@ -1,5 +1,7 @@
 from torchvision import transforms
 
+from mussel.models.base import IMAGENET_MEAN, IMAGENET_STD
+
 def eval_transforms(use_imagenet_rgb_dist=False):
     """Create transforms for evaluation/inference.
     
@@ -10,8 +12,8 @@ def eval_transforms(use_imagenet_rgb_dist=False):
         Composed torchvision transforms for image preprocessing.
     """
     if use_imagenet_rgb_dist:
-        mean = (0.485, 0.456, 0.406)
-        std = (0.229, 0.224, 0.225)
+        mean = IMAGENET_MEAN
+        std = IMAGENET_STD
     else:
         mean = (0.5, 0.5, 0.5)
         std = (0.5, 0.5, 0.5)

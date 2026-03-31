@@ -416,10 +416,12 @@ def create_visualizations(
             final_coords,
             save_dir=output_png_dir,
             num_workers=cfg.num_workers,
+            mpp=cfg.seg_config.mpp,
             patch_size=cfg.seg_config.patch_size,
             filter_black_white=cfg.png_config.filter_black_white,
             white_threshold=cfg.png_config.white_threshold,
             black_threshold=cfg.png_config.black_threshold,
+            slide_mpp_override=cfg.seg_config.slide_mpp_override,
         )
     
     # Save thumbnail

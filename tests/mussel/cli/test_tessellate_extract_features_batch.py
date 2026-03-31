@@ -1,5 +1,4 @@
 import os
-import time
 from pathlib import Path
 from unittest.mock import patch, MagicMock
 
@@ -89,11 +88,25 @@ def test_tessellate_extract_features_batch_basic(tmp_path, test_data_path, use_g
     assert os.path.exists(os.path.join(output_dir, "h5", "slide2.features.h5"))
     assert os.path.exists(os.path.join(output_dir, "pt", "slide2.features.pt"))
     
-    # Verify output files contain features
-    with h5py.File(os.path.join(output_dir, "h5", "slide1.features.h5"), "r") as f:
-        assert "features" in f
-        assert "coords" in f
-        assert f["features"].shape[0] > 0
+    # Verify output H5 content for both slides
+    for slide_id in ("slide1", "slide2"):
+        h5_path = os.path.join(output_dir, "h5", f"{slide_id}.features.h5")
+        pt_path = os.path.join(output_dir, "pt", f"{slide_id}.features.pt")
+        with h5py.File(h5_path, "r") as f:
+            assert "features" in f, f"{slide_id}: missing 'features' in H5"
+            assert "coords" in f,   f"{slide_id}: missing 'coords' in H5"
+            feats  = f["features"][:]
+            coords = f["coords"][:]
+        # Shape sanity
+        assert feats.ndim == 2 and feats.shape[0] > 0, f"{slide_id}: features shape unexpected: {feats.shape}"
+        assert feats.shape[1] == 1024, f"{slide_id}: RESNET50 feature dim should be 1024, got {feats.shape[1]}"
+        assert coords.shape == (feats.shape[0], 2), f"{slide_id}: coords shape mismatch with features"
+        # dtype and numerical health
+        assert feats.dtype == np.float32, f"{slide_id}: features dtype should be float32, got {feats.dtype}"
+        assert np.all(np.isfinite(feats)), f"{slide_id}: features contain NaN or Inf"
+        # .pt file must be loadable and match H5
+        pt_feats = torch.load(pt_path, map_location="cpu", weights_only=True)
+        assert pt_feats.shape == torch.Size(feats.shape), f"{slide_id}: pt shape {pt_feats.shape} != h5 shape {feats.shape}"
 
 
 @pytest.mark.slow
@@ -122,20 +135,30 @@ def test_tessellate_extract_features_batch_with_filtering(tmp_path, test_data_pa
     )
     
     main(OmegaConf.create(cfg))
-    
-    # Check outputs
-    assert os.path.exists(os.path.join(output_dir, "h5", "slide1.features.h5"))
-    assert os.path.exists(os.path.join(output_dir, "h5", "slide2.features.h5"))
+
+    # Verify both slides have output with positive patch count
+    for slide_id in ("slide1", "slide2"):
+        h5_path = os.path.join(output_dir, "h5", f"{slide_id}.features.h5")
+        assert os.path.exists(h5_path), f"missing output for {slide_id}"
+        with h5py.File(h5_path, "r") as f:
+            feats = f["features"][:]
+        assert feats.ndim == 2 and feats.shape[0] > 0, f"{slide_id}: no patches after filtering"
+        assert feats.shape[1] == 1024, f"{slide_id}: RESNET50 feature dim should be 1024"
+        assert np.all(np.isfinite(feats)), f"{slide_id}: features contain NaN or Inf after filtering"
 
 
 @pytest.mark.slow
 @pytest.mark.integration
 def test_tessellate_extract_features_batch_with_model_aggregation(tmp_path, test_data_path, use_gpu, num_workers):
-    """Test batch processing with slide-level model aggregation."""
+    """Test batch processing with slide-level model aggregation (mocked encoder).
+
+    Uses _make_* mocks so the test runs quickly without loading real models.
+    Verifies that the aggregation path produces slide-level feature files.
+    """
     slide_path = os.path.join(test_data_path, "948176.svs")
     slide_paths = [slide_path, slide_path]
     output_dir = str(tmp_path / "batch_output")
-    
+
     seg_config = SegConfig(segment_threshold=0)
     cfg = TessellateExtractFeaturesConfig(
         slide_paths=slide_paths,
@@ -148,78 +171,32 @@ def test_tessellate_extract_features_batch_with_model_aggregation(tmp_path, test
         seg_config=seg_config,
         num_workers=num_workers,
         batch_size=32,
-        slide_batch_size=2,  # Process both slides in one batch
+        slide_batch_size=2,
         use_gpu=use_gpu,
-        keep_intermediate_files=False,
+        keep_intermediate_files=True,
     )
-    
-    # Mock the slide encoder to avoid loading actual models
+
     with (
-        patch('mussel.utils.feature_extract.get_model_factory') as mock_factory,
-        patch('mussel.cli.tessellate_extract_features_common.segment_tissue') as mock_segment,
+        patch(
+            "mussel.cli.tessellate_extract_features_common.segment_tissue",
+            side_effect=_make_segment_tissue_mock(),
+        ),
+        patch(
+            "mussel.cli.tessellate_extract_features.extract_patch_features_batch",
+            side_effect=_make_extract_patch_features_batch_mock(),
+        ),
+        patch(
+            "mussel.cli.tessellate_extract_features.aggregate_slide_features_batch",
+            side_effect=_make_aggregate_slide_features_batch_mock(),
+        ),
     ):
-        # Mock segment_tissue to return fake data
-        mock_coords = [[0, 0], [256, 0], [0, 256]]
-        mock_polygon = MagicMock()
-        mock_grid = MagicMock()
-        mock_segment.return_value = (mock_polygon, mock_grid, mock_coords, None)
-        
-        # Mock model factory
-        mock_model = MagicMock()
-        mock_model_fun = MagicMock(return_value=torch.randn(1, 1536))  # Mock output
-        mock_model.get_model_fun.return_value = mock_model_fun
-        mock_model.get_preprocessing_fun.return_value = None
-        mock_factory.return_value = MagicMock(get_model=MagicMock(return_value=mock_model))
-        
-        # This will fail gracefully due to mocking, but we're testing the configuration
-        try:
-            main(OmegaConf.create(cfg))
-        except Exception:
-            pass  # Expected due to mocking
+        main(OmegaConf.create(cfg))
 
-
-def test_batch_processing_performance_benefit():
-    """
-    Demonstrate that batch processing provides performance benefits.
-    
-    This test measures timing difference between sequential and batch processing
-    when using slide-level model aggregation.
-    """
-    # This is more of a documentation/benchmark test
-    # In practice, batch processing should show:
-    # 1. Model loaded once vs multiple times
-    # 2. Better GPU utilization
-    # 3. Reduced overhead
-    
-    # We'll document this in comments rather than run actual timing tests
-    # which would require real GPU and slides
-    
-    """
-    Expected performance improvements with batch processing:
-    
-    Sequential processing (current):
-    - For N slides with model aggregation:
-      - Load model N times (overhead)
-      - Process each slide individually (underutilized GPU)
-      - Total time: N * (model_load_time + inference_time)
-    
-    Batch processing (new):
-    - For N slides with model aggregation and batch_size B:
-      - Load model 1 time (overhead)
-      - Process slides in batches of B (better GPU utilization)
-      - Total time: model_load_time + (N/B) * batch_inference_time
-      
-    Where batch_inference_time < B * inference_time due to:
-    - Parallel processing on GPU
-    - Reduced memory transfer overhead
-    - Better tensor operation efficiency
-    
-    Example with 100 slides, batch_size=8:
-    - Sequential: 100 * (2s + 0.5s) = 250s
-    - Batch: 2s + (100/8) * 3s = 2s + 37.5s = 39.5s
-    - Speedup: ~6.3x
-    """
-    pass
+    for slide_id in ("slide1", "slide2"):
+        assert os.path.exists(os.path.join(output_dir, "h5", f"{slide_id}.features.h5"))
+        # Slide-level features should be a single vector
+        with h5py.File(os.path.join(output_dir, "h5", f"{slide_id}.features.h5"), "r") as f:
+            assert f["features"].shape[0] == 1, f"{slide_id}: expected 1 slide-level feature row"
 
 
 def test_auto_slide_id_generation(tmp_path, test_data_path, use_gpu, num_workers):
@@ -385,4 +362,54 @@ def test_tile_level_batching_with_slide_aggregation(tmp_path, test_data_path, us
     # Verify aggregated features are slide-level (single vector)
     with h5py.File(os.path.join(output_dir, "h5", "slide1.features.h5"), "r") as f:
         assert f["features"].shape[0] == 1
+
+
+def test_wsi_dir_discovery(test_data_path):
+    """Test that wsi_dir collects slides from a directory."""
+    from mussel.utils.file import collect_wsi_paths, WSI_EXTENSIONS
+    paths = collect_wsi_paths(str(test_data_path), search_nested=False)
+    assert len(paths) > 0
+    assert all(Path(p).suffix.lower() in WSI_EXTENSIONS for p in paths)
+
+
+def test_wsi_dir_nested(tmp_path):
+    """Test that search_nested finds files in subdirectories."""
+    from mussel.utils.file import collect_wsi_paths
+    sub = tmp_path / "sub"
+    sub.mkdir()
+    (sub / "slide.svs").touch()
+    (tmp_path / "top.svs").touch()
+    # Non-nested: only top-level
+    flat = collect_wsi_paths(str(tmp_path), search_nested=False)
+    assert len(flat) == 1
+    assert flat[0].endswith("top.svs")
+    # Nested: both
+    nested = collect_wsi_paths(str(tmp_path), search_nested=True)
+    assert len(nested) == 2
+
+
+def test_wsi_dir_conflict_raises(tmp_path):
+    """Test that specifying both wsi_dir and slide_paths (or slide_path) raises an error."""
+    from mussel.cli.tessellate_extract_features import TessellateExtractFeaturesConfig
+
+    dummy_wsi = tmp_path / "dummy.svs"
+    dummy_wsi.touch()
+
+    # wsi_dir + slide_paths should raise
+    cfg = OmegaConf.structured(TessellateExtractFeaturesConfig)
+    cfg.wsi_dir = str(tmp_path)
+    cfg.slide_paths = ["some_slide.svs"]
+    cfg.output_dir = str(tmp_path / "out")
+    cfg.model_type = "CLIP"
+    with pytest.raises(ValueError, match="Cannot specify both wsi_dir and slide_paths"):
+        main(cfg)
+
+    # wsi_dir + slide_path should also raise
+    cfg2 = OmegaConf.structured(TessellateExtractFeaturesConfig)
+    cfg2.wsi_dir = str(tmp_path)
+    cfg2.slide_path = "some_slide.svs"
+    cfg2.output_dir = str(tmp_path / "out")
+    cfg2.model_type = "CLIP"
+    with pytest.raises(ValueError, match="Cannot specify both wsi_dir and slide_path"):
+        main(cfg2)
 

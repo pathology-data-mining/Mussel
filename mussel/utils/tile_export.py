@@ -2,6 +2,7 @@ import functools
 import logging
 import os
 from concurrent import futures
+from typing import Optional
 
 import h5py
 import numpy as np
@@ -38,6 +39,7 @@ def export_tiles(
     patch_size: int = 256,
     mpp: float = 0.5,
     num_workers: int = 16,
+    slide_mpp_override: Optional[float] = None,
 ) -> None:
     """Export tiles from a whole slide image to individual PNG files.
 
@@ -48,6 +50,8 @@ def export_tiles(
         patch_size: Patch size in pixels (default: 256).
         mpp: Microns per pixel (default: 0.5).
         num_workers: Number of worker threads (default: 16).
+        slide_mpp_override: If provided, use this as the slide's native MPP instead of
+            reading from metadata.  Useful when the slide lacks MPP tags.
     """
 
     log.info(f"Loading .patches.h5 file: {patch_h5_path}")
@@ -59,7 +63,7 @@ def export_tiles(
     wsi = tiffslide.TiffSlide(slide_path)
     
     # Get MPP with fallback handling
-    slide_mpp = get_slide_mpp(wsi, slide_path)
+    slide_mpp = get_slide_mpp(wsi, slide_path, slide_mpp_override=slide_mpp_override)
 
     native_patch_size = get_native_size(patch_size, mpp, slide_mpp)
     log.info(

@@ -23,7 +23,8 @@ from mussel.utils.segment import draw_slide_mask, save_patches_png, segment_tiss
 class SegConfig:
     """
     patch_size (int): Patch size at specified mpp (microns per pixel).
-    step_size (int): Optional step size. Defaults to the patch size.
+    step_size (int): Optional step size. Defaults to the patch size. Overridden by overlap if set.
+    overlap (int): Patch overlap in absolute pixels (0 = no overlap). step_size = patch_size - overlap.
     mpp (float): Desired microns per pixel
     seg_level (int): Tessellation pyramid level. If negative, use best level for factor=64 downsample.
     segment_threshold (int): Pixel threshold value . If pixel value smaller than or equal to threshold, it is set to 0, otherwise it is set to the maximum value (segment_max_value).
@@ -37,6 +38,17 @@ class SegConfig:
     max_num_holes (int): Maximum number of holes.
     keep_ids (List[int]): List of contour IDs to keep.
     exclude_ids (List[int]): List of contour IDs to exclude.
+    min_tissue_proportion (float): Minimum fraction of patch area that must be tissue (0.0–1.0). Patches below this are discarded.
+    remove_artifacts (bool): If True, apply artifact removal before patching (requires artifact_remover_fn).
+    remove_penmarks (bool): If True, apply pen mark removal before patching (requires artifact_remover_fn).
+    seg_model (str): Segmentation backend: "classic" (default, HSV/Otsu) or "neural" (deep-learning, requires torch).
+    slide_mpp_override (float): If set, use this value (µm/px) as the slide's native MPP instead of
+        reading it from slide metadata. Use this when the slide lacks MPP tags and the
+        metadata-based fallback produces incorrect results.
+    artifact_remover_fn: Optional callable ``(img, mask, mpp) -> mask`` where ``img`` is the RGB
+        thumbnail, ``mask`` is the binary tissue mask, and ``mpp`` is the thumbnail's microns-per-pixel.
+        Returns a corrected binary mask. Use :class:`~mussel.utils.artifact_removal.GrandQCArtifactRemover`
+        for a ready-made GrandQC-based implementation.
     """
 
     # Default patch size constant - used to detect when automatic patch size selection should apply
@@ -57,6 +69,12 @@ class SegConfig:
     max_num_holes: int = 8
     keep_ids: List[int] = field(default_factory=list)
     exclude_ids: List[int] = field(default_factory=list)
+    overlap: int = 0  # Patch overlap in absolute pixels (0 = no overlap). step_size = patch_size - overlap
+    min_tissue_proportion: float = 0.0  # Minimum fraction of patch that must be tissue (0.0-1.0). Patches below this are discarded.
+    remove_artifacts: bool = False  # If True, apply artifact removal to the tissue mask before patching.
+    remove_penmarks: bool = False  # If True, apply pen mark removal to the tissue mask before patching.
+    seg_model: str = "classic"  # Segmentation model: "classic" (Otsu/threshold) or "neural" (deep-learning, requires torch).
+    slide_mpp_override: Optional[float] = None  # If set, use this as the slide's native MPP instead of reading from metadata.
 
 
 @dataclass
@@ -219,10 +237,12 @@ def main(
             coords,
             save_dir=cfg.output_png_dir,
             num_workers=cfg.num_workers,
+            mpp=cfg.seg_config.mpp,
             patch_size=cfg.seg_config.patch_size,
             filter_black_white=cfg.png_config.filter_black_white,
             white_threshold=cfg.png_config.white_threshold,
             black_threshold=cfg.png_config.black_threshold,
+            slide_mpp_override=cfg.seg_config.slide_mpp_override,
         )
 
     if cfg.output_thumbnail_path:

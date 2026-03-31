@@ -1,13 +1,13 @@
 [project]
 name = "mussel"
-version = "1.1.2"
+version = "1.2.0"
 description = "weakly supervised computational pathology on whole slide images"
 license = { text = "GPL-3.0 license" }
 readme = "README.md"
 requires-python = ">=3.10, <3.12"  # NOTE: flash-attn prebuilt wheels (see lines 112–113) are only provided for 3.10/3.11; update wheel URLs if raising this upper bound.
 dependencies = [
   "pandas",
-  "numpy<2",
+  "numpy",
   "h5py",
   "matplotlib",
   "tiffslide",
@@ -18,13 +18,14 @@ dependencies = [
   # NOTE: Upper bound kept in sync with the fastattn extra, which pins transformers==4.36.2
   # and a narrow huggingface-hub range. Relax this once the fastattn stack is updated/tested.
   "transformers<4.46",
-  "transpath@git+https://github.com/msk-mind/TransPath/",
-  "timm_ctranspath@git+https://github.com/msk-mind/timm-ctranspath",
+  "gdown>=4.6.0",
   "shapely>=2.0.7",
   "einops>=0.8.1",
   "einops-exts>=0.0.4",
   "setuptools",
   "configargparse>=1.7.1",
+  "environs",
+  "sacremoses",
 ]
 
 [dependency-groups]
@@ -55,17 +56,15 @@ dev = [
   "torchvision",
   "open-clip-torch",
 ]
-"torch-cpu" = ["torch < 2.6", "torchvision", "open-clip-torch"]
-"torch-gpu" = ["torch < 2.6", "torchvision", "open-clip-torch"]
+"torch-cpu" = ["torch < 2.6", "torchvision", "open-clip-torch", "segmentation-models-pytorch"]
+"torch-gpu" = ["torch < 2.6", "torchvision", "open-clip-torch", "segmentation-models-pytorch"]
 "fastattn" = [
   "gigapath@git+https://github.com/prov-gigapath/prov-gigapath",
   "fairscale",
-  "torch==2.1.2",
-  "torchvision==0.16.2",
-  "xformers>=0.0.23,<0.0.24",
-  "huggingface-hub>=0.20,<0.21",
-  "transformers==4.36.2",
-  "flash-attn==2.5.9",
+  "torch==2.11.0",
+  "torchvision",
+  "xformers>=0.0.34",
+  "flash-attn==2.6.3",
   "timm>=1.0.3",
   "omegaconf",
   "torchmetrics==0.10.3",
@@ -76,7 +75,6 @@ dev = [
   "scikit-survival",
   "wandb",
   "open-clip-torch",
-  "packaging==23.2",
   "ninja==1.11.1.1",
 ]
 "distributed" = [
@@ -92,6 +90,8 @@ dev = [
 
 [tool.uv]
 conflicts = [
+  # These are mutually exclusive: torch/tensorflow and fastattn pin incompatible torch versions.
+  # fastattn uses torch==2.11.0+cu126; torch-gpu/cpu use torch 2.x+cu121/cpu.
   [
     { extra = "tensorflow-gpu" },
     { extra = "tensorflow-cpu" },
@@ -107,19 +107,19 @@ torch = [
   { index = "torch-cpu", extra = "tensorflow-cpu" },
   { index = "torch-cpu", extra = "torch-cpu" },
   { index = "torch-gpu", extra = "torch-gpu" },
-  { index = "torch-gpu-cu118", extra = "fastattn" },
+  { index = "torch-gpu-cu126", extra = "fastattn" },
 ]
 torchvision = [
   { index = "torch-cpu", extra = "tensorflow-gpu" },
   { index = "torch-cpu", extra = "tensorflow-cpu" },
   { index = "torch-cpu", extra = "torch-cpu" },
   { index = "torch-gpu", extra = "torch-gpu" },
-  { index = "torch-gpu-cu118", extra = "fastattn" },
+  { index = "torch-gpu-cu126", extra = "fastattn" },
 ]
-xformers = [{ index = "torch-gpu-cu118", extra = "fastattn" }]
+xformers = [{ index = "torch-gpu-cu126", extra = "fastattn" }]
 flash-attn = [
-  { url = "https://github.com/mjun0812/flash-attention-prebuild-wheels/releases/download/v0.0.1/flash_attn-2.5.9+cu118torch2.1-cp310-cp310-linux_x86_64.whl", marker = "python_version == '3.10'" },
-  { url = "https://github.com/mjun0812/flash-attention-prebuild-wheels/releases/download/v0.0.1/flash_attn-2.5.9+cu118torch2.1-cp311-cp311-linux_x86_64.whl", marker = "python_version == '3.11'" },
+  { url = "https://github.com/mjun0812/flash-attention-prebuild-wheels/releases/download/v0.9.4/flash_attn-2.6.3%2Bcu126torch2.11-cp311-cp311-manylinux_2_24_x86_64.manylinux_2_28_x86_64.whl", marker = "python_version == '3.11'" },
+  { url = "https://github.com/mjun0812/flash-attention-prebuild-wheels/releases/download/v0.9.4/flash_attn-2.6.3%2Bcu128torch2.11-cp311-cp311-manylinux_2_24_x86_64.manylinux_2_28_x86_64.whl", marker = "python_version == '3.10'" },
 ]
 
 [[tool.uv.index]]
@@ -137,6 +137,11 @@ name = "torch-gpu-cu118"
 url = "https://download.pytorch.org/whl/cu118"
 explicit = true
 
+[[tool.uv.index]]
+name = "torch-gpu-cu126"
+url = "https://download.pytorch.org/whl/cu126"
+explicit = true
+
 [tool.setuptools.packages.find]
 include = ["mussel*"]
 
@@ -150,6 +155,8 @@ markers = [
     "slow: marks tests as slow and require significant time to run (deselect with '-m \"not slow\"')",
     "integration: marks integration tests that perform actual model inference",
     "gpu_compatible: marks tests that support --use-gpu flag for faster execution (use the use_gpu fixture to check)",
+    "requires_tensorflow: marks tests that require the tensorflow extra (run via tests/slurm/test_tensorflow.sh)",
+    "requires_fastattn: marks tests that require the fastattn extra (run via tests/slurm/test_fastattn.sh)",
 ]
 
 [project.scripts]

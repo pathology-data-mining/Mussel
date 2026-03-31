@@ -36,6 +36,47 @@ except ImportError:
     AZURE_FILES_SDK_AVAILABLE = False
 
 
+WSI_EXTENSIONS = frozenset({
+    ".svs", ".ndpi", ".scn", ".tif", ".tiff", ".mrxs",
+    ".vms", ".vmu", ".bif", ".qptiff", ".czi",
+})
+
+
+def collect_wsi_paths(
+    wsi_dir: str,
+    search_nested: bool = False,
+    extensions: Optional[frozenset] = None,
+) -> List[str]:
+    """Collect WSI file paths from a directory.
+
+    Args:
+        wsi_dir: Directory to search for WSI files.
+        search_nested: If True, recursively search subdirectories.
+        extensions: Set of file extensions to include (default: WSI_EXTENSIONS).
+
+    Returns:
+        Sorted list of absolute paths to WSI files found.
+    """
+    if extensions is None:
+        extensions = WSI_EXTENSIONS
+    wsi_dir_path = Path(wsi_dir)
+    if not wsi_dir_path.is_dir():
+        raise ValueError(f"wsi_dir is not a directory: {wsi_dir}")
+    if search_nested:
+        paths = [
+            str(p.resolve())
+            for p in wsi_dir_path.rglob("*")
+            if p.is_file() and p.suffix.lower() in extensions
+        ]
+    else:
+        paths = [
+            str(p.resolve())
+            for p in wsi_dir_path.iterdir()
+            if p.is_file() and p.suffix.lower() in extensions
+        ]
+    return sorted(paths)
+
+
 def _is_remote_path(path):
     """Check if a path is a remote path (starts with az://, azblob://, s3://, etc.)."""
     if not isinstance(path, str):

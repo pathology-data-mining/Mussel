@@ -18,6 +18,64 @@ Supported systems:
 * Mac OS (x86 and ARM) (cpu only)
 * Linux (x86) (cpu and gpu)
 
+### Supported slide formats
+
+Mussel reads whole-slide images via [tiffslide](https://github.com/Bayer-Group/tiffslide)
+(backed by [tifffile](https://github.com/cgohlke/tifffile)).
+The following formats are supported:
+
+| Extension | Format | Scanner / Vendor | Tiffslide support |
+|-----------|--------|-----------------|-------------------|
+| `.svs` | Aperio SVS | Leica (Aperio) | ✅ Full |
+| `.scn` | Leica SCN | Leica | ✅ Full |
+| `.tif` / `.tiff` | TIFF, BigTIFF, OME-TIFF | Generic / various | ✅ Full |
+| `.ndpi` | Hamamatsu NDPI | Hamamatsu | ⚠️ Partial — see notes |
+| `.bif` | Ventana BIF | Roche (Ventana) | ⚠️ Partial — see notes |
+| `.mrxs` | MIRAX | 3DHISTECH | ⚠️ Generic TIFF — see notes |
+| `.vms` / `.vmu` | Hamamatsu VMS / VMU | Hamamatsu | ⚠️ Generic TIFF — see notes |
+| `.qptiff` | PerkinElmer / Akoya QPTIFF | PerkinElmer / Akoya | ⚠️ Generic TIFF — see notes |
+| `.czi` | Carl Zeiss CZI | Zeiss | ⚠️ Generic TIFF — see notes |
+
+**Format support notes:**
+
+- **SVS, SCN, TIFF/BigTIFF/OME-TIFF** — fully supported; tiffslide parses vendor metadata
+  and reliably populates `tiffslide.mpp-x`.
+- **NDPI** — tiffslide's Hamamatsu parser is marked "only partially implemented"; MPP
+  is read from standard TIFF resolution tags (`tiff.XResolution` / `tiff.ResolutionUnit`).
+  Most Hamamatsu scanners embed resolution in TIFF tags, so this works in practice.
+  If MPP is wrong or missing, use `seg_config.slide_mpp_override`.
+- **BIF** — tiffslide has no special Ventana parser; falls back to generic TIFF tag reading.
+  Use `seg_config.slide_mpp_override` if MPP is not found automatically.
+- **MRXS** — tiffslide uses generic TIFF parsing. MRXS is a multi-file format: the `.mrxs`
+  file must be accompanied by its sidecar directory (same name, no extension) in the same
+  location; moving only the `.mrxs` file will cause a read error.
+- **VMS / VMU** — older Hamamatsu pyramid formats; treated as generic TIFF. These formats
+  are uncommon on modern scanners; test before relying on them in production.
+- **QPTIFF** — PerkinElmer/Akoya format; treated as generic TIFF. Multiplex (multi-channel)
+  QPTIFF files are supported for tiling but feature extraction uses the first channel only.
+- **CZI** — Zeiss format; tifffile provides CZI support. Multi-series CZI files (multiple
+  acquisitions in one file) are supported but only the first series (index 0) is used.
+
+**MPP (microns per pixel) retrieval** — Mussel reads MPP from slide metadata
+using the following fallback chain:
+1. `slide_mpp_override` CLI parameter — if provided, used directly; all metadata reading is skipped
+2. `tiffslide.mpp-x` — standard property populated by tiffslide for all supported formats
+3. `aperio.MPP` / `openslide.mpp-x` — legacy vendor property names
+4. `tiff.XResolution` + `tiff.ResolutionUnit` — raw TIFF resolution tags converted to µm/px;
+   tiffslide exposes these for partially-supported formats (NDPI, BIF, MRXS, QPTIFF, CZI)
+   even when it cannot normalize them to `tiffslide.mpp-x`
+5. Magnification-based estimate: scans `aperio.AppMag`, `openslide.objective-power`,
+   and `tiffslide.objective-power`; computes MPP as `10.0 / magnification`
+6. Configurable default (0.5 µm/px, typical for 20× TCGA slides) with a warning log
+
+When slides lack MPP metadata and the default 0.5 µm/px doesn't match the actual
+scanner resolution, pass the known value explicitly:
+```bash
+tessellate slide_path=slide.svs seg_config.slide_mpp_override=1.0 ...
+tessellate_extract_features slide_path=slide.svs seg_config.slide_mpp_override=0.25 ...
+export_tiles slide_path=slide.svs slide_mpp_override=0.5 ...
+```
+
 ### Pre-requisites
 - [uv](https://docs.astral.sh/uv/)
     ```bash
@@ -38,47 +96,99 @@ cpus, as well, but it's very slow.)
 
 #### PyTorch
 
-PyTorch is required for the following models:
+Install PyTorch support first, then models are downloaded automatically on first use:
 
-* [ResNet-50](https://huggingface.co/microsoft/resnet-50)
-* [TransPath](https://github.com/Xiyue-Wang/TransPath)
-* [Prov-GigaPath](https://github.com/prov-gigapath/prov-gigapath)
-* [Virchow](https://huggingface.co/paige-ai/Virchow)
-* [H-Optimus-0](https://huggingface.co/bioptimus/H-optimus-0)
-* [OpenCLIP](https://github.com/mlfoundations/open_clip)
+```bash
+uv sync --extra torch-gpu   # GPU (CUDA) — recommended
+uv sync --extra torch-cpu   # CPU only (Mac or CPU-only Linux)
+```
 
+PyTorch is required for the following patch encoders:
 
-##### GPU (CUDA)
-If you need to run a PyTorch model on GPUs, you can create the Mussel dev environment with
-the command
+| Model | `model_type` | Access | HuggingFace |
+|---|---|---|---|
+| ResNet-50 | `RESNET50` | public | built-in (torchvision) |
+| TransPath | `CTRANSPATH` | public | [Xiyue-Wang/TransPath](https://github.com/Xiyue-Wang/TransPath) |
+| OpenCLIP | `CLIP` | public | [wisdomik/QuiltNet-B-16-PMB](https://huggingface.co/wisdomik/QuiltNet-B-16-PMB) |
+| Phikon | `PHIKON` | public | [owkin/phikon](https://huggingface.co/owkin/phikon) |
+| Phikon-v2 | `PHIKON_V2` | public | [owkin/phikon-v2](https://huggingface.co/owkin/phikon-v2) |
+| Midnight-12k | `MIDNIGHT12K` | public | [kaiko-ai/midnight](https://huggingface.co/kaiko-ai/midnight) |
+| Prov-GigaPath | `GIGAPATH` | 🔒 gated | [prov-gigapath/prov-gigapath](https://huggingface.co/prov-gigapath/prov-gigapath) |
+| Virchow | `VIRCHOW` | 🔒 gated | [paige-ai/Virchow](https://huggingface.co/paige-ai/Virchow) |
+| Virchow2 | `VIRCHOW2` | 🔒 gated | [paige-ai/Virchow2](https://huggingface.co/paige-ai/Virchow2) |
+| H-Optimus-0 | `OPTIMUS` | 🔒 gated | [bioptimus/H-optimus-0](https://huggingface.co/bioptimus/H-optimus-0) |
+| H-Optimus-1 | `H_OPTIMUS_1` | 🔒 gated | [bioptimus/H-optimus-1](https://huggingface.co/bioptimus/H-optimus-1) |
+| H0-mini | `H0_MINI` | 🔒 gated | [bioptimus/H0-mini](https://huggingface.co/bioptimus/H0-mini) |
+| UNI | `UNI` | 🔒 gated | [MahmoodLab/UNI](https://huggingface.co/MahmoodLab/UNI) |
+| UNI2 | `UNI2` | 🔒 gated | [MahmoodLab/UNI2-h](https://huggingface.co/MahmoodLab/UNI2-h) |
+| CONCH v1.5 | `CONCH1_5` | 🔒 gated | [MahmoodLab/TITAN](https://huggingface.co/MahmoodLab/TITAN) |
+| GPFM | `GPFM` | public | [majiabo/GPFM](https://huggingface.co/majiabo/GPFM) |
+| Hibou-L | `HIBOU_L` | 🔒 gated | [histai/hibou-L](https://huggingface.co/histai/hibou-L) |
+
+And the following slide encoders (aggregate patch features into a single slide embedding):
+
+| Model | `model_type` | Patch encoder | Access | HuggingFace |
+|---|---|---|---|---|
+| Prov-GigaPath | `GIGAPATH_SLIDE` | `GIGAPATH` | 🔒 gated | [prov-gigapath/prov-gigapath](https://huggingface.co/prov-gigapath/prov-gigapath) |
+| TITAN | `TITAN_SLIDE` | `CONCH1_5` | 🔒 gated | [MahmoodLab/TITAN](https://huggingface.co/MahmoodLab/TITAN) |
+| PRISM | `PRISM_SLIDE` | `VIRCHOW` | 🔒 gated | [paige-ai/Prism](https://huggingface.co/paige-ai/Prism) |
+| FEATHER | `FEATHER_SLIDE` | `CONCH1_5` | 🔒 gated | [MahmoodLab/abmil.base.conch_v15.pc108-24k](https://huggingface.co/MahmoodLab/abmil.base.conch_v15.pc108-24k) |
+| MADELEINE | `MADELEINE_SLIDE` | `CLIP` | 🔒 gated | [MahmoodLab/madeleine](https://huggingface.co/MahmoodLab/madeleine) |
+| CHIEF | `CHIEF_SLIDE` | `CTRANSPATH` | ⬇ access req. | [hms-dbmi/CHIEF](https://github.com/hms-dbmi/CHIEF) |
+
+**🔒 Gated models** require signing an access agreement on the HuggingFace model page and setting your token:
+```bash
+export HF_TOKEN=hf_...
+```
+
+**⬇ Models requiring access request** are downloaded automatically once access is granted:
+
+| Model | Request access | Notes |
+|---|---|---|
+| CHIEF (`CHIEF_SLIDE`) | [Google Drive folder](https://drive.google.com/drive/folders/1uRv9A1HuTW5m_pJoyMzdN31bE1i-tDaV) | Request via [hms-dbmi/CHIEF](https://github.com/hms-dbmi/CHIEF); `gdown` downloads automatically on first use |
+
+TransPath (`CTRANSPATH`) and CHIEF (`CHIEF_SLIDE`) are downloaded automatically via `gdown` on first use (cached in the HuggingFace hub cache directory).
+
+#### TensorFlow
+
+TensorFlow is required for GooglePath only:
+
+| Model | `model_type` | Access | HuggingFace |
+|---|---|---|---|
+| GooglePath | `GOOGLEPATH` | 🔒 gated | [google/path-foundation](https://huggingface.co/google/path-foundation) |
+
+```bash
+uv sync --extra tensorflow-gpu   # GPU (CUDA)
+uv sync --extra tensorflow-cpu   # CPU only (e.g. Mac)
+```
+
+#### Neural segmentation (`seg_model="neural"`)
+
+Mussel includes built-in neural tissue segmentation using a **DeepLabV3-ResNet50**
+model (2-class: tissue vs background) trained on histopathology slides as part of the
+[HEST](https://github.com/mahmoodlab/HEST) project at the Mahmood Lab, Harvard Medical
+School.
+
+Pre-trained weights are hosted at
+[MahmoodLab/hest-tissue-seg](https://huggingface.co/MahmoodLab/hest-tissue-seg) on
+HuggingFace and are downloaded automatically on first use (no account or token
+required). The model operates at 1 µm/px; Mussel handles resampling automatically.
+
+> **Reference:** Chan *et al.*, "A Pathology Foundation Model for Cancer Diagnosis and
+> Prognosis Prediction", *Nature* 2025.
+> [[paper]](https://doi.org/10.1038/s41586-025-08690-5)
+> [[GitHub]](https://github.com/mahmoodlab/HEST)
+> [[HuggingFace model card]](https://huggingface.co/MahmoodLab/hest-tissue-seg)
+
+No extra packages are required — it works with any `torch-gpu` or `torch-cpu` install:
+
 ```bash
 uv sync --extra torch-gpu
 ```
 
-##### CPU
-If you just want CPU support for a PyTorch model, you can create your Mussel environment with 
-```bash
-uv sync --extra torch-cpu
-```
-Mussel doesn't currently support Apple Metal GPUs, so this is what you'd use to install on a modern MacBook.
-
-#### TensorFlow
-TensorFlow is required to run the Google Path Foundation model,
-
-* [Google Path Foundation](https://huggingface.co/google/path-foundation)
-
-##### GPU (CUDA)
-To run the GooglePath with GPUs, create your dev environment with
-```bash
-uv sync --extra tensorflow-gpu
-```
-
-##### CPU
-If you just want CPU support for working with GooglePath, create your Mussel environment with 
-```bash
-uv sync --extra tensorflow-cpu
-```
-Again, this is what you'd install on a MacBook running on Apple Silicon.
+Then pass `seg_config.seg_model=neural` to `tessellate` or
+`tessellate_extract_features`. A CUDA GPU is recommended for practical
+performance but CPU inference is supported.
 
 ## Development Notes
 
@@ -113,9 +223,7 @@ Mussel can process slides stored on the cloud or remote object stores via the `t
 
 ### Run unit tests
 
-Make sure that the dev dependencies are installed. (They should be installed by default).   (Note that the tests in
-this repo expect you to have installed the `torch-gpu` version of the project, and only
-the default model, `CLIP`, is used for feature extraction.)
+Make sure that the dev dependencies are installed. (They should be installed by default.)
 
 ```bash
 uv run pytest tests
@@ -136,6 +244,7 @@ slides, and generating feature embeddings with pathology foundation models.
 The tools currently available from Mussel are,
 
 * `tessellate` - tiling and foreground detection of whole-slide images
+* `tessellate_extract_features` - combined tiling + feature extraction pipeline; supports batch processing from a directory
 * `extract_features` - extract features from whole slide images (WSI) using a foundation model.
 * `create_class_embeddings` - generate tissue-type embeddings for classifying tiles
 * `annotate` - annotate tiles with tissue-types

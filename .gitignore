@@ -25,3 +25,13 @@ outputs/
 tmp*
 *~
 *.swp
+mussel.egg-info/
+logs/slurm/
+
+# Development / PR validation docs (kept locally, not merged to main)
+docs/comparison_*.png
+docs/generate_comparison_figures.py
+docs/generate_penmark_figures.py
+docs/mussel-vs-reference-pipeline-report.md
+docs/penmark_*.png
+docs/regression-report.md
