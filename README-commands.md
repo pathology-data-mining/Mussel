@@ -49,21 +49,30 @@ tessellate \
 
 #### Supported slide formats
 
-Mussel uses [tiffslide](https://github.com/bayer-science-for-a-better-life/tiffslide)
-(an OpenSlide-compatible library) to read whole-slide images. The following formats are
-supported:
+Mussel uses [tiffslide](https://github.com/Bayer-Group/tiffslide)
+(backed by [tifffile](https://github.com/cgohlke/tifffile)) to read whole-slide images.
 
-| Format | Extension | Vendor |
-|---|---|---|
-| Aperio SVS | `.svs` | Leica/Aperio |
-| Hamamatsu NDPI | `.ndpi` | Hamamatsu |
-| Leica SCN | `.scn` | Leica |
-| Generic TIFF | `.tif`, `.tiff` | Various |
-| MIRAX/3DHistech | `.mrxs` | 3DHistech |
-| Hamamatsu VMS | `.vms`, `.vmu` | Hamamatsu |
-| Ventana BIF | `.bif` | Ventana/Roche |
-| PerkinElmer QPTIFF | `.qptiff` | PerkinElmer |
-| Zeiss CZI | `.czi` | Zeiss |
+| Format | Extension | Vendor | Tiffslide support |
+|---|---|---|---|
+| Aperio SVS | `.svs` | Leica/Aperio | ✅ Full |
+| Leica SCN | `.scn` | Leica | ✅ Full |
+| Generic / OME TIFF | `.tif`, `.tiff` | Various | ✅ Full |
+| Hamamatsu NDPI | `.ndpi` | Hamamatsu | ⚠️ Partial — MPP from TIFF tags |
+| Ventana BIF | `.bif` | Ventana/Roche | ⚠️ Partial — MPP from TIFF tags |
+| MIRAX | `.mrxs` | 3DHistech | ⚠️ Generic TIFF; requires sidecar dir |
+| Hamamatsu VMS/VMU | `.vms`, `.vmu` | Hamamatsu | ⚠️ Generic TIFF |
+| PerkinElmer QPTIFF | `.qptiff` | PerkinElmer | ⚠️ Generic TIFF; first channel only |
+| Zeiss CZI | `.czi` | Zeiss | ⚠️ Generic TIFF; first series only |
+
+**Format limitations:**
+- **NDPI / BIF** — tiffslide's vendor parsers are incomplete; MPP is derived from
+  `tiff.XResolution` / `tiff.ResolutionUnit` tags (works for most files). Use
+  `seg_config.slide_mpp_override` if MPP is incorrect.
+- **MRXS** — multi-file format: the `.mrxs` file and its sidecar directory (same name,
+  no extension) must be in the same location. Moving the `.mrxs` alone will fail.
+- **QPTIFF** — multiplex/multi-channel files are tiled using the first channel only.
+- **CZI** — multi-series files (multiple acquisitions) use series 0 only.
+- **VMS / VMU** — uncommon on modern scanners; validate before production use.
 
 #### MPP resolution
 

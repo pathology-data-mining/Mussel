@@ -24,18 +24,37 @@ Mussel reads whole-slide images via [tiffslide](https://github.com/Bayer-Group/t
 (backed by [tifffile](https://github.com/cgohlke/tifffile)).
 The following formats are supported:
 
-| Extension | Format | Scanner / Vendor |
-|-----------|--------|-----------------|
-| `.svs` | Aperio SVS | Leica (Aperio) |
-| `.ndpi` | Hamamatsu NDPI | Hamamatsu |
-| `.scn` | Leica SCN | Leica |
-| `.tif` / `.tiff` | TIFF, BigTIFF, OME-TIFF | Generic / various |
-| `.mrxs` | MIRAX | 3DHISTECH |
-| `.vms` | Hamamatsu VMS | Hamamatsu |
-| `.vmu` | Hamamatsu VMU | Hamamatsu |
-| `.bif` | Ventana BIF | Roche (Ventana) |
-| `.qptiff` | PerkinElmer / Akoya QPTIFF | PerkinElmer / Akoya |
-| `.czi` | Carl Zeiss CZI | Zeiss |
+| Extension | Format | Scanner / Vendor | Tiffslide support |
+|-----------|--------|-----------------|-------------------|
+| `.svs` | Aperio SVS | Leica (Aperio) | ✅ Full |
+| `.scn` | Leica SCN | Leica | ✅ Full |
+| `.tif` / `.tiff` | TIFF, BigTIFF, OME-TIFF | Generic / various | ✅ Full |
+| `.ndpi` | Hamamatsu NDPI | Hamamatsu | ⚠️ Partial — see notes |
+| `.bif` | Ventana BIF | Roche (Ventana) | ⚠️ Partial — see notes |
+| `.mrxs` | MIRAX | 3DHISTECH | ⚠️ Generic TIFF — see notes |
+| `.vms` / `.vmu` | Hamamatsu VMS / VMU | Hamamatsu | ⚠️ Generic TIFF — see notes |
+| `.qptiff` | PerkinElmer / Akoya QPTIFF | PerkinElmer / Akoya | ⚠️ Generic TIFF — see notes |
+| `.czi` | Carl Zeiss CZI | Zeiss | ⚠️ Generic TIFF — see notes |
+
+**Format support notes:**
+
+- **SVS, SCN, TIFF/BigTIFF/OME-TIFF** — fully supported; tiffslide parses vendor metadata
+  and reliably populates `tiffslide.mpp-x`.
+- **NDPI** — tiffslide's Hamamatsu parser is marked "only partially implemented"; MPP
+  is read from standard TIFF resolution tags (`tiff.XResolution` / `tiff.ResolutionUnit`).
+  Most Hamamatsu scanners embed resolution in TIFF tags, so this works in practice.
+  If MPP is wrong or missing, use `seg_config.slide_mpp_override`.
+- **BIF** — tiffslide has no special Ventana parser; falls back to generic TIFF tag reading.
+  Use `seg_config.slide_mpp_override` if MPP is not found automatically.
+- **MRXS** — tiffslide uses generic TIFF parsing. MRXS is a multi-file format: the `.mrxs`
+  file must be accompanied by its sidecar directory (same name, no extension) in the same
+  location; moving only the `.mrxs` file will cause a read error.
+- **VMS / VMU** — older Hamamatsu pyramid formats; treated as generic TIFF. These formats
+  are uncommon on modern scanners; test before relying on them in production.
+- **QPTIFF** — PerkinElmer/Akoya format; treated as generic TIFF. Multiplex (multi-channel)
+  QPTIFF files are supported for tiling but feature extraction uses the first channel only.
+- **CZI** — Zeiss format; tifffile provides CZI support. Multi-series CZI files (multiple
+  acquisitions in one file) are supported but only the first series (index 0) is used.
 
 **MPP (microns per pixel) retrieval** — Mussel reads MPP from slide metadata
 using the following fallback chain:
