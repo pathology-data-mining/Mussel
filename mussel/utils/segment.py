@@ -70,7 +70,7 @@ def get_slide_mpp(
                     except (ValueError, TypeError):
                         continue
             
-            if magnification is not None:
+            if magnification is not None and magnification > 0:
                 # Estimate MPP from magnification using standard conversion
                 # Typical values: 40x -> 0.25 MPP, 20x -> 0.5 MPP, 10x -> 1.0 MPP
                 slide_mpp = 10.0 / magnification

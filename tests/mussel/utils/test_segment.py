@@ -216,18 +216,17 @@ class TestGetSlideMPP:
         assert mpp == 0.8
     
     def test_get_slide_mpp_zero_magnification_handling(self):
-        """Test handling of zero magnification (would cause division by zero)"""
+        """Test that zero magnification falls back to default MPP (no ZeroDivisionError)."""
         import tiffslide
-        
+
         wsi = MagicMock()
         wsi.properties = {
             tiffslide.PROPERTY_NAME_MPP_X: None,
-            'aperio.AppMag': "0"
+            "aperio.AppMag": "0",
         }
-        
-        # This will cause division by zero, should be caught
-        with pytest.raises(ZeroDivisionError):
-            get_slide_mpp(wsi)
+
+        mpp = get_slide_mpp(wsi)
+        assert mpp == 0.5  # falls back to default
     
     def test_get_slide_mpp_priority_order(self):
         """Test that standard property takes priority over alternatives"""
