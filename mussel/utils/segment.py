@@ -55,8 +55,13 @@ def get_slide_mpp(
         MPP value as float.
     """
     if slide_mpp_override is not None:
+        slide_mpp_override = float(slide_mpp_override)
+        if slide_mpp_override <= 0:
+            raise ValueError(
+                f"slide_mpp_override must be a positive value, got {slide_mpp_override}"
+            )
         logger.info(f"Using slide_mpp_override: {slide_mpp_override}")
-        return float(slide_mpp_override)
+        return slide_mpp_override
 
     try:
         slide_name = slide_path if slide_path else "slide"
@@ -93,7 +98,10 @@ def get_slide_mpp(
             }.get(unit)
             if scale is not None:
                 try:
-                    slide_mpp = round(scale / float(x_resolution), 4)
+                    x_res_float = float(x_resolution)
+                    if x_res_float <= 0:
+                        raise ValueError(f"tiff.XResolution is non-positive: {x_resolution}")
+                    slide_mpp = round(scale / x_res_float, 4)
                     logger.warning(
                         f"MPP not in standard metadata for {slide_name}; "
                         f"derived from tiff.XResolution ({x_resolution} px/{unit.lower()}): "

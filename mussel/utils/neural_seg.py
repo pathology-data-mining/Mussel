@@ -166,7 +166,14 @@ class NeuralTissueSegmenter:
         model.classifier[4] = nn.Conv2d(256, 2, kernel_size=1, stride=1)
 
         # Load checkpoint; strip "model." prefix added by PyTorch Lightning.
-        checkpoint = torch.load(weights_path, map_location="cpu", weights_only=False)
+        try:
+            checkpoint = torch.load(weights_path, map_location="cpu", weights_only=True)
+        except Exception:
+            logger.warning(
+                "Could not load checkpoint with weights_only=True; "
+                "falling back to weights_only=False. Only load checkpoints from trusted sources."
+            )
+            checkpoint = torch.load(weights_path, map_location="cpu", weights_only=False)
         state_dict = {
             k.replace("model.", ""): v
             for k, v in checkpoint.get("state_dict", {}).items()

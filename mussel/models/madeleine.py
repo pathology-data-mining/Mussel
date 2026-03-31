@@ -135,7 +135,14 @@ class MadeleineSlideEncoderModel(TorchModel):
             n_heads=cfg.get("n_heads", 4),
         )
         # Checkpoint was saved with DDP wrapper — strip the "module." prefix
-        state_dict = torch.load(pt_path, map_location="cpu", weights_only=False)
+        try:
+            state_dict = torch.load(pt_path, map_location="cpu", weights_only=True)
+        except Exception:
+            logger.warning(
+                "Could not load checkpoint with weights_only=True; "
+                "falling back to weights_only=False. Only load checkpoints from trusted sources."
+            )
+            state_dict = torch.load(pt_path, map_location="cpu", weights_only=False)
         state_dict = {k[len("module."):]: v for k, v in state_dict.items()}
         model_obj.load_state_dict(state_dict, strict=True)
         model_obj.eval()
