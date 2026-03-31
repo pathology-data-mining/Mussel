@@ -1,4 +1,4 @@
-.PHONY: help install install-dev test test-fast test-slow test-all test-gpu test-fast-gpu test-slow-gpu test-parallel test-watch clean format lint type-check coverage docs build
+.PHONY: help install install-dev test test-fast test-slow test-all test-gpu test-fast-gpu test-slow-gpu test-parallel test-watch clean format lint type-check coverage docs build slurm-setup slurm-test-integration slurm-test-fastattn slurm-test-tensorflow slurm-generate-snapshots slurm-test-all slurm-status slurm-logs
 
 # Default target - show help
 help:
@@ -49,6 +49,16 @@ help:
 	@echo "  make dev              Install dev dependencies and run fast tests"
 	@echo "  make check            Run format check, lint, and tests"
 	@echo "  make pre-commit       Run all checks before committing"
+	@echo ""
+	@echo "SLURM Tests (requires sbatch on an HPC cluster):"
+	@echo "  make slurm-setup              Create ~/logs/slurm/ output directory (run once)"
+	@echo "  make slurm-test-integration   Submit full integration test array (39 tasks, torch-gpu + fastattn + tensorflow)"
+	@echo "  make slurm-test-fastattn      Submit fastattn model tests (GigaPath with flash-attn)"
+	@echo "  make slurm-test-tensorflow    Submit TensorFlow model tests (GooglePath)"
+	@echo "  make slurm-generate-snapshots Submit golden snapshot generation job"
+	@echo "  make slurm-test-all           Submit all SLURM test jobs"
+	@echo "  make slurm-status             Show running/pending SLURM jobs for this user"
+	@echo "  make slurm-logs               Tail the most recent SLURM log in ~/logs/slurm/"
 
 # Installation targets
 install:
@@ -275,3 +285,51 @@ info:
 benchmark:
 	@echo "Running benchmark tests..."
 	@uv run pytest tests/ -m "slow" --durations=0 | grep -E "PASSED|FAILED|seconds"
+
+# SLURM test targets
+# Requires an HPC cluster with sbatch available.
+# Run 'make slurm-setup' once to create the log directory before submitting jobs.
+
+SLURM_LOG_DIR := $(HOME)/logs/slurm
+SLURM_SCRIPTS := tests/slurm
+
+slurm-setup:
+	@echo "Creating SLURM log directory: $(SLURM_LOG_DIR)"
+	@mkdir -p $(SLURM_LOG_DIR)
+	@echo "Done — submit jobs with: make slurm-test-integration"
+
+slurm-test-integration: slurm-setup
+	@echo "Submitting integration test array (39 tasks)..."
+	@sbatch $(SLURM_SCRIPTS)/run_integration.sh
+	@echo "Logs: $(SLURM_LOG_DIR)/test_integration_<jobid>_<taskid>.out"
+
+slurm-test-fastattn: slurm-setup
+	@echo "Submitting fastattn model tests (GigaPath with flash-attn)..."
+	@sbatch $(SLURM_SCRIPTS)/run_fastattn.sh
+	@echo "Logs: $(SLURM_LOG_DIR)/test_fastattn_<jobid>.log"
+
+slurm-test-tensorflow: slurm-setup
+	@echo "Submitting TensorFlow model tests (GooglePath)..."
+	@sbatch $(SLURM_SCRIPTS)/run_tensorflow.sh
+	@echo "Logs: $(SLURM_LOG_DIR)/test_tensorflow_<jobid>.log"
+
+slurm-generate-snapshots: slurm-setup
+	@echo "Submitting golden snapshot generation job..."
+	@sbatch $(SLURM_SCRIPTS)/run_generate_snapshots.sh
+	@echo "Logs: $(SLURM_LOG_DIR)/generate_snapshots_<jobid>.out"
+
+slurm-test-all: slurm-test-integration slurm-test-fastattn slurm-test-tensorflow
+	@echo "All SLURM test jobs submitted"
+
+slurm-status:
+	@squeue --me --format="%.10i %.20j %.8T %.10M %.5D %R" 2>/dev/null || \
+		echo "squeue not available — are you on an HPC login node?"
+
+slurm-logs:
+	@LATEST=$$(ls -t $(SLURM_LOG_DIR)/*.out $(SLURM_LOG_DIR)/*.log 2>/dev/null | head -1); \
+	if [ -z "$$LATEST" ]; then \
+		echo "No SLURM logs found in $(SLURM_LOG_DIR)"; \
+	else \
+		echo "=== $$LATEST ==="; \
+		tail -50 "$$LATEST"; \
+	fi
