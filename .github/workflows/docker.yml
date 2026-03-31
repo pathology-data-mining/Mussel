@@ -25,6 +25,7 @@ jobs:
           - torch-cpu
           - tensorflow-gpu
           - tensorflow-cpu
+          - fastattn
 
     steps:
     - name: Checkout repository
