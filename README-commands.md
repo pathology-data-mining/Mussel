@@ -73,8 +73,9 @@ fallback chain. The first value found is used:
 1. **`seg_config.slide_mpp_override`** — explicit CLI override; bypasses all metadata reading
 2. **`tiffslide.mpp-x`** — standard property populated by tiffslide for all supported formats
 3. **`aperio.MPP`** / **`openslide.mpp-x`** — legacy vendor properties
-4. **Magnification estimate** — derived from objective-power metadata as `10.0 / magnification`
-5. **Default 0.5 µm/px** — used as last resort with a warning logged
+4. **`tiff.XResolution` + `tiff.ResolutionUnit`** — raw TIFF resolution tags converted to µm/px (INCH, CENTIMETER, MILLIMETER, MICROMETER supported); tiffslide exposes these for partially-supported formats (NDPI, BIF, MRXS, QPTIFF, CZI) even when it cannot normalize them to `tiffslide.mpp-x`
+5. **Magnification estimate** — derived from objective-power metadata as `10.0 / magnification`
+6. **Default 0.5 µm/px** — used as last resort with a warning logged
 
 If the slide has missing or corrupt MPP metadata, use the override:
 ```bash

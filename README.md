@@ -41,8 +41,10 @@ The following formats are supported:
 using the following fallback chain:
 1. `slide_mpp_override` CLI parameter — if provided, used directly; all metadata reading is skipped
 2. `tiffslide.mpp-x` — standard property populated by tiffslide for all supported formats
-3. `aperio.MPP` — vendor-specific Aperio/Leica property (`.svs`)
-4. `openslide.mpp-x` — legacy OpenSlide-style property
+3. `aperio.MPP` / `openslide.mpp-x` — legacy vendor property names
+4. `tiff.XResolution` + `tiff.ResolutionUnit` — raw TIFF resolution tags converted to µm/px;
+   tiffslide exposes these for partially-supported formats (NDPI, BIF, MRXS, QPTIFF, CZI)
+   even when it cannot normalize them to `tiffslide.mpp-x`
 5. Magnification-based estimate: scans `aperio.AppMag`, `openslide.objective-power`,
    and `tiffslide.objective-power`; computes MPP as `10.0 / magnification`
 6. Configurable default (0.5 µm/px, typical for 20× TCGA slides) with a warning log

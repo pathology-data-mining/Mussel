@@ -28,67 +28,106 @@ def get_slide_mpp(
     default_mpp: float = 0.5,
     slide_mpp_override: Optional[float] = None,
 ) -> float:
-    """
-    Get MPP (microns per pixel) from slide metadata with fallback handling.
+    """Get MPP (microns per pixel) from slide metadata with fallback handling.
+
+    Fallback chain (first successful value wins):
+
+    1. ``slide_mpp_override`` — explicit override; skips all metadata reading.
+    2. ``tiffslide.mpp-x`` — standard tiffslide property (populated for SVS, SCN,
+       and most TIFF-based formats when resolution tags are present).
+    3. ``aperio.MPP`` / ``openslide.mpp-x`` — legacy vendor property names.
+    4. ``tiff.XResolution`` + ``tiff.ResolutionUnit`` — raw TIFF resolution tags,
+       converted to µm/px.  Tiffslide exposes these for partially-supported formats
+       (NDPI, BIF, MRXS, QPTIFF, CZI) even when it cannot derive mpp-x itself.
+    5. Objective-power magnification estimate — ``10.0 / magnification`` using
+       ``aperio.AppMag``, ``openslide.objective-power``, or
+       ``tiffslide.objective-power``.
+    6. ``default_mpp`` (0.5 µm/px, typical for 20x TCGA slides).
 
     Args:
-        wsi: TiffSlide object
-        slide_path: Optional path to slide for logging
-        default_mpp: Default MPP to use if metadata not found (default: 0.5 for 20x TCGA slides)
-        slide_mpp_override: If provided, skip all metadata reading and return this value directly.
-            Use this when the slide lacks MPP metadata and you know the correct value.
+        wsi: TiffSlide object.
+        slide_path: Optional path to slide for logging.
+        default_mpp: Fallback MPP if all metadata reads fail (default: 0.5).
+        slide_mpp_override: If provided, return this value directly without
+            reading any metadata.
 
     Returns:
-        MPP value as float
+        MPP value as float.
     """
     if slide_mpp_override is not None:
         logger.info(f"Using slide_mpp_override: {slide_mpp_override}")
         return float(slide_mpp_override)
 
     try:
-        # Try standard tiffslide property first
+        slide_name = slide_path if slide_path else "slide"
+
+        # Step 2: standard tiffslide property
         slide_mpp_value = wsi.properties.get(tiffslide.PROPERTY_NAME_MPP_X)
-        
-        # If not found, try vendor-specific property names that tiffslide may not normalise
+
+        # Step 3: vendor-specific legacy keys
         if slide_mpp_value is None:
-            for key in ['aperio.MPP', 'openslide.mpp-x']:
+            for key in ["aperio.MPP", "openslide.mpp-x"]:
                 slide_mpp_value = wsi.properties.get(key)
                 if slide_mpp_value is not None:
                     logger.info(f"Found MPP in alternate property: {key}")
                     break
-        
-        if slide_mpp_value is None:
-            # Try to estimate MPP from magnification if available
-            magnification = None
-            for key in ['aperio.AppMag', 'openslide.objective-power', tiffslide.PROPERTY_NAME_OBJECTIVE_POWER]:
-                mag_value = wsi.properties.get(key)
-                if mag_value is not None:
-                    try:
-                        magnification = float(mag_value)
-                        logger.info(f"Found magnification: {magnification}x from {key}")
-                        break
-                    except (ValueError, TypeError):
-                        continue
-            
-            if magnification is not None and magnification > 0:
-                # Estimate MPP from magnification using standard conversion
-                # Typical values: 40x -> 0.25 MPP, 20x -> 0.5 MPP, 10x -> 1.0 MPP
-                slide_mpp = 10.0 / magnification
-                slide_name = slide_path if slide_path else "slide"
-                logger.warning(f"MPP metadata not found for {slide_name}, estimated from magnification ({magnification}x): {slide_mpp:.3f}")
-            else:
-                # Use default MPP (common for TCGA slides at 20x magnification)
-                slide_mpp = default_mpp
-                slide_name = slide_path if slide_path else "slide"
-                logger.warning(f"MPP metadata not found for {slide_name}, using default MPP: {slide_mpp}")
-        else:
+
+        if slide_mpp_value is not None:
             slide_mpp = float(slide_mpp_value)
             logger.info(f"slide_mpp: {slide_mpp}")
-            
-        return slide_mpp
-        
+            return slide_mpp
+
+        # Step 4: raw TIFF resolution tags.
+        # Tiffslide exposes tiff.XResolution / tiff.ResolutionUnit for partially-
+        # supported formats (NDPI, BIF, MRXS, QPTIFF, CZI) even when it cannot
+        # complete the conversion to tiffslide.mpp-x (e.g. unrecognised unit).
+        x_resolution = wsi.properties.get("tiff.XResolution")
+        resolution_unit = wsi.properties.get("tiff.ResolutionUnit")
+        if x_resolution is not None and resolution_unit is not None:
+            unit = str(resolution_unit).upper()
+            scale = {
+                "INCH": 25400.0,
+                "CENTIMETER": 10000.0,
+                "MILLIMETER": 1000.0,
+                "MICROMETER": 1.0,
+            }.get(unit)
+            if scale is not None:
+                try:
+                    slide_mpp = round(scale / float(x_resolution), 4)
+                    logger.warning(
+                        f"MPP not in standard metadata for {slide_name}; "
+                        f"derived from tiff.XResolution ({x_resolution} px/{unit.lower()}): "
+                        f"{slide_mpp:.4f} µm/px"
+                    )
+                    return slide_mpp
+                except (ValueError, ArithmeticError):
+                    pass
+
+        # Step 5: estimate from objective-power magnification
+        magnification = None
+        for key in ["aperio.AppMag", "openslide.objective-power", tiffslide.PROPERTY_NAME_OBJECTIVE_POWER]:
+            mag_value = wsi.properties.get(key)
+            if mag_value is not None:
+                try:
+                    magnification = float(mag_value)
+                    logger.info(f"Found magnification: {magnification}x from {key}")
+                    break
+                except (ValueError, TypeError):
+                    continue
+
+        if magnification is not None and magnification > 0:
+            slide_mpp = 10.0 / magnification
+            logger.warning(
+                f"MPP metadata not found for {slide_name}, "
+                f"estimated from magnification ({magnification}x): {slide_mpp:.3f}"
+            )
+            return slide_mpp
+
+        # Step 6: default fallback
+        logger.warning(f"MPP metadata not found for {slide_name}, using default MPP: {default_mpp}")
+        return default_mpp
+
     except (KeyError, TypeError, ValueError) as e:
-        # Fallback to default MPP if property is missing or invalid
         slide_name = slide_path if slide_path else "slide"
         logger.warning(f"Failed to read MPP metadata for {slide_name}: {e}, using default MPP: {default_mpp}")
         return default_mpp

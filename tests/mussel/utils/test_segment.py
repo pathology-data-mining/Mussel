@@ -317,14 +317,83 @@ class TestGetSlideMPP:
         """Test logging when falling back to default MPP"""
         wsi = MagicMock()
         wsi.properties = {}
-        
+
         with patch('mussel.utils.segment.logger') as mock_logger:
             get_slide_mpp(wsi)
-            
+
             # Should log warning about using default
             mock_logger.warning.assert_called_once()
             call_args = str(mock_logger.warning.call_args)
             assert "default" in call_args.lower()
+
+    def test_get_slide_mpp_tiff_xresolution_inch(self):
+        """Step 4: derive MPP from tiff.XResolution when tiffslide.mpp-x is absent."""
+        import tiffslide
+
+        wsi = MagicMock()
+        wsi.properties = {
+            tiffslide.PROPERTY_NAME_MPP_X: None,
+            "tiff.XResolution": "40000",   # 40000 px/inch → 25400/40000 = 0.635 µm/px
+            "tiff.ResolutionUnit": "INCH",
+        }
+
+        mpp = get_slide_mpp(wsi)
+        assert abs(mpp - 0.635) < 0.001
+
+    def test_get_slide_mpp_tiff_xresolution_centimeter(self):
+        """Step 4: derive MPP from tiff.XResolution in cm units."""
+        import tiffslide
+
+        wsi = MagicMock()
+        wsi.properties = {
+            tiffslide.PROPERTY_NAME_MPP_X: None,
+            "tiff.XResolution": "20000",   # 20000 px/cm → 10000/20000 = 0.5 µm/px
+            "tiff.ResolutionUnit": "CENTIMETER",
+        }
+
+        mpp = get_slide_mpp(wsi)
+        assert mpp == pytest.approx(0.5, abs=1e-4)
+
+    def test_get_slide_mpp_tiff_xresolution_micrometer(self):
+        """Step 4: MICROMETER units — XResolution is directly px/µm."""
+        import tiffslide
+
+        wsi = MagicMock()
+        wsi.properties = {
+            tiffslide.PROPERTY_NAME_MPP_X: None,
+            "tiff.XResolution": "2.0",   # 2 px/µm → 0.5 µm/px
+            "tiff.ResolutionUnit": "MICROMETER",
+        }
+
+        mpp = get_slide_mpp(wsi)
+        assert mpp == pytest.approx(0.5, abs=1e-4)
+
+    def test_get_slide_mpp_tiff_xresolution_unknown_unit_skipped(self):
+        """Step 4: unknown ResolutionUnit — skip and fall through to default."""
+        import tiffslide
+
+        wsi = MagicMock()
+        wsi.properties = {
+            tiffslide.PROPERTY_NAME_MPP_X: None,
+            "tiff.XResolution": "40000",
+            "tiff.ResolutionUnit": "NONE",
+        }
+
+        mpp = get_slide_mpp(wsi)
+        assert mpp == 0.5  # falls through to default
+
+    def test_get_slide_mpp_tiffslide_takes_priority_over_tiff_tags(self):
+        """tiffslide.mpp-x should win over tiff.XResolution."""
+        import tiffslide
+
+        wsi = MagicMock()
+        wsi.properties = {
+            tiffslide.PROPERTY_NAME_MPP_X: "0.25",
+            "tiff.XResolution": "40000",
+            "tiff.ResolutionUnit": "INCH",
+        }
+
+        assert get_slide_mpp(wsi) == 0.25
 
 
 class TestDrawSlideMask:
