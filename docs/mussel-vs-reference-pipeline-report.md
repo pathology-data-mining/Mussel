@@ -448,3 +448,64 @@ Segmentation masks were visualised at two scales using `docs/generate_penmark_fi
 **Three crops centred on the densest pen-mark regions** (left: before with tissue overlay, centre: after, right: removed pixels in red):
 
 ![Pen mark removal — crops](penmark_crop.png)
+
+---
+
+## Round 2 Roadmap — TRIDENT Parity (remaining gaps)
+
+The following features were identified during the TRIDENT audit but are out of scope for this PR. They are tracked as future work for the next round of TRIDENT parity work.
+
+### Missing Patch Encoders
+
+| TRIDENT name | Model | Notes |
+|---|---|---|
+| `conch_v1` | CONCH v1.0 | 512-dim; distinct from CONCH v1.5 already in Mussel |
+| `musk` | MUSK | Vision-language model; gated weights on HuggingFace |
+| `openmidnight` | OpenMidnight | Open-weights variant of Midnight12K |
+| `kaiko-vitb8` | Kaiko ViT-B/8 | Open weights; `kaiko-ai/kaiko-vitb8` |
+| `kaiko-vitb16` | Kaiko ViT-B/16 | Open weights; `kaiko-ai/kaiko-vitb16` |
+| `kaiko-vits8` | Kaiko ViT-S/8 | Open weights; `kaiko-ai/kaiko-vits8` |
+| `kaiko-vits16` | Kaiko ViT-S/16 | Open weights; `kaiko-ai/kaiko-vits16` |
+| `kaiko-vitl14` | Kaiko ViT-L/14 | Open weights; `kaiko-ai/kaiko-vitl14` |
+| `lunit-vits8` | Lunit ViT-S/8 | Open weights; `lunit-ai/lunit-dino-vits8` |
+| `genbio-pathfm` | GenBio PathFM | Open weights; `genbio-ai/pathfm` |
+
+### Missing Slide Encoders
+
+| TRIDENT name | Model | Notes |
+|---|---|---|
+| `threads` | THREADS | Sequence-based WSI encoder; requires pretrained weights |
+| `abmil` | ABMIL | Attention-based MIL aggregator; no pretrained weights; learned at training time |
+| `mean-*` | MeanSlideEncoder | Simple mean-pool of patch features over any patch encoder |
+
+### Heatmap Visualization
+
+A `visualize_heatmap()` utility that overlays per-patch scores (e.g., attention weights from ABMIL, feature similarity) onto a slide thumbnail. Reference: `mahmoodlab/TRIDENT Visualization.py`. Inputs: coords array, scores array, patch size, slide thumbnail; outputs: colormapped PNG overlay.
+
+### AnyToTiffConverter CLI (`mussel convert`)
+
+A new `convert` CLI command that pre-converts exotic or non-pyramidal slide formats to pyramidal TIFF before processing. Formats targeted:
+
+| Input format | Extension(s) | Reader |
+|---|---|---|
+| DICOM WSI | `.dcm`, `.dicom` | pyvips / aicsimageio |
+| Leica LIF | `.lif` | aicsimageio (Bio-Formats) |
+| Olympus VSI | `.vsi` | aicsimageio (Bio-Formats) |
+| OME-TIFF / OME-XML | `.ome.tiff`, `.ome.xml` | pyvips |
+| Zeiss ZVI / CZI | `.zvi`, `.czi` | aicsimageio (Bio-Formats) |
+| NRRD volumetric | `.nrrd` | aicsimageio |
+| Flat images | `.png`, `.jpg` | PIL |
+
+The fast path uses **pyvips** for direct stream-conversion to pyramidal TIFF; the fallback uses **aicsimageio** with Bio-Formats (requires a JVM). Reference: `mahmoodlab/TRIDENT Converter.py AnyToTiffConverter`.
+
+New optional dependencies: `pyvips`, `aicsimageio[bioformats]`.
+
+### Additional WSI Backends
+
+| Backend | Format | Dependency | Notes |
+|---|---|---|---|
+| OME-Zarr | `.zarr` | `ome-zarr` | Cloud-native chunked format; growing adoption in HTAN, IDC |
+| SDPC | `.sdpc` | `sdpc` (unofficial) | Huron/Motic scanner format; common in Chinese public datasets |
+| CuCIM | `.svs`, `.tif`, `.tiff` | `cucim` (NVIDIA RAPIDS) | GPU-accelerated slide reading; drop-in speed upgrade for SVS/TIFF |
+
+These backends would be integrated into `get_slide_mpp()` and the tiling pipeline alongside the existing tiffslide backend.
