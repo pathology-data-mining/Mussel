@@ -13,22 +13,9 @@ Feature dimension: 4608 (3 × embed_dim=1536)
 Input: 224×224 with pathology-specific normalisation
   mean=(0.697, 0.575, 0.728), std=(0.188, 0.240, 0.187)
 
-Setup:
-  The model code lives in the genbio-pathfm GitHub repository but is not yet
-  distributed as a proper Python package.  Make the ``genbio_pathfm`` module
-  importable via one of:
-
-  Option A — add the repo to PYTHONPATH::
-
-      git clone https://github.com/genbio-ai/genbio-pathfm.git /path/to/genbio
-      export PYTHONPATH=/path/to/genbio:$PYTHONPATH
-
-  Option B — install from the cloned directory::
-
-      pip install /path/to/genbio-pathfm/   # (requires a pyproject.toml)
-
-  Weights are downloaded automatically from ``genbio-ai/genbio-pathfm`` on
-  HuggingFace Hub on first use.
+The model architecture is vendored from the upstream repository into
+``mussel/models/_genbio_pathfm.py`` (GenBio AI Community License — non-commercial
+research use only).  Weights are downloaded automatically from HuggingFace Hub.
 """
 
 import logging
@@ -37,6 +24,7 @@ from typing import Callable, List
 
 import torch
 
+from mussel.models._genbio_pathfm import GenBio_PathFM_Inference
 from mussel.models.base import TorchModel
 from mussel.models.model_factory import ModelType, register_model
 
@@ -47,12 +35,7 @@ _CHECKPOINT_FILENAME = "model.pth"
 
 @register_model(ModelType.GENBIO_PATHFM)
 class GenBioPathFMModel(TorchModel):
-    """GenBio-PathFM — 4608-dim, 224px input.
-
-    Requires the ``genbio_pathfm`` module from
-    https://github.com/genbio-ai/genbio-pathfm to be on ``sys.path``
-    (see module docstring for setup instructions).
-    """
+    """GenBio-PathFM — 4608-dim, 224px input."""
 
     def __init__(
         self,
@@ -78,16 +61,6 @@ class GenBioPathFMModel(TorchModel):
     @staticmethod
     def _load_genbio(model_path: str, device: str) -> torch.nn.Module:
         """Download weights and instantiate ``GenBio_PathFM_Inference``."""
-        try:
-            from genbio_pathfm.model import GenBio_PathFM_Inference  # noqa: PLC0415
-        except ImportError as e:
-            raise ImportError(
-                "The genbio_pathfm module is required to load GenBio-PathFM.\n"
-                "Add the cloned repository to your PYTHONPATH:\n"
-                "  git clone https://github.com/genbio-ai/genbio-pathfm.git\n"
-                "  export PYTHONPATH=/path/to/genbio-pathfm:$PYTHONPATH"
-            ) from e
-
         try:
             from huggingface_hub import hf_hub_download  # noqa: PLC0415
         except ImportError as e:
