@@ -136,7 +136,9 @@ class GenBioPathFMModel(TorchModel):
         return self.obj.transform
 
     def _forward(self, x: torch.Tensor) -> torch.Tensor:
-        return self.obj(x)
+        # GenBio uses .view() internally which requires contiguous memory;
+        # channels_last layout (applied by TorchModel) would break it.
+        return self.obj(x.contiguous())
 
     @property
     def autocast_dtype(self) -> torch.dtype:
