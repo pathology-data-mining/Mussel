@@ -9,6 +9,7 @@ import cv2
 import numpy as np
 import shapely
 import tiffslide
+from mussel.utils.wsi_backend import open_slide as _wsi_open_slide
 from PIL import Image, ImageDraw
 from shapely.geometry import MultiPolygon, Polygon
 from shapely.ops import transform
@@ -554,7 +555,7 @@ def segment_tissue(
                 
         Returns None if no tissue contours are found or if slide dimensions are too large.
     """
-    wsi = tiffslide.open_slide(slide_path)
+    wsi = _wsi_open_slide(slide_path)
     
     try:
         if slide_id is None:
@@ -793,7 +794,7 @@ def draw_slide_mask(
     """
     Draw slide mask with polygon contours or list of grid polygons
     """
-    wsi = tiffslide.open_slide(slide_path)
+    wsi = _wsi_open_slide(slide_path)
     
     try:
         if vis_level < 0:
@@ -897,7 +898,7 @@ def save_patches_png(
     """
     Save patches as png
     """
-    wsi = tiffslide.open_slide(slide_path)
+    wsi = _wsi_open_slide(slide_path)
     pool = None
     
     try:

@@ -11,6 +11,7 @@ from .model_factory import (
 
 # Import model modules to trigger @register_model self-registration
 from . import (
+    abmil,
     clip,
     chief,
     conch,

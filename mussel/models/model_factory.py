@@ -55,6 +55,7 @@ class ModelType(Enum):
     LUNIT_VITS16 = 32, "lunit_vits16", "hf-hub:1aurent/vit_small_patch16_224.lunit_dino"
     OPENMIDNIGHT = 33, "openmidnight", "SophontAI/OpenMidnight"
     GENBIO_PATHFM = 34, "genbio_pathfm", "genbio-ai/genbio-pathfm"
+    ABMIL_SLIDE = 35, "abmil_slide", ""
 
 
 # Mapping of slide encoder models to their compatible patch encoder models

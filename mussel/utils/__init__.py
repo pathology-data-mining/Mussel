@@ -44,5 +44,8 @@ from .segment import (
     segment_tissue,
 )
 from .artifact_removal import GrandQCArtifactRemover
+from .converter import AnyToTiffConverter
+from .visualization import visualize_heatmap
+from .wsi_backend import open_slide
 from .tile_export import export_tiles
 from .timer import timed

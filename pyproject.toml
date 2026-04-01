@@ -87,6 +87,18 @@ dev = [
   "s3fs",
   "adlfs",
 ]
+"convert" = [
+  "pyvips",
+  "aicsimageio",
+  "tqdm",
+]
+"cucim" = [
+  "cucim",
+]
+"zarr" = [
+  "zarr",
+  "ome-zarr",
+]
 
 [tool.uv]
 conflicts = [
@@ -174,3 +186,4 @@ merge_annotation_features = 'mussel.cli.merge_annotation_features:main'
 linear_probe_benchmark = 'mussel.cli.linear_probe_benchmark:main'
 export_tiles = 'mussel.cli.export_tiles:main'
 save_model = 'mussel.cli.save_model:main'
+convert = 'mussel.cli.convert:main'

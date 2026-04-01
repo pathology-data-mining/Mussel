@@ -1,7 +1,17 @@
 import logging
 
 import h5py
-import tiffslide as openslide
+from mussel.utils.wsi_backend import open_slide as _open_slide
+
+# Provide a module-level alias so downstream code can call `openslide.open_slide`
+# or use the module directly; we redirect all calls through the multi-backend helper.
+class _BackendShim:
+    """Minimal shim that routes open_slide() through mussel.utils.wsi_backend."""
+    @staticmethod
+    def open_slide(path):
+        return _open_slide(path)
+
+openslide = _BackendShim()
 from PIL import Image
 
 logger = logging.getLogger(__name__)

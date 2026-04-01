@@ -1,6 +1,13 @@
 import logging
 
-import tiffslide as openslide
+from mussel.utils.wsi_backend import open_slide as _open_slide
+
+class _BackendShim:
+    @staticmethod
+    def open_slide(path):
+        return _open_slide(path)
+
+openslide = _BackendShim()
 from torch.utils.data import Dataset
 
 logger = logging.getLogger(__name__)
