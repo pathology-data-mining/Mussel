@@ -10,13 +10,22 @@ Loading procedure (from the model card):
      224px resolution, whereas the base DINOv2 uses 392px)
   3. Load the state dict
 
+The DINOv2 architecture code uses SwiGLU FFN which is not available in timm,
+so the ``facebookresearch/dinov2`` torch.hub repo is required.  If torch.hub
+cannot access GitHub (e.g. on compute clusters), the repo zip is downloaded
+via ``requests`` and cached at ``~/.cache/torch/hub/facebookresearch_dinov2_main/``.
+
 Reference: https://huggingface.co/SophontAI/OpenMidnight
 
 Feature dimension: 1536 (ViT-Giant)
 Input: 224×224, ImageNet normalisation.
 """
 
+import io
 import logging
+import os
+import zipfile
+from pathlib import Path
 from typing import Callable, List
 
 import torch
@@ -28,6 +37,46 @@ from mussel.models.model_factory import ModelType, register_model
 logger = logging.getLogger(__name__)
 
 _CHECKPOINT_FILENAME = "teacher_checkpoint_load.pt"
+_DINOV2_HUB_OWNER = "facebookresearch"
+_DINOV2_HUB_REPO = "dinov2"
+_DINOV2_BRANCH = "main"
+_DINOV2_ZIP_URL = (
+    f"https://github.com/{_DINOV2_HUB_OWNER}/{_DINOV2_HUB_REPO}/"
+    f"archive/refs/heads/{_DINOV2_BRANCH}.zip"
+)
+
+
+def _ensure_dinov2_hub_cache() -> Path:
+    """Return path to the dinov2 hub repo, downloading if necessary."""
+    hub_dir = Path(torch.hub.get_dir())
+    repo_dir = hub_dir / f"{_DINOV2_HUB_OWNER}_{_DINOV2_HUB_REPO}_{_DINOV2_BRANCH}"
+
+    if repo_dir.exists():
+        return repo_dir
+
+    logger.info(
+        "DINOv2 hub repo not cached; downloading via requests → %s", repo_dir
+    )
+    try:
+        import requests  # noqa: PLC0415
+
+        response = requests.get(_DINOV2_ZIP_URL, timeout=120)
+        response.raise_for_status()
+        with zipfile.ZipFile(io.BytesIO(response.content)) as zf:
+            hub_dir.mkdir(parents=True, exist_ok=True)
+            # Zip top-level dir is "dinov2-main/"; rename to repo_dir name
+            prefix = f"{_DINOV2_HUB_REPO}-{_DINOV2_BRANCH}/"
+            zf.extractall(hub_dir)
+        extracted = hub_dir / f"{_DINOV2_HUB_REPO}-{_DINOV2_BRANCH}"
+        extracted.rename(repo_dir)
+    except Exception as e:
+        raise RuntimeError(
+            f"Failed to download DINOv2 hub repo from {_DINOV2_ZIP_URL}: {e}\n"
+            "Pre-populate the cache manually:\n"
+            f"  git clone https://github.com/{_DINOV2_HUB_OWNER}/{_DINOV2_HUB_REPO}.git {repo_dir}"
+        ) from e
+
+    return repo_dir
 
 
 @register_model(ModelType.OPENMIDNIGHT)
@@ -57,10 +106,8 @@ class OpenMidnightModel(TorchModel):
     @staticmethod
     def _load(model_path: str) -> torch.nn.Module:
         """Load OpenMidnight weights into a DINOv2 ViT-G/14 backbone."""
-        import os
-
         try:
-            from huggingface_hub import hf_hub_download
+            from huggingface_hub import hf_hub_download  # noqa: PLC0415
         except ImportError as e:
             raise ImportError("huggingface_hub is required to load OpenMidnight") from e
 
@@ -68,13 +115,16 @@ class OpenMidnightModel(TorchModel):
             ckpt_path = model_path
         else:
             repo_id = model_path.replace("hf-hub:", "")
-            logger.info(f"Downloading OpenMidnight checkpoint from {repo_id}")
+            logger.info("Downloading OpenMidnight checkpoint from %s", repo_id)
             ckpt_path = hf_hub_download(repo_id, _CHECKPOINT_FILENAME)
 
+        repo_dir = _ensure_dinov2_hub_cache()
         model = torch.hub.load(
-            "facebookresearch/dinov2",
+            str(repo_dir),
             "dinov2_vitg14_reg",
             weights=None,
+            source="local",
+            trust_repo=True,
         )
 
         checkpoint = torch.load(ckpt_path, map_location="cpu", weights_only=True)

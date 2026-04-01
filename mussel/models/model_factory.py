@@ -45,6 +45,16 @@ class ModelType(Enum):
     FEATHER_SLIDE = 22, "feather_slide", "MahmoodLab/abmil.base.conch_v15.pc108-24k"
     CHIEF_SLIDE = 23, "chief_slide", ""
     MADELEINE_SLIDE = 24, "madeleine_slide", "MahmoodLab/madeleine"
+    CONCH_V1 = 25, "conch_v1", "hf-hub:MahmoodLab/CONCH"
+    KAIKO_VITS8 = 26, "kaiko_vits8", "hf-hub:1aurent/vit_small_patch8_224.kaiko_ai_towards_large_pathology_fms"
+    KAIKO_VITS16 = 27, "kaiko_vits16", "hf-hub:1aurent/vit_small_patch16_224.kaiko_ai_towards_large_pathology_fms"
+    KAIKO_VITB8 = 28, "kaiko_vitb8", "hf-hub:1aurent/vit_base_patch8_224.kaiko_ai_towards_large_pathology_fms"
+    KAIKO_VITB16 = 29, "kaiko_vitb16", "hf-hub:1aurent/vit_base_patch16_224.kaiko_ai_towards_large_pathology_fms"
+    KAIKO_VITL14 = 30, "kaiko_vitl14", "hf-hub:1aurent/vit_large_patch14_reg4_224.kaiko_ai_towards_large_pathology_fms"
+    LUNIT_VITS8 = 31, "lunit_vits8", "hf-hub:1aurent/vit_small_patch8_224.lunit_dino"
+    LUNIT_VITS16 = 32, "lunit_vits16", "hf-hub:1aurent/vit_small_patch16_224.lunit_dino"
+    OPENMIDNIGHT = 33, "openmidnight", "SophontAI/OpenMidnight"
+    GENBIO_PATHFM = 34, "genbio_pathfm", "genbio-ai/genbio-pathfm"
 
 
 # Mapping of slide encoder models to their compatible patch encoder models
@@ -87,6 +97,16 @@ MODEL_PATCH_SIZES = {
     ModelType.MIDNIGHT12K: 224,
     ModelType.GPFM: 224,
     ModelType.HIBOU_L: 224,
+    ModelType.CONCH_V1: 448,
+    ModelType.KAIKO_VITS8: 224,
+    ModelType.KAIKO_VITS16: 224,
+    ModelType.KAIKO_VITB8: 224,
+    ModelType.KAIKO_VITB16: 224,
+    ModelType.KAIKO_VITL14: 224,
+    ModelType.LUNIT_VITS8: 224,
+    ModelType.LUNIT_VITS16: 224,
+    ModelType.OPENMIDNIGHT: 224,
+    ModelType.GENBIO_PATHFM: 224,
 }
 
 
