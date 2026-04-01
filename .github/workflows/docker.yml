@@ -66,6 +66,7 @@ jobs:
 
     - name: Update Docker Hub description
       if: matrix.backend == 'torch-gpu'
+      continue-on-error: true
       uses: peter-evans/dockerhub-description@v4
       with:
         username: ${{ secrets.DOCKERHUB_USERNAME }}
