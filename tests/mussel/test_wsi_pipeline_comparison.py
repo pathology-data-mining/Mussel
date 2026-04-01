@@ -143,7 +143,6 @@ def _run_mussel_patching(
         slide_path=wsi_path,
         patch_size=patch_size,
         mpp=mpp,
-        use_otsu=False,
         tissue_area_threshold=1,
         output_h5_path=output_h5_path,
         overlap=overlap,
@@ -206,7 +205,6 @@ class TestMusselH5Format:
             slide_path=MUSSEL_TEST_WSI,
             patch_size=256,
             mpp=0.5,
-            use_otsu=False,
             tissue_area_threshold=1,
             output_h5_path=out,
         )
@@ -406,7 +404,6 @@ class TestTridentMusselComparison:
             slide_path=MUSSEL_TEST_WSI,
             patch_size=256,
             mpp=0.5,
-            use_otsu=False,
             tissue_area_threshold=1,
             output_h5_path=out,
             overlap=0,

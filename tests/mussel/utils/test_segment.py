@@ -1019,6 +1019,71 @@ class TestSegmentTissueSegModel:
         sig = inspect.signature(segment_tissue)
         assert sig.parameters["seg_model"].default == "classic"
 
+    def test_seg_model_otsu_accepted(self):
+        """seg_model='otsu' is a valid value — no ValueError raised."""
+        mock_wsi = _make_mock_wsi_with_tissue()
+        # Use the shared helper (same pattern as other classic-mode tests).
+        result = _run_segment_with_mocks(
+            mock_wsi, seg_level=1, patch_size=256, mpp=0.5,
+            tissue_area_threshold=1, seg_model="otsu",
+        )
+        # Whether or not tissue is found, seg_model should be stored in attrs.
+        if result is not None:
+            _, _, _, attrs = result
+            assert attrs["seg_model"] == "otsu"
+
+    def test_use_otsu_deprecated_overrides_seg_model(self):
+        """use_otsu=True emits DeprecationWarning and acts as seg_model='otsu'."""
+        mock_wsi = _make_mock_wsi_with_tissue()
+        import warnings
+
+        with warnings.catch_warnings(record=True) as w:
+            warnings.simplefilter("always")
+            result = _run_segment_with_mocks(
+                mock_wsi, seg_level=1, patch_size=256, mpp=0.5,
+                tissue_area_threshold=1, use_otsu=True,
+            )
+        dep_warnings = [x for x in w if issubclass(x.category, DeprecationWarning)]
+        assert len(dep_warnings) == 1
+        assert "seg_model='otsu'" in str(dep_warnings[0].message)
+        if result is not None:
+            _, _, _, attrs = result
+            assert attrs["seg_model"] == "otsu"
+
+    def test_seg_model_neural_warns_on_classic_params(self):
+        """seg_model='neural' logs a warning when classic-only params are non-default."""
+        mock_wsi = _make_mock_wsi_with_tissue()
+        fake_mask = np.zeros((64, 64), dtype=np.uint8)
+        fake_mask[16:48, 16:48] = 255
+
+        with (
+            patch("mussel.utils.segment.tiffslide.open_slide", return_value=mock_wsi),
+            patch("mussel.utils.segment.get_slide_mpp", return_value=0.5),
+            patch(
+                "mussel.utils.segment._assert_level_downsamples",
+                return_value=[(1.0, 1.0), (4.0, 4.0)],
+            ),
+            patch(
+                "mussel.utils.segment._segment_tissue_neural",
+                return_value=fake_mask,
+            ),
+            patch("mussel.utils.segment.logger") as mock_logger,
+        ):
+            from mussel.utils.segment import segment_tissue
+
+            segment_tissue(
+                "/fake/slide.svs",
+                patch_size=256,
+                mpp=0.5,
+                tissue_area_threshold=1,
+                seg_model="neural",
+                median_blur_ksize=11,  # non-default — should trigger warning
+            )
+            warning_calls = [
+                str(call) for call in mock_logger.warning.call_args_list
+            ]
+            assert any("median_blur_ksize" in c for c in warning_calls)
+
     def test_seg_model_neural_calls_neural_segmenter(self):
         """seg_model='neural' delegates to _segment_tissue_neural."""
         mock_wsi = _make_mock_wsi_with_tissue()

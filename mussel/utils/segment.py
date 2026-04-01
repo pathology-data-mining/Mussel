@@ -1,6 +1,7 @@
 import functools
 import logging
 import multiprocessing as mp
+import warnings
 from dataclasses import dataclass
 from pathlib import Path
 from typing import List, Optional
@@ -490,7 +491,7 @@ def segment_tissue(
     remove_artifacts: bool = False,
     remove_penmarks: bool = False,
     artifact_remover_fn=None,  # Optional callable: (img, mask, mpp) -> mask
-    seg_model: str = "classic",  # "classic" (HSV/Otsu) or "neural" (DeepLabV3)
+    seg_model: str = "classic",  # "classic" (HSV + manual threshold), "otsu" (HSV + Otsu threshold), or "neural" (DeepLabV3)
     slide_mpp_override: Optional[float] = None,
 ):
     """Segment tissue regions in a whole-slide image and generate tissue patches.
@@ -504,10 +505,16 @@ def segment_tissue(
         slide_id: Optional identifier for the slide (defaults to filename stem).
         seg_level: Pyramid level to use for segmentation (default: -1 for auto-select).
         segment_threshold: Binary threshold value for tissue detection (default: 20).
+            Only used when ``seg_model`` is ``"classic"``.
         segment_max_value: Maximum value for binary thresholding (default: 255).
+            Only used when ``seg_model`` is ``"classic"`` or ``"otsu"``.
         median_blur_ksize: Kernel size for median blur filter (default: 7).
-        morphology_ex_kernel: Kernel size for morphological closing (0 to disable).
-        use_otsu: Whether to use Otsu's method for automatic threshold (default: False).
+            Only used when ``seg_model`` is ``"classic"`` or ``"otsu"``.
+        morphology_ex_kernel: Kernel size for morphological closing applied to the tissue
+            mask (0 to disable). Applied after segmentation for all ``seg_model`` values,
+            including ``"neural"``.
+        use_otsu: **Deprecated** — use ``seg_model="otsu"`` instead. If ``True``,
+            overrides ``seg_model`` to ``"otsu"`` with a deprecation warning.
         tissue_area_threshold: Minimum tissue contour area in requested patches (default: 100).
             A contour must cover at least this many patches (at ``patch_size`` and ``mpp``)
             to be retained.  Because the threshold is expressed in terms of the actual
@@ -537,7 +544,21 @@ def segment_tissue(
             artifact/pen-mark removal.  See
             :class:`~mussel.utils.artifact_removal.GrandQCArtifactRemover` for
             a ready-made implementation.
-        
+        seg_model: Segmentation backend (default: ``"classic"``).
+
+            - ``"classic"``: HSV colour space + median blur + fixed threshold
+              (``segment_threshold``).
+            - ``"otsu"``: HSV colour space + median blur + Otsu's automatic threshold.
+              Ignores ``segment_threshold``.
+            - ``"neural"``: DeepLabV3-ResNet50 trained on histopathology (HEST).
+              Ignores ``segment_threshold`` and ``median_blur_ksize``; raises a warning
+              if either is set to a non-default value. Requires PyTorch; weights are
+              auto-downloaded from ``MahmoodLab/hest-tissue-seg``.
+
+            ``morphology_ex_kernel`` applies to all three modes.
+        slide_mpp_override: If set, use this value (µm/px) as the slide's native MPP
+            instead of reading it from slide metadata.
+
     Returns:
         tuple: A 4-tuple containing:
             - polygon (shapely.geometry.MultiPolygon): Tissue regions as a multipolygon
@@ -552,7 +573,7 @@ def segment_tissue(
                 - level_dim: Dimensions at level 0
                 - name: Slide identifier
                 - (and other segmentation parameters)
-                
+
         Returns None if no tissue contours are found or if slide dimensions are too large.
     """
     wsi = _wsi_open_slide(slide_path)
@@ -619,7 +640,7 @@ def segment_tissue(
         level_downsamples = _assert_level_downsamples(wsi)
 
         # Validate and normalise seg_model
-        supported_seg_models = {"classic", "neural"}
+        supported_seg_models = {"classic", "otsu", "neural"}
         if seg_model is None:
             seg_model = "classic"
         elif not isinstance(seg_model, str):
@@ -631,6 +652,32 @@ def segment_tissue(
                 f"Unsupported seg_model {seg_model!r}. "
                 f"Supported values: {sorted(supported_seg_models)}"
             )
+
+        # Handle deprecated use_otsu flag.
+        if use_otsu:
+            warnings.warn(
+                "use_otsu=True is deprecated; use seg_model='otsu' instead. "
+                "Overriding seg_model to 'otsu'.",
+                DeprecationWarning,
+                stacklevel=2,
+            )
+            seg_model = "otsu"
+
+        # Warn about classic-only parameters that are ignored by the neural backend.
+        if seg_model == "neural":
+            _SEGMENT_THRESHOLD_DEFAULT = 20
+            _MEDIAN_BLUR_DEFAULT = 7
+            ignored = []
+            if segment_threshold != _SEGMENT_THRESHOLD_DEFAULT:
+                ignored.append(f"segment_threshold={segment_threshold!r}")
+            if median_blur_ksize != _MEDIAN_BLUR_DEFAULT:
+                ignored.append(f"median_blur_ksize={median_blur_ksize!r}")
+            if ignored:
+                logger.warning(
+                    "seg_model='neural' ignores classic-only parameters: %s. "
+                    "These values have no effect.",
+                    ", ".join(ignored),
+                )
 
         if seg_model == "neural":
             # The img is read at seg_level. Compute its actual MPP so that
@@ -645,7 +692,7 @@ def segment_tissue(
             )  # Apply median blurring
 
             # Thresholding
-            if use_otsu:
+            if seg_model == "otsu":
                 _, tissue_mask = cv2.threshold(
                     img_med, 0, segment_max_value, cv2.THRESH_OTSU + cv2.THRESH_BINARY
                 )
@@ -654,10 +701,10 @@ def segment_tissue(
                     img_med, segment_threshold, segment_max_value, cv2.THRESH_BINARY
                 )
 
-            # Morphological closing
-            if morphology_ex_kernel > 0:
-                kernel = np.ones((morphology_ex_kernel, morphology_ex_kernel), np.uint8)
-                tissue_mask = cv2.morphologyEx(tissue_mask, cv2.MORPH_CLOSE, kernel)
+        # Morphological closing — applied regardless of seg_model.
+        if morphology_ex_kernel > 0:
+            kernel = np.ones((morphology_ex_kernel, morphology_ex_kernel), np.uint8)
+            tissue_mask = cv2.morphologyEx(tissue_mask, cv2.MORPH_CLOSE, kernel)
 
         # Optional artifact/pen mark removal via pluggable callable.
         # Compute the thumbnail's MPP so the remover can rescale to its model's
@@ -754,7 +801,6 @@ def segment_tissue(
             "segment_max_value": segment_max_value,
             "median_blur_ksize": median_blur_ksize,
             "morphology_ex_kernel": morphology_ex_kernel,
-            "use_otsu": use_otsu,
             "tissue_area_threshold": tissue_area_threshold,
             "hole_area_threshold": hole_area_threshold,
             "max_num_holes": max_num_holes,
