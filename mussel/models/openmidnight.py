@@ -13,7 +13,7 @@ Loading procedure (from the model card):
 The DINOv2 architecture code uses SwiGLU FFN which is not available in timm,
 so the ``facebookresearch/dinov2`` torch.hub repo is required.  If torch.hub
 cannot access GitHub (e.g. on compute clusters), the repo zip is downloaded
-via ``requests`` and cached at ``~/.cache/torch/hub/facebookresearch_dinov2_main/``.
+via ``requests`` and cached at ``~/.cache/torch/hub/facebookresearch_dinov2_<sha>/``.
 
 Reference: https://huggingface.co/SophontAI/OpenMidnight
 
@@ -24,6 +24,8 @@ Input: 224×224, ImageNet normalisation.
 import io
 import logging
 import os
+import shutil
+import tempfile
 import zipfile
 from pathlib import Path
 from typing import Callable, List
@@ -39,17 +41,26 @@ logger = logging.getLogger(__name__)
 _CHECKPOINT_FILENAME = "teacher_checkpoint_load.pt"
 _DINOV2_HUB_OWNER = "facebookresearch"
 _DINOV2_HUB_REPO = "dinov2"
-_DINOV2_BRANCH = "main"
+# Pinned to a specific commit for reproducibility and supply-chain safety.
+_DINOV2_COMMIT = "7b187bd4df8efce2cbcbbb67bd01532c19bf4c9c"
 _DINOV2_ZIP_URL = (
     f"https://github.com/{_DINOV2_HUB_OWNER}/{_DINOV2_HUB_REPO}/"
-    f"archive/refs/heads/{_DINOV2_BRANCH}.zip"
+    f"archive/{_DINOV2_COMMIT}.zip"
 )
 
 
 def _ensure_dinov2_hub_cache() -> Path:
-    """Return path to the dinov2 hub repo, downloading if necessary."""
+    """Return path to the dinov2 hub repo, downloading if necessary.
+
+    Uses an atomic extract-then-rename pattern so concurrent SLURM workers
+    never see a partially-extracted directory.  The cache dir is named after
+    the pinned commit SHA to ensure reproducibility.
+    """
+    from mussel.utils.model_cache import model_download_lock
+
     hub_dir = Path(torch.hub.get_dir())
-    repo_dir = hub_dir / f"{_DINOV2_HUB_OWNER}_{_DINOV2_HUB_REPO}_{_DINOV2_BRANCH}"
+    # Include short commit SHA in dir name so the pinned version is always used.
+    repo_dir = hub_dir / f"{_DINOV2_HUB_OWNER}_{_DINOV2_HUB_REPO}_{_DINOV2_COMMIT[:8]}"
 
     if repo_dir.exists():
         return repo_dir
@@ -57,24 +68,48 @@ def _ensure_dinov2_hub_cache() -> Path:
     logger.info(
         "DINOv2 hub repo not cached; downloading via requests → %s", repo_dir
     )
-    try:
-        import requests  # noqa: PLC0415
 
-        response = requests.get(_DINOV2_ZIP_URL, timeout=120)
-        response.raise_for_status()
-        with zipfile.ZipFile(io.BytesIO(response.content)) as zf:
-            hub_dir.mkdir(parents=True, exist_ok=True)
-            # Zip top-level dir is "dinov2-main/"; rename to repo_dir name
-            prefix = f"{_DINOV2_HUB_REPO}-{_DINOV2_BRANCH}/"
-            zf.extractall(hub_dir)
-        extracted = hub_dir / f"{_DINOV2_HUB_REPO}-{_DINOV2_BRANCH}"
-        extracted.rename(repo_dir)
-    except Exception as e:
-        raise RuntimeError(
-            f"Failed to download DINOv2 hub repo from {_DINOV2_ZIP_URL}: {e}\n"
-            "Pre-populate the cache manually:\n"
-            f"  git clone https://github.com/{_DINOV2_HUB_OWNER}/{_DINOV2_HUB_REPO}.git {repo_dir}"
-        ) from e
+    lock_name = f"dinov2_hub_{_DINOV2_COMMIT[:8]}"
+    with model_download_lock(lock_name, cache_dir=str(hub_dir)):
+        # Double-check after acquiring the lock (another worker may have finished).
+        if repo_dir.exists():
+            return repo_dir
+
+        hub_dir.mkdir(parents=True, exist_ok=True)
+        tmp_dir = Path(tempfile.mkdtemp(prefix=".dinov2-tmp-", dir=hub_dir))
+        try:
+            import requests  # noqa: PLC0415
+
+            response = requests.get(_DINOV2_ZIP_URL, timeout=120)
+            response.raise_for_status()
+
+            zip_prefix = f"{_DINOV2_HUB_REPO}-{_DINOV2_COMMIT}"
+            with zipfile.ZipFile(io.BytesIO(response.content)) as zf:
+                # Zip Slip protection: reject any member with absolute or
+                # traversal paths before touching the filesystem.
+                for member in zf.infolist():
+                    member_parts = Path(member.filename).parts
+                    if not member_parts:
+                        continue
+                    if Path(member.filename).is_absolute() or ".." in member_parts:
+                        raise ValueError(
+                            f"Unsafe path in DINOv2 archive: {member.filename!r}"
+                        )
+                zf.extractall(tmp_dir)
+
+            # Atomic rename: extracted top-level is "dinov2-<commit>/"
+            extracted = tmp_dir / zip_prefix
+            os.rename(extracted, repo_dir)
+        except Exception as e:
+            raise RuntimeError(
+                f"Failed to download DINOv2 hub repo from {_DINOV2_ZIP_URL}: {e}\n"
+                "Pre-populate the cache manually:\n"
+                f"  git clone https://github.com/{_DINOV2_HUB_OWNER}/{_DINOV2_HUB_REPO}.git {repo_dir}"
+            ) from e
+        finally:
+            # Clean up the temp dir (it may still hold partially-extracted files).
+            if tmp_dir.exists():
+                shutil.rmtree(tmp_dir, ignore_errors=True)
 
     return repo_dir
 

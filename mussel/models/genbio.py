@@ -24,6 +24,7 @@ Weights are downloaded automatically from HuggingFace Hub.
 import importlib.util
 import logging
 import os
+import tempfile
 import types
 from pathlib import Path
 from typing import Callable, List
@@ -36,9 +37,11 @@ from mussel.models.model_factory import ModelType, register_model
 logger = logging.getLogger(__name__)
 
 _CHECKPOINT_FILENAME = "model.pth"
+# Pinned to a specific commit for reproducibility and supply-chain safety.
+_MODEL_CODE_COMMIT = "822654b881af40db0259ab6aa7e9c9dfbe0bac78"
 _MODEL_CODE_URL = (
     "https://raw.githubusercontent.com/genbio-ai/genbio-pathfm/"
-    "main/genbio_pathfm/model.py"
+    f"{_MODEL_CODE_COMMIT}/genbio_pathfm/model.py"
 )
 _LICENSE_URL = (
     "https://github.com/genbio-ai/genbio-pathfm/blob/main/LICENSE.txt"
@@ -80,34 +83,58 @@ class GenBioPathFMModel(TorchModel):
 
         Cached at ``~/.cache/mussel/genbio_pathfm/model.py``; downloaded only
         once.  By proceeding the user accepts the GenBio AI Community License
-        (non-commercial research use only).
+        (non-commercial research use only).  Uses an atomic write (temp file +
+        ``os.replace``) and a file lock to be safe under concurrent SLURM workers.
         """
+        from mussel.utils.model_cache import model_download_lock
+
         cache_dir = Path.home() / ".cache" / "mussel" / "genbio_pathfm"
         cache_dir.mkdir(parents=True, exist_ok=True)
         cached_file = cache_dir / "model.py"
 
         if not cached_file.exists():
-            logger.info(
-                "Downloading GenBio-PathFM model code → %s\n"
-                "By proceeding you accept the GenBio AI Community License "
-                "(non-commercial research use only): %s",
-                cached_file,
-                _LICENSE_URL,
-            )
-            try:
-                import requests  # noqa: PLC0415
+            with model_download_lock("genbio_pathfm_model_code", cache_dir=str(cache_dir)):
+                # Double-check after acquiring lock.
+                if not cached_file.exists():
+                    logger.info(
+                        "Downloading GenBio-PathFM model code → %s\n"
+                        "By proceeding you accept the GenBio AI Community License "
+                        "(non-commercial research use only): %s",
+                        cached_file,
+                        _LICENSE_URL,
+                    )
+                    try:
+                        import requests  # noqa: PLC0415
 
-                response = requests.get(_MODEL_CODE_URL, timeout=60)
-                response.raise_for_status()
-                cached_file.write_bytes(response.content)
-            except Exception:
-                import urllib.request  # noqa: PLC0415
+                        response = requests.get(_MODEL_CODE_URL, timeout=60)
+                        response.raise_for_status()
+                        content = response.content
+                    except Exception:
+                        import urllib.request  # noqa: PLC0415
 
-                urllib.request.urlretrieve(_MODEL_CODE_URL, cached_file)
+                        with urllib.request.urlopen(_MODEL_CODE_URL) as r:
+                            content = r.read()
+
+                    # Atomic write: write to a temp file then rename.
+                    tmp_fd, tmp_path = tempfile.mkstemp(
+                        suffix=".py.tmp", dir=cache_dir
+                    )
+                    try:
+                        with os.fdopen(tmp_fd, "wb") as fh:
+                            fh.write(content)
+                        os.replace(tmp_path, cached_file)
+                    except Exception:
+                        os.unlink(tmp_path)
+                        raise
 
         spec = importlib.util.spec_from_file_location(
             "_genbio_pathfm_model", cached_file
         )
+        if spec is None or spec.loader is None:
+            raise ImportError(
+                f"Cannot load GenBio-PathFM model code from {cached_file}. "
+                f"Try deleting the cache and re-running: rm -f {cached_file}"
+            )
         module = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(module)
         return module
