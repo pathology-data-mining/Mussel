@@ -25,7 +25,6 @@ import importlib.util
 import logging
 import os
 import types
-import urllib.request
 from pathlib import Path
 from typing import Callable, List
 
@@ -95,7 +94,16 @@ class GenBioPathFMModel(TorchModel):
                 cached_file,
                 _LICENSE_URL,
             )
-            urllib.request.urlretrieve(_MODEL_CODE_URL, cached_file)
+            try:
+                import requests  # noqa: PLC0415
+
+                response = requests.get(_MODEL_CODE_URL, timeout=60)
+                response.raise_for_status()
+                cached_file.write_bytes(response.content)
+            except Exception:
+                import urllib.request  # noqa: PLC0415
+
+                urllib.request.urlretrieve(_MODEL_CODE_URL, cached_file)
 
         spec = importlib.util.spec_from_file_location(
             "_genbio_pathfm_model", cached_file
