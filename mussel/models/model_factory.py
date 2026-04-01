@@ -108,6 +108,8 @@ MODEL_PATCH_SIZES = {
     ModelType.LUNIT_VITS16: 224,
     ModelType.OPENMIDNIGHT: 224,
     ModelType.GENBIO_PATHFM: 224,
+    # ABMIL slide encoder: encoder-agnostic; default matches common patch encoders
+    ModelType.ABMIL_SLIDE: 256,
 }
 
 

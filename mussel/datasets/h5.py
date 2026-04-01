@@ -1,14 +1,14 @@
 import logging
 
 import h5py
-from mussel.utils.wsi_backend import open_slide as _open_slide
 
-# Provide a module-level alias so downstream code can call `openslide.open_slide`
-# or use the module directly; we redirect all calls through the multi-backend helper.
+# Circular-import guard: mussel.utils.wsi_backend → mussel.utils.__init__ → feature_extract
+# → mussel.datasets, which is still being initialized at this point.  Use a lazy import.
 class _BackendShim:
     """Minimal shim that routes open_slide() through mussel.utils.wsi_backend."""
     @staticmethod
     def open_slide(path):
+        from mussel.utils.wsi_backend import open_slide as _open_slide  # noqa: PLC0415
         return _open_slide(path)
 
 openslide = _BackendShim()

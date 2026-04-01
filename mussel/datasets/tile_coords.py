@@ -1,10 +1,11 @@
 import logging
 
-from mussel.utils.wsi_backend import open_slide as _open_slide
-
+# Circular-import guard: same as h5.py — lazy import to avoid
+# mussel.datasets → mussel.utils → feature_extract → mussel.datasets cycle.
 class _BackendShim:
     @staticmethod
     def open_slide(path):
+        from mussel.utils.wsi_backend import open_slide as _open_slide  # noqa: PLC0415
         return _open_slide(path)
 
 openslide = _BackendShim()
