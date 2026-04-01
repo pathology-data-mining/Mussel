@@ -23,6 +23,9 @@ Image.MAX_IMAGE_PIXELS = None
 
 logger = logging.getLogger(__name__)
 
+_SEGMENT_THRESHOLD_DEFAULT = 20
+_MEDIAN_BLUR_DEFAULT = 7
+
 
 def get_slide_mpp(
     wsi,
@@ -471,9 +474,9 @@ def segment_tissue(
     slide_path: str,
     slide_id: Optional[str] = None,
     seg_level: int = -1,
-    segment_threshold: int = 20,
+    segment_threshold: int = _SEGMENT_THRESHOLD_DEFAULT,
     segment_max_value: int = 255,
-    median_blur_ksize: int = 7,
+    median_blur_ksize: int = _MEDIAN_BLUR_DEFAULT,
     morphology_ex_kernel: int = 0,
     use_otsu: bool = False,
     tissue_area_threshold: int = 100,
@@ -665,8 +668,6 @@ def segment_tissue(
 
         # Warn about classic-only parameters that are ignored by the neural backend.
         if seg_model == "neural":
-            _SEGMENT_THRESHOLD_DEFAULT = 20
-            _MEDIAN_BLUR_DEFAULT = 7
             ignored = []
             if segment_threshold != _SEGMENT_THRESHOLD_DEFAULT:
                 ignored.append(f"segment_threshold={segment_threshold!r}")
