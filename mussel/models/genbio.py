@@ -13,29 +13,46 @@ Feature dimension: 4608 (3 × embed_dim=1536)
 Input: 224×224 with pathology-specific normalisation
   mean=(0.697, 0.575, 0.728), std=(0.188, 0.240, 0.187)
 
-The model architecture is vendored from the upstream repository into
-``mussel/models/_genbio_pathfm.py`` (GenBio AI Community License — non-commercial
-research use only).  Weights are downloaded automatically from HuggingFace Hub.
+The model architecture code is published under the GenBio AI Community License
+(non-commercial research use only), which is incompatible with Mussel's GPL-3.0
+license and therefore cannot be vendored here.  Instead, ``genbio_pathfm/model.py``
+is downloaded from GitHub on first use and cached locally in
+``~/.cache/mussel/genbio_pathfm/``, following the same pattern as ``torch.hub``.
+Weights are downloaded automatically from HuggingFace Hub.
 """
 
+import importlib.util
 import logging
 import os
+import types
+import urllib.request
+from pathlib import Path
 from typing import Callable, List
 
 import torch
 
-from mussel.models._genbio_pathfm import GenBio_PathFM_Inference
 from mussel.models.base import TorchModel
 from mussel.models.model_factory import ModelType, register_model
 
 logger = logging.getLogger(__name__)
 
 _CHECKPOINT_FILENAME = "model.pth"
+_MODEL_CODE_URL = (
+    "https://raw.githubusercontent.com/genbio-ai/genbio-pathfm/"
+    "main/genbio_pathfm/model.py"
+)
+_LICENSE_URL = (
+    "https://github.com/genbio-ai/genbio-pathfm/blob/main/LICENSE.txt"
+)
 
 
 @register_model(ModelType.GENBIO_PATHFM)
 class GenBioPathFMModel(TorchModel):
-    """GenBio-PathFM — 4608-dim, 224px input."""
+    """GenBio-PathFM — 4608-dim, 224px input.
+
+    Model architecture code is downloaded from GitHub on first use and cached
+    in ``~/.cache/mussel/genbio_pathfm/``.  Weights come from HuggingFace Hub.
+    """
 
     def __init__(
         self,
@@ -59,6 +76,35 @@ class GenBioPathFMModel(TorchModel):
         super().__init__(model_path, model_obj, use_gpu, gpu_device_id)
 
     @staticmethod
+    def _fetch_model_code() -> types.ModuleType:
+        """Download genbio_pathfm/model.py from GitHub and import it.
+
+        Cached at ``~/.cache/mussel/genbio_pathfm/model.py``; downloaded only
+        once.  By proceeding the user accepts the GenBio AI Community License
+        (non-commercial research use only).
+        """
+        cache_dir = Path.home() / ".cache" / "mussel" / "genbio_pathfm"
+        cache_dir.mkdir(parents=True, exist_ok=True)
+        cached_file = cache_dir / "model.py"
+
+        if not cached_file.exists():
+            logger.info(
+                "Downloading GenBio-PathFM model code → %s\n"
+                "By proceeding you accept the GenBio AI Community License "
+                "(non-commercial research use only): %s",
+                cached_file,
+                _LICENSE_URL,
+            )
+            urllib.request.urlretrieve(_MODEL_CODE_URL, cached_file)
+
+        spec = importlib.util.spec_from_file_location(
+            "_genbio_pathfm_model", cached_file
+        )
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        return module
+
+    @staticmethod
     def _load_genbio(model_path: str, device: str) -> torch.nn.Module:
         """Download weights and instantiate ``GenBio_PathFM_Inference``."""
         try:
@@ -73,6 +119,8 @@ class GenBioPathFMModel(TorchModel):
             logger.info("Downloading GenBio-PathFM weights from %s", repo_id)
             weights_path = hf_hub_download(repo_id, _CHECKPOINT_FILENAME)
 
+        module = GenBioPathFMModel._fetch_model_code()
+        GenBio_PathFM_Inference = module.GenBio_PathFM_Inference
         return GenBio_PathFM_Inference(weights_path, device=device)
 
     def get_preprocessing_fun(self) -> Callable:
