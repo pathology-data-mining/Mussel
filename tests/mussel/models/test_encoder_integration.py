@@ -46,24 +46,35 @@ _SLIDE_ENCODER_TYPES = list(_SLIDE_ENCODERS)
 # Expected feature dimension per patch encoder (used to synthesise fake features
 # for slide-encoder-only tests).
 _PATCH_ENCODER_DIM: dict[ModelType, int] = {
-    ModelType.RESNET50:    1024,   # custom baseline stops at layer3 (256*4=1024)
-    ModelType.CTRANSPATH:   768,
-    ModelType.GIGAPATH:    1536,
-    ModelType.VIRCHOW:     2560,
-    ModelType.VIRCHOW2:    2560,
-    ModelType.OPTIMUS:     1536,
-    ModelType.CLIP:         512,
-    ModelType.GOOGLEPATH:   384,   # ViT-S/16 (embed_dim=384)
-    ModelType.CONCH1_5:     768,
-    ModelType.UNI:         1024,
-    ModelType.UNI2:        1536,
-    ModelType.PHIKON:       768,
-    ModelType.PHIKON_V2:   1024,   # DINOv2 ViT-L/14
-    ModelType.H_OPTIMUS_1: 1536,
-    ModelType.H0_MINI:      768,
-    ModelType.MIDNIGHT12K: 1536,   # DINOv2 ViT-g/14
-    ModelType.GPFM:        1024,   # ViT-L/14 (embed_dim=1024, num_classes=0)
-    ModelType.HIBOU_L:     1024,
+    ModelType.RESNET50:       1024,   # custom baseline stops at layer3 (256*4=1024)
+    ModelType.CTRANSPATH:      768,
+    ModelType.GIGAPATH:       1536,
+    ModelType.VIRCHOW:        2560,
+    ModelType.VIRCHOW2:       2560,
+    ModelType.OPTIMUS:        1536,
+    ModelType.CLIP:            512,
+    ModelType.GOOGLEPATH:      384,   # ViT-S/16 (embed_dim=384)
+    ModelType.CONCH1_5:        768,
+    ModelType.UNI:            1024,
+    ModelType.UNI2:           1536,
+    ModelType.PHIKON:          768,
+    ModelType.PHIKON_V2:      1024,   # DINOv2 ViT-L/14
+    ModelType.H_OPTIMUS_1:    1536,
+    ModelType.H0_MINI:         768,
+    ModelType.MIDNIGHT12K:    1536,   # DINOv2 ViT-g/14
+    ModelType.GPFM:           1024,   # ViT-L/14 (embed_dim=1024, num_classes=0)
+    ModelType.HIBOU_L:        1024,
+    # Round 2: new patch encoders
+    ModelType.CONCH_V1:        512,   # CONCH v1.0, ViT-B/16 (448px)
+    ModelType.KAIKO_VITS8:     384,   # Kaiko ViT-S/8
+    ModelType.KAIKO_VITS16:    384,   # Kaiko ViT-S/16
+    ModelType.KAIKO_VITB8:     768,   # Kaiko ViT-B/8
+    ModelType.KAIKO_VITB16:    768,   # Kaiko ViT-B/16
+    ModelType.KAIKO_VITL14:   1024,   # Kaiko ViT-L/14
+    ModelType.LUNIT_VITS8:     384,   # Lunit DINO ViT-S/8
+    ModelType.LUNIT_VITS16:    384,   # Lunit DINO ViT-S/16
+    ModelType.OPENMIDNIGHT:   1536,   # DINOv2 ViT-G/14
+    ModelType.GENBIO_PATHFM:  4608,   # 3 channels × 1536
 }
 
 # Per-slide-encoder override for the INPUT patch feature dimension.
