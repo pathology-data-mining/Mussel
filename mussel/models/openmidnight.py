@@ -122,7 +122,7 @@ class OpenMidnightModel(TorchModel):
         model = torch.hub.load(
             str(repo_dir),
             "dinov2_vitg14_reg",
-            weights=None,
+            pretrained=False,
             source="local",
             trust_repo=True,
         )
