@@ -16,7 +16,7 @@
 #SBATCH --cpus-per-task=4
 #SBATCH --mem=32G
 #SBATCH --time=0:45:00
-#SBATCH --array=0-38
+#SBATCH --array=0-48
 #SBATCH --output=/gpfs/cdsi_ess/home/limr/logs/slurm/test_integration_%A_%a.out
 
 set -euo pipefail
@@ -69,6 +69,17 @@ TESTS=(
     "tests/mussel/utils/test_segmentation_integration.py::test_grandqc_artifact_remover_integrated_with_segment_tissue"
     # --- pen mark slide from S3 (task 38) ---
     "tests/mussel/utils/test_segmentation_integration.py::test_grandqc_penmark_removal_reduces_mask_on_marked_slide"
+    # --- Round 2 patch encoders (tasks 39-48) ---
+    "tests/mussel/models/test_encoder_integration.py::test_patch_encoder_extracts_features[CONCH_V1]"
+    "tests/mussel/models/test_encoder_integration.py::test_patch_encoder_extracts_features[KAIKO_VITS8]"
+    "tests/mussel/models/test_encoder_integration.py::test_patch_encoder_extracts_features[KAIKO_VITS16]"
+    "tests/mussel/models/test_encoder_integration.py::test_patch_encoder_extracts_features[KAIKO_VITB8]"
+    "tests/mussel/models/test_encoder_integration.py::test_patch_encoder_extracts_features[KAIKO_VITB16]"
+    "tests/mussel/models/test_encoder_integration.py::test_patch_encoder_extracts_features[KAIKO_VITL14]"
+    "tests/mussel/models/test_encoder_integration.py::test_patch_encoder_extracts_features[LUNIT_VITS8]"
+    "tests/mussel/models/test_encoder_integration.py::test_patch_encoder_extracts_features[LUNIT_VITS16]"
+    "tests/mussel/models/test_encoder_integration.py::test_patch_encoder_extracts_features[OPENMIDNIGHT]"
+    "tests/mussel/models/test_encoder_integration.py::test_patch_encoder_extracts_features[GENBIO_PATHFM]"
 )
 
 EXTRAS=(
@@ -87,6 +98,9 @@ EXTRAS=(
     torch-gpu torch-gpu torch-gpu torch-gpu
     # penmark slide from S3 (task 38)
     "torch-gpu distributed"
+    # Round 2 patch encoders (tasks 39-48)
+    torch-gpu torch-gpu torch-gpu torch-gpu torch-gpu
+    torch-gpu torch-gpu torch-gpu torch-gpu torch-gpu
 )
 
 VENVS=(
@@ -104,6 +118,8 @@ VENVS=(
     "" "" "" ""
     # penmark slide from S3 (task 38): use repo .venv
     ""
+    # Round 2 patch encoders (tasks 39-48): use repo .venv
+    "" "" "" "" ""  "" "" "" "" ""
 )
 
 TEST_NODE="${TESTS[$SLURM_ARRAY_TASK_ID]}"
