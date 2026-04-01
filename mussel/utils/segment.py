@@ -636,7 +636,7 @@ def segment_tissue(
             # NeuralTissueSegmenter can rescale to the model's 1 µm/px target.
             seg_level_ds = level_downsamples[seg_level][0]  # x-axis downsample
             seg_level_mpp = slide_mpp * seg_level_ds
-            img_otsu = _segment_tissue_neural(img, seg_level_mpp)
+            tissue_mask = _segment_tissue_neural(img, seg_level_mpp)
         else:
             img_hsv = cv2.cvtColor(img, cv2.COLOR_RGB2HSV)  # Convert to HSV space
             img_med = cv2.medianBlur(
@@ -645,18 +645,18 @@ def segment_tissue(
 
             # Thresholding
             if use_otsu:
-                _, img_otsu = cv2.threshold(
+                _, tissue_mask = cv2.threshold(
                     img_med, 0, segment_max_value, cv2.THRESH_OTSU + cv2.THRESH_BINARY
                 )
             else:
-                _, img_otsu = cv2.threshold(
+                _, tissue_mask = cv2.threshold(
                     img_med, segment_threshold, segment_max_value, cv2.THRESH_BINARY
                 )
 
             # Morphological closing
             if morphology_ex_kernel > 0:
                 kernel = np.ones((morphology_ex_kernel, morphology_ex_kernel), np.uint8)
-                img_otsu = cv2.morphologyEx(img_otsu, cv2.MORPH_CLOSE, kernel)
+                tissue_mask = cv2.morphologyEx(tissue_mask, cv2.MORPH_CLOSE, kernel)
 
         # Optional artifact/pen mark removal via pluggable callable.
         # Compute the thumbnail's MPP so the remover can rescale to its model's
@@ -664,7 +664,7 @@ def segment_tissue(
         if artifact_remover_fn is not None:
             if remove_artifacts or remove_penmarks:
                 img_mpp = slide_mpp * level_downsamples[seg_level][0]
-                img_otsu = artifact_remover_fn(img, img_otsu, img_mpp)
+                tissue_mask = artifact_remover_fn(img, tissue_mask, img_mpp)
             else:
                 logger.warning(
                     "artifact_remover_fn was provided but neither remove_artifacts nor "
@@ -692,7 +692,7 @@ def segment_tissue(
 
         # Find and filter contours
         contours, hierarchy = cv2.findContours(
-            img_otsu, cv2.RETR_CCOMP, cv2.CHAIN_APPROX_NONE
+            tissue_mask, cv2.RETR_CCOMP, cv2.CHAIN_APPROX_NONE
         )  # Find contours
         if contours is None or hierarchy is None:
             return None
