@@ -24,7 +24,7 @@ class SubsetSequentialSampler(Sampler):
 
     def __init__(self, indices):
         """Initialize the sampler with a list of indices.
-        
+
         Args:
             indices: A sequence of indices to sample from.
         """
@@ -41,10 +41,10 @@ class SubsetSequentialSampler(Sampler):
 
 def collate_MIL(batch):
     """Collate function for Multiple Instance Learning (MIL) batches.
-    
+
     Args:
         batch: List of tuples containing (image, label) pairs.
-        
+
     Returns:
         List containing [concatenated images, labels tensor].
     """
@@ -55,20 +55,20 @@ def collate_MIL(batch):
 
 def collate_features(batch):
     """Collate function for feature batches with coordinates.
-    
+
     Args:
         batch: List of tuples containing (features, coordinates) pairs.
-        
+
     Returns:
         List containing [concatenated features, stacked coordinates].
     """
     # Filter out None values (corrupted/failed tiles)
     batch = [item for item in batch if item[0] is not None]
-    
+
     # If all tiles in batch failed, return empty tensors
     if len(batch) == 0:
         return [torch.empty(0), np.empty((0, 2))]
-    
+
     img = torch.cat([item[0] for item in batch], dim=0)
     coords = np.vstack([item[1] for item in batch])
     return [img, coords]
@@ -76,12 +76,12 @@ def collate_features(batch):
 
 def get_simple_loader(dataset, batch_size=1, num_workers=1):
     """Create a simple DataLoader with sequential sampling.
-    
+
     Args:
         dataset: Dataset to load.
         batch_size: Number of samples per batch (default: 1).
         num_workers: Number of worker processes for data loading (default: 1).
-        
+
     Returns:
         DataLoader instance.
     """
@@ -105,7 +105,7 @@ def get_split_loader(split_dataset, training=False, testing=False, weighted=Fals
     Return either the validation loader or training loader
     """
     kwargs = {"num_workers": 4} if device.type == "cuda" else {}
-    
+
     if testing:
         ids = np.random.choice(
             np.arange(len(split_dataset), int(len(split_dataset) * 0.1)), replace=False
@@ -118,7 +118,7 @@ def get_split_loader(split_dataset, training=False, testing=False, weighted=Fals
             **kwargs,
         )
         return loader
-    
+
     if training:
         if weighted:
             weights = make_weights_for_balanced_classes_split(split_dataset)
@@ -127,7 +127,7 @@ def get_split_loader(split_dataset, training=False, testing=False, weighted=Fals
             sampler_instance = RandomSampler(split_dataset)
     else:
         sampler_instance = SequentialSampler(split_dataset)
-    
+
     loader = DataLoader(
         split_dataset,
         batch_size=1,
@@ -135,20 +135,20 @@ def get_split_loader(split_dataset, training=False, testing=False, weighted=Fals
         collate_fn=collate_MIL,
         **kwargs,
     )
-    
+
     return loader
 
 
 def get_optim(model, args):
     """Create an optimizer for the model.
-    
+
     Args:
         model: The neural network model.
         args: Arguments object containing opt (optimizer type), lr (learning rate), and reg (weight decay).
-        
+
     Returns:
         Optimizer instance (Adam or SGD).
-        
+
     Raises:
         NotImplementedError: If optimizer type is not supported.
     """
@@ -172,7 +172,7 @@ def get_optim(model, args):
 
 def print_network(net):
     """Print network architecture and parameter counts.
-    
+
     Args:
         net: Neural network model to analyze.
     """
@@ -201,7 +201,7 @@ def generate_split(
     custom_test_ids=None,
 ):
     """Generate train/validation/test splits for cross-validation.
-    
+
     Args:
         cls_ids: List of arrays containing indices for each class.
         val_num: List of validation sample counts per class.
@@ -211,7 +211,7 @@ def generate_split(
         seed: Random seed for reproducibility (default: 7).
         label_frac: Fraction of training labels to use (default: 1.0).
         custom_test_ids: Optional pre-defined test indices.
-        
+
     Yields:
         Tuple of (train_ids, val_ids, test_ids) for each split.
     """
@@ -260,12 +260,12 @@ def generate_split(
 
 def nth(iterator, n, default=None):
     """Return the nth item from an iterator or default if exhausted.
-    
+
     Args:
         iterator: Iterator to consume.
         n: Index of item to return (0-based). If None, exhausts the iterator.
         default: Value to return if iterator is exhausted (default: None).
-        
+
     Returns:
         The nth item from the iterator or default.
     """
@@ -277,11 +277,11 @@ def nth(iterator, n, default=None):
 
 def calculate_error(Y_hat, Y):
     """Calculate classification error rate.
-    
+
     Args:
         Y_hat: Predicted labels tensor.
         Y: Ground truth labels tensor.
-        
+
     Returns:
         Error rate as a float (1.0 - accuracy).
     """
@@ -291,10 +291,10 @@ def calculate_error(Y_hat, Y):
 
 def make_weights_for_balanced_classes_split(dataset):
     """Create sample weights for balanced class sampling.
-    
+
     Args:
         dataset: Dataset with slide_cls_ids attribute and getlabel method.
-        
+
     Returns:
         Tensor of sample weights for balanced sampling.
     """
@@ -313,7 +313,7 @@ def make_weights_for_balanced_classes_split(dataset):
 
 def initialize_weights(module):
     """Initialize weights for linear and batch norm layers.
-    
+
     Args:
         module: Neural network module to initialize.
     """

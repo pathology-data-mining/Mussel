@@ -7,7 +7,6 @@ from mussel.cli.filter_tessellate import FilterTessellateConfig
 from mussel.cli.tessellate import SegConfig
 from mussel.models import ModelType
 
-
 _FILTER_TESSELLATE_REQUIRED = dict(
     slide_path="test.svs",
     output_h5_path="test.h5",
@@ -16,13 +15,18 @@ _FILTER_TESSELLATE_REQUIRED = dict(
 )
 
 
-@pytest.mark.parametrize("model_type,expected_patch_size", [
-    (ModelType.CONCH1_5, 512),
-    (ModelType.VIRCHOW, 224),
-    (ModelType.CLIP, 224),
-    (ModelType.GOOGLEPATH, 224),
-])
-def test_filter_tessellate_default_patch_size_for_model(model_type, expected_patch_size):
+@pytest.mark.parametrize(
+    "model_type,expected_patch_size",
+    [
+        (ModelType.CONCH1_5, 512),
+        (ModelType.VIRCHOW, 224),
+        (ModelType.CLIP, 224),
+        (ModelType.GOOGLEPATH, 224),
+    ],
+)
+def test_filter_tessellate_default_patch_size_for_model(
+    model_type, expected_patch_size
+):
     """Test that patch size is automatically set based on model type in filter_tessellate."""
     cfg = FilterTessellateConfig(
         **_FILTER_TESSELLATE_REQUIRED,
@@ -44,7 +48,9 @@ def test_filter_tessellate_explicit_patch_size_preserved():
 
 @pytest.mark.slow
 @pytest.mark.integration
-def test_filter_tessellate_config_construction(tmp_path, test_data_path, classifier_pkl_path, use_gpu, num_workers):
+def test_filter_tessellate_config_construction(
+    tmp_path, test_data_path, classifier_pkl_path, use_gpu, num_workers
+):
     """Test that FilterTessellateConfig can be constructed with valid parameters."""
     slide_path = os.path.join(test_data_path, "948176.svs")
     classifier_pkl = classifier_pkl_path
@@ -75,7 +81,9 @@ def test_filter_tessellate_config_construction(tmp_path, test_data_path, classif
 
 @pytest.mark.slow
 @pytest.mark.integration
-def test_filter_tessellate_config_with_intermediate_files(tmp_path, test_data_path, classifier_pkl_path, use_gpu, num_workers):
+def test_filter_tessellate_config_with_intermediate_files(
+    tmp_path, test_data_path, classifier_pkl_path, use_gpu, num_workers
+):
     """Test config construction with keep_intermediate_files=True."""
     slide_path = os.path.join(test_data_path, "948176.svs")
     classifier_pkl = classifier_pkl_path

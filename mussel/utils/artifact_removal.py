@@ -28,7 +28,7 @@ logger = logging.getLogger(__name__)
 _GRANDQC_REPO_ID = "MahmoodLab/hest-tissue-seg"
 _GRANDQC_CKPT = "GrandQC_MPP1_state_dict.pth"
 _GRANDQC_ENCODER = "timm-efficientnet-b0"
-_GRANDQC_TARGET_MPP = 1.0   # model trained at 10x ≈ 1 µm/px
+_GRANDQC_TARGET_MPP = 1.0  # model trained at 10x ≈ 1 µm/px
 _GRANDQC_TILE_SIZE = 512
 _GRANDQC_N_CLASSES = 8
 
@@ -89,6 +89,7 @@ class GrandQCArtifactRemover:
             return self._device
         try:
             import torch
+
             return "cuda" if torch.cuda.is_available() else "cpu"
         except ImportError:
             return "cpu"
@@ -125,10 +126,12 @@ class GrandQCArtifactRemover:
         self._model = model
         from mussel.models.base import IMAGENET_MEAN, IMAGENET_STD
 
-        self._transforms = transforms.Compose([
-            transforms.ToTensor(),
-            transforms.Normalize(mean=IMAGENET_MEAN, std=IMAGENET_STD),
-        ])
+        self._transforms = transforms.Compose(
+            [
+                transforms.ToTensor(),
+                transforms.Normalize(mean=IMAGENET_MEAN, std=IMAGENET_STD),
+            ]
+        )
 
     def __call__(
         self,
@@ -164,7 +167,11 @@ class GrandQCArtifactRemover:
                 "the model's target %.1f µm/px (max_input_mpp=%.1f). "
                 "The thumbnail lacks sufficient detail for reliable artifact detection. "
                 "Returning original mask unchanged. Pass a thumbnail at ≤ %.1f µm/px.",
-                mpp, scale, _GRANDQC_TARGET_MPP, self.max_input_mpp, self.max_input_mpp,
+                mpp,
+                scale,
+                _GRANDQC_TARGET_MPP,
+                self.max_input_mpp,
+                self.max_input_mpp,
             )
             return mask.copy()
 
@@ -191,7 +198,7 @@ class GrandQCArtifactRemover:
         tiles = [
             self._transforms(
                 Image.fromarray(
-                    img_padded[i * tile:(i + 1) * tile, j * tile:(j + 1) * tile]
+                    img_padded[i * tile : (i + 1) * tile, j * tile : (j + 1) * tile]
                 )
             )
             for i in range(n_h)
@@ -202,7 +209,9 @@ class GrandQCArtifactRemover:
         preds: list[np.ndarray] = []
         with torch.no_grad():
             for start in range(0, len(tiles), self.batch_size):
-                batch = torch.stack(tiles[start:start + self.batch_size]).to(self.device)
+                batch = torch.stack(tiles[start : start + self.batch_size]).to(
+                    self.device
+                )
                 logits = self._model(batch)
                 probs = torch.softmax(logits, dim=1)
                 _, cls = torch.max(probs, dim=1)  # (B, tile, tile)
@@ -213,7 +222,7 @@ class GrandQCArtifactRemover:
                 preds.append(keep.cpu().numpy().astype(np.uint8))
 
         # Reassemble tiles into a full prediction map and unpad.
-        all_preds = np.concatenate(preds, axis=0)           # (n_h*n_w, tile, tile)
+        all_preds = np.concatenate(preds, axis=0)  # (n_h*n_w, tile, tile)
         pred_map = all_preds.reshape(n_h, n_w, tile, tile)
         # transpose(0,2,1,3) → (n_h, tile, n_w, tile), reshape → (ph, pw)
         pred_full = pred_map.transpose(0, 2, 1, 3).reshape(ph, pw)[:proc_h, :proc_w]

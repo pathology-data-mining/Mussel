@@ -50,7 +50,7 @@ class GPFMModel(TorchModel):
             model_path = ModelType.GPFM.path
 
         if model_path.startswith("hf-hub:"):
-            repo_id = model_path[len("hf-hub:"):]
+            repo_id = model_path[len("hf-hub:") :]
             hf_token = os.environ.get("HF_TOKEN")
             with model_download_lock(model_path) as _:
                 pth_path = hf_hub_download(repo_id, "GPFM.pth", token=hf_token)

@@ -1,13 +1,14 @@
 import os
-import numpy as np
+
 import h5py
+import numpy as np
 from omegaconf import OmegaConf
 
 import mussel.cli.tessellate
-from mussel.cli.tessellate import TessellateConfig, SegConfig
+from mussel.cli.tessellate import SegConfig, TessellateConfig
 
 # Dimensions of the test slide (85656 x 19917 at level 0)
-_SLIDE_WIDTH  = 85656
+_SLIDE_WIDTH = 85656
 _SLIDE_HEIGHT = 19917
 
 
@@ -30,13 +31,15 @@ def test_tessellate(tmp_path, num_workers):
         assert "coords" in f, "H5 output missing 'coords' dataset"
 
         coords = f["coords"][:]
-        attrs  = dict(f["coords"].attrs)
+        attrs = dict(f["coords"].attrs)
 
         # Shape and dtype
-        assert coords.ndim == 2 and coords.shape[1] == 2, (
-            f"coords should be (N, 2), got {coords.shape}"
-        )
-        assert coords.dtype == np.int64, f"coords dtype should be int64, got {coords.dtype}"
+        assert (
+            coords.ndim == 2 and coords.shape[1] == 2
+        ), f"coords should be (N, 2), got {coords.shape}"
+        assert (
+            coords.dtype == np.int64
+        ), f"coords dtype should be int64, got {coords.dtype}"
 
         # Must have produced some patches
         assert coords.shape[0] > 0, "tessellation produced zero patches"
@@ -49,9 +52,12 @@ def test_tessellate(tmp_path, num_workers):
         patch_size = int(attrs["patch_size"])
         assert np.all(coords[:, 0] >= 0), "negative x coordinates"
         assert np.all(coords[:, 1] >= 0), "negative y coordinates"
-        assert np.all(coords[:, 0] + patch_size <= _SLIDE_WIDTH),  "x + patch_size exceeds slide width"
-        assert np.all(coords[:, 1] + patch_size <= _SLIDE_HEIGHT), "y + patch_size exceeds slide height"
-
+        assert np.all(
+            coords[:, 0] + patch_size <= _SLIDE_WIDTH
+        ), "x + patch_size exceeds slide width"
+        assert np.all(
+            coords[:, 1] + patch_size <= _SLIDE_HEIGHT
+        ), "y + patch_size exceeds slide height"
 
 
 def test_seg_config_new_fields_defaults():

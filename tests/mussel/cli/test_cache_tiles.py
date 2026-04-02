@@ -7,6 +7,7 @@ from omegaconf import OmegaConf
 import mussel.cli.cache_tiles
 from mussel.cli.cache_tiles import CacheTilesConfig
 
+
 @pytest.mark.slow
 @pytest.mark.integration
 def test_cache_tiles(tmp_path, test_data_path, num_workers):
@@ -18,7 +19,8 @@ def test_cache_tiles(tmp_path, test_data_path, num_workers):
         "vessel",
         "necrosis",
         "invasive adenocarcinoma",
-        "sarcoma"]
+        "sarcoma",
+    ]
     output_indices_json = tmp_path / "test.json"
     output_pt_path = tmp_path / "test.pt"
     cfg = CacheTilesConfig(
@@ -33,4 +35,3 @@ def test_cache_tiles(tmp_path, test_data_path, num_workers):
     mussel.cli.cache_tiles.main(cfg)
     assert os.path.exists(output_indices_json)
     assert os.path.exists(output_pt_path)
-

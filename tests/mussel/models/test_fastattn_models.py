@@ -25,6 +25,7 @@ gigapath = pytest.importorskip("gigapath", reason="fastattn extra not installed"
 # that import; the top-level gigapath package does not.
 try:
     import gigapath.slide_encoder as _slide_encoder  # noqa: F401
+
     _HAS_SLIDE_ENCODER = True
 except (ImportError, RuntimeError) as _exc:
     _HAS_SLIDE_ENCODER = False
@@ -32,6 +33,7 @@ except (ImportError, RuntimeError) as _exc:
 
 # Verify that torch/numpy interop works (torch 2.1.2 requires numpy<2).
 import torch as _torch
+
 try:
     _torch.zeros(1).numpy()
     _HAS_TORCH_NUMPY = True
@@ -40,7 +42,8 @@ except Exception as _exc:
     _TORCH_NUMPY_SKIP_REASON = f"torch/numpy incompatibility: {_exc}"
 
 from mussel.models.model_factory import ModelType
-from mussel.utils.feature_extract import extract_patch_features, _apply_slide_aggregation
+from mussel.utils.feature_extract import (_apply_slide_aggregation,
+                                          extract_patch_features)
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -115,7 +118,9 @@ def test_gigapath_slide_encoder_aggregates_features(tmp_path, use_gpu):
         pytest.skip(_SLIDE_ENCODER_SKIP_REASON)
     rng = np.random.default_rng(42)
     n_patches, patch_size_native = 32, 512
-    fake_features = rng.standard_normal((n_patches, _GIGAPATH_PATCH_DIM)).astype(np.float32)
+    fake_features = rng.standard_normal((n_patches, _GIGAPATH_PATCH_DIM)).astype(
+        np.float32
+    )
     fake_features /= np.linalg.norm(fake_features, axis=1, keepdims=True) + 1e-8
     fake_coords = np.stack(
         [np.arange(n_patches) * patch_size_native, np.zeros(n_patches, dtype=np.int64)],

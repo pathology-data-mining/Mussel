@@ -36,10 +36,21 @@ except ImportError:
     AZURE_FILES_SDK_AVAILABLE = False
 
 
-WSI_EXTENSIONS = frozenset({
-    ".svs", ".ndpi", ".scn", ".tif", ".tiff", ".mrxs",
-    ".vms", ".vmu", ".bif", ".qptiff", ".czi",
-})
+WSI_EXTENSIONS = frozenset(
+    {
+        ".svs",
+        ".ndpi",
+        ".scn",
+        ".tif",
+        ".tiff",
+        ".mrxs",
+        ".vms",
+        ".vmu",
+        ".bif",
+        ".qptiff",
+        ".czi",
+    }
+)
 
 
 def collect_wsi_paths(
@@ -88,12 +99,12 @@ def _is_remote_path(path):
 
 def is_remote_path(path):
     """Check if a path is a remote path (starts with az://, azblob://, s3://, etc.).
-    
+
     Public API for checking remote paths.
-    
+
     Args:
         path: Path to check (string or Path-like object)
-    
+
     Returns:
         True if path is a remote URL, False otherwise
     """
@@ -102,17 +113,17 @@ def is_remote_path(path):
 
 def safe_path_join(base_path, *parts):
     """Safely join path components, preserving URL schemes for remote paths.
-    
+
     For remote paths (az://, s3://, etc.), uses string concatenation with /.
     For local paths, uses pathlib.Path for proper OS-specific joining.
-    
+
     Args:
         base_path: Base path (can be local or remote URL)
         *parts: Path components to join
-    
+
     Returns:
         Joined path as string
-    
+
     Examples:
         >>> safe_path_join("s3://bucket", "folder", "file.txt")
         's3://bucket/folder/file.txt'
@@ -132,17 +143,17 @@ def safe_path_join(base_path, *parts):
 
 def get_slide_id_from_path(slide_path: str, slide_id: Optional[str] = None) -> str:
     """Get slide ID from path or use provided ID.
-    
+
     If slide_id is provided, returns it. Otherwise, extracts the filename
     without extension from slide_path.
-    
+
     Args:
         slide_path: Path to the slide file
         slide_id: Optional explicit slide ID
-    
+
     Returns:
         Slide ID string
-    
+
     Examples:
         >>> get_slide_id_from_path("/path/to/slide.svs")
         'slide'
@@ -156,17 +167,17 @@ def get_slide_ids_from_paths(
     slide_paths: List[str], slide_ids: Optional[List[str]] = None
 ) -> List[str]:
     """Get slide IDs from paths or use provided IDs.
-    
+
     If slide_ids is provided, returns it. Otherwise, extracts filenames
     without extensions from slide_paths.
-    
+
     Args:
         slide_paths: List of paths to slide files
         slide_ids: Optional list of explicit slide IDs
-    
+
     Returns:
         List of slide ID strings
-    
+
     Examples:
         >>> get_slide_ids_from_paths(["/a/slide1.svs", "/b/slide2.svs"])
         ['slide1', 'slide2']
@@ -178,14 +189,14 @@ def get_slide_ids_from_paths(
 
 def ensure_directory_exists(path, is_file_path: bool = False):
     """Ensure directory exists, creating parents if needed.
-    
+
     Args:
         path: Directory path or file path (str or Path)
         is_file_path: If True, creates parent directory of file
-    
+
     Returns:
         Path object of the directory that was created/verified
-    
+
     Examples:
         >>> ensure_directory_exists("/path/to/output")
         PosixPath('/path/to/output')
@@ -235,7 +246,9 @@ def _get_fsspec_filesystem(path, ssl_verify=True):
     storage_options = {}
     if path.startswith(("az://", "azblob://", "abfs://")):
         # Try to get credentials from environment
-        account_name = extracted_account_name or os.environ.get("AZURE_STORAGE_ACCOUNT_NAME")
+        account_name = extracted_account_name or os.environ.get(
+            "AZURE_STORAGE_ACCOUNT_NAME"
+        )
         account_key = os.environ.get("AZURE_STORAGE_ACCOUNT_KEY")
         sas_token = os.environ.get("AZURE_STORAGE_SAS_TOKEN")
         connection_string = os.environ.get("AZURE_STORAGE_CONNECTION_STRING")
@@ -311,9 +324,7 @@ def load_classifier(pkl_path: str):
         return pickle.load(f)
 
 
-def load_features_from_h5(
-    h5_path: str, pt_path: Optional[str] = None
-):
+def load_features_from_h5(h5_path: str, pt_path: Optional[str] = None):
     """Load features and coordinates from an HDF5 file.
 
     If *pt_path* is given and exists, features are loaded from that PyTorch
@@ -540,7 +551,9 @@ def _download_azure_directory_with_sdk(container_name, prefix, local_path):
         raise ImportError("azure-storage-blob is required for Azure downloads")
 
     # Suppress Azure SDK and urllib3 logging to reduce noise
-    logging.getLogger("azure.core.pipeline.policies.http_logging_policy").setLevel(logging.WARNING)
+    logging.getLogger("azure.core.pipeline.policies.http_logging_policy").setLevel(
+        logging.WARNING
+    )
     logging.getLogger("azure.storage.blob").setLevel(logging.WARNING)
     warnings.filterwarnings("ignore", category=Warning, module="urllib3")
 
@@ -565,10 +578,10 @@ def _download_azure_directory_with_sdk(container_name, prefix, local_path):
     blob_count = 0
     downloaded_count = 0
     skipped_count = 0
-    
+
     for blob in container_client.list_blobs(name_starts_with=prefix):
         blob_count += 1
-        
+
         # Remove prefix to get relative path
         relative_path = blob.name[len(prefix) :].lstrip("/")
         if not relative_path:
@@ -577,24 +590,29 @@ def _download_azure_directory_with_sdk(container_name, prefix, local_path):
             continue
 
         local_file_path = os.path.join(local_path, relative_path)
-        
+
         # Skip if file already exists (avoid re-downloading)
-        if os.path.exists(local_file_path) and os.path.getsize(local_file_path) == blob.size:
+        if (
+            os.path.exists(local_file_path)
+            and os.path.getsize(local_file_path) == blob.size
+        ):
             skipped_count += 1
             continue
-        
+
         os.makedirs(os.path.dirname(local_file_path), exist_ok=True)
 
         # Only log every 10th download to reduce noise
         if downloaded_count % 10 == 0:
             logger.info(f"Downloading {blob.name} ({blob.size} bytes)...")
-        
+
         blob_client = container_client.get_blob_client(blob.name)
         with open(local_file_path, "wb") as f:
             blob_client.download_blob().readinto(f)
         downloaded_count += 1
 
-    logger.info(f"Download complete: {downloaded_count} files downloaded, {skipped_count} skipped")
+    logger.info(
+        f"Download complete: {downloaded_count} files downloaded, {skipped_count} skipped"
+    )
 
 
 def _download_azure_files_directory(share_name, prefix, local_path):
@@ -606,10 +624,14 @@ def _download_azure_files_directory(share_name, prefix, local_path):
         local_path: Local destination directory
     """
     if not AZURE_FILES_SDK_AVAILABLE:
-        raise ImportError("azure-storage-file-share is required for Azure Files downloads")
+        raise ImportError(
+            "azure-storage-file-share is required for Azure Files downloads"
+        )
 
     # Suppress Azure SDK logging
-    logging.getLogger("azure.core.pipeline.policies.http_logging_policy").setLevel(logging.WARNING)
+    logging.getLogger("azure.core.pipeline.policies.http_logging_policy").setLevel(
+        logging.WARNING
+    )
     logging.getLogger("azure.storage.fileshare").setLevel(logging.WARNING)
     warnings.filterwarnings("ignore", category=Warning, module="urllib3")
 
@@ -628,7 +650,7 @@ def _download_azure_files_directory(share_name, prefix, local_path):
     )
 
     share_client = share_service_client.get_share_client(share_name)
-    
+
     logger.info(f"Listing files in {share_name}/{prefix}")
     downloaded_count = 0
     skipped_count = 0
@@ -636,31 +658,36 @@ def _download_azure_files_directory(share_name, prefix, local_path):
     # Recursively download directory contents
     def download_directory(dir_path, local_dir):
         nonlocal downloaded_count, skipped_count
-        
+
         dir_client = share_client.get_directory_client(dir_path)
-        
+
         for item in dir_client.list_directories_and_files():
-            item_name = item['name']
+            item_name = item["name"]
             remote_item_path = f"{dir_path}/{item_name}" if dir_path else item_name
             local_item_path = os.path.join(local_dir, item_name)
-            
-            if item.get('is_directory', False):
+
+            if item.get("is_directory", False):
                 # Recursively download subdirectory
                 os.makedirs(local_item_path, exist_ok=True)
                 download_directory(remote_item_path, local_item_path)
             else:
                 # Download file
-                file_size = item.get('content_length', 0)
-                
+                file_size = item.get("content_length", 0)
+
                 # Skip if file already exists with same size
-                if os.path.exists(local_item_path) and os.path.getsize(local_item_path) == file_size:
+                if (
+                    os.path.exists(local_item_path)
+                    and os.path.getsize(local_item_path) == file_size
+                ):
                     skipped_count += 1
                     continue
-                
+
                 # Only log every 10th download to reduce noise
                 if downloaded_count % 10 == 0:
-                    logger.info(f"Downloading {remote_item_path} ({file_size} bytes)...")
-                
+                    logger.info(
+                        f"Downloading {remote_item_path} ({file_size} bytes)..."
+                    )
+
                 file_client = share_client.get_file_client(remote_item_path)
                 with open(local_item_path, "wb") as f:
                     data = file_client.download_file()
@@ -668,7 +695,9 @@ def _download_azure_files_directory(share_name, prefix, local_path):
                 downloaded_count += 1
 
     download_directory(prefix.rstrip("/"), local_path)
-    logger.info(f"Download complete: {downloaded_count} files downloaded, {skipped_count} skipped")
+    logger.info(
+        f"Download complete: {downloaded_count} files downloaded, {skipped_count} skipped"
+    )
 
 
 def _download_azure_files_file(share_name, file_path, local_path):
@@ -680,10 +709,14 @@ def _download_azure_files_file(share_name, file_path, local_path):
         local_path: Local destination file path
     """
     if not AZURE_FILES_SDK_AVAILABLE:
-        raise ImportError("azure-storage-file-share is required for Azure Files downloads")
+        raise ImportError(
+            "azure-storage-file-share is required for Azure Files downloads"
+        )
 
     # Suppress Azure SDK logging
-    logging.getLogger("azure.core.pipeline.policies.http_logging_policy").setLevel(logging.WARNING)
+    logging.getLogger("azure.core.pipeline.policies.http_logging_policy").setLevel(
+        logging.WARNING
+    )
     logging.getLogger("azure.storage.fileshare").setLevel(logging.WARNING)
     warnings.filterwarnings("ignore", category=Warning, module="urllib3")
 
@@ -703,17 +736,17 @@ def _download_azure_files_file(share_name, file_path, local_path):
 
     share_client = share_service_client.get_share_client(share_name)
     file_client = share_client.get_file_client(file_path)
-    
+
     logger.info(f"Downloading single file {share_name}/{file_path}")
-    
+
     # Create parent directory if needed
     os.makedirs(os.path.dirname(local_path), exist_ok=True)
-    
+
     # Download file
     with open(local_path, "wb") as f:
         data = file_client.download_file()
         f.write(data.readall())
-    
+
     logger.info(f"Download complete: {local_path}")
 
 
@@ -788,7 +821,10 @@ def download_model_path(model_path, cache_dir=None, ssl_verify=True):
                     # Path like "model.pth" - single file in share root
                     _download_azure_files_file(share_name, prefix, local_path)
         # For Azure Blob paths, use direct Azure SDK (more reliable than fsspec)
-        elif model_path.startswith(("az://", "azblob://", "abfs://")) and AZURE_SDK_AVAILABLE:
+        elif (
+            model_path.startswith(("az://", "azblob://", "abfs://"))
+            and AZURE_SDK_AVAILABLE
+        ):
             logger.info("Using Azure SDK for download (more reliable than fsspec)")
             # Parse container and prefix, handling both azblob formats:
             # 1. azblob://container/prefix/path

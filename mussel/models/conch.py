@@ -8,7 +8,8 @@ import torch
 from torchvision import transforms
 from transformers import AutoModel
 
-from mussel.models.base import IMAGENET_MEAN, IMAGENET_STD, TorchModel, get_best_attn_implementation
+from mussel.models.base import (IMAGENET_MEAN, IMAGENET_STD, TorchModel,
+                                get_best_attn_implementation)
 
 try:
     from mussel.utils.model_cache import model_download_lock
@@ -147,7 +148,9 @@ class TitanSlideEncoderModel(TorchModel):
                 )
             except TypeError:
                 # Fallback for older transformers that don't support attn_implementation
-                model_obj = AutoModel.from_pretrained(model_path, trust_remote_code=True)
+                model_obj = AutoModel.from_pretrained(
+                    model_path, trust_remote_code=True
+                )
         super().__init__(model_path, model_obj, use_gpu, gpu_device_id)
 
     def get_model_fun(self) -> Callable:

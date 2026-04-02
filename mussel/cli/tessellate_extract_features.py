@@ -9,47 +9,35 @@ from typing import Any, Dict, List, Optional
 
 logger = logging.getLogger(__name__)
 
-import h5py
-import torch
-import hydra
-from hydra.conf import HelpConf, HydraConf
-from hydra.core.config_store import ConfigStore
 import multiprocessing
 from collections import defaultdict
-from omegaconf import MISSING, OmegaConf, ListConfig, DictConfig
 
-from mussel.cli.tessellate import (
-    SegConfig,
-    BiopsySegConfig,
-    ResectionSegConfig,
-    TcgaSegConfig,
-    VisConfig,
-    PngConfig,
-)
+import h5py
+import hydra
+import torch
+from hydra.conf import HelpConf, HydraConf
+from hydra.core.config_store import ConfigStore
+from omegaconf import MISSING, DictConfig, ListConfig, OmegaConf
+
+from mussel.cli.tessellate import (BiopsySegConfig, PngConfig,
+                                   ResectionSegConfig, SegConfig,
+                                   TcgaSegConfig, VisConfig)
 from mussel.cli.tessellate_extract_features_common import (
-    process_slide_tessellation_and_filtering,
-    process_slide_tessellation_only,
-    create_visualizations,
-)
-
-from mussel.models import ModelType, get_required_patch_encoder, get_default_patch_size
-from mussel.utils import (
-    aggregate_slide_features_batch,
-    extract_patch_features_batch,
-    get_model_path_from_dir,
-    get_classifier_pkl_from_model_dir,
-    get_batch_size_for_model,
-    resolve_aggregation_method,
-    resolve_patch_encoder,
-    save_torch_tensor,
-    resolve_remote_paths,
-    get_slide_id_from_path,
-    get_slide_ids_from_paths,
-    ensure_directory_exists,
-    is_remote_path,
-    safe_path_join,
-)
-from mussel.utils.file import collect_wsi_paths, WSI_EXTENSIONS
+    create_visualizations, process_slide_tessellation_and_filtering,
+    process_slide_tessellation_only)
+from mussel.models import (ModelType, get_default_patch_size,
+                           get_required_patch_encoder)
+from mussel.utils import (aggregate_slide_features_batch,
+                          ensure_directory_exists,
+                          extract_patch_features_batch,
+                          get_batch_size_for_model,
+                          get_classifier_pkl_from_model_dir,
+                          get_model_path_from_dir, get_slide_id_from_path,
+                          get_slide_ids_from_paths, is_remote_path,
+                          resolve_aggregation_method, resolve_patch_encoder,
+                          resolve_remote_paths, safe_path_join,
+                          save_torch_tensor)
+from mussel.utils.file import WSI_EXTENSIONS, collect_wsi_paths
 
 # Private aliases used throughout this module
 _is_remote_path = is_remote_path
@@ -156,8 +144,10 @@ class TessellateExtractFeaturesConfig:
     # Batch mode parameters
     slide_paths: Optional[List[str]] = None
     slide_ids: Optional[List[str]] = None
-    wsi_dir: Optional[str] = None  # Directory to scan for WSI files (alternative to slide_paths)
-    search_nested: bool = False     # If True, recursively search wsi_dir subdirectories
+    wsi_dir: Optional[str] = (
+        None  # Directory to scan for WSI files (alternative to slide_paths)
+    )
+    search_nested: bool = False  # If True, recursively search wsi_dir subdirectories
     output_dir: Optional[str] = None
     output_h5_suffix: str = "features.h5"
     output_pt_suffix: str = "features.pt"
@@ -191,7 +181,9 @@ class TessellateExtractFeaturesConfig:
     gpu_device_id: Optional[int] = None
     gpu_device_ids: Optional[List[int]] = None
     keep_intermediate_files: bool = False
-    save_features_to_h5: bool = True  # Save final features to .h5 files; if False, only .pt files are saved (but tile_h5 is kept for patch encoders)
+    save_features_to_h5: bool = (
+        True  # Save final features to .h5 files; if False, only .pt files are saved (but tile_h5 is kept for patch encoders)
+    )
     seg_config: SegConfig = MISSING
     vis_config: VisConfig = field(default_factory=VisConfig)
     png_config: PngConfig = field(default_factory=PngConfig)
@@ -416,7 +408,7 @@ def main(
             _main_single(cfg)
 
 
-@resolve_remote_paths('model_dir', 'classifier_pkl', auto_detect=False)
+@resolve_remote_paths("model_dir", "classifier_pkl", auto_detect=False)
 def _main_single(cfg: TessellateExtractFeaturesConfig):
     """Process a single slide."""
     # Check if output_dir is provided instead of output_h5_path/output_pt_path
@@ -429,8 +421,12 @@ def _main_single(cfg: TessellateExtractFeaturesConfig):
         slide_id = get_slide_id_from_path(cfg.slide_path, cfg.slide_id)
 
         # Generate output paths from output_dir
-        cfg.output_h5_path = str(output_dir / "h5" / f"{slide_id}.{cfg.output_h5_suffix}")
-        cfg.output_pt_path = str(output_dir / "pt" / f"{slide_id}.{cfg.output_pt_suffix}")
+        cfg.output_h5_path = str(
+            output_dir / "h5" / f"{slide_id}.{cfg.output_h5_suffix}"
+        )
+        cfg.output_pt_path = str(
+            output_dir / "pt" / f"{slide_id}.{cfg.output_pt_suffix}"
+        )
 
         # Create subdirectories
         ensure_directory_exists(cfg.output_h5_path, is_file_path=True)
@@ -439,7 +435,7 @@ def _main_single(cfg: TessellateExtractFeaturesConfig):
         logger.info(f"Using output_dir: {cfg.output_dir}")
         logger.info(f"Generated output_h5_path: {cfg.output_h5_path}")
         logger.info(f"Generated output_pt_path: {cfg.output_pt_path}")
-    
+
     if (
         cfg.slide_path is None
         or cfg.output_h5_path is None
@@ -458,8 +454,10 @@ def _main_single(cfg: TessellateExtractFeaturesConfig):
         logger.info(f"Using temporary directory for intermediate files: {temp_dir}")
 
     # Resolve classifier_pkl from model_dir if not explicitly provided
-    classifier_pkl = get_classifier_pkl_from_model_dir(cfg.model_dir, cfg.classifier_pkl)
-    
+    classifier_pkl = get_classifier_pkl_from_model_dir(
+        cfg.model_dir, cfg.classifier_pkl
+    )
+
     # Determine if filtering is enabled
     use_filtering = classifier_pkl is not None
 
@@ -488,35 +486,56 @@ def _main_single(cfg: TessellateExtractFeaturesConfig):
             model_type = cfg.prefilter_model_type
 
     # Resolve model paths from model_dir
-    model_path = get_model_path_from_dir(cfg.model_dir, model_type) if model_type else None
+    model_path = (
+        get_model_path_from_dir(cfg.model_dir, model_type) if model_type else None
+    )
     if model_path is None and cfg.model_dir and model_type:
-        logger.info(f"Model {model_type.name} not found in model_dir, will download from HuggingFace")
+        logger.info(
+            f"Model {model_type.name} not found in model_dir, will download from HuggingFace"
+        )
     elif model_path is None and model_type:
-        logger.info(f"No model_dir configured, will download {model_type.name} from HuggingFace")
-    
-    prefilter_model_path = cfg.prefilter_model_path if cfg.prefilter_model_path else (
-        get_model_path_from_dir(cfg.model_dir, cfg.prefilter_model_type) if cfg.prefilter_model_type else None
+        logger.info(
+            f"No model_dir configured, will download {model_type.name} from HuggingFace"
+        )
+
+    prefilter_model_path = (
+        cfg.prefilter_model_path
+        if cfg.prefilter_model_path
+        else (
+            get_model_path_from_dir(cfg.model_dir, cfg.prefilter_model_type)
+            if cfg.prefilter_model_type
+            else None
+        )
     )
     if prefilter_model_path is None and cfg.prefilter_model_type and cfg.model_dir:
-        logger.info(f"Model {cfg.prefilter_model_type.name} not found in model_dir, will download from HuggingFace")
-    elif prefilter_model_path is None and cfg.prefilter_model_type and not cfg.model_dir:
-        logger.info(f"No model_dir configured, will download {cfg.prefilter_model_type.name} from HuggingFace")
+        logger.info(
+            f"Model {cfg.prefilter_model_type.name} not found in model_dir, will download from HuggingFace"
+        )
+    elif (
+        prefilter_model_path is None and cfg.prefilter_model_type and not cfg.model_dir
+    ):
+        logger.info(
+            f"No model_dir configured, will download {cfg.prefilter_model_type.name} from HuggingFace"
+        )
 
     # Resolve slide model path if using model aggregation
     slide_model_path = None
     if cfg.slide_model_type:
         slide_model_path = get_model_path_from_dir(cfg.model_dir, cfg.slide_model_type)
         if slide_model_path is None and cfg.model_dir:
-            logger.info(f"Model {cfg.slide_model_type.name} not found in model_dir, will download from HuggingFace")
+            logger.info(
+                f"Model {cfg.slide_model_type.name} not found in model_dir, will download from HuggingFace"
+            )
             slide_model_path = cfg.slide_model_type.path
         elif slide_model_path is None:
-            logger.info(f"No model_dir configured, will download {cfg.slide_model_type.name} from HuggingFace")
+            logger.info(
+                f"No model_dir configured, will download {cfg.slide_model_type.name} from HuggingFace"
+            )
             slide_model_path = cfg.slide_model_type.path
 
     # Optimization: If filtering is enabled and models are the same, skip second extraction
     models_are_same = (
-        model_type == cfg.prefilter_model_type
-        and model_path == prefilter_model_path
+        model_type == cfg.prefilter_model_type and model_path == prefilter_model_path
     )
     skip_second_extraction = use_filtering and models_are_same
 
@@ -565,7 +584,7 @@ def _main_single(cfg: TessellateExtractFeaturesConfig):
         logger.info("Cleaned up temporary files.")
 
 
-@resolve_remote_paths('model_dir', 'classifier_pkl', auto_detect=False)
+@resolve_remote_paths("model_dir", "classifier_pkl", auto_detect=False)
 def _main_batch(
     cfg: TessellateExtractFeaturesConfig, patch_output_dir: Optional[str] = None
 ):
@@ -603,8 +622,10 @@ def _main_batch(
         logger.info(f"Using temporary directory for intermediate files: {temp_dir}")
 
     # Resolve classifier_pkl from model_dir if not explicitly provided
-    classifier_pkl = get_classifier_pkl_from_model_dir(cfg.model_dir, cfg.classifier_pkl)
-    
+    classifier_pkl = get_classifier_pkl_from_model_dir(
+        cfg.model_dir, cfg.classifier_pkl
+    )
+
     # Determine if filtering is enabled
     use_filtering = classifier_pkl is not None
 
@@ -633,35 +654,56 @@ def _main_batch(
             model_type = cfg.prefilter_model_type
 
     # Resolve model paths from model_dir
-    model_path = get_model_path_from_dir(cfg.model_dir, model_type) if model_type else None
+    model_path = (
+        get_model_path_from_dir(cfg.model_dir, model_type) if model_type else None
+    )
     if model_path is None and cfg.model_dir and model_type:
-        logger.info(f"Model {model_type.name} not found in model_dir, will download from HuggingFace")
+        logger.info(
+            f"Model {model_type.name} not found in model_dir, will download from HuggingFace"
+        )
     elif model_path is None and model_type:
-        logger.info(f"No model_dir configured, will download {model_type.name} from HuggingFace")
-    
-    prefilter_model_path = cfg.prefilter_model_path if cfg.prefilter_model_path else (
-        get_model_path_from_dir(cfg.model_dir, cfg.prefilter_model_type) if cfg.prefilter_model_type else None
+        logger.info(
+            f"No model_dir configured, will download {model_type.name} from HuggingFace"
+        )
+
+    prefilter_model_path = (
+        cfg.prefilter_model_path
+        if cfg.prefilter_model_path
+        else (
+            get_model_path_from_dir(cfg.model_dir, cfg.prefilter_model_type)
+            if cfg.prefilter_model_type
+            else None
+        )
     )
     if prefilter_model_path is None and cfg.prefilter_model_type and cfg.model_dir:
-        logger.info(f"Model {cfg.prefilter_model_type.name} not found in model_dir, will download from HuggingFace")
-    elif prefilter_model_path is None and cfg.prefilter_model_type and not cfg.model_dir:
-        logger.info(f"No model_dir configured, will download {cfg.prefilter_model_type.name} from HuggingFace")
+        logger.info(
+            f"Model {cfg.prefilter_model_type.name} not found in model_dir, will download from HuggingFace"
+        )
+    elif (
+        prefilter_model_path is None and cfg.prefilter_model_type and not cfg.model_dir
+    ):
+        logger.info(
+            f"No model_dir configured, will download {cfg.prefilter_model_type.name} from HuggingFace"
+        )
 
     # Resolve slide model path if using model aggregation
     slide_model_path = None
     if cfg.slide_model_type:
         slide_model_path = get_model_path_from_dir(cfg.model_dir, cfg.slide_model_type)
         if slide_model_path is None and cfg.model_dir:
-            logger.info(f"Model {cfg.slide_model_type.name} not found in model_dir, will download from HuggingFace")
+            logger.info(
+                f"Model {cfg.slide_model_type.name} not found in model_dir, will download from HuggingFace"
+            )
             slide_model_path = cfg.slide_model_type.path
         elif slide_model_path is None:
-            logger.info(f"No model_dir configured, will download {cfg.slide_model_type.name} from HuggingFace")
+            logger.info(
+                f"No model_dir configured, will download {cfg.slide_model_type.name} from HuggingFace"
+            )
             slide_model_path = cfg.slide_model_type.path
 
     # Optimization: If filtering is enabled and models are the same, skip second extraction
     models_are_same = (
-        model_type == cfg.prefilter_model_type
-        and model_path == prefilter_model_path
+        model_type == cfg.prefilter_model_type and model_path == prefilter_model_path
     )
     skip_second_extraction = use_filtering and models_are_same
 
@@ -704,7 +746,9 @@ def _main_batch(
                 continue
         except Exception as e:
             logger.error(f"Error processing slide {slide_id}: {e}")
-            logger.warning(f"Skipping slide {slide_id} and continuing with remaining slides")
+            logger.warning(
+                f"Skipping slide {slide_id} and continuing with remaining slides"
+            )
             continue
 
         # Add output paths to result
@@ -750,7 +794,9 @@ def _main_batch(
     # If a slide model is specified, force two-step processing with model aggregation
     aggregation_method = cfg.aggregation_method
     if cfg.slide_model_type is not None and aggregation_method == "identity":
-        logger.info(f"Auto-enabling two-step processing with aggregation_method='model' for slide_model_type={cfg.slide_model_type.name}")
+        logger.info(
+            f"Auto-enabling two-step processing with aggregation_method='model' for slide_model_type={cfg.slide_model_type.name}"
+        )
         aggregation_method = "model"
 
     use_two_step = aggregation_method != "identity"
@@ -802,7 +848,11 @@ def _main_batch(
             )
 
             # Create h5 and pt subdirectories if they're local paths
-            subdirs = ["tile_h5", "pt"] if not cfg.save_features_to_h5 else ["tile_h5", "h5", "pt"]
+            subdirs = (
+                ["tile_h5", "pt"]
+                if not cfg.save_features_to_h5
+                else ["tile_h5", "h5", "pt"]
+            )
             for subdir in subdirs:
                 subdir_path = _safe_path_join(patch_output_dir_str, subdir)
                 if not _is_remote_path(subdir_path):
@@ -812,7 +862,7 @@ def _main_batch(
             # No aggregation needed since they already contain tile-level features
             for i, r in enumerate(slide_results):
                 intermediate_h5_path = intermediate_h5_paths[i]
-                
+
                 # Copy tile_h5 file (only if source and destination are different)
                 tile_h5_dest = _safe_path_join(
                     patch_output_dir_str,
@@ -825,13 +875,17 @@ def _main_batch(
                     if _is_remote_path(intermediate_h5_path):
                         same_path = intermediate_h5_path == tile_h5_dest
                     else:
-                        same_path = os.path.abspath(intermediate_h5_path) == os.path.abspath(tile_h5_dest)
+                        same_path = os.path.abspath(
+                            intermediate_h5_path
+                        ) == os.path.abspath(tile_h5_dest)
                     if not same_path:
                         shutil.copy2(intermediate_h5_path, tile_h5_dest)
                         logger.debug(f"Copied tile features to {tile_h5_dest}")
                     else:
-                        logger.debug(f"Tile features already at destination: {tile_h5_dest}")
-                
+                        logger.debug(
+                            f"Tile features already at destination: {tile_h5_dest}"
+                        )
+
                 # Extract and save PT file
                 pt_dest = _safe_path_join(
                     patch_output_dir_str,
@@ -842,7 +896,7 @@ def _main_batch(
                     features = torch.from_numpy(f["features"][:])
                 save_torch_tensor(pt_dest, features, ssl_verify=cfg.ssl_verify)
                 logger.debug(f"Saved PT features to {pt_dest}")
-                
+
                 # Optionally copy/create h5 file with features
                 if cfg.save_features_to_h5:
                     h5_dest = _safe_path_join(
@@ -860,7 +914,9 @@ def _main_batch(
                         "tile_h5",
                         f"{r['slide_id']}.patch.h5",
                     )
-                    if tile_h5_dest not in h5_files_to_strip and not _is_remote_path(tile_h5_dest):
+                    if tile_h5_dest not in h5_files_to_strip and not _is_remote_path(
+                        tile_h5_dest
+                    ):
                         h5_files_to_strip.append(tile_h5_dest)
 
         # Phase 3: Batch aggregate to slide level OR copy patch features for tile encoders
@@ -871,17 +927,17 @@ def _main_batch(
                 f"\n=== Phase 3: Copying tile features to slide output (tile encoder) ==="
             )
             logger.info(f"Patch encoder: {model_type.name}")
-            
+
             for i, r in enumerate(slide_results):
                 intermediate_h5_path = intermediate_h5_paths[i]
-                
+
                 # Copy h5 file if save_features_to_h5 is enabled
                 if cfg.save_features_to_h5:
                     h5_dest = r["output_h5_path"]
                     if not _is_remote_path(h5_dest):
                         shutil.copy2(intermediate_h5_path, h5_dest)
                         logger.debug(f"Copied h5 to {h5_dest}")
-                
+
                 # Copy PT file
                 pt_dest = r["output_pt_path"]
                 with h5py.File(intermediate_h5_path, "r") as f:
@@ -890,9 +946,15 @@ def _main_batch(
                 logger.debug(f"Saved PT to {pt_dest}")
         elif aggregation_method == "model" and cfg.slide_model_type is None:
             # aggregation_method=model requires a slide_model_type
-            logger.error(f"aggregation_method='model' requires slide_model_type to be specified")
-            logger.error(f"Current model_type={model_type.name} is a tile encoder, not a slide encoder")
-            logger.error(f"Either specify a slide_model_type or use aggregation_method='mean'/'max'")
+            logger.error(
+                f"aggregation_method='model' requires slide_model_type to be specified"
+            )
+            logger.error(
+                f"Current model_type={model_type.name} is a tile encoder, not a slide encoder"
+            )
+            logger.error(
+                f"Either specify a slide_model_type or use aggregation_method='mean'/'max'"
+            )
             raise ValueError(
                 f"aggregation_method='model' requires slide_model_type. "
                 f"Current model_type={model_type.name} cannot be used for slide-level aggregation."
@@ -908,7 +970,11 @@ def _main_batch(
             logger.info(f"Slide batch size: {cfg.slide_batch_size}")
 
             # Skip H5 output if save_features_to_h5=false mode is enabled
-            output_h5_paths = None if not cfg.save_features_to_h5 else [r["output_h5_path"] for r in slide_results]
+            output_h5_paths = (
+                None
+                if not cfg.save_features_to_h5
+                else [r["output_h5_path"] for r in slide_results]
+            )
             output_pt_paths = [r["output_pt_path"] for r in slide_results]
 
             try:
@@ -928,11 +994,13 @@ def _main_batch(
             except Exception as e:
                 logger.error(f"Error during batch aggregation: {e}")
                 logger.warning("Continuing with available results...")
-        
+
         # If save_features_to_h5=false, strip features from all tracked h5 files (keep coords only)
         # This must be done AFTER aggregation since aggregation needs the features
         if not cfg.save_features_to_h5 and h5_files_to_strip:
-            logger.info(f"Converting {len(h5_files_to_strip)} h5 files to coords-only (save_features_to_h5=false)")
+            logger.info(
+                f"Converting {len(h5_files_to_strip)} h5 files to coords-only (save_features_to_h5=false)"
+            )
             for h5_path in h5_files_to_strip:
                 try:
                     if not os.path.exists(h5_path):
@@ -961,7 +1029,7 @@ def _main_batch(
         # Single-step: extract directly to final output (no aggregation)
         logger.info(f"\n=== Single-step extraction: {model_type.name} ===")
         logger.info(f"Batch size: {get_batch_size_for_model(cfg, model_type)}")
-        
+
         if not cfg.save_features_to_h5:
             # save_features_to_h5=false mode: extract to temp, save PT + coords-only H5
             temp_h5_dir = tempfile.mkdtemp()
@@ -969,12 +1037,12 @@ def _main_batch(
                 os.path.join(temp_h5_dir, f"{r['slide_id']}.features.h5")
                 for r in slide_results
             ]
-            
+
             # Create tile_h5 subdirectory for coords-only H5 files
             tile_h5_dir = _safe_path_join(output_dir_str, "tile_h5")
             if not _is_remote_path(tile_h5_dir):
                 ensure_directory_exists(tile_h5_dir)
-            
+
             coords_h5_paths = [
                 _safe_path_join(output_dir_str, "tile_h5", f"{r['slide_id']}.patch.h5")
                 for r in slide_results
@@ -1012,18 +1080,22 @@ def _main_batch(
         for i, r in enumerate(slide_results):
             with h5py.File(temp_output_h5_paths[i], "r") as f:
                 features = torch.from_numpy(f["features"][:])
-                save_torch_tensor(r["output_pt_path"], features, ssl_verify=cfg.ssl_verify)
+                save_torch_tensor(
+                    r["output_pt_path"], features, ssl_verify=cfg.ssl_verify
+                )
 
                 # Always create coords-only H5 in batch mode for downstream processes
                 coords = f["coords"][:]
                 with h5py.File(coords_h5_paths[i], "w") as f_out:
                     f_out.create_dataset("coords", data=coords, compression="gzip")
                     logger.debug(f"Saved coords-only H5 to {coords_h5_paths[i]}")
-        
+
         # Clean up temp H5 files if save_features_to_h5=false
         if not cfg.save_features_to_h5:
             shutil.rmtree(temp_h5_dir)
-            logger.info("Cleaned up temporary H5 files (save_features_to_h5=false mode)")
+            logger.info(
+                "Cleaned up temporary H5 files (save_features_to_h5=false mode)"
+            )
 
     # Phase 4: Create visualizations
     logger.info(f"\n=== Phase 4: Creating visualizations ===")
@@ -1069,7 +1141,7 @@ def _main_batch(
     logger.info(f"Output directory: {cfg.output_dir}")
 
 
-@resolve_remote_paths('model_dir', 'classifier_pkl', auto_detect=False)
+@resolve_remote_paths("model_dir", "classifier_pkl", auto_detect=False)
 def _main_batch_multi_model(cfg: TessellateExtractFeaturesConfig):
     """Process multiple slides with multiple models, optimized by grouping models with same patch size."""
     if cfg.slide_paths is None or cfg.output_dir is None:
@@ -1164,7 +1236,7 @@ def _main_batch_multi_model(cfg: TessellateExtractFeaturesConfig):
             logger.info(f"Processing patch model: {model.name}")
             logger.info(f"Patch size: {patch_size}px")
             logger.info(f"{'=' * 60}")
-            
+
             try:
                 cfg_copy.model_type = model
                 cfg_copy.slide_model_type = None
@@ -1188,13 +1260,15 @@ def _main_batch_multi_model(cfg: TessellateExtractFeaturesConfig):
                 _main_batch(cfg_copy)
             except Exception as e:
                 logger.error(f"Error processing patch model {model.name}: {e}")
-                logger.warning(f"Skipping model {model.name} and continuing with remaining models")
+                logger.warning(
+                    f"Skipping model {model.name} and continuing with remaining models"
+                )
 
         # Process slide-level models (with slide batching!)
         for model in group["slide"]:
             logger.info(f"\n{'=' * 60}")
             logger.info(f"Processing slide model: {model.name}")
-            
+
             try:
                 # Infer required patch encoder
                 patch_encoder = get_required_patch_encoder(model)
@@ -1218,7 +1292,9 @@ def _main_batch_multi_model(cfg: TessellateExtractFeaturesConfig):
                 _main_batch(cfg_copy, patch_output_dir=patch_output_dir)
             except Exception as e:
                 logger.error(f"Error processing slide model {model.name}: {e}")
-                logger.warning(f"Skipping model {model.name} and continuing with remaining models")
+                logger.warning(
+                    f"Skipping model {model.name} and continuing with remaining models"
+                )
 
     logger.info(f"\n{'=' * 80}")
     logger.info(f"Multi-model batch processing complete!")
@@ -1240,7 +1316,9 @@ def _main_single_multi_model(cfg: TessellateExtractFeaturesConfig):
     elif cfg.output_dir:
         cfg_batch.output_dir = str(cfg.output_dir)
     else:
-        raise ValueError("Single-slide multi-model mode requires output_h5_path or output_dir")
+        raise ValueError(
+            "Single-slide multi-model mode requires output_h5_path or output_dir"
+        )
 
     _main_batch_multi_model(cfg_batch)
 

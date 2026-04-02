@@ -117,5 +117,7 @@ class H0MiniModel(TorchModel):
         return _bioptimus_preprocessing()
 
     def _forward(self, x: torch.Tensor) -> torch.Tensor:
-        out = self.obj(x)  # (N, num_tokens, embed_dim) — global_pool='' returns all tokens
-        return out[:, 0]   # CLS token -> (N, embed_dim)
+        out = self.obj(
+            x
+        )  # (N, num_tokens, embed_dim) — global_pool='' returns all tokens
+        return out[:, 0]  # CLS token -> (N, embed_dim)

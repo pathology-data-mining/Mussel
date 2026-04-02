@@ -81,11 +81,16 @@ def test_tensorflow_patch_encoder_extracts_features(tmp_path, model_type, use_gp
 
     n, d = features.shape
     assert n > 0, f"{model_type.name}: expected at least one patch, got 0"
-    assert np.all(np.isfinite(features)), f"{model_type.name}: features contain NaN or Inf"
+    assert np.all(
+        np.isfinite(features)
+    ), f"{model_type.name}: features contain NaN or Inf"
     assert not np.all(features == 0), f"{model_type.name}: all features are zero"
-    assert coords.shape == (n, 2), f"{model_type.name}: coords shape {coords.shape} != ({n}, 2)"
+    assert coords.shape == (
+        n,
+        2,
+    ), f"{model_type.name}: coords shape {coords.shape} != ({n}, 2)"
 
     if model_type in _EXPECTED_DIM:
-        assert d == _EXPECTED_DIM[model_type], (
-            f"{model_type.name}: expected dim {_EXPECTED_DIM[model_type]}, got {d}"
-        )
+        assert (
+            d == _EXPECTED_DIM[model_type]
+        ), f"{model_type.name}: expected dim {_EXPECTED_DIM[model_type]}, got {d}"

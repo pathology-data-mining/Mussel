@@ -7,12 +7,13 @@ downloaded weights are required.  Tests verify:
   - get_model_fun() calls the underlying model with the right inputs and
     returns a CPU tensor with the expected shape
 """
+
 import inspect
+from unittest.mock import MagicMock, PropertyMock, patch
 
 import pytest
 import torch
 import torch.nn as nn
-from unittest.mock import MagicMock, patch, PropertyMock
 from torchvision import transforms
 
 import mussel.models  # noqa: F401  # triggers all @register_model decorators
@@ -24,7 +25,8 @@ from mussel.models.gpfm import GPFMModel
 from mussel.models.hibou import HibouLModel
 from mussel.models.madeleine import MadeleineSlideEncoderModel
 from mussel.models.midnight import Midnight12kModel
-from mussel.models.model_factory import MODEL_FACTORIES, MODEL_PATCH_SIZES, ModelType
+from mussel.models.model_factory import (MODEL_FACTORIES, MODEL_PATCH_SIZES,
+                                         ModelType)
 from mussel.models.optimus import H0MiniModel, HOptimus1Model, OptimusModel
 from mussel.models.phikon import PhikonModel, PhikonV2Model
 from mussel.models.prism import PRISMSlideEncoderModel
@@ -64,6 +66,7 @@ _MODEL_CLASSES = {
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _make_model(cls, obj, device=None, use_gpu=False):
     """Create a model instance without calling __init__."""
     instance = cls.__new__(cls)
@@ -92,6 +95,7 @@ def _simple_patch_img(size=224):
 # ---------------------------------------------------------------------------
 # Patch encoder – preprocessing: custom Compose transforms
 # ---------------------------------------------------------------------------
+
 
 class TestOptimusModelPreprocessing:
     """OptimusModel (H-Optimus-0) uses custom Compose with its own normalisation."""
@@ -147,6 +151,7 @@ class TestConch15ModelPreprocessing:
 # Patch encoders – preprocessing via timm resolve_data_config
 # ---------------------------------------------------------------------------
 
+
 def _timm_prep_model():
     """Return a MagicMock with a pretrained_cfg attribute."""
     model_mock = MagicMock()
@@ -154,7 +159,13 @@ def _timm_prep_model():
     return model_mock
 
 
-_TIMM_CFG = {"input_size": (3, 224, 224), "mean": (0.485, 0.456, 0.406), "std": (0.229, 0.224, 0.225), "interpolation": "bicubic", "crop_pct": 0.875}
+_TIMM_CFG = {
+    "input_size": (3, 224, 224),
+    "mean": (0.485, 0.456, 0.406),
+    "std": (0.229, 0.224, 0.225),
+    "interpolation": "bicubic",
+    "crop_pct": 0.875,
+}
 
 
 class TestTimmBasedPreprocessing:
@@ -162,8 +173,14 @@ class TestTimmBasedPreprocessing:
 
     def _assert_prep_callable(self, cls, module_path="mussel.models.base"):
         fake_transform = transforms.Compose([transforms.ToTensor()])
-        with patch(f"{module_path}.resolve_data_config", return_value=_TIMM_CFG) as mock_resolve, \
-             patch(f"{module_path}.create_transform", return_value=fake_transform) as mock_create:
+        with (
+            patch(
+                f"{module_path}.resolve_data_config", return_value=_TIMM_CFG
+            ) as mock_resolve,
+            patch(
+                f"{module_path}.create_transform", return_value=fake_transform
+            ) as mock_create,
+        ):
             m = _make_model(cls, _timm_prep_model())
             prep = m.get_preprocessing_fun()
             assert callable(prep)
@@ -214,6 +231,7 @@ class TestTimmBasedPreprocessing:
 # Patch encoder – HibouLModel (custom preprocessing via AutoImageProcessor)
 # ---------------------------------------------------------------------------
 
+
 class TestHibouLModelPreprocessing:
     def test_preprocessing_callable(self):
         processor = MagicMock()
@@ -239,6 +257,7 @@ class TestHibouLModelPreprocessing:
 # Patch encoder – ClipModel (preprocessing stored in self.preprocessing)
 # ---------------------------------------------------------------------------
 
+
 class TestClipModelPreprocessing:
     def test_preprocessing_returns_stored_transform(self):
         m = _make_model(ClipModel, MagicMock())
@@ -251,11 +270,15 @@ class TestClipModelPreprocessing:
 # Slide encoders – preprocessing returns None
 # ---------------------------------------------------------------------------
 
-@pytest.mark.parametrize("cls_name", [
-    "PRISMSlideEncoderModel",
-    "FeatherSlideEncoderModel",
-    "MadeleineSlideEncoderModel",
-])
+
+@pytest.mark.parametrize(
+    "cls_name",
+    [
+        "PRISMSlideEncoderModel",
+        "FeatherSlideEncoderModel",
+        "MadeleineSlideEncoderModel",
+    ],
+)
 def test_slide_encoder_preprocessing_is_none(cls_name):
     cls = _MODEL_CLASSES[cls_name]
     m = _make_model(cls, MagicMock())
@@ -276,17 +299,21 @@ def test_titan_slide_preprocessing_is_none():
 # Patch encoder – model_fun: standard TorchModel (returns self.obj(x).cpu())
 # ---------------------------------------------------------------------------
 
-@pytest.mark.parametrize("cls_name,embed_dim", [
-    ("ResnetModel", 1024),
-    ("UniModel", 1024),
-    ("Uni2Model", 1536),
-    ("OptimusModel", 768),
-    ("HOptimus1Model", 1024),
-    ("H0MiniModel", 512),
-    ("GPFMModel", 1024),
-    ("GigapathModel", 1536),
-    ("TransPathModel", 768),
-])
+
+@pytest.mark.parametrize(
+    "cls_name,embed_dim",
+    [
+        ("ResnetModel", 1024),
+        ("UniModel", 1024),
+        ("Uni2Model", 1536),
+        ("OptimusModel", 768),
+        ("HOptimus1Model", 1024),
+        ("H0MiniModel", 512),
+        ("GPFMModel", 1024),
+        ("GigapathModel", 1536),
+        ("TransPathModel", 768),
+    ],
+)
 def test_standard_patch_encoder_model_fun(cls_name, embed_dim):
     """Standard TorchModel.get_model_fun() returns self.obj(x).cpu()."""
     cls = _MODEL_CLASSES[cls_name]
@@ -306,11 +333,15 @@ def test_standard_patch_encoder_model_fun(cls_name, embed_dim):
 # These models use AutoModel and their get_model_fun extracts last_hidden_state[:,0]
 # ---------------------------------------------------------------------------
 
-@pytest.mark.parametrize("cls_name,embed_dim", [
-    ("PhikonModel", 768),
-    ("PhikonV2Model", 1024),
-    ("Midnight12kModel", 1536),
-])
+
+@pytest.mark.parametrize(
+    "cls_name,embed_dim",
+    [
+        ("PhikonModel", 768),
+        ("PhikonV2Model", 1024),
+        ("Midnight12kModel", 1536),
+    ],
+)
 def test_transformers_patch_encoder_model_fun(cls_name, embed_dim):
     """PhikonModel / Midnight12kModel return last_hidden_state[:, 0] (CLS token)."""
     cls = _MODEL_CLASSES[cls_name]
@@ -326,14 +357,16 @@ def test_transformers_patch_encoder_model_fun(cls_name, embed_dim):
     x = _simple_patch_img()
     result = model_fun(x)
     assert result.device.type == "cpu"
-    assert result.shape == (batch_size, embed_dim), (
-        f"{cls_name}: expected ({batch_size}, {embed_dim}), got {tuple(result.shape)}"
-    )
+    assert result.shape == (
+        batch_size,
+        embed_dim,
+    ), f"{cls_name}: expected ({batch_size}, {embed_dim}), got {tuple(result.shape)}"
 
 
 # ---------------------------------------------------------------------------
 # VirchowModel – model_fun concatenates CLS + avg patch tokens
 # ---------------------------------------------------------------------------
+
 
 class TestVirchowModelFun:
     def _run(self, cls, embed_dim=1280):
@@ -360,6 +393,7 @@ class TestVirchowModelFun:
 # ---------------------------------------------------------------------------
 # HibouLModel – model_fun extracts CLS token from last_hidden_state
 # ---------------------------------------------------------------------------
+
 
 class TestHibouLModelFun:
     def test_model_fun_returns_cls_token(self):
@@ -393,6 +427,7 @@ class TestHibouLModelFun:
 # ---------------------------------------------------------------------------
 # Slide encoders – model_fun
 # ---------------------------------------------------------------------------
+
 
 class TestPRISMSlideEncoderModelFun:
     def test_calls_encode_slide_and_squeezes(self):
@@ -442,11 +477,15 @@ class TestMadeleineSlideEncoderModelFun:
 # Slide encoders – save() raises ValueError for file paths
 # ---------------------------------------------------------------------------
 
-@pytest.mark.parametrize("cls_name", [
-    "PRISMSlideEncoderModel",
-    "FeatherSlideEncoderModel",
-    "MadeleineSlideEncoderModel",
-])
+
+@pytest.mark.parametrize(
+    "cls_name",
+    [
+        "PRISMSlideEncoderModel",
+        "FeatherSlideEncoderModel",
+        "MadeleineSlideEncoderModel",
+    ],
+)
 def test_slide_encoder_save_rejects_file_extension(cls_name, tmp_path):
     cls = _MODEL_CLASSES[cls_name]
     m = _make_model(cls, MagicMock())
@@ -457,6 +496,7 @@ def test_slide_encoder_save_rejects_file_extension(cls_name, tmp_path):
 # ---------------------------------------------------------------------------
 # OptimusModel class-level correctness (was orphaned bug)
 # ---------------------------------------------------------------------------
+
 
 class TestOptimusModelClassIntegrity:
     def test_optimus_model_exists(self):
@@ -479,6 +519,7 @@ class TestOptimusModelClassIntegrity:
 # ---------------------------------------------------------------------------
 # All 24 model types have a factory and a patch size
 # ---------------------------------------------------------------------------
+
 
 def test_all_model_types_have_factory():
     for mt in ModelType:

@@ -30,6 +30,7 @@ if _SYSTEM in ("Linux", "Darwin", "FreeBSD", "OpenBSD"):
     # Unix-like systems
     try:
         import fcntl
+
         _HAS_FCNTL = True
     except ImportError:
         logger.warning("fcntl not available on this system, file locking disabled")
@@ -37,6 +38,7 @@ elif _SYSTEM == "Windows":
     # Windows systems
     try:
         import msvcrt
+
         _HAS_MSVCRT = True
     except ImportError:
         logger.warning("msvcrt not available on Windows, file locking disabled")
@@ -50,11 +52,11 @@ else:
 def _acquire_lock(file_handle, blocking=True):
     """
     Acquire an exclusive lock on a file (cross-platform).
-    
+
     Args:
         file_handle: Open file object
         blocking: If True, wait for lock. If False, raise if unavailable.
-    
+
     Raises:
         BlockingIOError: If non-blocking and lock unavailable
     """
@@ -71,7 +73,10 @@ def _acquire_lock(file_handle, blocking=True):
             msvcrt.locking(file_handle.fileno(), mode, 1)
         except OSError as e:
             # msvcrt raises OSError for lock conflicts, convert to BlockingIOError
-            if not blocking and e.errno in (13, 33):  # Permission denied, lock violation
+            if not blocking and e.errno in (
+                13,
+                33,
+            ):  # Permission denied, lock violation
                 raise BlockingIOError("Lock is held by another process") from e
             raise
     else:
@@ -87,7 +92,7 @@ def _acquire_lock(file_handle, blocking=True):
 def _release_lock(file_handle):
     """
     Release an exclusive lock on a file (cross-platform).
-    
+
     Args:
         file_handle: Open file object
     """
@@ -107,7 +112,7 @@ def model_download_lock(
 
     This ensures that when multiple processes try to download the same model,
     only one actually performs the download while others wait.
-    
+
     Cross-platform support:
     - Unix/Linux/macOS: Uses fcntl for robust file locking
     - Windows: Uses msvcrt for file locking
@@ -130,8 +135,8 @@ def model_download_lock(
     # Determine cache directory
     if cache_dir is None:
         cache_dir = (
-            os.environ.get("HF_HOME") 
-            or os.environ.get("TRANSFORMERS_CACHE") 
+            os.environ.get("HF_HOME")
+            or os.environ.get("TRANSFORMERS_CACHE")
             or os.environ.get("TMPDIR")
             or "/tmp"
         )

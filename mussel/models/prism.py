@@ -44,7 +44,7 @@ class PRISMSlideEncoderModel(TorchModel):
         if model_path is None:
             model_path = ModelType.PRISM_SLIDE.path
         if model_path.startswith("hf-hub:"):
-            hf_path = model_path[len("hf-hub:"):]
+            hf_path = model_path[len("hf-hub:") :]
         else:
             hf_path = model_path
         model_obj = None

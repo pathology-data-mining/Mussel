@@ -22,9 +22,7 @@ sys.path.insert(0, str(REPO))
 from mussel.models.model_factory import ModelType
 from mussel.utils.feature_extract import extract_patch_features
 
-REF_PATCH_H5 = Path(
-    "/gpfs/cdsi_ess/foundation/reef/filter_tiles/9481/948176.patch.h5"
-)
+REF_PATCH_H5 = Path("/gpfs/cdsi_ess/foundation/reef/filter_tiles/9481/948176.patch.h5")
 SLIDE_PATH = REPO / "tests/testdata/948176.svs"
 
 MODELS = [
@@ -34,7 +32,9 @@ MODELS = [
     ),
     (
         ModelType.CTRANSPATH,
-        Path("/gpfs/cdsi_ess/foundation/reef/features/ctranspath/9481/948176.features.pt"),
+        Path(
+            "/gpfs/cdsi_ess/foundation/reef/features/ctranspath/9481/948176.features.pt"
+        ),
     ),
 ]
 
@@ -92,7 +92,9 @@ def _run_model(model_type: ModelType, ref_feat_path: Path) -> dict:
     close_tight = np.allclose(mussel_feats, ref_feats, rtol=1e-3, atol=1e-4)
     close_loose = np.allclose(mussel_feats, ref_feats, rtol=1e-2, atol=1e-3)
 
-    print(f"  Cosine sim:  mean={cos.mean():.6f}  min={cos.min():.6f}  p5={np.percentile(cos, 5):.6f}")
+    print(
+        f"  Cosine sim:  mean={cos.mean():.6f}  min={cos.min():.6f}  p5={np.percentile(cos, 5):.6f}"
+    )
     print(f"  L2 distance: mean={l2.mean():.5f}  max={l2.max():.5f}")
     print(f"  Max abs diff: {max_absdiff:.6f}")
     print(f"  allclose(rtol=1e-3, atol=1e-4): {close_tight}")
@@ -137,7 +139,9 @@ def main():
     for r in results:
         status_sym = {"PASS": "✅", "WARN": "⚠️", "FAIL": "❌"}.get(r["status"], "❓")
         cos = r.get("cos_mean", float("nan"))
-        print(f"  {status_sym} {r['model']:20s}  cos_mean={cos:.6f}  status={r['status']}")
+        print(
+            f"  {status_sym} {r['model']:20s}  cos_mean={cos:.6f}  status={r['status']}"
+        )
         if r["status"] not in ("PASS", "WARN"):
             all_pass = False
 

@@ -1,30 +1,27 @@
+import logging
 import os
 import ssl
-import logging
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, List, Optional
 
 import h5py
+import hydra
 import numpy as np
 import torch
-from torch.utils.data import DataLoader
-import hydra
 from hydra.conf import HelpConf, HydraConf
 from hydra.core.config_store import ConfigStore
 from omegaconf import MISSING
+from torch.utils.data import DataLoader
 from tqdm import tqdm
 
 from mussel.datasets import WholeSlideImageTileCoordDataset
 from mussel.models import ModelType, get_model_factory
-from mussel.utils import (
-    save_features,
-    extract_patch_features_batch,
-    aggregate_slide_features_batch,
-    resolve_remote_paths,
-    get_slide_ids_from_paths,
-    ensure_directory_exists,
-)
+from mussel.utils import (aggregate_slide_features_batch,
+                          ensure_directory_exists,
+                          extract_patch_features_batch,
+                          get_slide_ids_from_paths, resolve_remote_paths,
+                          save_features)
 from mussel.utils.file import save_hdf5, save_torch_tensor
 from mussel.utils.ml import collate_features
 
@@ -190,11 +187,15 @@ def main(cfg: ExtractFeaturesConfig):
 @resolve_remote_paths()
 def _main_single(cfg: ExtractFeaturesConfig):
     """Process a single slide."""
-    if cfg.patch_h5_path is None or cfg.slide_path is None or cfg.output_h5_path is None:
+    if (
+        cfg.patch_h5_path is None
+        or cfg.slide_path is None
+        or cfg.output_h5_path is None
+    ):
         raise ValueError(
             "Single-slide mode requires patch_h5_path, slide_path, and output_h5_path to be specified"
         )
-    
+
     save_features(
         slide_path=cfg.slide_path,
         gpu_device_id=cfg.gpu_device_id,
@@ -224,43 +225,46 @@ def _main_batch(cfg: ExtractFeaturesConfig):
         raise ValueError(
             "Batch mode requires patch_h5_paths, slide_paths, and output_dir to be specified"
         )
-    
+
     # Create output directory
     output_dir = Path(cfg.output_dir)
     ensure_directory_exists(output_dir)
-    
+
     # Generate slide IDs if not provided
     slide_ids = get_slide_ids_from_paths(cfg.slide_paths, cfg.slide_ids)
-    
+
     # Validate input lengths
     if not (len(cfg.patch_h5_paths) == len(cfg.slide_paths)):
         raise ValueError(
             f"patch_h5_paths and slide_paths must have the same length: "
             f"patch_h5_paths={len(cfg.patch_h5_paths)}, slide_paths={len(cfg.slide_paths)}"
         )
-    
+
     if slide_ids and len(slide_ids) != len(cfg.slide_paths):
         raise ValueError(
             f"slide_ids must have the same length as slide_paths: "
             f"slide_ids={len(slide_ids)}, slide_paths={len(cfg.slide_paths)}"
         )
-    
+
     # Prepare output paths
-    output_h5_paths = [str(output_dir / f"{slide_id}.{cfg.output_h5_suffix}") for slide_id in slide_ids]
-    output_pt_paths = [str(output_dir / f"{slide_id}.{cfg.output_pt_suffix}") for slide_id in slide_ids]
-    
+    output_h5_paths = [
+        str(output_dir / f"{slide_id}.{cfg.output_h5_suffix}") for slide_id in slide_ids
+    ]
+    output_pt_paths = [
+        str(output_dir / f"{slide_id}.{cfg.output_pt_suffix}") for slide_id in slide_ids
+    ]
+
     # Check if we need two-step processing
     use_two_step = cfg.aggregation_method != "identity"
-    
+
     logger.info(f"Batch extracting features for {len(cfg.slide_paths)} slides")
-    
+
     if use_two_step:
         # Extract to intermediate patch feature files for later aggregation
         intermediate_h5_paths = [
-            str(output_dir / f"{slide_id}.patch.h5") 
-            for slide_id in slide_ids
+            str(output_dir / f"{slide_id}.patch.h5") for slide_id in slide_ids
         ]
-        
+
         extract_patch_features_batch(
             patch_h5_paths=cfg.patch_h5_paths,
             slide_paths=cfg.slide_paths,
@@ -276,9 +280,11 @@ def _main_batch(cfg: ExtractFeaturesConfig):
             pin_memory=True,
             is_test_run=cfg.is_test_run,
         )
-        
+
         # Aggregate to slide level using batch processing
-        logger.info(f"Batch aggregating {len(cfg.slide_paths)} slides with aggregation_method={cfg.aggregation_method}")
+        logger.info(
+            f"Batch aggregating {len(cfg.slide_paths)} slides with aggregation_method={cfg.aggregation_method}"
+        )
         aggregate_slide_features_batch(
             patch_features_h5_paths=intermediate_h5_paths,
             output_h5_paths=output_h5_paths,
@@ -309,13 +315,13 @@ def _main_batch(cfg: ExtractFeaturesConfig):
             pin_memory=True,
             is_test_run=cfg.is_test_run,
         )
-        
+
         # Save as PT format for consistency
         for output_h5, output_pt in zip(output_h5_paths, output_pt_paths):
             with h5py.File(output_h5, "r") as f:
                 features = torch.from_numpy(f["features"][:])
                 torch.save(features, output_pt)
-    
+
     logger.info(f"Batch processing complete. Output saved to {output_dir}")
 
 

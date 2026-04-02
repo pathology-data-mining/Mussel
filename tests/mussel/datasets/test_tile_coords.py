@@ -1,14 +1,14 @@
 """Test that WholeSlideImageTileCoordDataset produces equivalent outputs to WholeSlideImageH5Dataset."""
 
+from pathlib import Path
+
 import h5py
 import numpy as np
 import pytest
 import torch
-from pathlib import Path
 
 from mussel.datasets.h5 import WholeSlideImageH5Dataset
 from mussel.datasets.tile_coords import WholeSlideImageTileCoordDataset
-
 
 TESTDATA_DIR = Path(__file__).parent.parent.parent / "testdata"
 H5_PATH = TESTDATA_DIR / "948176.patch.h5"
@@ -40,7 +40,9 @@ def tile_coord_dataset():
         attrs = {
             "patch_size": f["coords"].attrs["patch_size"],
             "patch_level": f["coords"].attrs["patch_level"],
-            "patch_size_to_resize_to_for_desired_mpp": f["coords"].attrs["patch_size_to_resize_to_for_desired_mpp"],
+            "patch_size_to_resize_to_for_desired_mpp": f["coords"].attrs[
+                "patch_size_to_resize_to_for_desired_mpp"
+            ],
         }
 
     return WholeSlideImageTileCoordDataset(
@@ -86,14 +88,12 @@ def test_datasets_return_identical_tiles(h5_dataset, tile_coord_dataset):
 
         # Coordinates should be identical
         np.testing.assert_array_equal(
-            h5_coord, tc_coord,
-            err_msg=f"Coordinates differ at index {idx}"
+            h5_coord, tc_coord, err_msg=f"Coordinates differ at index {idx}"
         )
 
         # Image tensors should be identical
         torch.testing.assert_close(
-            h5_img, tc_img,
-            msg=f"Image tensors differ at index {idx}"
+            h5_img, tc_img, msg=f"Image tensors differ at index {idx}"
         )
 
 
@@ -110,7 +110,9 @@ def test_datasets_with_limit_to_indices(h5_dataset, tile_coord_dataset):
         attrs = {
             "patch_size": f["coords"].attrs["patch_size"],
             "patch_level": f["coords"].attrs["patch_level"],
-            "patch_size_to_resize_to_for_desired_mpp": f["coords"].attrs["patch_size_to_resize_to_for_desired_mpp"],
+            "patch_size_to_resize_to_for_desired_mpp": f["coords"].attrs[
+                "patch_size_to_resize_to_for_desired_mpp"
+            ],
         }
 
     h5_limited = WholeSlideImageH5Dataset(
@@ -153,7 +155,9 @@ def test_datasets_without_imagenet_normalization():
         attrs = {
             "patch_size": f["coords"].attrs["patch_size"],
             "patch_level": f["coords"].attrs["patch_level"],
-            "patch_size_to_resize_to_for_desired_mpp": f["coords"].attrs["patch_size_to_resize_to_for_desired_mpp"],
+            "patch_size_to_resize_to_for_desired_mpp": f["coords"].attrs[
+                "patch_size_to_resize_to_for_desired_mpp"
+            ],
         }
 
     h5_ds = WholeSlideImageH5Dataset(
