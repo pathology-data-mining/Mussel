@@ -29,6 +29,17 @@ jobs:
           - fastattn
 
     steps:
+    - name: Free disk space
+      uses: jlumbroso/free-disk-space@v1.3.1
+      with:
+        tool-cache: false
+        android: true
+        dotnet: true
+        haskell: true
+        large-packages: true
+        docker-images: true
+        swap-storage: false
+
     - name: Checkout repository
       uses: actions/checkout@v4
 
@@ -62,7 +73,7 @@ jobs:
         build-args: |
           BACKEND=${{ matrix.backend }}
         cache-from: type=gha,scope=${{ matrix.backend }}
-        cache-to: type=gha,mode=max,scope=${{ matrix.backend }},ignore-error=true
+        cache-to: type=gha,mode=min,scope=${{ matrix.backend }},ignore-error=true
 
     - name: Update Docker Hub description
       if: matrix.backend == 'torch-gpu'
