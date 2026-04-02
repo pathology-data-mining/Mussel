@@ -163,8 +163,7 @@ class TestVisualizeHeatmap:
             scores=scores,
             coords=coords,
             patch_size_level0=PATCH_SIZE_LEVEL0,
-            output_dir=str(tmp_path),
-            filename="test_heatmap.png",
+            output_path=str(tmp_path / "test_heatmap.png"),
         )
         assert os.path.exists(out), f"Expected output file {out} to exist"
         assert out.endswith("test_heatmap.png")
@@ -177,9 +176,8 @@ class TestVisualizeHeatmap:
             scores=scores,
             coords=coords,
             patch_size_level0=PATCH_SIZE_LEVEL0,
-            output_dir=str(tmp_path),
+            output_path=str(tmp_path / "overlay.png"),
             overlay_only=True,
-            filename="overlay.png",
         )
         assert os.path.exists(out)
 
@@ -191,28 +189,43 @@ class TestVisualizeHeatmap:
             scores=scores,
             coords=coords,
             patch_size_level0=PATCH_SIZE_LEVEL0,
-            output_dir=str(tmp_path),
+            output_path=str(tmp_path / "no_norm.png"),
             normalize=False,
-            filename="no_norm.png",
         )
         assert os.path.exists(out)
 
-    def test_top_k_patches_saved(self, tmp_path):
-        """num_top_patches>0 should create the topk_patches subdirectory."""
+    def test_top_k_patches_default_subdir(self, tmp_path):
+        """num_top_patches>0 without output_patch_dir uses topk_patches/ next to heatmap."""
         scores, coords = self._make_scores_coords()
+        out_path = str(tmp_path / "topk.png")
         visualize_heatmap(
             slide_path=SVS_PATH,
             scores=scores,
             coords=coords,
             patch_size_level0=PATCH_SIZE_LEVEL0,
-            output_dir=str(tmp_path),
+            output_path=out_path,
             num_top_patches=3,
-            filename="topk.png",
         )
         topk_dir = tmp_path / "topk_patches"
-        assert topk_dir.exists(), "topk_patches directory should be created"
+        assert topk_dir.exists(), "topk_patches directory should be created next to heatmap"
         patch_files = list(topk_dir.glob("*.png"))
         assert len(patch_files) == 3, f"Expected 3 patch files, got {len(patch_files)}"
+
+    def test_top_k_patches_explicit_dir(self, tmp_path):
+        """output_patch_dir writes patch tiles to the specified directory."""
+        scores, coords = self._make_scores_coords()
+        patch_dir = str(tmp_path / "my_patches")
+        visualize_heatmap(
+            slide_path=SVS_PATH,
+            scores=scores,
+            coords=coords,
+            patch_size_level0=PATCH_SIZE_LEVEL0,
+            output_path=str(tmp_path / "heatmap.png"),
+            num_top_patches=2,
+            output_patch_dir=patch_dir,
+        )
+        patch_files = list(Path(patch_dir).glob("*.png"))
+        assert len(patch_files) == 2, f"Expected 2 patch files, got {len(patch_files)}"
 
     def test_custom_colormap(self, tmp_path):
         """Different colourmap name should not raise."""
@@ -223,7 +236,6 @@ class TestVisualizeHeatmap:
             coords=coords,
             patch_size_level0=PATCH_SIZE_LEVEL0,
             cmap="viridis",
-            output_dir=str(tmp_path),
-            filename="viridis.png",
+            output_path=str(tmp_path / "viridis.png"),
         )
         assert os.path.exists(out)

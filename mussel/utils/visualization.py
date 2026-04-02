@@ -105,10 +105,10 @@ def visualize_heatmap(
     cmap: str = "coolwarm",
     normalize: bool = True,
     num_top_patches: int = -1,
-    output_dir: str = "output",
+    output_path: str = "output/heatmap.png",
+    output_patch_dir: Optional[str] = None,
     vis_mag: Optional[int] = None,
     overlay_only: bool = False,
-    filename: str = "heatmap.png",
 ) -> str:
     """Generate and save a heatmap overlaid on a whole-slide image.
 
@@ -126,15 +126,27 @@ def visualize_heatmap(
         num_top_patches: Number of highest-scoring patches to save as
             individual PNG files.  ``-1`` disables this feature.  Defaults to
             ``-1``.
-        output_dir: Directory where the heatmap (and optional patch tiles) are
-            saved.  Defaults to ``"output"``.
+        output_path: Full filesystem path for the saved heatmap PNG (parent
+            directory is created automatically).  Defaults to
+            ``"output/heatmap.png"``.
+        output_patch_dir: Directory where top-k patch tiles are written when
+            ``num_top_patches > 0``.  If ``None`` (default), tiles are saved
+            to a ``topk_patches/`` subdirectory next to ``output_path``::
+
+                <output_path parent>/
+                  heatmap.png          ← output_path
+                  topk_patches/        ← default output_patch_dir
+                    top_0_score_0.9234.png
+                    top_1_score_0.8912.png
+                    ...
+
+            When an explicit path is provided, the directory is created
+            automatically and patches are written directly there.
         vis_mag: Target magnification for visualisation.  When provided,
             ``vis_level`` is ignored and the best matching pyramid level is
             selected automatically.
         overlay_only: If ``True``, save only the colourised overlay without
             blending it onto the slide thumbnail.  Defaults to ``False``.
-        filename: Output filename (relative to ``output_dir``).  Defaults to
-            ``"heatmap.png"``.
 
     Returns:
         Absolute path to the saved heatmap image.
@@ -195,14 +207,17 @@ def visualize_heatmap(
         img_arr = np.array(img)
         blended_img = cv2.addWeighted(img_arr, 0.6, overlay_colored, 0.4, 0)
 
-    os.makedirs(output_dir, exist_ok=True)
-    heatmap_path = os.path.join(output_dir, filename)
+    os.makedirs(os.path.dirname(os.path.abspath(output_path)), exist_ok=True)
+    heatmap_path = output_path
     Image.fromarray(blended_img).save(heatmap_path)
     logger.info("Saved heatmap to %s", heatmap_path)
 
     if num_top_patches > 0:
-        topk_dir = os.path.join(output_dir, "topk_patches")
-        os.makedirs(topk_dir, exist_ok=True)
+        if output_patch_dir is None:
+            output_patch_dir = os.path.join(
+                os.path.dirname(os.path.abspath(output_path)), "topk_patches"
+            )
+        os.makedirs(output_patch_dir, exist_ok=True)
         topk_indices = np.argsort(scores)[-num_top_patches:]
         for rank, idx in enumerate(topk_indices):
             x, y = int(coords[idx][0]), int(coords[idx][1])
@@ -210,9 +225,9 @@ def visualize_heatmap(
                 (x, y), 0, (patch_size_level0, patch_size_level0)
             )
             patch_path = os.path.join(
-                topk_dir, f"top_{rank}_score_{scores[idx]:.4f}.png"
+                output_patch_dir, f"top_{rank}_score_{scores[idx]:.4f}.png"
             )
             patch.save(patch_path)
-        logger.info("Saved %d top patches to %s", num_top_patches, topk_dir)
+        logger.info("Saved %d top patches to %s", num_top_patches, output_patch_dir)
 
     return heatmap_path
