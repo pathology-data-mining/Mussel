@@ -97,7 +97,7 @@ class TestConvertCLISingleFile:
             mpp=0.25,
         )
 
-        with patch("mussel.utils.converter.AnyToTiffConverter") as MockConverter:
+        with patch("mussel.cli.convert.AnyToTiffConverter") as MockConverter:
             mock_instance = MagicMock()
             MockConverter.return_value = mock_instance
             convert_module.main(cfg)
@@ -116,7 +116,7 @@ class TestConvertCLISingleFile:
             bigtiff=True,
         )
 
-        with patch("mussel.utils.converter.AnyToTiffConverter") as MockConverter:
+        with patch("mussel.cli.convert.AnyToTiffConverter") as MockConverter:
             MockConverter.return_value = MagicMock()
             convert_module.main(cfg)
 
@@ -144,7 +144,7 @@ class TestConvertCLIBatchMode:
             downscale_by=1,
         )
 
-        with patch("mussel.utils.converter.AnyToTiffConverter") as MockConverter:
+        with patch("mussel.cli.convert.AnyToTiffConverter") as MockConverter:
             mock_instance = MagicMock()
             MockConverter.return_value = mock_instance
             convert_module.main(cfg)
@@ -170,7 +170,7 @@ class TestConvertCLIBatchMode:
             downscale_by=2,
         )
 
-        with patch("mussel.utils.converter.AnyToTiffConverter") as MockConverter:
+        with patch("mussel.cli.convert.AnyToTiffConverter") as MockConverter:
             mock_instance = MagicMock()
             MockConverter.return_value = mock_instance
             convert_module.main(cfg)

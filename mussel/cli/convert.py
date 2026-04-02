@@ -1,5 +1,6 @@
 """CLI command to convert slides to pyramidal TIFF (``mussel convert``)."""
 
+import os
 from dataclasses import dataclass, field
 from typing import List, Optional
 
@@ -7,6 +8,8 @@ import hydra
 from hydra.conf import HelpConf, HydraConf
 from hydra.core.config_store import ConfigStore
 from omegaconf import MISSING
+
+from mussel.utils.converter import AnyToTiffConverter
 
 
 @dataclass
@@ -93,10 +96,6 @@ def main(cfg: ConvertConfig) -> None:
         # With downscaling (40x → 20x)
         convert input_path=./wsis output_dir=./tiffs mpp_csv=mpp.csv downscale_by=2
     """
-    import os
-
-    from mussel.utils.converter import AnyToTiffConverter
-
     converter = AnyToTiffConverter(job_dir=cfg.output_dir, bigtiff=cfg.bigtiff)
 
     if os.path.isfile(cfg.input_path):
