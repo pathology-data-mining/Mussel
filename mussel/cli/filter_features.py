@@ -3,15 +3,16 @@ import os
 from dataclasses import dataclass, field
 from typing import Optional
 
-import torch
 import hydra
+import torch
 from hydra.conf import HelpConf, HydraConf
 from hydra.core.config_store import ConfigStore
 from omegaconf import MISSING, OmegaConf
 
 logger = logging.getLogger(__name__)
 
-from mussel.utils import save_hdf5, filter_features, load_classifier, load_features_from_h5
+from mussel.utils import (filter_features, load_classifier,
+                          load_features_from_h5, save_hdf5)
 
 
 @dataclass
@@ -63,10 +64,10 @@ def main(
     logger.info(f"loading model pkl {cfg.classifier_pkl}")
     classifier = load_classifier(cfg.classifier_pkl)
 
-    features, coords_all = load_features_from_h5(cfg.features_h5_path, cfg.features_pt_path)
-    logger.info(
-        f"Loaded {features.shape[0]} features of dimension {features.shape[1]}"
+    features, coords_all = load_features_from_h5(
+        cfg.features_h5_path, cfg.features_pt_path
     )
+    logger.info(f"Loaded {features.shape[0]} features of dimension {features.shape[1]}")
     features, coords = filter_features(
         features,
         coords_all,

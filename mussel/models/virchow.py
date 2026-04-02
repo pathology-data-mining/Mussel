@@ -3,8 +3,8 @@
 import logging
 from typing import Callable, List
 
-import torch
 import timm
+import torch
 from timm.layers import SwiGLUPacked
 
 from mussel.models.base import TorchModel, _timm_preprocessing
@@ -60,7 +60,7 @@ class VirchowModel(TorchModel):
         the embedding is CLS ++ mean(patch_tokens), doubling the embed dim.
         """
         output = self.obj(x)  # (N, num_tokens, embed_dim)
-        class_token = output[:, 0]           # (N, embed_dim)
+        class_token = output[:, 0]  # (N, embed_dim)
         avg_patch_tokens = output[:, 1:].mean(dim=1)  # (N, embed_dim)
         return torch.cat([class_token, avg_patch_tokens], dim=1)  # (N, embed_dim*2)
 

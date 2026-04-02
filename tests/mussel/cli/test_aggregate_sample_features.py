@@ -30,7 +30,9 @@ def _write_fake_h5(path, n_tiles, dim=4, seed=0):
 
 def test_subsample_tiles_random_reduces_count():
     features, coords = _make_data(100)
-    f_out, c_out = subsample_tiles(features, coords, max_tiles=30, strategy="random", slide_sizes=[100], seed=42)
+    f_out, c_out = subsample_tiles(
+        features, coords, max_tiles=30, strategy="random", slide_sizes=[100], seed=42
+    )
     assert f_out.shape == (30, 4)
     assert c_out.shape == (30, 2)
 
@@ -39,15 +41,21 @@ def test_subsample_tiles_random_no_duplicates():
     # Use unique coords to guarantee no coord collisions in this test
     features = np.arange(100 * 4, dtype=np.float32).reshape(100, 4)
     coords = np.arange(100 * 2).reshape(100, 2)  # all coords unique by construction
-    f_out, c_out = subsample_tiles(features, coords, max_tiles=50, strategy="random", slide_sizes=[100], seed=42)
+    f_out, c_out = subsample_tiles(
+        features, coords, max_tiles=50, strategy="random", slide_sizes=[100], seed=42
+    )
     # sampling is without replacement — all selected feature rows should be distinct
     assert len(set(map(tuple, f_out.tolist()))) == 50
 
 
 def test_subsample_tiles_random_reproducible():
     features, coords = _make_data(200)
-    f1, c1 = subsample_tiles(features, coords, max_tiles=50, strategy="random", slide_sizes=[200], seed=7)
-    f2, c2 = subsample_tiles(features, coords, max_tiles=50, strategy="random", slide_sizes=[200], seed=7)
+    f1, c1 = subsample_tiles(
+        features, coords, max_tiles=50, strategy="random", slide_sizes=[200], seed=7
+    )
+    f2, c2 = subsample_tiles(
+        features, coords, max_tiles=50, strategy="random", slide_sizes=[200], seed=7
+    )
     np.testing.assert_array_equal(f1, f2)
     np.testing.assert_array_equal(c1, c2)
 
@@ -61,7 +69,14 @@ def test_subsample_tiles_proportional():
     c1 = np.ones((40, 2), dtype=int)
     features = np.concatenate([f0, f1], axis=0)
     coords = np.concatenate([c0, c1], axis=0)
-    f_out, c_out = subsample_tiles(features, coords, max_tiles=20, strategy="proportional", slide_sizes=[60, 40], seed=42)
+    f_out, c_out = subsample_tiles(
+        features,
+        coords,
+        max_tiles=20,
+        strategy="proportional",
+        slide_sizes=[60, 40],
+        seed=42,
+    )
     assert f_out.shape[0] == 20
     assert c_out.shape[0] == 20
 
@@ -75,14 +90,18 @@ def test_subsample_tiles_equal():
     c1 = np.ones((40, 2), dtype=int)
     features = np.concatenate([f0, f1], axis=0)
     coords = np.concatenate([c0, c1], axis=0)
-    f_out, c_out = subsample_tiles(features, coords, max_tiles=10, strategy="equal", slide_sizes=[80, 40], seed=42)
+    f_out, c_out = subsample_tiles(
+        features, coords, max_tiles=10, strategy="equal", slide_sizes=[80, 40], seed=42
+    )
     assert f_out.shape[0] == 10
     assert c_out.shape[0] == 10
 
 
 def test_subsample_tiles_no_op_when_below_max():
     features, coords = _make_data(50)
-    f_out, c_out = subsample_tiles(features, coords, max_tiles=100, strategy="random", slide_sizes=[50], seed=0)
+    f_out, c_out = subsample_tiles(
+        features, coords, max_tiles=100, strategy="random", slide_sizes=[50], seed=0
+    )
     np.testing.assert_array_equal(f_out, features)
     np.testing.assert_array_equal(c_out, coords)
 
@@ -90,7 +109,9 @@ def test_subsample_tiles_no_op_when_below_max():
 def test_subsample_tiles_invalid_strategy():
     features, coords = _make_data(50)
     with pytest.raises(ValueError, match="strategy"):
-        subsample_tiles(features, coords, max_tiles=10, strategy="bogus", slide_sizes=[50], seed=0)
+        subsample_tiles(
+            features, coords, max_tiles=10, strategy="bogus", slide_sizes=[50], seed=0
+        )
 
 
 # =============================================================================
@@ -98,7 +119,8 @@ def test_subsample_tiles_invalid_strategy():
 # =============================================================================
 
 
-from mussel.utils.feature_extract import aggregate_sample_features as _aggregate_sample_features
+from mussel.utils.feature_extract import \
+    aggregate_sample_features as _aggregate_sample_features
 
 
 def test_aggregate_sample_features_single_slide(tmp_path):
@@ -192,9 +214,10 @@ def test_aggregate_sample_features_with_subsampling(tmp_path):
 # =============================================================================
 
 
+from omegaconf import OmegaConf
+
 import mussel.cli.aggregate_sample_features
 from mussel.cli.aggregate_sample_features import AggregateSampleFeaturesConfig
-from omegaconf import OmegaConf
 
 
 def test_aggregate_sample_features_cli(tmp_path):
@@ -219,9 +242,9 @@ def test_aggregate_sample_features_cli(tmp_path):
     mussel.cli.aggregate_sample_features.main(OmegaConf.structured(cfg))
 
     with h5py.File(tmp_path / "samples" / "P1.features.h5") as f:
-        assert f["features"].shape[0] == 30   # 25+20=45 → subsampled to 30
+        assert f["features"].shape[0] == 30  # 25+20=45 → subsampled to 30
     with h5py.File(tmp_path / "samples" / "P2.features.h5") as f:
-        assert f["features"].shape[0] == 30   # 30 ≤ 30, no subsampling
+        assert f["features"].shape[0] == 30  # 30 ≤ 30, no subsampling
 
 
 def test_cli_mismatched_lengths_raises(tmp_path):

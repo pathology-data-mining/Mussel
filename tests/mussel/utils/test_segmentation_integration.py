@@ -39,6 +39,7 @@ def _use_gpu_available(use_gpu: bool) -> bool:
         return False
     try:
         import torch
+
         return torch.cuda.is_available()
     except ImportError:
         return False
@@ -77,9 +78,9 @@ def test_neural_segmentation_produces_valid_patches(tmp_path, use_gpu):
     )
 
     coords = _unpack_segment_result(result)
-    assert coords is not None and len(coords) > 0, (
-        "Neural segmenter produced zero patches on a slide with known tissue"
-    )
+    assert (
+        coords is not None and len(coords) > 0
+    ), "Neural segmenter produced zero patches on a slide with known tissue"
 
     n_patches = len(coords)
     hsv_baseline = 1474
@@ -92,11 +93,12 @@ def test_neural_segmentation_produces_valid_patches(tmp_path, use_gpu):
         h5_coords = f["coords"][:]
         seg_model_attr = f["coords"].attrs.get("seg_model", "")
 
-    assert seg_model_attr == "neural", (
-        f"Expected seg_model='neural' in HDF5 attrs, got {seg_model_attr!r}"
-    )
+    assert (
+        seg_model_attr == "neural"
+    ), f"Expected seg_model='neural' in HDF5 attrs, got {seg_model_attr!r}"
 
     import tiffslide
+
     with tiffslide.TiffSlide(_SLIDE_PATH) as wsi:
         w, h = wsi.dimensions
 
@@ -131,9 +133,9 @@ def test_neural_segmentation_patch_count_close_to_hsv(tmp_path, use_gpu):
     n_classic = len(_unpack_segment_result(classic) or [])
     n_neural = len(_unpack_segment_result(neural) or [])
 
-    assert n_classic > 0 and n_neural > 0, (
-        f"Both segmenters must find tissue: classic={n_classic}, neural={n_neural}"
-    )
+    assert (
+        n_classic > 0 and n_neural > 0
+    ), f"Both segmenters must find tissue: classic={n_classic}, neural={n_neural}"
 
     ratio = n_neural / n_classic
     assert 0.5 <= ratio <= 2.0, (
@@ -184,12 +186,12 @@ def test_grandqc_artifact_remover_runs_on_real_slide(use_gpu):
 
     assert result.shape == mask.shape
     assert result.dtype == mask.dtype
-    assert set(np.unique(result)).issubset({0, 1}), (
-        f"Non-binary values in output: {np.unique(result)}"
-    )
-    assert result.sum() > 0, (
-        "GrandQC zeroed out the entire mask — likely a model or input problem"
-    )
+    assert set(np.unique(result)).issubset(
+        {0, 1}
+    ), f"Non-binary values in output: {np.unique(result)}"
+    assert (
+        result.sum() > 0
+    ), "GrandQC zeroed out the entire mask — likely a model or input problem"
 
 
 @pytest.mark.slow
@@ -249,7 +251,6 @@ def test_grandqc_artifact_remover_integrated_with_segment_tissue(tmp_path, use_g
     assert coords.shape[1] == 2
 
 
-
 # ---------------------------------------------------------------------------
 # Pen mark removal — S3 slide (not committed to repo)
 # ---------------------------------------------------------------------------
@@ -276,14 +277,19 @@ def _download_penmark_slide() -> str:
         # Quick head-object to verify access before downloading
         s3.head_object(Bucket="mskmind-bkt", Key="reef-slides/1007867.svs")
     except Exception as exc:
-        pytest.skip(f"S3 slide not accessible (profile={_PENMARK_SLIDE_AWS_PROFILE}): {exc}")
+        pytest.skip(
+            f"S3 slide not accessible (profile={_PENMARK_SLIDE_AWS_PROFILE}): {exc}"
+        )
 
     _PENMARK_SLIDE_CACHE.parent.mkdir(parents=True, exist_ok=True)
     import logging
+
     logging.getLogger(__name__).info(
         "Downloading %s to %s ...", _PENMARK_SLIDE_S3, _PENMARK_SLIDE_CACHE
     )
-    s3.download_file("mskmind-bkt", "reef-slides/1007867.svs", str(_PENMARK_SLIDE_CACHE))
+    s3.download_file(
+        "mskmind-bkt", "reef-slides/1007867.svs", str(_PENMARK_SLIDE_CACHE)
+    )
     return str(_PENMARK_SLIDE_CACHE)
 
 
@@ -330,16 +336,16 @@ def test_grandqc_penmark_removal_reduces_mask_on_marked_slide(use_gpu):
 
     assert result.shape == mask.shape
     assert result.dtype == mask.dtype
-    assert set(np.unique(result)).issubset({0, 1}), (
-        f"Non-binary values in output: {np.unique(result)}"
-    )
+    assert set(np.unique(result)).issubset(
+        {0, 1}
+    ), f"Non-binary values in output: {np.unique(result)}"
 
     tissue_before = int(mask.sum())
     tissue_after = int(result.sum())
 
-    assert tissue_after > 0, (
-        "GrandQC zeroed the entire mask — model may not have loaded correctly"
-    )
+    assert (
+        tissue_after > 0
+    ), "GrandQC zeroed the entire mask — model may not have loaded correctly"
     assert tissue_after < tissue_before, (
         f"Pen mark removal did not reduce the mask "
         f"(before={tissue_before}, after={tissue_after}). "
@@ -348,7 +354,10 @@ def test_grandqc_penmark_removal_reduces_mask_on_marked_slide(use_gpu):
 
     reduction_pct = 100.0 * (tissue_before - tissue_after) / tissue_before
     import logging
+
     logging.getLogger(__name__).info(
         "Pen mark removal: %.1f%% of pixels removed (%d → %d)",
-        reduction_pct, tissue_before, tissue_after,
+        reduction_pct,
+        tissue_before,
+        tissue_after,
     )

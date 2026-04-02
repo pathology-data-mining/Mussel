@@ -143,7 +143,7 @@ class MadeleineSlideEncoderModel(TorchModel):
                 "falling back to weights_only=False. Only load checkpoints from trusted sources."
             )
             state_dict = torch.load(pt_path, map_location="cpu", weights_only=False)
-        state_dict = {k[len("module."):]: v for k, v in state_dict.items()}
+        state_dict = {k[len("module.") :]: v for k, v in state_dict.items()}
         model_obj.load_state_dict(state_dict, strict=True)
         model_obj.eval()
         super().__init__(model_path, model_obj, use_gpu, gpu_device_id)
@@ -157,7 +157,9 @@ class MadeleineSlideEncoderModel(TorchModel):
 
         def model_fun(patch_features):
             with torch.no_grad(), torch.inference_mode():
-                patch_features = patch_features.to(self.device, non_blocking=True).float()
+                patch_features = patch_features.to(
+                    self.device, non_blocking=True
+                ).float()
                 return self.obj(patch_features).squeeze().cpu()
 
         return model_fun

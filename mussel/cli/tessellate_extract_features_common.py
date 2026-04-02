@@ -12,17 +12,11 @@ from shapely.geometry import Polygon
 
 logger = logging.getLogger(__name__)
 
-from mussel.utils import (
-    save_features,
-    filter_features,
-    save_hdf5,
-    save_torch_tensor,
-    is_remote_path,
-    safe_path_join,
-    load_classifier,
-    load_features_from_h5,
-)
-from mussel.utils.segment import draw_slide_mask, save_patches_png, segment_tissue
+from mussel.utils import (filter_features, is_remote_path, load_classifier,
+                          load_features_from_h5, safe_path_join, save_features,
+                          save_hdf5, save_torch_tensor)
+from mussel.utils.segment import (draw_slide_mask, save_patches_png,
+                                  segment_tissue)
 
 
 def _tessellate_and_filter(
@@ -70,9 +64,13 @@ def _tessellate_and_filter(
     # Step 1: Tessellate
     logger.info(f"Tessellating slide: {slide_path}")
     if cfg.keep_intermediate_files:
-        tessellate_h5_path = safe_path_join(base_path, f"{Path(slide_path).stem}.tessellate.h5")
+        tessellate_h5_path = safe_path_join(
+            base_path, f"{Path(slide_path).stem}.tessellate.h5"
+        )
     else:
-        tessellate_h5_path = os.path.join(temp_dir, f"{Path(slide_path).stem}.tessellate.h5")
+        tessellate_h5_path = os.path.join(
+            temp_dir, f"{Path(slide_path).stem}.tessellate.h5"
+        )
 
     if values := segment_tissue(
         slide_path=slide_path,
@@ -103,11 +101,19 @@ def _tessellate_and_filter(
     if use_filtering:
         logger.info(f"Extracting features for filtering: {slide_path}")
         if cfg.keep_intermediate_files:
-            prefilter_features_h5_path = safe_path_join(base_path, f"{Path(slide_path).stem}.prefilter_features.h5")
-            prefilter_features_pt_path = safe_path_join(base_path, f"{Path(slide_path).stem}.prefilter_features.pt")
+            prefilter_features_h5_path = safe_path_join(
+                base_path, f"{Path(slide_path).stem}.prefilter_features.h5"
+            )
+            prefilter_features_pt_path = safe_path_join(
+                base_path, f"{Path(slide_path).stem}.prefilter_features.pt"
+            )
         else:
-            prefilter_features_h5_path = os.path.join(temp_dir, f"{Path(slide_path).stem}.prefilter_features.h5")
-            prefilter_features_pt_path = os.path.join(temp_dir, f"{Path(slide_path).stem}.prefilter_features.pt")
+            prefilter_features_h5_path = os.path.join(
+                temp_dir, f"{Path(slide_path).stem}.prefilter_features.h5"
+            )
+            prefilter_features_pt_path = os.path.join(
+                temp_dir, f"{Path(slide_path).stem}.prefilter_features.pt"
+            )
 
         save_features(
             slide_path=slide_path,
@@ -125,7 +131,9 @@ def _tessellate_and_filter(
 
         logger.info(f"Filtering features: {slide_path}")
         classifier = load_classifier(cfg.classifier_pkl)
-        features, all_coords = load_features_from_h5(prefilter_features_h5_path, prefilter_features_pt_path)
+        features, all_coords = load_features_from_h5(
+            prefilter_features_h5_path, prefilter_features_pt_path
+        )
         filtered_features, filtered_coords = filter_features(
             features,
             all_coords,
@@ -142,9 +150,13 @@ def _tessellate_and_filter(
             final_coords_h5_path = prefilter_features_h5_path
         else:
             if cfg.keep_intermediate_files:
-                filtered_coords_h5_path = safe_path_join(base_path, f"{Path(slide_path).stem}.filtered_coords.h5")
+                filtered_coords_h5_path = safe_path_join(
+                    base_path, f"{Path(slide_path).stem}.filtered_coords.h5"
+                )
             else:
-                filtered_coords_h5_path = os.path.join(temp_dir, f"{Path(slide_path).stem}.filtered_coords.h5")
+                filtered_coords_h5_path = os.path.join(
+                    temp_dir, f"{Path(slide_path).stem}.filtered_coords.h5"
+                )
 
             save_hdf5(
                 filtered_coords_h5_path,
@@ -252,7 +264,9 @@ def process_slide_tessellation_and_filtering(
     # Final extraction step
     if two_step_mode and cfg.aggregation_method != "identity":
         logger.info(f"Extracting patch features: {slide_path}")
-        intermediate_h5_path = safe_path_join(base_path, f"{Path(slide_path).stem}.patch.h5")
+        intermediate_h5_path = safe_path_join(
+            base_path, f"{Path(slide_path).stem}.patch.h5"
+        )
         save_features(
             slide_path=slide_path,
             gpu_device_id=cfg.gpu_device_id,
@@ -302,7 +316,6 @@ def process_slide_tessellation_and_filtering(
             "slide_path": slide_path,
             "tessellate_h5_path": tessellate_h5_path,
         }
-
 
 
 def process_slide_tessellation_only(
@@ -361,7 +374,6 @@ def process_slide_tessellation_only(
     }
 
 
-
 def _build_grid_polygons(coords, tessellate_h5_path: str) -> list:
     """Build a list of Shapely Polygons for each tile coordinate.
 
@@ -378,12 +390,16 @@ def _build_grid_polygons(coords, tessellate_h5_path: str) -> list:
     polygons = []
     for coord in coords:
         x, y = coord
-        polygons.append(Polygon([
-            [x, y],
-            [x, y + native_patch_size],
-            [x + native_patch_size, y + native_patch_size],
-            [x + native_patch_size, y],
-        ]))
+        polygons.append(
+            Polygon(
+                [
+                    [x, y],
+                    [x, y + native_patch_size],
+                    [x + native_patch_size, y + native_patch_size],
+                    [x + native_patch_size, y],
+                ]
+            )
+        )
     return polygons
 
 
@@ -407,7 +423,7 @@ def create_visualizations(
             **OmegaConf.to_container(cfg.vis_config),
         )
         grid_mask.save(output_grid_mask_path)
-    
+
     # Save PNG patches
     if output_png_dir:
         logger.info(f"Saving patches to {output_png_dir}")
@@ -423,7 +439,7 @@ def create_visualizations(
             black_threshold=cfg.png_config.black_threshold,
             slide_mpp_override=cfg.seg_config.slide_mpp_override,
         )
-    
+
     # Save thumbnail
     if output_thumbnail_path:
         with tiffslide.TiffSlide(slide_path) as wsi:

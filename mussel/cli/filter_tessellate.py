@@ -1,31 +1,28 @@
+import logging
 import os
 import shutil
 import ssl
 import tempfile
-import logging
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, List, Optional
 
 import hydra
-import torch
 import tiffslide
+import torch
 from hydra.conf import HelpConf, HydraConf
 from hydra.core.config_store import ConfigStore
 from omegaconf import MISSING, OmegaConf
 
-from mussel.cli.tessellate import (
-    SegConfig,
-    BiopsySegConfig,
-    ResectionSegConfig,
-    TcgaSegConfig,
-    VisConfig,
-    PngConfig,
-)
+from mussel.cli.tessellate import (BiopsySegConfig, PngConfig,
+                                   ResectionSegConfig, SegConfig,
+                                   TcgaSegConfig, VisConfig)
 from mussel.cli.tessellate_extract_features_common import _build_grid_polygons
 from mussel.models import ModelType, get_default_patch_size
-from mussel.utils import save_features, filter_features, save_hdf5, load_classifier, load_features_from_h5
-from mussel.utils.segment import draw_slide_mask, save_patches_png, segment_tissue
+from mussel.utils import (filter_features, load_classifier,
+                          load_features_from_h5, save_features, save_hdf5)
+from mussel.utils.segment import (draw_slide_mask, save_patches_png,
+                                  segment_tissue)
 
 logger = logging.getLogger(__name__)
 
@@ -163,7 +160,9 @@ def _main(cfg: FilterTessellateConfig, temp_dir, base_path):
     logger.info("Step 1/3: Tessellating whole-slide image...")
     if cfg.keep_intermediate_files:
         # Use a persistent path based on output path
-        tessellate_h5_path = str(base_path / f"{Path(cfg.slide_path).stem}.tessellate.h5")
+        tessellate_h5_path = str(
+            base_path / f"{Path(cfg.slide_path).stem}.tessellate.h5"
+        )
     else:
         tessellate_h5_path = os.path.join(temp_dir, "tessellate.h5")
 
@@ -220,9 +219,7 @@ def _main(cfg: FilterTessellateConfig, temp_dir, base_path):
     classifier = load_classifier(cfg.classifier_pkl)
 
     features, coords_all = load_features_from_h5(features_h5_path, features_pt_path)
-    logger.info(
-        f"Loaded {features.shape[0]} features of dimension {features.shape[1]}"
-    )
+    logger.info(f"Loaded {features.shape[0]} features of dimension {features.shape[1]}")
     features, coords = filter_features(
         features,
         coords_all,

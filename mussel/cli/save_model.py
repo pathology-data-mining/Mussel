@@ -1,7 +1,7 @@
-from dataclasses import dataclass
-from typing import Optional, List
-from pathlib import Path
 import os
+from dataclasses import dataclass
+from pathlib import Path
+from typing import List, Optional
 
 import hydra
 from hydra.conf import HelpConf, HydraConf
@@ -18,7 +18,7 @@ class SaveModelConfig:
         model_type (ModelType): Type of model to save.
         model_path (Optional[str]): Path to the model weights.
         output_path (str): Path to save the model.
-    
+
     Multi-Model Mode:
         model_types (List[ModelType]): List of model types to save.
         model_dir (str): Directory to save all models (each in subdirectory named after model type).
@@ -27,7 +27,7 @@ class SaveModelConfig:
     model_type: Optional[ModelType] = None
     model_path: Optional[str] = None
     output_path: Optional[str] = None
-    
+
     # Multi-model mode
     model_types: Optional[List[ModelType]] = None
     model_dir: Optional[str] = None
@@ -109,9 +109,13 @@ def save_model(cfg: SaveModelConfig):
             if model_type == ModelType.CONCH1_5:
                 print(f"\n⊙ {model_type.name} is extracted from TITAN_SLIDE")
                 if ModelType.TITAN_SLIDE in cfg.model_types:
-                    print(f"  → TITAN_SLIDE will be saved; CONCH1_5 can be extracted from it")
+                    print(
+                        f"  → TITAN_SLIDE will be saved; CONCH1_5 can be extracted from it"
+                    )
                     continue
-                print(f"  → Saving TITAN_SLIDE instead (CONCH1_5 can be extracted from it)")
+                print(
+                    f"  → Saving TITAN_SLIDE instead (CONCH1_5 can be extracted from it)"
+                )
                 model_type = ModelType.TITAN_SLIDE
 
             try:

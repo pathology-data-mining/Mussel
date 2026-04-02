@@ -4,18 +4,14 @@ from unittest.mock import MagicMock, call, patch
 
 import pytest
 
-from mussel.cli.save_model import (
-    SaveModelConfig,
-    _ensure_cache_dirs,
-    _save_one_model,
-    save_model,
-)
+from mussel.cli.save_model import (SaveModelConfig, _ensure_cache_dirs,
+                                   _save_one_model, save_model)
 from mussel.models import ModelType
-
 
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 def _make_mock_model(save_side_effect=None):
     model = MagicMock()
@@ -33,6 +29,7 @@ def _make_mock_factory(model):
 # ---------------------------------------------------------------------------
 # _ensure_cache_dirs
 # ---------------------------------------------------------------------------
+
 
 class TestEnsureCacheDirs:
     def test_creates_standard_dirs(self, tmp_path, monkeypatch):
@@ -93,6 +90,7 @@ class TestEnsureCacheDirs:
 # _save_one_model
 # ---------------------------------------------------------------------------
 
+
 class TestSaveOneModel:
     @patch("mussel.cli.save_model.get_model_factory")
     def test_skips_if_ready_marker_exists(self, mock_gmf, tmp_path):
@@ -150,9 +148,7 @@ class TestSaveOneModel:
     def test_falls_back_to_pth_when_dir_save_raises_value_error(
         self, mock_gmf, mock_ecd, tmp_path
     ):
-        model = _make_mock_model(
-            save_side_effect=[ValueError("bad path"), None]
-        )
+        model = _make_mock_model(save_side_effect=[ValueError("bad path"), None])
         mock_gmf.return_value = _make_mock_factory(model)
 
         _save_one_model(ModelType.RESNET50, tmp_path)
@@ -177,6 +173,7 @@ class TestSaveOneModel:
 # ---------------------------------------------------------------------------
 # save_model — single model mode
 # ---------------------------------------------------------------------------
+
 
 class TestSaveModelSingle:
     def test_raises_if_no_model_type(self):
@@ -216,12 +213,15 @@ class TestSaveModelSingle:
         )
         save_model(cfg)
 
-        mock_gmf.return_value.get_model.assert_called_once_with(custom_path, use_gpu=False)
+        mock_gmf.return_value.get_model.assert_called_once_with(
+            custom_path, use_gpu=False
+        )
 
 
 # ---------------------------------------------------------------------------
 # save_model — multi-model mode
 # ---------------------------------------------------------------------------
+
 
 class TestSaveModelMulti:
     def test_raises_if_no_model_dir(self):

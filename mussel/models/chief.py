@@ -114,7 +114,9 @@ class CHIEFSlideEncoderModel(TorchModel):
         model_obj = _CHIEFSlideModel()
         td = torch.load(model_path, weights_only=True, map_location="cpu")
         result = model_obj.load_state_dict(td, strict=False)
-        missing = [k for k in result.missing_keys if not k.endswith("num_batches_tracked")]
+        missing = [
+            k for k in result.missing_keys if not k.endswith("num_batches_tracked")
+        ]
         if missing:
             raise RuntimeError(f"CHIEF checkpoint is missing keys: {missing}")
         super().__init__(model_path, model_obj, use_gpu, gpu_device_id)
@@ -134,7 +136,9 @@ class CHIEFSlideEncoderModel(TorchModel):
         cache_dir.mkdir(parents=True, exist_ok=True)
         url = f"https://drive.google.com/drive/folders/{cls._GDRIVE_FOLDER_ID}"
         logger.info("Downloading CHIEF weights from Google Drive → %s", cache_dir)
-        gdown.download_folder(url, output=str(cache_dir), quiet=False, use_cookies=False)
+        gdown.download_folder(
+            url, output=str(cache_dir), quiet=False, use_cookies=False
+        )
         if not dest.exists():
             raise FileNotFoundError(
                 f"{cls._CHECKPOINT_FILENAME} not found after download. "
@@ -149,7 +153,11 @@ class CHIEFSlideEncoderModel(TorchModel):
         def model_fun(features_tensor):
             with torch.no_grad():
                 # features_tensor arrives as [1, N, D] (batch dim from _apply_slide_aggregation)
-                h = features_tensor.squeeze(0).to(self.device, non_blocking=True).float()
+                h = (
+                    features_tensor.squeeze(0)
+                    .to(self.device, non_blocking=True)
+                    .float()
+                )
                 return self.obj(h).squeeze().cpu()
 
         return model_fun

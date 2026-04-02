@@ -14,10 +14,12 @@ class SimpleClassifier:
 
     def predict_proba(self, X):
         n = len(X)
-        probs = np.column_stack([
-            np.linspace(0.9, 0.1, n),  # class 0
-            np.linspace(0.1, 0.9, n),  # class 1
-        ])
+        probs = np.column_stack(
+            [
+                np.linspace(0.9, 0.1, n),  # class 0
+                np.linspace(0.1, 0.9, n),  # class 1
+            ]
+        )
         return probs
 
 

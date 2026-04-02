@@ -39,11 +39,20 @@ class _ConvStem(nn.Module):
         super().__init__()
         assert patch_size == 4
         assert embed_dim % 8 == 0
-        img_size = (img_size, img_size) if isinstance(img_size, int) else tuple(img_size)
-        patch_size_t = (patch_size, patch_size) if isinstance(patch_size, int) else tuple(patch_size)
+        img_size = (
+            (img_size, img_size) if isinstance(img_size, int) else tuple(img_size)
+        )
+        patch_size_t = (
+            (patch_size, patch_size)
+            if isinstance(patch_size, int)
+            else tuple(patch_size)
+        )
         self.img_size = img_size
         self.patch_size = patch_size_t
-        self.grid_size = (img_size[0] // patch_size_t[0], img_size[1] // patch_size_t[1])
+        self.grid_size = (
+            img_size[0] // patch_size_t[0],
+            img_size[1] // patch_size_t[1],
+        )
         self.num_patches = self.grid_size[0] * self.grid_size[1]
         if output_fmt is not None:
             self.flatten = False
@@ -116,7 +125,9 @@ class TransPathModel(TorchModel):
         # (e.g. relative_position_index) that new timm no longer stores.
         # Missing keys are checked to ensure all model parameters are covered.
         result = model_obj.load_state_dict(remapped, strict=False)
-        missing = [k for k in result.missing_keys if not k.endswith("num_batches_tracked")]
+        missing = [
+            k for k in result.missing_keys if not k.endswith("num_batches_tracked")
+        ]
         if missing:
             raise RuntimeError(f"TransPath checkpoint is missing keys: {missing}")
         # ctranspath uses standard ImageNet normalization — preprocessing is

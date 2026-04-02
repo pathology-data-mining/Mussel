@@ -15,6 +15,7 @@ import torch
 
 def _make_remover(remove_penmarks_only: bool = False):
     from mussel.utils.artifact_removal import GrandQCArtifactRemover
+
     return GrandQCArtifactRemover(
         remove_penmarks_only=remove_penmarks_only,
         device="cpu",
@@ -43,11 +44,14 @@ def _make_fake_model(predicted_class: int, tile_size: int = 512):
 def _inject_model(remover, predicted_class: int):
     """Bypass _load_model by injecting a fake model directly."""
     from torchvision import transforms
+
     remover._model = _make_fake_model(predicted_class)
-    remover._transforms = transforms.Compose([
-        transforms.ToTensor(),
-        transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
-    ])
+    remover._transforms = transforms.Compose(
+        [
+            transforms.ToTensor(),
+            transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
+        ]
+    )
 
 
 class TestGrandQCArtifactRemoverCore:
@@ -77,7 +81,9 @@ class TestGrandQCArtifactRemoverCore:
 
         result = self._run(remover, img, mask)
 
-        assert result.sum() == 0, "All tissue should be removed when model predicts folds"
+        assert (
+            result.sum() == 0
+        ), "All tissue should be removed when model predicts folds"
 
     def test_penmarks_only_keeps_folds(self):
         """remove_penmarks_only=True: fold class (2) is NOT removed."""
@@ -89,7 +95,9 @@ class TestGrandQCArtifactRemoverCore:
 
         result = self._run(remover, img, mask)
 
-        np.testing.assert_array_equal(result, mask, err_msg="Folds should be kept in penmarks-only mode")
+        np.testing.assert_array_equal(
+            result, mask, err_msg="Folds should be kept in penmarks-only mode"
+        )
 
     def test_penmarks_only_removes_penmarks(self):
         """remove_penmarks_only=True: pen marking class (4) IS removed."""

@@ -2,12 +2,13 @@ from torchvision import transforms
 
 from mussel.models.base import IMAGENET_MEAN, IMAGENET_STD
 
+
 def eval_transforms(use_imagenet_rgb_dist=False):
     """Create transforms for evaluation/inference.
-    
+
     Args:
         use_imagenet_rgb_dist: Use ImageNet RGB distribution for normalization (default: False).
-        
+
     Returns:
         Composed torchvision transforms for image preprocessing.
     """
