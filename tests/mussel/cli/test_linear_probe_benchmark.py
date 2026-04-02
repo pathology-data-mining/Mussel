@@ -7,16 +7,13 @@ import pytest
 from omegaconf import OmegaConf
 from shapely.geometry import box
 
-from mussel.cli.linear_probe_benchmark import (
-    LinearProbeBenchmarkConfig,
-    _eval_split,
-    main,
-)
-
+from mussel.cli.linear_probe_benchmark import (LinearProbeBenchmarkConfig,
+                                               _eval_split, main)
 
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 def _make_parquet(tmp_path, n_slides=20, tiles_per_slide=10, n_features=8, seed=0):
     """Create a synthetic GeoParquet file with feature columns and annotations."""
@@ -48,6 +45,7 @@ def _make_parquet(tmp_path, n_slides=20, tiles_per_slide=10, n_features=8, seed=
 # Config factory
 # ---------------------------------------------------------------------------
 
+
 def _cfg(tmp_path, parquet_path, **overrides):
     defaults = dict(
         features_annotation_parquet_path=parquet_path,
@@ -72,6 +70,7 @@ def _cfg(tmp_path, parquet_path, **overrides):
 # Tests
 # ---------------------------------------------------------------------------
 
+
 def test_main_runs_and_outputs_files(tmp_path):
     """main() produces val and test CSV/PNG outputs."""
     parquet_path = _make_parquet(tmp_path)
@@ -92,7 +91,9 @@ def test_test_set_metrics_in_report(tmp_path):
 
     report = pd.read_csv(cfg.output_test_csv, index_col=0)
     assert "auc_roc" in report.index, "auc_roc missing from test report"
-    assert "average_precision" in report.index, "average_precision missing from test report"
+    assert (
+        "average_precision" in report.index
+    ), "average_precision missing from test report"
 
 
 def test_val_metrics_in_report(tmp_path):
@@ -116,8 +117,12 @@ def test_stratified_split_preserves_both_classes(tmp_path):
     # verify reports have both class columns (0 and 1).
     for csv_path in [cfg.output_csv, cfg.output_test_csv]:
         report = pd.read_csv(csv_path, index_col=0)
-        assert "0" in report.columns or 0 in report.columns, f"class 0 missing in {csv_path}"
-        assert "1" in report.columns or 1 in report.columns, f"class 1 missing in {csv_path}"
+        assert (
+            "0" in report.columns or 0 in report.columns
+        ), f"class 0 missing in {csv_path}"
+        assert (
+            "1" in report.columns or 1 in report.columns
+        ), f"class 1 missing in {csv_path}"
 
 
 def test_eval_split_returns_metrics(tmp_path):
@@ -134,7 +139,9 @@ def test_eval_split_returns_metrics(tmp_path):
     pipe.fit(X, y)
 
     metrics = _eval_split(
-        pipe, X, y,
+        pipe,
+        X,
+        y,
         str(tmp_path / "r.csv"),
         str(tmp_path / "cm.png"),
         "test",

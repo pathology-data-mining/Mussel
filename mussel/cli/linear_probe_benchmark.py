@@ -11,13 +11,8 @@ from hydra.conf import HelpConf, HydraConf
 from hydra.core.config_store import ConfigStore
 from omegaconf import MISSING, OmegaConf
 from sklearn.linear_model import LogisticRegression
-from sklearn.metrics import (
-    ConfusionMatrixDisplay,
-    average_precision_score,
-    classification_report,
-    f1_score,
-    roc_auc_score,
-)
+from sklearn.metrics import (ConfusionMatrixDisplay, average_precision_score,
+                             classification_report, f1_score, roc_auc_score)
 from sklearn.model_selection import GridSearchCV, train_test_split
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler
@@ -118,14 +113,16 @@ def main(cfg: LinearProbeBenchmarkConfig):
     df_filtered = df_filtered.assign(y=(df_filtered.annotation == 2).astype(int))
 
     # One label per slide (1 if the slide has any positive tile, else 0) for stratification
-    slide_labels = (
-        df_filtered.groupby("slide_id")["y"].max().reset_index()
-    )
+    slide_labels = df_filtered.groupby("slide_id")["y"].max().reset_index()
     slide_ids = slide_labels["slide_id"].values
     strat = slide_labels["y"].values
 
     train_ids, test_ids, train_strat, _ = train_test_split(
-        slide_ids, strat, test_size=cfg.test_size, random_state=cfg.random_state, stratify=strat
+        slide_ids,
+        strat,
+        test_size=cfg.test_size,
+        random_state=cfg.random_state,
+        stratify=strat,
     )
     train_ids, val_ids = train_test_split(
         train_ids,
@@ -145,17 +142,17 @@ def main(cfg: LinearProbeBenchmarkConfig):
     X_test = test_df.filter(regex="feature_").values
     y_test = test_df["y"].values
 
-    pipeline = Pipeline([
-        ("scaler", StandardScaler()),
-        ("clf", LogisticRegression(solver="saga", max_iter=cfg.max_iter)),
-    ])
+    pipeline = Pipeline(
+        [
+            ("scaler", StandardScaler()),
+            ("clf", LogisticRegression(solver="saga", max_iter=cfg.max_iter)),
+        ]
+    )
     param_grid = {
         "clf__C": list(cfg.C_values),
         "clf__penalty": list(cfg.penalties),
     }
-    search = GridSearchCV(
-        pipeline, param_grid, cv=cfg.cv, scoring="roc_auc", n_jobs=-1
-    )
+    search = GridSearchCV(pipeline, param_grid, cv=cfg.cv, scoring="roc_auc", n_jobs=-1)
     search.fit(X_train, y_train)
     best = search.best_estimator_
 
