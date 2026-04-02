@@ -131,7 +131,7 @@ torchvision = [
 xformers = [{ index = "torch-gpu-cu126", extra = "fastattn" }]
 flash-attn = [
   { url = "https://github.com/mjun0812/flash-attention-prebuild-wheels/releases/download/v0.9.4/flash_attn-2.6.3%2Bcu126torch2.11-cp311-cp311-manylinux_2_24_x86_64.manylinux_2_28_x86_64.whl", marker = "python_version == '3.11'" },
-  { url = "https://github.com/mjun0812/flash-attention-prebuild-wheels/releases/download/v0.9.4/flash_attn-2.6.3%2Bcu128torch2.11-cp311-cp311-manylinux_2_24_x86_64.manylinux_2_28_x86_64.whl", marker = "python_version == '3.10'" },
+  { url = "https://github.com/mjun0812/flash-attention-prebuild-wheels/releases/download/v0.9.4/flash_attn-2.6.3%2Bcu126torch2.11-cp310-cp310-manylinux_2_24_x86_64.manylinux_2_28_x86_64.whl", marker = "python_version == '3.10'" },
 ]
 
 [[tool.uv.index]]
