@@ -146,6 +146,31 @@ def get_slide_mpp(
         return default_mpp
 
 
+def get_level_for_magnification(wsi, target_mag: float, fallback_level: int = 2) -> int:
+    """Return the best pyramid level for a target magnification.
+
+    Reads the slide's native MPP via :func:`get_slide_mpp`, computes the
+    required downsample factor, and delegates to
+    ``wsi.get_best_level_for_downsample``.
+
+    Args:
+        wsi: TiffSlide-compatible slide object.
+        target_mag: Desired magnification (e.g. ``20.0`` for 20×).
+        fallback_level: Pyramid level to return when MPP cannot be determined
+            (default: 2).
+
+    Returns:
+        Integer pyramid level index closest to ``target_mag``.
+    """
+    try:
+        mpp = get_slide_mpp(wsi)
+        native_mag = 10.0 / mpp
+        downsample = native_mag / target_mag
+        return wsi.get_best_level_for_downsample(downsample)
+    except Exception:
+        return fallback_level
+
+
 def is_white_patch(patch, saturation_threshold=5):
     """
     Determine if patch is white based on HSV saturation threshold.

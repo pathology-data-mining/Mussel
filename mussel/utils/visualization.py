@@ -9,6 +9,8 @@ import matplotlib.pyplot as plt
 import numpy as np
 from PIL import Image
 
+from mussel.utils.segment import get_level_for_magnification
+
 try:
     from scipy.stats import rankdata as _scipy_rankdata
 
@@ -159,24 +161,8 @@ def visualize_heatmap(
         scores = _rank_normalize(scores)
 
     if vis_mag is not None:
-        src_downsample = wsi.level_downsamples[0]
-        # level_downsamples[0] is always 1.0; we need the slide's native mag.
-        # tiffslide exposes mpp; convert to approximate downsample ratio.
-        downsample = wsi.level_downsamples[vis_level]  # fallback value
         try:
-            mpp = wsi.properties.get("tiffslide.mpp-x") or wsi.properties.get(
-                "openslide.mpp-x"
-            )
-            if mpp is not None:
-                native_mag = 10.0 / float(mpp)
-                downsample = native_mag / vis_mag
-                vis_level = wsi.get_best_level_for_downsample(downsample)
-            else:
-                logger.warning(
-                    "MPP not found in slide properties; vis_mag ignored, "
-                    "falling back to vis_level=%d.",
-                    vis_level,
-                )
+            vis_level = get_level_for_magnification(wsi, vis_mag, fallback_level=vis_level)
         except Exception as exc:
             logger.warning(
                 "Could not determine vis_level from vis_mag=%d (%s); "
@@ -185,9 +171,7 @@ def visualize_heatmap(
                 exc,
                 vis_level,
             )
-        downsample = wsi.level_downsamples[vis_level]
-    else:
-        downsample = wsi.level_downsamples[vis_level]
+    downsample = wsi.level_downsamples[vis_level]
 
     scale = np.array([1.0 / downsample, 1.0 / downsample])
     region_size = tuple(

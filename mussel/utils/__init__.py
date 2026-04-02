@@ -40,6 +40,8 @@ from .ml import collate_features
 from .segment import (
     contours_to_polygon,
     draw_slide_mask,
+    get_level_for_magnification,
+    get_slide_mpp,
     save_patches_png,
     segment_tissue,
 )
