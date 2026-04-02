@@ -26,12 +26,37 @@ logger = logging.getLogger(__name__)
 Image.MAX_IMAGE_PIXELS = None
 
 # Extensions handled by Bio-Formats via aicsimageio.
-BIOFORMAT_EXTENSIONS = frozenset({
-    ".tif", ".tiff", ".ndpi", ".svs", ".lif", ".ims", ".vsi", ".bif", ".btf",
-    ".mrxs", ".scn", ".ome.tiff", ".ome.tif", ".h5", ".hdf", ".hdf5", ".he5",
-    ".dicom", ".dcm", ".ome.xml", ".zvi", ".pcoraw", ".jp2", ".qptiff",
-    ".nrrd", ".ome.btf", ".fg7",
-})
+BIOFORMAT_EXTENSIONS = frozenset(
+    {
+        ".tif",
+        ".tiff",
+        ".ndpi",
+        ".svs",
+        ".lif",
+        ".ims",
+        ".vsi",
+        ".bif",
+        ".btf",
+        ".mrxs",
+        ".scn",
+        ".ome.tiff",
+        ".ome.tif",
+        ".h5",
+        ".hdf",
+        ".hdf5",
+        ".he5",
+        ".dicom",
+        ".dcm",
+        ".ome.xml",
+        ".zvi",
+        ".pcoraw",
+        ".jp2",
+        ".qptiff",
+        ".nrrd",
+        ".ome.btf",
+        ".fg7",
+    }
+)
 
 PIL_EXTENSIONS = frozenset({".png", ".jpg", ".jpeg"})
 CZI_EXTENSIONS = frozenset({".czi"})
@@ -150,13 +175,18 @@ class AnyToTiffConverter:
                 skipped_unsupported.append(filename)
                 continue
             mpp = float(df.loc[df["wsi"] == filename, "mpp"].values[0])
-            tasks.append((self.job_dir, self.bigtiff, img_path, mpp, 1.0 / downscale_by))
+            tasks.append(
+                (self.job_dir, self.bigtiff, img_path, mpp, 1.0 / downscale_by)
+            )
 
         if skipped_missing:
-            logger.warning("Skipping %d files not found in input_dir.", len(skipped_missing))
+            logger.warning(
+                "Skipping %d files not found in input_dir.", len(skipped_missing)
+            )
         if skipped_unsupported:
             logger.warning(
-                "Skipping %d files with unsupported extension.", len(skipped_unsupported)
+                "Skipping %d files with unsupported extension.",
+                len(skipped_unsupported),
             )
         if not tasks:
             raise ValueError("No valid conversion tasks found from CSV entries.")
@@ -262,12 +292,18 @@ class AnyToTiffConverter:
             if czyx.ndim != 4:
                 raise ValueError(f"Unexpected image shape: {czyx.shape}")
             first_z = czyx[:, 0, :, :]
-            data = first_z[0] if first_z.shape[0] == 1 else np.transpose(first_z[:3], (1, 2, 0))
+            data = (
+                first_z[0]
+                if first_z.shape[0] == 1
+                else np.transpose(first_z[:3], (1, 2, 0))
+            )
             if zoom != 1.0:
                 pil_img = Image.fromarray(data)
                 new_w = int(pil_img.width * zoom)
                 new_h = int(pil_img.height * zoom)
-                data = np.array(pil_img.resize((new_w, new_h), Image.Resampling.LANCZOS))
+                data = np.array(
+                    pil_img.resize((new_w, new_h), Image.Resampling.LANCZOS)
+                )
             px = img_obj.physical_pixel_sizes
             if px and px.X is not None:
                 self._detected_mpp[file_path] = float(px.X)

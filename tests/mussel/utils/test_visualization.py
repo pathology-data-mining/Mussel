@@ -8,13 +8,8 @@ from unittest.mock import MagicMock, patch
 import numpy as np
 import pytest
 
-from mussel.utils.visualization import (
-    _rank_normalize,
-    apply_colormap,
-    create_overlay,
-    visualize_heatmap,
-)
-
+from mussel.utils.visualization import (_rank_normalize, apply_colormap,
+                                        create_overlay, visualize_heatmap)
 
 # ---------------------------------------------------------------------------
 # _rank_normalize
@@ -44,7 +39,9 @@ class TestRankNormalize:
         """Tied values receive the same normalised score (average ranking)."""
         scores = np.array([1.0, 2.0, 2.0, 3.0])
         ranks = _rank_normalize(scores)
-        assert ranks[1] == pytest.approx(ranks[2]), "Tied scores should map to same rank"
+        assert ranks[1] == pytest.approx(
+            ranks[2]
+        ), "Tied scores should map to same rank"
 
 
 # ---------------------------------------------------------------------------
@@ -56,7 +53,9 @@ class TestCreateOverlay:
     def _make_inputs(self, n_patches=10, img_size=(100, 100), patch_px=20):
         """Produce consistent test inputs."""
         np.random.seed(0)
-        coords = np.array([[i * 5, j * 5] for i in range(4) for j in range(4)])[:n_patches]
+        coords = np.array([[i * 5, j * 5] for i in range(4) for j in range(4)])[
+            :n_patches
+        ]
         scores = np.random.rand(len(coords))
         scale = np.array([1.0 / 4, 1.0 / 4])
         return scores, coords, patch_px, scale, img_size
@@ -78,7 +77,9 @@ class TestCreateOverlay:
         region_size = (200, 200)
         overlay = create_overlay(scores, coords, patch_px, scale, region_size)
         # Most of the 200x200 image has no coverage
-        assert np.isnan(overlay).sum() > 0, "There should be NaN pixels where no patches overlap"
+        assert (
+            np.isnan(overlay).sum() > 0
+        ), "There should be NaN pixels where no patches overlap"
 
     def test_covered_pixels_not_nan(self):
         """Covered pixels should not be NaN."""
@@ -150,8 +151,13 @@ class TestVisualizeHeatmap:
     def _make_scores_coords(self, n=20):
         """Generate synthetic scores and tile coordinates."""
         np.random.seed(42)
-        coords = np.array([[i * PATCH_SIZE_LEVEL0, j * PATCH_SIZE_LEVEL0]
-                           for i in range(5) for j in range(4)])[:n]
+        coords = np.array(
+            [
+                [i * PATCH_SIZE_LEVEL0, j * PATCH_SIZE_LEVEL0]
+                for i in range(5)
+                for j in range(4)
+            ]
+        )[:n]
         scores = np.random.rand(len(coords)).astype(np.float32)
         return scores, coords
 
@@ -207,7 +213,9 @@ class TestVisualizeHeatmap:
             num_top_patches=3,
         )
         topk_dir = tmp_path / "topk_patches"
-        assert topk_dir.exists(), "topk_patches directory should be created next to heatmap"
+        assert (
+            topk_dir.exists()
+        ), "topk_patches directory should be created next to heatmap"
         patch_files = list(topk_dir.glob("*.png"))
         assert len(patch_files) == 3, f"Expected 3 patch files, got {len(patch_files)}"
 

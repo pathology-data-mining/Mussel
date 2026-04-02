@@ -10,7 +10,6 @@ import cv2
 import numpy as np
 import shapely
 import tiffslide
-from mussel.utils.wsi_backend import open_slide as _wsi_open_slide
 from PIL import Image, ImageDraw
 from shapely.geometry import MultiPolygon, Polygon
 from shapely.ops import transform
@@ -18,6 +17,7 @@ from shapely.prepared import prep
 
 from mussel.utils.file import save_hdf5
 from mussel.utils.timer import timed
+from mussel.utils.wsi_backend import open_slide as _wsi_open_slide
 
 Image.MAX_IMAGE_PIXELS = None
 
@@ -105,7 +105,9 @@ def get_slide_mpp(
                 try:
                     x_res_float = float(x_resolution)
                     if x_res_float <= 0:
-                        raise ValueError(f"tiff.XResolution is non-positive: {x_resolution}")
+                        raise ValueError(
+                            f"tiff.XResolution is non-positive: {x_resolution}"
+                        )
                     slide_mpp = round(scale / x_res_float, 4)
                     logger.warning(
                         f"MPP not in standard metadata for {slide_name}; "
@@ -118,7 +120,11 @@ def get_slide_mpp(
 
         # Step 5: estimate from objective-power magnification
         magnification = None
-        for key in ["aperio.AppMag", "openslide.objective-power", tiffslide.PROPERTY_NAME_OBJECTIVE_POWER]:
+        for key in [
+            "aperio.AppMag",
+            "openslide.objective-power",
+            tiffslide.PROPERTY_NAME_OBJECTIVE_POWER,
+        ]:
             mag_value = wsi.properties.get(key)
             if mag_value is not None:
                 try:
@@ -137,12 +143,16 @@ def get_slide_mpp(
             return slide_mpp
 
         # Step 6: default fallback
-        logger.warning(f"MPP metadata not found for {slide_name}, using default MPP: {default_mpp}")
+        logger.warning(
+            f"MPP metadata not found for {slide_name}, using default MPP: {default_mpp}"
+        )
         return default_mpp
 
     except (KeyError, TypeError, ValueError) as e:
         slide_name = slide_path if slide_path else "slide"
-        logger.warning(f"Failed to read MPP metadata for {slide_name}: {e}, using default MPP: {default_mpp}")
+        logger.warning(
+            f"Failed to read MPP metadata for {slide_name}: {e}, using default MPP: {default_mpp}"
+        )
         return default_mpp
 
 
@@ -490,6 +500,7 @@ def _segment_tissue_neural(img: np.ndarray, slide_mpp: float) -> np.ndarray:
         Binary uint8 mask, shape (H, W), values 0 (background) or 255 (tissue).
     """
     from mussel.utils.neural_seg import NeuralTissueSegmenter
+
     segmenter = NeuralTissueSegmenter()
     return segmenter.segment(img, slide_mpp=slide_mpp)
 
@@ -523,11 +534,11 @@ def segment_tissue(
     slide_mpp_override: Optional[float] = None,
 ):
     """Segment tissue regions in a whole-slide image and generate tissue patches.
-    
+
     Performs tissue segmentation using HSV color space, median filtering, and binary
     thresholding to identify tissue regions. Then partitions tissue into a grid of
     patches for downstream processing.
-    
+
     Args:
         slide_path: Path to the whole-slide image file.
         slide_id: Optional identifier for the slide (defaults to filename stem).
@@ -605,7 +616,7 @@ def segment_tissue(
         Returns None if no tissue contours are found or if slide dimensions are too large.
     """
     wsi = _wsi_open_slide(slide_path)
-    
+
     try:
         if slide_id is None:
             slide_id = Path(slide_path).stem
@@ -638,9 +649,7 @@ def segment_tissue(
 
         if step_size is None:
             if overlap < 0:
-                raise ValueError(
-                    f"overlap must be non-negative, got {overlap}"
-                )
+                raise ValueError(f"overlap must be non-negative, got {overlap}")
             if overlap > 0:
                 step_size = patch_size - overlap
                 if step_size <= 0:
@@ -656,14 +665,18 @@ def segment_tissue(
             )
 
         # Get MPP with fallback handling
-        slide_mpp = get_slide_mpp(wsi, slide_path, slide_mpp_override=slide_mpp_override)
+        slide_mpp = get_slide_mpp(
+            wsi, slide_path, slide_mpp_override=slide_mpp_override
+        )
 
         native_step_size = get_native_size(step_size, mpp, slide_mpp)
         native_patch_size = get_native_size(patch_size, mpp, slide_mpp)
         logger.info(f"native_step_size: {native_step_size}")
         logger.info(f"native_patch_size: {native_patch_size}")
 
-        img = np.array(wsi.read_region((0, 0), seg_level, wsi.level_dimensions[seg_level]))
+        img = np.array(
+            wsi.read_region((0, 0), seg_level, wsi.level_dimensions[seg_level])
+        )
 
         level_downsamples = _assert_level_downsamples(wsi)
 
@@ -759,7 +772,7 @@ def segment_tissue(
         # threshold truly scale-independent: the same threshold value produces the same
         # minimum-tissue-size in µm² regardless of which pyramid level is used for
         # segmentation.
-        native_patch_area = native_patch_size ** 2
+        native_patch_area = native_patch_size**2
         seg_patch_area = int(native_patch_area / (scale[0] * scale[1]))
         tissue_area_threshold *= seg_patch_area
         hole_area_threshold *= seg_patch_area
@@ -807,9 +820,11 @@ def segment_tissue(
         if min_tissue_proportion > 0.0:
             prepared_polygon = prep(polygon)
             filtered = [
-                (g, c) for g, c in zip(grid, coords)
+                (g, c)
+                for g, c in zip(grid, coords)
                 if prepared_polygon.intersects(g)
-                and prepared_polygon.intersection(g).area / g.area >= min_tissue_proportion
+                and prepared_polygon.intersection(g).area / g.area
+                >= min_tissue_proportion
             ]
             if filtered:
                 grid, coords = zip(*filtered)
@@ -867,7 +882,7 @@ def draw_slide_mask(
     Draw slide mask with polygon contours or list of grid polygons
     """
     wsi = _wsi_open_slide(slide_path)
-    
+
     try:
         if vis_level < 0:
             if len(wsi.level_dimensions) == 1:
@@ -972,11 +987,13 @@ def save_patches_png(
     """
     wsi = _wsi_open_slide(slide_path)
     pool = None
-    
+
     try:
         # Get MPP with fallback handling
-        slide_mpp = get_slide_mpp(wsi, slide_path, slide_mpp_override=slide_mpp_override)
-        
+        slide_mpp = get_slide_mpp(
+            wsi, slide_path, slide_mpp_override=slide_mpp_override
+        )
+
         native_patch_size = get_native_size(patch_size, mpp, slide_mpp)
 
         save_dir = Path(save_dir)

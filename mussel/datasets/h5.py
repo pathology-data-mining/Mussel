@@ -2,14 +2,19 @@ import logging
 
 import h5py
 
+
 # Circular-import guard: mussel.utils.wsi_backend → mussel.utils.__init__ → feature_extract
 # → mussel.datasets, which is still being initialized at this point.  Use a lazy import.
 class _BackendShim:
     """Minimal shim that routes open_slide() through mussel.utils.wsi_backend."""
+
     @staticmethod
     def open_slide(path):
-        from mussel.utils.wsi_backend import open_slide as _open_slide  # noqa: PLC0415
+        from mussel.utils.wsi_backend import \
+            open_slide as _open_slide  # noqa: PLC0415
+
         return _open_slide(path)
+
 
 openslide = _BackendShim()
 from PIL import Image
@@ -19,8 +24,6 @@ from torch.utils.data import Dataset
 from torchvision import transforms
 
 from .utils import eval_transforms
-
-
 
 
 class WholeSlideImageH5Dataset(Dataset):
@@ -92,10 +95,10 @@ class WholeSlideImageH5Dataset(Dataset):
 
     def __getitem__(self, idx_):
         """Get a patch and its coordinates by index.
-        
+
         Args:
             idx_: Index of the patch to retrieve.
-            
+
         Returns:
             Tuple of (transformed image tensor, coordinates).
         """
@@ -116,7 +119,9 @@ class WholeSlideImageH5Dataset(Dataset):
                 # Handle JPEG decoding errors (e.g., unsupported JPEG markers in NDPI files)
                 # Return None to indicate this tile should be skipped
                 if "Jpeg8Error" in str(type(e).__name__) or "imagecodecs" in str(e):
-                    logger.warning(f"Skipping corrupted tile at {coord} due to JPEG decode error: {e}")
+                    logger.warning(
+                        f"Skipping corrupted tile at {coord} due to JPEG decode error: {e}"
+                    )
                 else:
                     logger.error(f"Error reading tile at {coord}: {e}")
                 return None, coord

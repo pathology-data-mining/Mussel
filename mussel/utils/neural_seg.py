@@ -44,8 +44,8 @@ _HF_REPO_ID = "MahmoodLab/hest-tissue-seg"
 _CKPT_FILENAME = "deeplabv3_seg_v4.ckpt"
 
 # Model inference constants (match the training configuration).
-_INPUT_SIZE = 512       # patch size in pixels
-_TARGET_MPP = 1.0       # inference resolution: 1 µm/px (~10x)
+_INPUT_SIZE = 512  # patch size in pixels
+_TARGET_MPP = 1.0  # inference resolution: 1 µm/px (~10x)
 
 
 class NeuralTissueSegmenter:
@@ -114,7 +114,9 @@ class NeuralTissueSegmenter:
         if scale != 1.0:
             target_H = max(1, int(round(H * scale)))
             target_W = max(1, int(round(W * scale)))
-            resized = cv2.resize(img, (target_W, target_H), interpolation=cv2.INTER_CUBIC)
+            resized = cv2.resize(
+                img, (target_W, target_H), interpolation=cv2.INTER_CUBIC
+            )
         else:
             target_H, target_W = H, W
             resized = img
@@ -143,10 +145,12 @@ class NeuralTissueSegmenter:
         self._model = self._model.to(self.device)
         if self.device.type == "cuda":
             self._model = self._model.half()
-        self._transform = transforms.Compose([
-            transforms.ToTensor(),
-            transforms.Normalize(mean=IMAGENET_MEAN, std=IMAGENET_STD),
-        ])
+        self._transform = transforms.Compose(
+            [
+                transforms.ToTensor(),
+                transforms.Normalize(mean=IMAGENET_MEAN, std=IMAGENET_STD),
+            ]
+        )
         logger.info(f"NeuralTissueSegmenter loaded on {self.device}")
 
     def _build_model(self, weights_path: str):
@@ -162,7 +166,9 @@ class NeuralTissueSegmenter:
                 "Could not load checkpoint with weights_only=True; "
                 "falling back to weights_only=False. Only load checkpoints from trusted sources."
             )
-            checkpoint = torch.load(weights_path, map_location="cpu", weights_only=False)
+            checkpoint = torch.load(
+                weights_path, map_location="cpu", weights_only=False
+            )
         state_dict = {
             k.replace("model.", ""): v
             for k, v in checkpoint.get("state_dict", {}).items()
@@ -171,9 +177,7 @@ class NeuralTissueSegmenter:
         model.load_state_dict(state_dict)
         return model
 
-    def _run_tiled_inference(
-        self, img: np.ndarray, H: int, W: int
-    ) -> np.ndarray:
+    def _run_tiled_inference(self, img: np.ndarray, H: int, W: int) -> np.ndarray:
         """Tile `img` into patches, run inference, and assemble the mask."""
         patch_size = _INPUT_SIZE
         full_mask = np.zeros((H, W), dtype=np.uint8)

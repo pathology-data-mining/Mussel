@@ -24,4 +24,3 @@ class LunitViTS16Model(_TimmHfHubBase):
     """Lunit DINO ViT-S/16 — 384-dim, 224px input."""
 
     _default_model_type = ModelType.LUNIT_VITS16
-

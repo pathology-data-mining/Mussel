@@ -93,7 +93,9 @@ def _timm_preprocessing(model_obj: nn.Module) -> Callable:
     Returns:
         Callable preprocessing transform.
     """
-    return create_transform(**resolve_data_config(model_obj.pretrained_cfg, model=model_obj))
+    return create_transform(
+        **resolve_data_config(model_obj.pretrained_cfg, model=model_obj)
+    )
 
 
 class Model:

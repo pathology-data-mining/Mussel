@@ -12,7 +12,6 @@ import mussel.models  # noqa: F401 — ensures all models registered
 from mussel.models.abmil import ABMIL, ABMILSlideModel, _ABMILSlideEncoder
 from mussel.models.model_factory import ModelType, get_model_factory
 
-
 # ---------------------------------------------------------------------------
 # ABMIL nn.Module
 # ---------------------------------------------------------------------------
@@ -26,13 +25,20 @@ class TestABMILModule:
         x = torch.randn(B, N, D)
         agg, attn = model(x)
         assert agg.shape == (B, 1, D), f"Expected ({B}, 1, {D}), got {agg.shape}"
-        assert attn.shape == (B, 1, 4, N), f"Expected ({B}, 1, 4, {N}), got {attn.shape}"
+        assert attn.shape == (
+            B,
+            1,
+            4,
+            N,
+        ), f"Expected ({B}, 1, 4, {N}), got {attn.shape}"
 
     def test_forward_single_head_no_condensing(self):
         """With n_heads=1 the condensing layer is absent and output dim stays D."""
         B, N, D = 1, 10, 64
         model = ABMIL(feature_dim=D, head_dim=32, n_heads=1, n_branches=1)
-        assert not hasattr(model, "condensing_layer"), "n_heads=1 should have no condensing layer"
+        assert not hasattr(
+            model, "condensing_layer"
+        ), "n_heads=1 should have no condensing layer"
         agg, attn = model(torch.randn(B, N, D))
         assert agg.shape == (B, 1, D)
         assert attn.shape == (B, 1, 1, N)
@@ -69,9 +75,9 @@ class TestABMILModule:
         # attn shape: [B, n_branches, n_heads, N] → scores over positions
         # After softmax the masked positions should have essentially 0 weight
         attn_weights = torch.softmax(attn[0, 0, 0], dim=-1)  # shape [N]
-        assert attn_weights[5:].sum().item() < 1e-3, (
-            "Masked positions should have near-zero attention weight"
-        )
+        assert (
+            attn_weights[5:].sum().item() < 1e-3
+        ), "Masked positions should have near-zero attention weight"
 
     def test_input_dimension_assertion(self):
         """Non-3D input should raise ValueError."""
@@ -160,7 +166,9 @@ class TestABMILSlideModel:
         with torch.no_grad():
             out1 = model.obj(x)
             out2 = model2.obj(x)
-        assert torch.allclose(out1, out2, atol=1e-5), "Reloaded model should be identical"
+        assert torch.allclose(
+            out1, out2, atol=1e-5
+        ), "Reloaded model should be identical"
 
     def test_get_model_fun_inference(self, tmp_path):
         """get_model_fun() returns a callable that produces [D] output (batch dim squeezed)."""

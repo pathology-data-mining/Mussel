@@ -119,9 +119,7 @@ class ABMIL(nn.Module):
             attn_scores = self.branching_layers[i](attn_vec)
 
             if attn_mask is not None:
-                attn_scores = attn_scores.masked_fill(
-                    ~attn_mask.unsqueeze(-1), -1e9
-                )
+                attn_scores = attn_scores.masked_fill(~attn_mask.unsqueeze(-1), -1e9)
 
             # Softmax over the N (patch) dimension → [B, N, n_branches]
             attn_weights = F.softmax(attn_scores, dim=1)
@@ -129,8 +127,8 @@ class ABMIL(nn.Module):
             # Weighted sum: [B, n_branches, D]
             weighted = torch.einsum("bnr,bnd->brd", attn_weights, features)
 
-            head_attentions.append(attn_scores)   # [B, N, n_branches]
-            head_features.append(weighted)        # [B, n_branches, D]
+            head_attentions.append(attn_scores)  # [B, N, n_branches]
+            head_features.append(weighted)  # [B, n_branches, D]
 
         # Concatenate heads along feature dim then condense back to D
         aggregated = torch.cat(head_features, dim=-1)  # [B, n_branches, n_heads*D]
@@ -138,8 +136,12 @@ class ABMIL(nn.Module):
             aggregated = self.condensing_layer(aggregated)  # [B, n_branches, D]
 
         # Stack attention scores: [B, N, n_branches, n_heads] → [B, n_branches, n_heads, N]
-        stacked_attn = torch.stack(head_attentions, dim=-1)        # [B, N, n_branches, n_heads]
-        stacked_attn = stacked_attn.permute(0, 2, 3, 1).contiguous()  # [B, n_branches, n_heads, N]
+        stacked_attn = torch.stack(
+            head_attentions, dim=-1
+        )  # [B, N, n_branches, n_heads]
+        stacked_attn = stacked_attn.permute(
+            0, 2, 3, 1
+        ).contiguous()  # [B, n_branches, n_heads, N]
 
         return aggregated, stacked_attn
 
@@ -193,10 +195,10 @@ class _ABMILSlideEncoder(nn.Module):
         Returns:
             Slide-level embedding of shape ``[1, D]``.
         """
-        features = self.pre_attention_layers(features)            # [1, N, D]
-        aggregated, _ = self.pooler(features)                     # [1, 1, D]
-        aggregated = aggregated.squeeze(1)                        # [1, D]
-        aggregated = self.post_attention_layers(aggregated)       # [1, D]
+        features = self.pre_attention_layers(features)  # [1, N, D]
+        aggregated, _ = self.pooler(features)  # [1, 1, D]
+        aggregated = aggregated.squeeze(1)  # [1, D]
+        aggregated = self.post_attention_layers(aggregated)  # [1, D]
         return aggregated
 
 
@@ -277,8 +279,8 @@ class ABMILSlideModel(TorchModel):
         def model_fun(patch_features: torch.Tensor) -> torch.Tensor:
             with torch.no_grad(), torch.inference_mode():
                 patch_features = patch_features.to(self.device, non_blocking=True)
-                slide_emb = self.obj(patch_features)   # [1, D]
-                return slide_emb.squeeze(0).cpu()      # [D]
+                slide_emb = self.obj(patch_features)  # [1, D]
+                return slide_emb.squeeze(0).cpu()  # [D]
 
         return model_fun
 

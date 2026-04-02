@@ -38,9 +38,18 @@ from PIL import Image as PILImage
 logger = logging.getLogger(__name__)
 
 # Formats that CuCIM can handle natively.
-_CUCIM_EXTENSIONS = frozenset({
-    ".svs", ".tif", ".tiff", ".ndpi", ".scn", ".mrxs", ".bif", ".qptiff",
-})
+_CUCIM_EXTENSIONS = frozenset(
+    {
+        ".svs",
+        ".tif",
+        ".tiff",
+        ".ndpi",
+        ".scn",
+        ".mrxs",
+        ".bif",
+        ".qptiff",
+    }
+)
 
 # OME-Zarr is always used for .zarr paths.
 _ZARR_EXTENSIONS = frozenset({".zarr"})
@@ -158,9 +167,7 @@ class CuCIMSlide(_SlideBase):
         self.level_dimensions: list = [
             (int(w), int(h)) for w, h in res["level_dimensions"]
         ]
-        self.level_downsamples: list = [
-            float(d) for d in res["level_downsamples"]
-        ]
+        self.level_downsamples: list = [float(d) for d in res["level_downsamples"]]
         # Build a properties-like dict from metadata
         self.properties: dict = dict(cuimage.metadata) if cuimage.metadata else {}
 
@@ -269,5 +276,9 @@ class OmeZarrSlide(_SlideBase):
         else:
             region = np.asarray(arr[yl : yl + h, xl : xl + w])
 
-        region = region[:, :, :3].astype(np.uint8) if region.ndim == 3 else region.astype(np.uint8)
+        region = (
+            region[:, :, :3].astype(np.uint8)
+            if region.ndim == 3
+            else region.astype(np.uint8)
+        )
         return PILImage.fromarray(region, mode="RGB")

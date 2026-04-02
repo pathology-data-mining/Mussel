@@ -1,18 +1,17 @@
 """Tests for the mussel convert CLI (mussel/cli/convert.py)."""
 
-import os
 import csv
+import os
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
+import numpy as np
 import pytest
 from omegaconf import OmegaConf
 from PIL import Image
-import numpy as np
 
 import mussel.cli.convert as convert_module
 from mussel.cli.convert import ConvertConfig
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -197,8 +196,11 @@ class TestConvertCLIEndToEnd:
         )
 
         from mussel.utils import converter as conv_mod
+
         with (
-            patch.object(conv_mod.AnyToTiffConverter, "_try_pyvips_convert", return_value=False),
+            patch.object(
+                conv_mod.AnyToTiffConverter, "_try_pyvips_convert", return_value=False
+            ),
             patch.object(conv_mod.AnyToTiffConverter, "_save_tiff") as mock_save,
         ):
             convert_module.main(cfg)
@@ -237,6 +239,7 @@ class TestConvertCLIIntegration:
         assert out_tiff.exists(), f"Expected output TIFF at {out_tiff}"
 
         import tiffslide
+
         with tiffslide.open_slide(str(out_tiff)) as wsi:
             w, h = wsi.level_dimensions[0]
             assert w == 128 and h == 128, f"Expected 128x128 at level 0, got {w}x{h}"
@@ -287,12 +290,12 @@ class TestConvertCLIIntegration:
         convert_module.main(cfg)
 
         import tiffslide
+
         with tiffslide.open_slide(str(out_dir / "mpp_test.tiff")) as wsi:
             mpp_x = wsi.properties.get("tiffslide.mpp-x") or wsi.properties.get(
                 "openslide.mpp-x"
             )
             if mpp_x is not None:
-                assert abs(float(mpp_x) - target_mpp) < 0.05, (
-                    f"Expected MPP ~{target_mpp}, got {mpp_x}"
-                )
-
+                assert (
+                    abs(float(mpp_x) - target_mpp) < 0.05
+                ), f"Expected MPP ~{target_mpp}, got {mpp_x}"

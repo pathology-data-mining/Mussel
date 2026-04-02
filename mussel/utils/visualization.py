@@ -161,7 +161,9 @@ def visualize_heatmap(
 
     if vis_mag is not None:
         try:
-            vis_level = get_level_for_magnification(wsi, vis_mag, fallback_level=vis_level)
+            vis_level = get_level_for_magnification(
+                wsi, vis_mag, fallback_level=vis_level
+            )
         except Exception as exc:
             logger.warning(
                 "Could not determine vis_level from vis_mag=%d (%s); "
@@ -204,9 +206,7 @@ def visualize_heatmap(
         topk_indices = np.argsort(scores)[-num_top_patches:]
         for rank, idx in enumerate(topk_indices):
             x, y = int(coords[idx][0]), int(coords[idx][1])
-            patch = wsi.read_region(
-                (x, y), 0, (patch_size_level0, patch_size_level0)
-            )
+            patch = wsi.read_region((x, y), 0, (patch_size_level0, patch_size_level0))
             patch_path = os.path.join(
                 output_patch_dir, f"top_{rank}_score_{scores[idx]:.4f}.png"
             )

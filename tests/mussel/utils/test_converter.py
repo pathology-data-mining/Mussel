@@ -10,15 +10,9 @@ import numpy as np
 import pytest
 from PIL import Image
 
-from mussel.utils.converter import (
-    BIOFORMAT_EXTENSIONS,
-    CZI_EXTENSIONS,
-    PIL_EXTENSIONS,
-    SUPPORTED_EXTENSIONS,
-    AnyToTiffConverter,
-    _splitext,
-)
-
+from mussel.utils.converter import (BIOFORMAT_EXTENSIONS, CZI_EXTENSIONS,
+                                    PIL_EXTENSIONS, SUPPORTED_EXTENSIONS,
+                                    AnyToTiffConverter, _splitext)
 
 # ---------------------------------------------------------------------------
 # _splitext
@@ -169,7 +163,9 @@ class TestProcessFile:
         converter = AnyToTiffConverter(job_dir=str(tmp_path / "out"))
 
         with (
-            patch.object(converter, "_try_pyvips_convert", return_value=True) as mock_pyvips,
+            patch.object(
+                converter, "_try_pyvips_convert", return_value=True
+            ) as mock_pyvips,
             patch.object(converter, "_read_image") as mock_read,
         ):
             converter.process_file(png_path, mpp=0.5)

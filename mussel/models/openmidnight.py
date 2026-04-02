@@ -65,9 +65,7 @@ def _ensure_dinov2_hub_cache() -> Path:
     if repo_dir.exists():
         return repo_dir
 
-    logger.info(
-        "DINOv2 hub repo not cached; downloading via requests → %s", repo_dir
-    )
+    logger.info("DINOv2 hub repo not cached; downloading via requests → %s", repo_dir)
 
     lock_name = f"dinov2_hub_{_DINOV2_COMMIT[:8]}"
     with model_download_lock(lock_name, cache_dir=str(hub_dir)):

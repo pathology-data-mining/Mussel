@@ -43,9 +43,7 @@ _MODEL_CODE_URL = (
     "https://raw.githubusercontent.com/genbio-ai/genbio-pathfm/"
     f"{_MODEL_CODE_COMMIT}/genbio_pathfm/model.py"
 )
-_LICENSE_URL = (
-    "https://github.com/genbio-ai/genbio-pathfm/blob/main/LICENSE.txt"
-)
+_LICENSE_URL = "https://github.com/genbio-ai/genbio-pathfm/blob/main/LICENSE.txt"
 
 
 @register_model(ModelType.GENBIO_PATHFM)
@@ -93,7 +91,9 @@ class GenBioPathFMModel(TorchModel):
         cached_file = cache_dir / "model.py"
 
         if not cached_file.exists():
-            with model_download_lock("genbio_pathfm_model_code", cache_dir=str(cache_dir)):
+            with model_download_lock(
+                "genbio_pathfm_model_code", cache_dir=str(cache_dir)
+            ):
                 # Double-check after acquiring lock.
                 if not cached_file.exists():
                     logger.info(
@@ -116,9 +116,7 @@ class GenBioPathFMModel(TorchModel):
                             content = r.read()
 
                     # Atomic write: write to a temp file then rename.
-                    tmp_fd, tmp_path = tempfile.mkstemp(
-                        suffix=".py.tmp", dir=cache_dir
-                    )
+                    tmp_fd, tmp_path = tempfile.mkstemp(suffix=".py.tmp", dir=cache_dir)
                     try:
                         with os.fdopen(tmp_fd, "wb") as fh:
                             fh.write(content)

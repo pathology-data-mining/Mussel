@@ -49,4 +49,3 @@ class KaikoViTL14Model(_TimmHfHubBase):
     """Kaiko ViT-L/14 — 1024-dim, 224px input."""
 
     _default_model_type = ModelType.KAIKO_VITL14
-

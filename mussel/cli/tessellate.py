@@ -16,7 +16,8 @@ from omegaconf import MISSING, OmegaConf
 
 logger = logging.getLogger(__name__)
 
-from mussel.utils.segment import draw_slide_mask, save_patches_png, segment_tissue
+from mussel.utils.segment import (draw_slide_mask, save_patches_png,
+                                  segment_tissue)
 
 
 @dataclass
@@ -57,7 +58,7 @@ class SegConfig:
 
     # Default patch size constant - used to detect when automatic patch size selection should apply
     DEFAULT_PATCH_SIZE: ClassVar[int] = 256
-    
+
     patch_size: int = 256
     step_size: Optional[int] = None  # if None, defaults to patch_size
     mpp: float = 0.5
@@ -73,12 +74,24 @@ class SegConfig:
     max_num_holes: int = 8
     keep_ids: List[int] = field(default_factory=list)
     exclude_ids: List[int] = field(default_factory=list)
-    overlap: int = 0  # Patch overlap in absolute pixels (0 = no overlap). step_size = patch_size - overlap
-    min_tissue_proportion: float = 0.0  # Minimum fraction of patch that must be tissue (0.0-1.0). Patches below this are discarded.
-    remove_artifacts: bool = False  # If True, apply artifact removal to the tissue mask before patching.
-    remove_penmarks: bool = False  # If True, apply pen mark removal to the tissue mask before patching.
-    seg_model: str = "classic"  # "classic" (HSV + fixed threshold), "otsu" (HSV + Otsu), or "neural" (DeepLabV3).
-    slide_mpp_override: Optional[float] = None  # If set, use this as the slide's native MPP instead of reading from metadata.
+    overlap: int = (
+        0  # Patch overlap in absolute pixels (0 = no overlap). step_size = patch_size - overlap
+    )
+    min_tissue_proportion: float = (
+        0.0  # Minimum fraction of patch that must be tissue (0.0-1.0). Patches below this are discarded.
+    )
+    remove_artifacts: bool = (
+        False  # If True, apply artifact removal to the tissue mask before patching.
+    )
+    remove_penmarks: bool = (
+        False  # If True, apply pen mark removal to the tissue mask before patching.
+    )
+    seg_model: str = (
+        "classic"  # "classic" (HSV + fixed threshold), "otsu" (HSV + Otsu), or "neural" (DeepLabV3).
+    )
+    slide_mpp_override: Optional[float] = (
+        None  # If set, use this as the slide's native MPP instead of reading from metadata.
+    )
 
 
 @dataclass

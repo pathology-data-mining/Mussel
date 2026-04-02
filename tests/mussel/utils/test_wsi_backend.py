@@ -6,13 +6,8 @@ from unittest.mock import MagicMock, patch
 import numpy as np
 import pytest
 
-from mussel.utils.wsi_backend import (
-    OmeZarrSlide,
-    _CUCIM_EXTENSIONS,
-    _ZARR_EXTENSIONS,
-    open_slide,
-)
-
+from mussel.utils.wsi_backend import (_CUCIM_EXTENSIONS, _ZARR_EXTENSIONS,
+                                      OmeZarrSlide, open_slide)
 
 SVS_PATH = "tests/testdata/948176.svs"
 
@@ -124,6 +119,7 @@ class TestCuCIMSlide:
     def test_cucim_explicit_backend_raises_if_not_installed(self, monkeypatch):
         """If cucim is not installed, explicit backend=cucim should raise ImportError."""
         import sys
+
         cucim_available = "cucim" in sys.modules or "cucim.clara" in sys.modules
         if cucim_available:
             pytest.skip("cucim is installed; cannot test missing-cucim path")
@@ -143,26 +139,23 @@ class TestOmeZarrSlide:
         store = MagicMock()
         arrays = []
         for i in range(n_levels):
-            scale = 2 ** i
+            scale = 2**i
             arr = MagicMock()
             arr.shape = (n_channels, base_h // scale, base_w // scale)
             arr.ndim = 3
+
             # Make indexing return a numpy array
             def make_slice(h, w, c):
                 def __getitem__(self, key):
                     return np.zeros((c, h, w), dtype=np.uint8)
+
                 return __getitem__
+
             arr.__getitem__ = make_slice(base_h // scale, base_w // scale, n_channels)
             arrays.append(arr)
 
         store.attrs = {
-            "multiscales": [
-                {
-                    "datasets": [
-                        {"path": str(i)} for i in range(n_levels)
-                    ]
-                }
-            ]
+            "multiscales": [{"datasets": [{"path": str(i)} for i in range(n_levels)]}]
         }
         store.__getitem__ = lambda self, key: arrays[int(key)]
         store.keys = lambda: [str(i) for i in range(n_levels)]
@@ -180,7 +173,9 @@ class TestOmeZarrSlide:
         assert slide.level_dimensions[1] == (w // 2, h // 2)
 
     def test_level_downsamples(self):
-        store, arrays, h, w = self._make_mock_zarr_store(n_levels=3, base_h=400, base_w=400)
+        store, arrays, h, w = self._make_mock_zarr_store(
+            n_levels=3, base_h=400, base_w=400
+        )
         arrays[0].shape = (3, 400, 400)
         arrays[1].shape = (3, 200, 200)
         arrays[2].shape = (3, 100, 100)
@@ -191,7 +186,9 @@ class TestOmeZarrSlide:
         assert slide.level_downsamples[2] == pytest.approx(4.0)
 
     def test_get_best_level_for_downsample(self):
-        store, arrays, h, w = self._make_mock_zarr_store(n_levels=3, base_h=400, base_w=400)
+        store, arrays, h, w = self._make_mock_zarr_store(
+            n_levels=3, base_h=400, base_w=400
+        )
         arrays[0].shape = (3, 400, 400)
         arrays[1].shape = (3, 200, 200)
         arrays[2].shape = (3, 100, 100)
@@ -202,9 +199,12 @@ class TestOmeZarrSlide:
         assert slide.get_best_level_for_downsample(3.5) == 1  # level 2 ds=4 > 3.5
         assert slide.get_best_level_for_downsample(4.0) == 2
 
-    def test_open_slide_zarr_extension_routes_to_zarr_backend(self, tmp_path, monkeypatch):
+    def test_open_slide_zarr_extension_routes_to_zarr_backend(
+        self, tmp_path, monkeypatch
+    ):
         """A .zarr path should trigger the zarr backend (or raise ImportError if zarr absent)."""
         import sys
+
         zarr_available = "zarr" in sys.modules
         zarr_path = str(tmp_path / "slide.zarr")
         os.makedirs(zarr_path, exist_ok=True)

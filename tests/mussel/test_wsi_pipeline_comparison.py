@@ -18,7 +18,7 @@ import subprocess
 import tempfile
 import textwrap
 from pathlib import Path
-from typing import Dict, Any
+from typing import Any, Dict
 
 import h5py
 import numpy as np
@@ -33,9 +33,7 @@ REF_PIPELINE_DIR = os.environ.get(
     "/gpfs/cdsi_ess/home/limr/ess/repos/wsi-reference-pipeline",
 )
 REF_PIPELINE_PYTHON = f"{REF_PIPELINE_DIR}/venv/bin/python"
-MUSSEL_TEST_WSI = str(
-    Path(__file__).parent.parent / "testdata" / "948176.svs"
-)
+MUSSEL_TEST_WSI = str(Path(__file__).parent.parent / "testdata" / "948176.svs")
 
 REF_PIPELINE_AVAILABLE = (
     os.path.isfile(REF_PIPELINE_PYTHON)
@@ -106,7 +104,9 @@ def _run_ref_patching(
             f"Reference pipeline subprocess failed (rc={result.returncode}):\n{result.stderr}"
         )
     h5_path = result.stdout.strip().splitlines()[-1]
-    assert os.path.isfile(h5_path), f"Expected reference H5 at {h5_path!r}, got stdout: {result.stdout!r}"
+    assert os.path.isfile(
+        h5_path
+    ), f"Expected reference H5 at {h5_path!r}, got stdout: {result.stdout!r}"
     return h5_path
 
 
@@ -245,7 +245,9 @@ class TestTridentH5Format:
 
     def test_coords_dtype_integer(self, ref_h5):
         coords, _ = _read_coords_h5(ref_h5)
-        assert np.issubdtype(coords.dtype, np.integer), f"Expected int dtype, got {coords.dtype}"
+        assert np.issubdtype(
+            coords.dtype, np.integer
+        ), f"Expected int dtype, got {coords.dtype}"
 
     def test_required_attrs_present(self, ref_h5):
         _, attrs = _read_coords_h5(ref_h5)
@@ -378,17 +380,17 @@ class TestTridentMusselComparison:
         """Mussel should not produce duplicate patch coordinates."""
         mc, _, _, _ = both_h5
         unique = np.unique(mc, axis=0)
-        assert len(unique) == len(mc), (
-            f"Mussel has {len(mc) - len(unique)} duplicate coordinates"
-        )
+        assert len(unique) == len(
+            mc
+        ), f"Mussel has {len(mc) - len(unique)} duplicate coordinates"
 
     def test_no_duplicate_coords_ref(self, both_h5):
         """Reference pipeline should not produce duplicate patch coordinates."""
         _, _, tc, _ = both_h5
         unique = np.unique(tc, axis=0)
-        assert len(unique) == len(tc), (
-            f"Reference pipeline has {len(tc) - len(unique)} duplicate coordinates"
-        )
+        assert len(unique) == len(
+            tc
+        ), f"Reference pipeline has {len(tc) - len(unique)} duplicate coordinates"
 
     def test_overlap_zero_produces_no_overlap_mussel(self, tmp_path):
         """With overlap=0, Mussel patches should not overlap each other.
@@ -417,6 +419,6 @@ class TestTridentMusselComparison:
             row = np.sort(coords[coords[:, 1] == y][:, 0])
             if len(row) > 1:
                 steps = np.diff(row)
-                assert np.all(steps >= patch_size_px), (
-                    f"Overlapping patches in row y={y}: steps={steps[steps < patch_size_px]}"
-                )
+                assert np.all(
+                    steps >= patch_size_px
+                ), f"Overlapping patches in row y={y}: steps={steps[steps < patch_size_px]}"
