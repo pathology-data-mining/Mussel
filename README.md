@@ -268,6 +268,7 @@ The tools currently available from Mussel are,
 * `merge_annotation_features` - merge tile features with annotations from a BMP file.
 * `linear_probe_benchmark` - benchmark a linear probe classifier on features extracted from a slide
 * `save_model` - download and save a foundation model locally
+* `convert` - convert whole-slide images to pyramidal TIFF format (single file or batch)
 
 These are described, with examples, in the accompanying document, [README-commands.md](README-commands.md)
 
