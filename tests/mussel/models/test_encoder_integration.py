@@ -23,12 +23,10 @@ import numpy as np
 import pytest
 import torch
 
-from mussel.models.model_factory import (
-    ModelType,
-    SLIDE_ENCODER_COMPATIBILITY,
-    get_required_patch_encoder,
-)
-from mussel.utils.feature_extract import extract_patch_features, _apply_slide_aggregation
+from mussel.models.model_factory import (SLIDE_ENCODER_COMPATIBILITY,
+                                         ModelType, get_required_patch_encoder)
+from mussel.utils.feature_extract import (_apply_slide_aggregation,
+                                          extract_patch_features)
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -38,32 +36,49 @@ _TESTDATA = Path(__file__).parent.parent.parent / "testdata"
 _SLIDE_PATH = str(_TESTDATA / "948176.svs")
 _PATCH_H5 = str(_TESTDATA / "948176.patch.h5")
 
-# All patch encoder model types (excludes slide encoders)
+# Slide encoders that are *encoder-agnostic* (not listed in SLIDE_ENCODER_COMPATIBILITY
+# because they work with any patch encoder — e.g. ABMIL).
+_AGNOSTIC_SLIDE_ENCODERS = {ModelType.ABMIL_SLIDE}
+
+# All patch encoder model types (excludes slide encoders, both compatibility-based
+# and encoder-agnostic ones).
 _SLIDE_ENCODERS = set(SLIDE_ENCODER_COMPATIBILITY.keys())
-_PATCH_ENCODER_TYPES = [mt for mt in ModelType if mt not in _SLIDE_ENCODERS]
+_ALL_SLIDE_ENCODERS = _SLIDE_ENCODERS | _AGNOSTIC_SLIDE_ENCODERS
+_PATCH_ENCODER_TYPES = [mt for mt in ModelType if mt not in _ALL_SLIDE_ENCODERS]
 _SLIDE_ENCODER_TYPES = list(_SLIDE_ENCODERS)
 
 # Expected feature dimension per patch encoder (used to synthesise fake features
 # for slide-encoder-only tests).
 _PATCH_ENCODER_DIM: dict[ModelType, int] = {
-    ModelType.RESNET50:    1024,   # custom baseline stops at layer3 (256*4=1024)
-    ModelType.CTRANSPATH:   768,
-    ModelType.GIGAPATH:    1536,
-    ModelType.VIRCHOW:     2560,
-    ModelType.VIRCHOW2:    2560,
-    ModelType.OPTIMUS:     1536,
-    ModelType.CLIP:         512,
-    ModelType.GOOGLEPATH:   384,   # ViT-S/16 (embed_dim=384)
-    ModelType.CONCH1_5:     768,
-    ModelType.UNI:         1024,
-    ModelType.UNI2:        1536,
-    ModelType.PHIKON:       768,
-    ModelType.PHIKON_V2:   1024,   # DINOv2 ViT-L/14
+    ModelType.RESNET50: 1024,  # custom baseline stops at layer3 (256*4=1024)
+    ModelType.CTRANSPATH: 768,
+    ModelType.GIGAPATH: 1536,
+    ModelType.VIRCHOW: 2560,
+    ModelType.VIRCHOW2: 2560,
+    ModelType.OPTIMUS: 1536,
+    ModelType.CLIP: 512,
+    ModelType.GOOGLEPATH: 384,  # ViT-S/16 (embed_dim=384)
+    ModelType.CONCH1_5: 768,
+    ModelType.UNI: 1024,
+    ModelType.UNI2: 1536,
+    ModelType.PHIKON: 768,
+    ModelType.PHIKON_V2: 1024,  # DINOv2 ViT-L/14
     ModelType.H_OPTIMUS_1: 1536,
-    ModelType.H0_MINI:      768,
-    ModelType.MIDNIGHT12K: 1536,   # DINOv2 ViT-g/14
-    ModelType.GPFM:        1024,   # ViT-L/14 (embed_dim=1024, num_classes=0)
-    ModelType.HIBOU_L:     1024,
+    ModelType.H0_MINI: 768,
+    ModelType.MIDNIGHT12K: 1536,  # DINOv2 ViT-g/14
+    ModelType.GPFM: 1024,  # ViT-L/14 (embed_dim=1024, num_classes=0)
+    ModelType.HIBOU_L: 1024,
+    # Round 2: new patch encoders
+    ModelType.CONCH_V1: 512,  # CONCH v1.0, ViT-B/16 (448px)
+    ModelType.KAIKO_VITS8: 384,  # Kaiko ViT-S/8
+    ModelType.KAIKO_VITS16: 384,  # Kaiko ViT-S/16
+    ModelType.KAIKO_VITB8: 768,  # Kaiko ViT-B/8
+    ModelType.KAIKO_VITB16: 768,  # Kaiko ViT-B/16
+    ModelType.KAIKO_VITL14: 1024,  # Kaiko ViT-L/14
+    ModelType.LUNIT_VITS8: 384,  # Lunit DINO ViT-S/8
+    ModelType.LUNIT_VITS16: 384,  # Lunit DINO ViT-S/16
+    ModelType.OPENMIDNIGHT: 1536,  # DINOv2 ViT-G/14
+    ModelType.GENBIO_PATHFM: 4608,  # 3 channels × 1536
 }
 
 # Per-slide-encoder override for the INPUT patch feature dimension.
@@ -76,7 +91,6 @@ _SLIDE_ENCODER_INPUT_DIM: dict[ModelType, int] = {
 }
 
 
-
 def _skip_on_load_failure(fn):
     """Decorator: run fn and pytest.skip on any model-load/network error."""
 
@@ -87,15 +101,29 @@ def _skip_on_load_failure(fn):
         except Exception as exc:
             msg = str(exc).lower()
             # HF gated model, missing file, network issues, or dynamic module download failures → skip
-            if any(kw in msg for kw in [
-                "401", "403", "access", "gated", "permission", "not found",
-                "no such file", "checkpoint", "notimplemented", "cannot open",
-                "connection", "timeout", "huggingface", "hf hub",
-                "no module named 'transformers_modules",
-                "no module named 'tensorflow",
-                "no module named 'fastattn",
-                "no module named 'gigapath",
-            ]):
+            if any(
+                kw in msg
+                for kw in [
+                    "401",
+                    "403",
+                    "access",
+                    "gated",
+                    "permission",
+                    "not found",
+                    "no such file",
+                    "checkpoint",
+                    "notimplemented",
+                    "cannot open",
+                    "connection",
+                    "timeout",
+                    "huggingface",
+                    "hf hub",
+                    "no module named 'transformers_modules",
+                    "no module named 'tensorflow",
+                    "no module named 'fastattn",
+                    "no module named 'gigapath",
+                ]
+            ):
                 pytest.skip(f"Model unavailable: {exc}")
             raise  # unexpected error → real failure
 
@@ -105,6 +133,7 @@ def _skip_on_load_failure(fn):
 # ---------------------------------------------------------------------------
 # Patch encoder integration tests
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.slow
 @pytest.mark.integration
@@ -147,45 +176,45 @@ def test_patch_encoder_extracts_features(tmp_path, model_type, use_gpu):
     n, d = features.shape
     assert n > 0, f"{model_type.name}: expected at least one patch, got 0"
     assert d > 0, f"{model_type.name}: feature dimension is 0"
-    assert coords.shape == (n, 2), (
-        f"{model_type.name}: coords shape {coords.shape} != ({n}, 2)"
-    )
-    assert np.all(np.isfinite(features)), (
-        f"{model_type.name}: features contain NaN or Inf"
-    )
-    assert not np.all(features == 0), (
-        f"{model_type.name}: all features are zero (model not producing output)"
-    )
+    assert coords.shape == (
+        n,
+        2,
+    ), f"{model_type.name}: coords shape {coords.shape} != ({n}, 2)"
+    assert np.all(
+        np.isfinite(features)
+    ), f"{model_type.name}: features contain NaN or Inf"
+    assert not np.all(
+        features == 0
+    ), f"{model_type.name}: all features are zero (model not producing output)"
 
     # If expected dimension is known, validate it
     if model_type in _PATCH_ENCODER_DIM:
         expected_d = _PATCH_ENCODER_DIM[model_type]
-        assert d == expected_d, (
-            f"{model_type.name}: expected dim {expected_d}, got {d}"
-        )
+        assert d == expected_d, f"{model_type.name}: expected dim {expected_d}, got {d}"
 
     # --- Statistical sanity checks ---
     norms = np.linalg.norm(features, axis=1)
-    assert norms.mean() > 1e-3, (
-        f"{model_type.name}: mean L2 norm {norms.mean():.4f} unexpectedly small"
-    )
-    assert norms.mean() < 1e4, (
-        f"{model_type.name}: mean L2 norm {norms.mean():.4f} unexpectedly large"
-    )
+    assert (
+        norms.mean() > 1e-3
+    ), f"{model_type.name}: mean L2 norm {norms.mean():.4f} unexpectedly small"
+    assert (
+        norms.mean() < 1e4
+    ), f"{model_type.name}: mean L2 norm {norms.mean():.4f} unexpectedly large"
     if n > 1:
         inter_patch_std = features.std(axis=0)
-        assert inter_patch_std.mean() > 1e-8, (
-            f"{model_type.name}: features show no variation across patches"
-        )
+        assert (
+            inter_patch_std.mean() > 1e-8
+        ), f"{model_type.name}: features show no variation across patches"
         dead_frac = float((inter_patch_std == 0).mean())
-        assert dead_frac < 0.10, (
-            f"{model_type.name}: {dead_frac:.1%} of feature dims are dead (zero variance)"
-        )
+        assert (
+            dead_frac < 0.10
+        ), f"{model_type.name}: {dead_frac:.1%} of feature dims are dead (zero variance)"
 
 
 # ---------------------------------------------------------------------------
 # Slide encoder integration tests
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.slow
 @pytest.mark.integration
@@ -204,9 +233,13 @@ def test_slide_encoder_aggregates_features(tmp_path, slide_model_type, use_gpu):
     required_patch_enc = get_required_patch_encoder(slide_model_type)
     # Use per-slide-encoder input dim override if available (e.g. MADELEINE was trained
     # on CONCH v1.0 at 512-dim, not the current CONCH1.5 at 768-dim).
-    patch_dim = _SLIDE_ENCODER_INPUT_DIM.get(slide_model_type) or _PATCH_ENCODER_DIM.get(required_patch_enc)
+    patch_dim = _SLIDE_ENCODER_INPUT_DIM.get(
+        slide_model_type
+    ) or _PATCH_ENCODER_DIM.get(required_patch_enc)
     if patch_dim is None:
-        pytest.skip(f"Feature dim for {required_patch_enc.name} not in _PATCH_ENCODER_DIM")
+        pytest.skip(
+            f"Feature dim for {required_patch_enc.name} not in _PATCH_ENCODER_DIM"
+        )
 
     n_patches = 32
     rng = np.random.default_rng(42)
@@ -216,10 +249,13 @@ def test_slide_encoder_aggregates_features(tmp_path, slide_model_type, use_gpu):
 
     # Some slide encoders need coordinates
     patch_size_native = 512  # 256 px at 0.5 mpp
-    fake_coords = np.stack([
-        np.arange(n_patches) * patch_size_native,
-        np.zeros(n_patches, dtype=np.int64),
-    ], axis=1).astype(np.int64)
+    fake_coords = np.stack(
+        [
+            np.arange(n_patches) * patch_size_native,
+            np.zeros(n_patches, dtype=np.int64),
+        ],
+        axis=1,
+    ).astype(np.int64)
 
     @_skip_on_load_failure
     def run():
@@ -234,17 +270,17 @@ def test_slide_encoder_aggregates_features(tmp_path, slide_model_type, use_gpu):
 
     result = run()
 
-    assert isinstance(result, np.ndarray), (
-        f"{slide_model_type.name}: expected np.ndarray, got {type(result)}"
-    )
+    assert isinstance(
+        result, np.ndarray
+    ), f"{slide_model_type.name}: expected np.ndarray, got {type(result)}"
     assert result.ndim >= 1, f"{slide_model_type.name}: result has 0 dims"
     assert result.size > 0, f"{slide_model_type.name}: result is empty"
-    assert np.all(np.isfinite(result)), (
-        f"{slide_model_type.name}: result contains NaN or Inf"
-    )
-    assert not np.all(result == 0), (
-        f"{slide_model_type.name}: all result values are zero"
-    )
+    assert np.all(
+        np.isfinite(result)
+    ), f"{slide_model_type.name}: result contains NaN or Inf"
+    assert not np.all(
+        result == 0
+    ), f"{slide_model_type.name}: all result values are zero"
 
     # Verify the embedding can be saved as a torch tensor
     output_pt = str(tmp_path / f"{slide_model_type.name}.pt")
@@ -264,10 +300,7 @@ _E2E_PAIRS = [
 
 # Conditionally add GIGAPATH pair if token is available (used in existing tests)
 # We don't hard-require it — skip if auth fails.
-_E2E_PAIRS_ALL = [
-    (get_required_patch_encoder(se), se)
-    for se in _SLIDE_ENCODER_TYPES
-]
+_E2E_PAIRS_ALL = [(get_required_patch_encoder(se), se) for se in _SLIDE_ENCODER_TYPES]
 
 
 @pytest.mark.slow
@@ -325,7 +358,9 @@ def test_end_to_end_patch_then_slide_encode(
 
     assert isinstance(result, np.ndarray)
     assert result.size > 0
-    assert np.all(np.isfinite(result)), f"{slide_model_type.name}: non-finite values in result"
+    assert np.all(
+        np.isfinite(result)
+    ), f"{slide_model_type.name}: non-finite values in result"
 
 
 # ---------------------------------------------------------------------------
@@ -372,9 +407,9 @@ def test_patch_encoder_is_deterministic(tmp_path, model_type, use_gpu):
         with h5py.File(h5_a, "r") as fa, h5py.File(h5_b, "r") as fb:
             feat_a = fa["features"][:]
             feat_b = fb["features"][:]
-        assert np.allclose(feat_a, feat_b, rtol=1e-4, atol=1e-5), (
-            f"{model_type.name}: outputs differ between runs (non-deterministic)"
-        )
+        assert np.allclose(
+            feat_a, feat_b, rtol=1e-4, atol=1e-5
+        ), f"{model_type.name}: outputs differ between runs (non-deterministic)"
 
     run()
 
@@ -388,7 +423,9 @@ def test_patch_encoder_is_deterministic(tmp_path, model_type, use_gpu):
 @pytest.mark.integration
 @pytest.mark.timeout(600)
 @pytest.mark.parametrize("model_type", _PATCH_ENCODER_TYPES, ids=lambda m: m.name)
-def test_patch_encoder_matches_snapshot(tmp_path, model_type, use_gpu, update_snapshots):
+def test_patch_encoder_matches_snapshot(
+    tmp_path, model_type, use_gpu, update_snapshots
+):
     """Features match a previously saved golden snapshot (regression test).
 
     On first run (or with ``--update-snapshots``) the current output is saved
@@ -429,12 +466,110 @@ def test_patch_encoder_matches_snapshot(tmp_path, model_type, use_gpu, update_sn
             return
 
         golden = np.load(snapshot_path)
-        assert features.shape == golden.shape, (
-            f"{model_type.name}: shape {features.shape} != snapshot {golden.shape}"
-        )
+        assert (
+            features.shape == golden.shape
+        ), f"{model_type.name}: shape {features.shape} != snapshot {golden.shape}"
         assert np.allclose(features, golden, rtol=1e-3, atol=1e-4), (
             f"{model_type.name}: features differ from snapshot "
             "(model weights or preprocessing changed?)"
         )
 
     run()
+
+
+# ---------------------------------------------------------------------------
+# Encoder-agnostic slide encoder integration tests (ABMIL)
+# ---------------------------------------------------------------------------
+
+
+def _make_abmil_checkpoint(tmp_path: Path, feature_dim: int = 512) -> str:
+    """Write a minimal ABMIL checkpoint to disk and return its path."""
+    from mussel.models.abmil import _ABMILSlideEncoder
+
+    config = {
+        "feature_dim": feature_dim,
+        "head_dim": 64,
+        "n_heads": 4,
+        "dropout": 0.0,
+        "gated": False,
+    }
+    enc = _ABMILSlideEncoder(**config)
+    path = str(tmp_path / "abmil_test.pt")
+    torch.save({"config": config, "state_dict": enc.state_dict()}, path)
+    return path
+
+
+@pytest.mark.slow
+@pytest.mark.integration
+@pytest.mark.timeout(120)
+@pytest.mark.parametrize(
+    "feature_dim,n_patches",
+    [
+        (512, 64),  # typical CONCH v1.0 / CLIP feature dim
+        (1024, 32),  # typical UNI / RESNET50 feature dim
+    ],
+    ids=["dim512", "dim1024"],
+)
+def test_abmil_slide_encoder_aggregates_features(
+    tmp_path, feature_dim, n_patches, use_gpu
+):
+    """ABMIL slide encoder aggregates synthetic patch features into a slide embedding.
+
+    Tests:
+    - Output is a 1-D numpy array of the expected feature dimension.
+    - Output is finite and non-zero.
+    - Model can be loaded from a checkpoint and run end-to-end.
+    """
+    from mussel.models.abmil import ABMILSlideModel
+
+    ckpt_path = _make_abmil_checkpoint(tmp_path, feature_dim=feature_dim)
+    model = ABMILSlideModel(model_path=ckpt_path, use_gpu=use_gpu)
+    model_fn = model.get_model_fun()
+
+    rng = np.random.default_rng(42)
+    fake_features = rng.standard_normal((1, n_patches, feature_dim)).astype(np.float32)
+    features_tensor = torch.from_numpy(fake_features)
+
+    result = model_fn(features_tensor)
+
+    assert result.shape == (
+        feature_dim,
+    ), f"Expected ({feature_dim},), got {result.shape}"
+    result_np = result.numpy()
+    assert np.all(np.isfinite(result_np)), "Result contains NaN or Inf"
+    assert not np.all(result_np == 0), "All result values are zero"
+
+
+@pytest.mark.slow
+@pytest.mark.integration
+@pytest.mark.timeout(120)
+def test_abmil_slide_encoder_via_apply_slide_aggregation(tmp_path, use_gpu):
+    """ABMILSlideModel is accessible through the _apply_slide_aggregation API."""
+    feature_dim = 256
+    n_patches = 48
+    ckpt_path = _make_abmil_checkpoint(tmp_path, feature_dim=feature_dim)
+
+    rng = np.random.default_rng(0)
+    fake_features = rng.standard_normal((n_patches, feature_dim)).astype(np.float32)
+    fake_coords = np.stack(
+        [
+            np.arange(n_patches) * 256,
+            np.zeros(n_patches, dtype=np.int64),
+        ],
+        axis=1,
+    ).astype(np.int64)
+
+    result = _apply_slide_aggregation(
+        features=fake_features,
+        aggregation_method="model",
+        slide_model_type=ModelType.ABMIL_SLIDE,
+        slide_model_path=ckpt_path,
+        use_gpu=use_gpu,
+        coords=fake_coords,
+        patch_size=256,
+    )
+
+    assert isinstance(result, np.ndarray)
+    assert result.ndim == 1
+    assert result.size == feature_dim
+    assert np.all(np.isfinite(result))

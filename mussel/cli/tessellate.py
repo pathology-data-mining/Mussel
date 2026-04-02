@@ -16,7 +16,8 @@ from omegaconf import MISSING, OmegaConf
 
 logger = logging.getLogger(__name__)
 
-from mussel.utils.segment import draw_slide_mask, save_patches_png, segment_tissue
+from mussel.utils.segment import (draw_slide_mask, save_patches_png,
+                                  segment_tissue)
 
 
 @dataclass
@@ -30,9 +31,10 @@ class SegConfig:
     segment_threshold (int): Pixel threshold value . If pixel value smaller than or equal to threshold, it is set to 0, otherwise it is set to the maximum value (segment_max_value).
     segment_max_value (int): Maximum pixel value.
     median_blur_ksize (int): Aperture linear size. it must be odd and greater than 1. image is blurred with median filter.
-    morphology_ex_kernel (int): Kernel for mophological closing transformation.
+    morphology_ex_kernel (int): Kernel for morphological closing applied to the tissue mask
+        (0 to disable). Applied regardless of ``seg_model``.
     ref_patch_size (int): Reference patch size to use for tissue area and hole area thresholding.
-    use_otsu (bool): If True, apply otsu thresholding.
+    use_otsu (bool): **Deprecated** — use ``seg_model="otsu"`` instead.
     tissue_area_threshold (int): Tissue area threshold. Foreground contour area needs to exceed this threshold (scaled by reference patch size) to be included as foreground.
     hole_area_threshold (int): Hole area threshold. Hole contour area needs to exceed this threshold (scaled by reference patch size) to be included as a hole.
     max_num_holes (int): Maximum number of holes.
@@ -41,7 +43,10 @@ class SegConfig:
     min_tissue_proportion (float): Minimum fraction of patch area that must be tissue (0.0–1.0). Patches below this are discarded.
     remove_artifacts (bool): If True, apply artifact removal before patching (requires artifact_remover_fn).
     remove_penmarks (bool): If True, apply pen mark removal before patching (requires artifact_remover_fn).
-    seg_model (str): Segmentation backend: "classic" (default, HSV/Otsu) or "neural" (deep-learning, requires torch).
+    seg_model (str): Segmentation backend: ``"classic"`` (default, HSV + fixed threshold),
+        ``"otsu"`` (HSV + Otsu's automatic threshold), or ``"neural"`` (DeepLabV3,
+        requires torch). ``segment_threshold`` and ``median_blur_ksize`` are ignored
+        for ``"neural"``; ``morphology_ex_kernel`` applies to all three modes.
     slide_mpp_override (float): If set, use this value (µm/px) as the slide's native MPP instead of
         reading it from slide metadata. Use this when the slide lacks MPP tags and the
         metadata-based fallback produces incorrect results.
@@ -53,7 +58,7 @@ class SegConfig:
 
     # Default patch size constant - used to detect when automatic patch size selection should apply
     DEFAULT_PATCH_SIZE: ClassVar[int] = 256
-    
+
     patch_size: int = 256
     step_size: Optional[int] = None  # if None, defaults to patch_size
     mpp: float = 0.5
@@ -63,18 +68,30 @@ class SegConfig:
     median_blur_ksize: int = 7
     morphology_ex_kernel: int = 0
     ref_patch_size: int = 512
-    use_otsu: bool = False
+    use_otsu: bool = False  # Deprecated: use seg_model="otsu" instead.
     tissue_area_threshold: int = 100
     hole_area_threshold: int = 16
     max_num_holes: int = 8
     keep_ids: List[int] = field(default_factory=list)
     exclude_ids: List[int] = field(default_factory=list)
-    overlap: int = 0  # Patch overlap in absolute pixels (0 = no overlap). step_size = patch_size - overlap
-    min_tissue_proportion: float = 0.0  # Minimum fraction of patch that must be tissue (0.0-1.0). Patches below this are discarded.
-    remove_artifacts: bool = False  # If True, apply artifact removal to the tissue mask before patching.
-    remove_penmarks: bool = False  # If True, apply pen mark removal to the tissue mask before patching.
-    seg_model: str = "classic"  # Segmentation model: "classic" (Otsu/threshold) or "neural" (deep-learning, requires torch).
-    slide_mpp_override: Optional[float] = None  # If set, use this as the slide's native MPP instead of reading from metadata.
+    overlap: int = (
+        0  # Patch overlap in absolute pixels (0 = no overlap). step_size = patch_size - overlap
+    )
+    min_tissue_proportion: float = (
+        0.0  # Minimum fraction of patch that must be tissue (0.0-1.0). Patches below this are discarded.
+    )
+    remove_artifacts: bool = (
+        False  # If True, apply artifact removal to the tissue mask before patching.
+    )
+    remove_penmarks: bool = (
+        False  # If True, apply pen mark removal to the tissue mask before patching.
+    )
+    seg_model: str = (
+        "classic"  # "classic" (HSV + fixed threshold), "otsu" (HSV + Otsu), or "neural" (DeepLabV3).
+    )
+    slide_mpp_override: Optional[float] = (
+        None  # If set, use this as the slide's native MPP instead of reading from metadata.
+    )
 
 
 @dataclass

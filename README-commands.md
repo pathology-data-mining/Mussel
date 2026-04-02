@@ -18,6 +18,7 @@ slides, and generating feature embeddings with pathology foundation models.
 * `merge_annotation_features` - merge tile features with annotations from a BMP file.
 * `linear_probe_benchmark` - benchmark a linear probe classifier on features extracted from a slide
 * `save_model` - download and save a foundation model locally
+* `convert` - convert whole-slide images to pyramidal TIFF format (single file or batch)
 
 Each of these commands is configurable with a number of different parameters.
 You can always get a quick list of the parameters and default values for a given tool
@@ -103,7 +104,7 @@ export_tiles slide_path=slide.svs slide_mpp_override=0.5 ...
 | `seg_config.min_tissue_proportion` | `0.0` | Discard patches where the tissue fraction is below this value (0.0–1.0). |
 | `seg_config.remove_artifacts` | `false` | Enable artifact removal (requires `artifact_remover_fn` hook). |
 | `seg_config.remove_penmarks` | `false` | Enable pen-mark removal (requires `artifact_remover_fn` hook). |
-| `seg_config.seg_model` | `"classic"` | Segmentation backend: `"classic"` (HSV/Otsu) or `"neural"` (deep learning; see below). |
+| `seg_config.seg_model` | `"classic"` | Segmentation backend: `"classic"` (HSV + fixed threshold), `"otsu"` (HSV + Otsu automatic threshold), or `"neural"` (deep learning; see below). Note: the old `seg_config.use_otsu=true` flag is deprecated — use `seg_model=otsu` instead. |
 | `seg_config.slide_mpp_override` | `null` | Override the slide's native MPP; useful when metadata is missing or wrong. |
 
 Example with 50% overlap and tissue filtering:
@@ -188,6 +189,16 @@ The following models are currently supported,
 | OpenCLIP       | CLIP          | public | https://github.com/mlfoundations/open_clip |
 | GooglePath     | GOOGLEPATH    | 🔒 gated | https://huggingface.co/google/path-foundation |
 | Conch v1.5     | CONCH1_5      | 🔒 gated | https://huggingface.co/MahmoodLab/TITAN |
+| CONCH v1.0     | CONCH_V1      | 🔒 gated | https://huggingface.co/MahmoodLab/CONCH |
+| Kaiko ViT-S/8  | KAIKO_VITS8   | public | https://huggingface.co/1aurent/vit_small_patch8_224.kaiko_ai_towards_large_pathology_fms |
+| Kaiko ViT-S/16 | KAIKO_VITS16  | public | https://huggingface.co/1aurent/vit_small_patch16_224.kaiko_ai_towards_large_pathology_fms |
+| Kaiko ViT-B/8  | KAIKO_VITB8   | public | https://huggingface.co/1aurent/vit_base_patch8_224.kaiko_ai_towards_large_pathology_fms |
+| Kaiko ViT-B/16 | KAIKO_VITB16  | public | https://huggingface.co/1aurent/vit_base_patch16_224.kaiko_ai_towards_large_pathology_fms |
+| Kaiko ViT-L/14 | KAIKO_VITL14  | public | https://huggingface.co/1aurent/vit_large_patch14_reg4_224.kaiko_ai_towards_large_pathology_fms |
+| Lunit ViT-S/8  | LUNIT_VITS8   | public | https://huggingface.co/1aurent/vit_small_patch8_224.lunit_dino |
+| Lunit ViT-S/16 | LUNIT_VITS16  | public | https://huggingface.co/1aurent/vit_small_patch16_224.lunit_dino |
+| OpenMidnight   | OPENMIDNIGHT  | 🔒 gated | https://huggingface.co/SophontAI/OpenMidnight |
+| GenBio-PathFM  | GENBIO_PATHFM | 🔒 gated | https://huggingface.co/genbio-ai/genbio-pathfm |
 
 **Slide encoders** (require patch-level features as input):
 
@@ -220,14 +231,16 @@ export HF_TOKEN=hf_...
 
 **Gated models** — visit the link in the table above to request access:
 
-- **Mahmood Lab** (MahmoodLab): UNI, UNI2, CONCH1_5, TITAN_SLIDE, FEATHER_SLIDE, MADELEINE_SLIDE
+- **Mahmood Lab** (MahmoodLab): UNI, UNI2, CONCH_V1, CONCH1_5, TITAN_SLIDE, FEATHER_SLIDE, MADELEINE_SLIDE
 - **Paige AI** (paige-ai): VIRCHOW, VIRCHOW2, PRISM_SLIDE
 - **Bioptimus** (bioptimus): OPTIMUS, H_OPTIMUS_1, H0_MINI
 - **Prov-GigaPath**: GIGAPATH, GIGAPATH_SLIDE
 - **Google**: GOOGLEPATH
 - **HistAI**: HIBOU_L
+- **SophontAI**: OPENMIDNIGHT
+- **GenBio AI**: GENBIO_PATHFM
 
-**Public models** (no token needed): RESNET50, CLIP, PHIKON, PHIKON_V2, MIDNIGHT12K, GPFM
+**Public models** (no token needed): RESNET50, CLIP, PHIKON, PHIKON_V2, MIDNIGHT12K, GPFM, KAIKO_VITS8, KAIKO_VITS16, KAIKO_VITB8, KAIKO_VITB16, KAIKO_VITL14, LUNIT_VITS8, LUNIT_VITS16
 
 **Local-checkpoint-only models**: CTRANSPATH and CHIEF_SLIDE require manually downloaded checkpoints (no HuggingFace download). Pass the checkpoint path via `model_path=`.
 
@@ -346,5 +359,40 @@ You can download and save a foundation model locally with the `save_model` comma
 save_model model_type=OPTIMUS output_path=optimus.pkl
 ``` 
 
+### `convert`
+
+`convert` converts whole-slide images to pyramidal TIFF format. It supports both
+single-file and batch (directory) mode.
+
+**Single file:**
+```bash
+convert \
+    input_path=slide.ndpi \
+    output_dir=converted/ \
+    mpp=0.25
+```
+
+**Batch mode** (directory of slides with an MPP CSV):
+```bash
+convert \
+    input_path=/data/slides/ \
+    output_dir=/data/converted/ \
+    mpp_csv=slides_mpp.csv \
+    num_workers=8
+```
+
+The CSV must have columns `wsi` (filename with extension) and `mpp` (microns-per-pixel).
+Each input file `<stem>.<ext>` produces `output_dir/<stem>.tiff`. Pass
+`bigtiff=true` for files larger than ~4 GB.
+
+| Parameter | Default | Description |
+|---|---|---|
+| `input_path` | required | Path to a single slide file or a directory of slides. |
+| `output_dir` | required | Directory for converted TIFF files (created if absent). |
+| `mpp` | — | Microns-per-pixel of the source image. Required for single-file mode. |
+| `mpp_csv` | — | CSV with `wsi` and `mpp` columns. Required for batch/directory mode. |
+| `downscale_by` | `1` | Integer downsample factor (e.g. `2` converts a 40× slide to 20×). |
+| `num_workers` | `1` | Parallel workers for batch mode (`0` = all CPUs). |
+| `bigtiff` | `false` | Write BigTIFF format (required for files > ~4 GB). |
 
 

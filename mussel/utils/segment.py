@@ -1,6 +1,7 @@
 import functools
 import logging
 import multiprocessing as mp
+import warnings
 from dataclasses import dataclass
 from pathlib import Path
 from typing import List, Optional
@@ -16,10 +17,14 @@ from shapely.prepared import prep
 
 from mussel.utils.file import save_hdf5
 from mussel.utils.timer import timed
+from mussel.utils.wsi_backend import open_slide as _wsi_open_slide
 
 Image.MAX_IMAGE_PIXELS = None
 
 logger = logging.getLogger(__name__)
+
+_SEGMENT_THRESHOLD_DEFAULT = 20
+_MEDIAN_BLUR_DEFAULT = 7
 
 
 def get_slide_mpp(
@@ -100,7 +105,9 @@ def get_slide_mpp(
                 try:
                     x_res_float = float(x_resolution)
                     if x_res_float <= 0:
-                        raise ValueError(f"tiff.XResolution is non-positive: {x_resolution}")
+                        raise ValueError(
+                            f"tiff.XResolution is non-positive: {x_resolution}"
+                        )
                     slide_mpp = round(scale / x_res_float, 4)
                     logger.warning(
                         f"MPP not in standard metadata for {slide_name}; "
@@ -113,7 +120,11 @@ def get_slide_mpp(
 
         # Step 5: estimate from objective-power magnification
         magnification = None
-        for key in ["aperio.AppMag", "openslide.objective-power", tiffslide.PROPERTY_NAME_OBJECTIVE_POWER]:
+        for key in [
+            "aperio.AppMag",
+            "openslide.objective-power",
+            tiffslide.PROPERTY_NAME_OBJECTIVE_POWER,
+        ]:
             mag_value = wsi.properties.get(key)
             if mag_value is not None:
                 try:
@@ -132,13 +143,42 @@ def get_slide_mpp(
             return slide_mpp
 
         # Step 6: default fallback
-        logger.warning(f"MPP metadata not found for {slide_name}, using default MPP: {default_mpp}")
+        logger.warning(
+            f"MPP metadata not found for {slide_name}, using default MPP: {default_mpp}"
+        )
         return default_mpp
 
     except (KeyError, TypeError, ValueError) as e:
         slide_name = slide_path if slide_path else "slide"
-        logger.warning(f"Failed to read MPP metadata for {slide_name}: {e}, using default MPP: {default_mpp}")
+        logger.warning(
+            f"Failed to read MPP metadata for {slide_name}: {e}, using default MPP: {default_mpp}"
+        )
         return default_mpp
+
+
+def get_level_for_magnification(wsi, target_mag: float, fallback_level: int = 2) -> int:
+    """Return the best pyramid level for a target magnification.
+
+    Reads the slide's native MPP via :func:`get_slide_mpp`, computes the
+    required downsample factor, and delegates to
+    ``wsi.get_best_level_for_downsample``.
+
+    Args:
+        wsi: TiffSlide-compatible slide object.
+        target_mag: Desired magnification (e.g. ``20.0`` for 20×).
+        fallback_level: Pyramid level to return when MPP cannot be determined
+            (default: 2).
+
+    Returns:
+        Integer pyramid level index closest to ``target_mag``.
+    """
+    try:
+        mpp = get_slide_mpp(wsi)
+        native_mag = 10.0 / mpp
+        downsample = native_mag / target_mag
+        return wsi.get_best_level_for_downsample(downsample)
+    except Exception:
+        return fallback_level
 
 
 def is_white_patch(patch, saturation_threshold=5):
@@ -445,7 +485,7 @@ def _segment_tissue_neural(img: np.ndarray, slide_mpp: float) -> np.ndarray:
 
     Uses a DeepLabV3-ResNet50 model (pre-trained on histopathology slides) to
     segment tissue from background.  The model and inference pipeline are
-    implemented directly in Mussel — no HEST or TRIDENT package is required.
+    implemented directly in Mussel — no HEST package is required.
     PyTorch and torchvision must be installed (``uv sync --extra torch-gpu``).
 
     Weights are downloaded automatically from ``MahmoodLab/hest-tissue-seg``
@@ -460,6 +500,7 @@ def _segment_tissue_neural(img: np.ndarray, slide_mpp: float) -> np.ndarray:
         Binary uint8 mask, shape (H, W), values 0 (background) or 255 (tissue).
     """
     from mussel.utils.neural_seg import NeuralTissueSegmenter
+
     segmenter = NeuralTissueSegmenter()
     return segmenter.segment(img, slide_mpp=slide_mpp)
 
@@ -469,9 +510,9 @@ def segment_tissue(
     slide_path: str,
     slide_id: Optional[str] = None,
     seg_level: int = -1,
-    segment_threshold: int = 20,
+    segment_threshold: int = _SEGMENT_THRESHOLD_DEFAULT,
     segment_max_value: int = 255,
-    median_blur_ksize: int = 7,
+    median_blur_ksize: int = _MEDIAN_BLUR_DEFAULT,
     morphology_ex_kernel: int = 0,
     use_otsu: bool = False,
     tissue_area_threshold: int = 100,
@@ -489,24 +530,30 @@ def segment_tissue(
     remove_artifacts: bool = False,
     remove_penmarks: bool = False,
     artifact_remover_fn=None,  # Optional callable: (img, mask, mpp) -> mask
-    seg_model: str = "classic",  # "classic" (HSV/Otsu) or "neural" (DeepLabV3)
+    seg_model: str = "classic",  # "classic" (HSV + manual threshold), "otsu" (HSV + Otsu threshold), or "neural" (DeepLabV3)
     slide_mpp_override: Optional[float] = None,
 ):
     """Segment tissue regions in a whole-slide image and generate tissue patches.
-    
+
     Performs tissue segmentation using HSV color space, median filtering, and binary
     thresholding to identify tissue regions. Then partitions tissue into a grid of
     patches for downstream processing.
-    
+
     Args:
         slide_path: Path to the whole-slide image file.
         slide_id: Optional identifier for the slide (defaults to filename stem).
         seg_level: Pyramid level to use for segmentation (default: -1 for auto-select).
         segment_threshold: Binary threshold value for tissue detection (default: 20).
+            Only used when ``seg_model`` is ``"classic"``.
         segment_max_value: Maximum value for binary thresholding (default: 255).
+            Only used when ``seg_model`` is ``"classic"`` or ``"otsu"``.
         median_blur_ksize: Kernel size for median blur filter (default: 7).
-        morphology_ex_kernel: Kernel size for morphological closing (0 to disable).
-        use_otsu: Whether to use Otsu's method for automatic threshold (default: False).
+            Only used when ``seg_model`` is ``"classic"`` or ``"otsu"``.
+        morphology_ex_kernel: Kernel size for morphological closing applied to the tissue
+            mask (0 to disable). Applied after segmentation for all ``seg_model`` values,
+            including ``"neural"``.
+        use_otsu: **Deprecated** — use ``seg_model="otsu"`` instead. If ``True``,
+            overrides ``seg_model`` to ``"otsu"`` with a deprecation warning.
         tissue_area_threshold: Minimum tissue contour area in requested patches (default: 100).
             A contour must cover at least this many patches (at ``patch_size`` and ``mpp``)
             to be retained.  Because the threshold is expressed in terms of the actual
@@ -536,7 +583,21 @@ def segment_tissue(
             artifact/pen-mark removal.  See
             :class:`~mussel.utils.artifact_removal.GrandQCArtifactRemover` for
             a ready-made implementation.
-        
+        seg_model: Segmentation backend (default: ``"classic"``).
+
+            - ``"classic"``: HSV colour space + median blur + fixed threshold
+              (``segment_threshold``).
+            - ``"otsu"``: HSV colour space + median blur + Otsu's automatic threshold.
+              Ignores ``segment_threshold``.
+            - ``"neural"``: DeepLabV3-ResNet50 trained on histopathology (HEST).
+              Ignores ``segment_threshold`` and ``median_blur_ksize``; raises a warning
+              if either is set to a non-default value. Requires PyTorch; weights are
+              auto-downloaded from ``MahmoodLab/hest-tissue-seg``.
+
+            ``morphology_ex_kernel`` applies to all three modes.
+        slide_mpp_override: If set, use this value (µm/px) as the slide's native MPP
+            instead of reading it from slide metadata.
+
     Returns:
         tuple: A 4-tuple containing:
             - polygon (shapely.geometry.MultiPolygon): Tissue regions as a multipolygon
@@ -551,11 +612,11 @@ def segment_tissue(
                 - level_dim: Dimensions at level 0
                 - name: Slide identifier
                 - (and other segmentation parameters)
-                
+
         Returns None if no tissue contours are found or if slide dimensions are too large.
     """
-    wsi = tiffslide.open_slide(slide_path)
-    
+    wsi = _wsi_open_slide(slide_path)
+
     try:
         if slide_id is None:
             slide_id = Path(slide_path).stem
@@ -588,9 +649,7 @@ def segment_tissue(
 
         if step_size is None:
             if overlap < 0:
-                raise ValueError(
-                    f"overlap must be non-negative, got {overlap}"
-                )
+                raise ValueError(f"overlap must be non-negative, got {overlap}")
             if overlap > 0:
                 step_size = patch_size - overlap
                 if step_size <= 0:
@@ -606,19 +665,23 @@ def segment_tissue(
             )
 
         # Get MPP with fallback handling
-        slide_mpp = get_slide_mpp(wsi, slide_path, slide_mpp_override=slide_mpp_override)
+        slide_mpp = get_slide_mpp(
+            wsi, slide_path, slide_mpp_override=slide_mpp_override
+        )
 
         native_step_size = get_native_size(step_size, mpp, slide_mpp)
         native_patch_size = get_native_size(patch_size, mpp, slide_mpp)
         logger.info(f"native_step_size: {native_step_size}")
         logger.info(f"native_patch_size: {native_patch_size}")
 
-        img = np.array(wsi.read_region((0, 0), seg_level, wsi.level_dimensions[seg_level]))
+        img = np.array(
+            wsi.read_region((0, 0), seg_level, wsi.level_dimensions[seg_level])
+        )
 
         level_downsamples = _assert_level_downsamples(wsi)
 
         # Validate and normalise seg_model
-        supported_seg_models = {"classic", "neural"}
+        supported_seg_models = {"classic", "otsu", "neural"}
         if seg_model is None:
             seg_model = "classic"
         elif not isinstance(seg_model, str):
@@ -631,12 +694,36 @@ def segment_tissue(
                 f"Supported values: {sorted(supported_seg_models)}"
             )
 
+        # Handle deprecated use_otsu flag.
+        if use_otsu:
+            warnings.warn(
+                "use_otsu=True is deprecated; use seg_model='otsu' instead. "
+                "Overriding seg_model to 'otsu'.",
+                DeprecationWarning,
+                stacklevel=2,
+            )
+            seg_model = "otsu"
+
+        # Warn about classic-only parameters that are ignored by the neural backend.
+        if seg_model == "neural":
+            ignored = []
+            if segment_threshold != _SEGMENT_THRESHOLD_DEFAULT:
+                ignored.append(f"segment_threshold={segment_threshold!r}")
+            if median_blur_ksize != _MEDIAN_BLUR_DEFAULT:
+                ignored.append(f"median_blur_ksize={median_blur_ksize!r}")
+            if ignored:
+                logger.warning(
+                    "seg_model='neural' ignores classic-only parameters: %s. "
+                    "These values have no effect.",
+                    ", ".join(ignored),
+                )
+
         if seg_model == "neural":
             # The img is read at seg_level. Compute its actual MPP so that
             # NeuralTissueSegmenter can rescale to the model's 1 µm/px target.
             seg_level_ds = level_downsamples[seg_level][0]  # x-axis downsample
             seg_level_mpp = slide_mpp * seg_level_ds
-            img_otsu = _segment_tissue_neural(img, seg_level_mpp)
+            tissue_mask = _segment_tissue_neural(img, seg_level_mpp)
         else:
             img_hsv = cv2.cvtColor(img, cv2.COLOR_RGB2HSV)  # Convert to HSV space
             img_med = cv2.medianBlur(
@@ -644,19 +731,19 @@ def segment_tissue(
             )  # Apply median blurring
 
             # Thresholding
-            if use_otsu:
-                _, img_otsu = cv2.threshold(
+            if seg_model == "otsu":
+                _, tissue_mask = cv2.threshold(
                     img_med, 0, segment_max_value, cv2.THRESH_OTSU + cv2.THRESH_BINARY
                 )
             else:
-                _, img_otsu = cv2.threshold(
+                _, tissue_mask = cv2.threshold(
                     img_med, segment_threshold, segment_max_value, cv2.THRESH_BINARY
                 )
 
-            # Morphological closing
-            if morphology_ex_kernel > 0:
-                kernel = np.ones((morphology_ex_kernel, morphology_ex_kernel), np.uint8)
-                img_otsu = cv2.morphologyEx(img_otsu, cv2.MORPH_CLOSE, kernel)
+        # Morphological closing — applied regardless of seg_model.
+        if morphology_ex_kernel > 0:
+            kernel = np.ones((morphology_ex_kernel, morphology_ex_kernel), np.uint8)
+            tissue_mask = cv2.morphologyEx(tissue_mask, cv2.MORPH_CLOSE, kernel)
 
         # Optional artifact/pen mark removal via pluggable callable.
         # Compute the thumbnail's MPP so the remover can rescale to its model's
@@ -664,7 +751,7 @@ def segment_tissue(
         if artifact_remover_fn is not None:
             if remove_artifacts or remove_penmarks:
                 img_mpp = slide_mpp * level_downsamples[seg_level][0]
-                img_otsu = artifact_remover_fn(img, img_otsu, img_mpp)
+                tissue_mask = artifact_remover_fn(img, tissue_mask, img_mpp)
             else:
                 logger.warning(
                     "artifact_remover_fn was provided but neither remove_artifacts nor "
@@ -685,14 +772,14 @@ def segment_tissue(
         # threshold truly scale-independent: the same threshold value produces the same
         # minimum-tissue-size in µm² regardless of which pyramid level is used for
         # segmentation.
-        native_patch_area = native_patch_size ** 2
+        native_patch_area = native_patch_size**2
         seg_patch_area = int(native_patch_area / (scale[0] * scale[1]))
         tissue_area_threshold *= seg_patch_area
         hole_area_threshold *= seg_patch_area
 
         # Find and filter contours
         contours, hierarchy = cv2.findContours(
-            img_otsu, cv2.RETR_CCOMP, cv2.CHAIN_APPROX_NONE
+            tissue_mask, cv2.RETR_CCOMP, cv2.CHAIN_APPROX_NONE
         )  # Find contours
         if contours is None or hierarchy is None:
             return None
@@ -733,9 +820,11 @@ def segment_tissue(
         if min_tissue_proportion > 0.0:
             prepared_polygon = prep(polygon)
             filtered = [
-                (g, c) for g, c in zip(grid, coords)
+                (g, c)
+                for g, c in zip(grid, coords)
                 if prepared_polygon.intersects(g)
-                and prepared_polygon.intersection(g).area / g.area >= min_tissue_proportion
+                and prepared_polygon.intersection(g).area / g.area
+                >= min_tissue_proportion
             ]
             if filtered:
                 grid, coords = zip(*filtered)
@@ -753,7 +842,6 @@ def segment_tissue(
             "segment_max_value": segment_max_value,
             "median_blur_ksize": median_blur_ksize,
             "morphology_ex_kernel": morphology_ex_kernel,
-            "use_otsu": use_otsu,
             "tissue_area_threshold": tissue_area_threshold,
             "hole_area_threshold": hole_area_threshold,
             "max_num_holes": max_num_holes,
@@ -793,8 +881,8 @@ def draw_slide_mask(
     """
     Draw slide mask with polygon contours or list of grid polygons
     """
-    wsi = tiffslide.open_slide(slide_path)
-    
+    wsi = _wsi_open_slide(slide_path)
+
     try:
         if vis_level < 0:
             if len(wsi.level_dimensions) == 1:
@@ -897,13 +985,15 @@ def save_patches_png(
     """
     Save patches as png
     """
-    wsi = tiffslide.open_slide(slide_path)
+    wsi = _wsi_open_slide(slide_path)
     pool = None
-    
+
     try:
         # Get MPP with fallback handling
-        slide_mpp = get_slide_mpp(wsi, slide_path, slide_mpp_override=slide_mpp_override)
-        
+        slide_mpp = get_slide_mpp(
+            wsi, slide_path, slide_mpp_override=slide_mpp_override
+        )
+
         native_patch_size = get_native_size(patch_size, mpp, slide_mpp)
 
         save_dir = Path(save_dir)

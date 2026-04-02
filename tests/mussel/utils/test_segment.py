@@ -1,25 +1,26 @@
+from unittest.mock import MagicMock, patch
+
 import numpy as np
 import pytest
-from unittest.mock import MagicMock, patch
 
 from mussel.utils.segment import get_slide_mpp
 
 
 class TestGetSlideMPP:
     """Test suite for get_slide_mpp function with comprehensive fallback coverage"""
-    
+
     def test_get_slide_mpp_standard_property(self):
         """Test MPP retrieval from standard tiffslide property"""
         import tiffslide
-        
+
         # Mock wsi object with standard MPP property
         wsi = MagicMock()
         wsi.properties = {tiffslide.PROPERTY_NAME_MPP_X: "0.25"}
-        
+
         mpp = get_slide_mpp(wsi)
-        
+
         assert mpp == 0.25
-    
+
     def test_get_slide_mpp_override_bypasses_metadata(self):
         """slide_mpp_override short-circuits all metadata reading"""
         wsi = MagicMock()
@@ -40,181 +41,173 @@ class TestGetSlideMPP:
 
         assert mpp == 1.0
         assert isinstance(mpp, float)
-    
+
     def test_get_slide_mpp_aperio_property(self):
         """Test MPP retrieval from aperio.MPP property"""
         import tiffslide
-        
+
         wsi = MagicMock()
-        wsi.properties = {
-            tiffslide.PROPERTY_NAME_MPP_X: None,
-            'aperio.MPP': "0.25"
-        }
-        
+        wsi.properties = {tiffslide.PROPERTY_NAME_MPP_X: None, "aperio.MPP": "0.25"}
+
         mpp = get_slide_mpp(wsi)
-        
+
         assert mpp == 0.25
-    
+
     def test_get_slide_mpp_openslide_property(self):
         """Test MPP retrieval from openslide.mpp-x property"""
         import tiffslide
-        
+
         wsi = MagicMock()
         wsi.properties = {
             tiffslide.PROPERTY_NAME_MPP_X: None,
-            'aperio.MPP': None,
-            'openslide.mpp-x': "1.0"
+            "aperio.MPP": None,
+            "openslide.mpp-x": "1.0",
         }
-        
+
         mpp = get_slide_mpp(wsi)
-        
+
         assert mpp == 1.0
-    
+
     def test_get_slide_mpp_from_aperio_magnification(self):
         """Test MPP estimation from aperio.AppMag magnification"""
         import tiffslide
-        
+
         wsi = MagicMock()
-        wsi.properties = {
-            tiffslide.PROPERTY_NAME_MPP_X: None,
-            'aperio.AppMag': "40"
-        }
-        
+        wsi.properties = {tiffslide.PROPERTY_NAME_MPP_X: None, "aperio.AppMag": "40"}
+
         mpp = get_slide_mpp(wsi)
-        
+
         # 40x magnification -> 10.0 / 40 = 0.25 MPP
         assert mpp == 0.25
-    
+
     def test_get_slide_mpp_from_openslide_magnification(self):
         """Test MPP estimation from openslide.objective-power"""
         import tiffslide
-        
+
         wsi = MagicMock()
         wsi.properties = {
             tiffslide.PROPERTY_NAME_MPP_X: None,
-            'aperio.AppMag': None,
-            'openslide.objective-power': "20"
+            "aperio.AppMag": None,
+            "openslide.objective-power": "20",
         }
-        
+
         mpp = get_slide_mpp(wsi)
-        
+
         # 20x magnification -> 10.0 / 20 = 0.5 MPP
         assert mpp == 0.5
-    
+
     def test_get_slide_mpp_from_tiffslide_magnification(self):
         """Test MPP estimation from tiffslide.objective-power"""
         import tiffslide
-        
+
         wsi = MagicMock()
         wsi.properties = {
             tiffslide.PROPERTY_NAME_MPP_X: None,
-            'aperio.AppMag': None,
-            'openslide.objective-power': None,
-            tiffslide.PROPERTY_NAME_OBJECTIVE_POWER: "10"
+            "aperio.AppMag": None,
+            "openslide.objective-power": None,
+            tiffslide.PROPERTY_NAME_OBJECTIVE_POWER: "10",
         }
-        
+
         mpp = get_slide_mpp(wsi)
-        
+
         # 10x magnification -> 10.0 / 10 = 1.0 MPP
         assert mpp == 1.0
-    
+
     def test_get_slide_mpp_magnification_float_value(self):
         """Test magnification with float value (e.g., 20.5x)"""
         import tiffslide
-        
+
         wsi = MagicMock()
-        wsi.properties = {
-            tiffslide.PROPERTY_NAME_MPP_X: None,
-            'aperio.AppMag': "20.5"
-        }
-        
+        wsi.properties = {tiffslide.PROPERTY_NAME_MPP_X: None, "aperio.AppMag": "20.5"}
+
         mpp = get_slide_mpp(wsi)
-        
+
         # 20.5x magnification -> 10.0 / 20.5 ≈ 0.488 MPP
         assert abs(mpp - 10.0 / 20.5) < 0.001
-    
+
     def test_get_slide_mpp_invalid_magnification_fallback(self):
         """Test fallback when magnification is not a valid number"""
         import tiffslide
-        
+
         wsi = MagicMock()
         wsi.properties = {
             tiffslide.PROPERTY_NAME_MPP_X: None,
-            'aperio.AppMag': "invalid"
+            "aperio.AppMag": "invalid",
         }
-        
+
         mpp = get_slide_mpp(wsi)
-        
+
         # Should fallback to default 0.5 MPP
         assert mpp == 0.5
-    
+
     def test_get_slide_mpp_no_metadata_default_fallback(self):
         """Test fallback to default MPP when no metadata found"""
         wsi = MagicMock()
         wsi.properties = {}
-        
+
         mpp = get_slide_mpp(wsi)
-        
+
         # Should use default 0.5 MPP
         assert mpp == 0.5
-    
+
     def test_get_slide_mpp_custom_default(self):
         """Test custom default MPP value"""
         wsi = MagicMock()
         wsi.properties = {}
-        
+
         mpp = get_slide_mpp(wsi, default_mpp=0.75)
-        
+
         assert mpp == 0.75
-    
+
     def test_get_slide_mpp_with_slide_path_logging(self):
         """Test that slide_path is used in log messages"""
         wsi = MagicMock()
         wsi.properties = {}
-        
-        with patch('mussel.utils.segment.logger') as mock_logger:
+
+        with patch("mussel.utils.segment.logger") as mock_logger:
             mpp = get_slide_mpp(wsi, slide_path="/path/to/slide.svs")
-            
+
             # Should log warning with slide path
             assert mock_logger.warning.called
             call_args = str(mock_logger.warning.call_args)
             assert "/path/to/slide.svs" in call_args
-    
+
     def test_get_slide_mpp_exception_handling(self):
         """Test exception handling with invalid property access"""
         wsi = MagicMock()
         # Simulate property access raising an exception
         wsi.properties.get.side_effect = KeyError("Property not found")
-        
+
         mpp = get_slide_mpp(wsi, default_mpp=0.6)
-        
+
         # Should catch exception and use default
         assert mpp == 0.6
-    
+
     def test_get_slide_mpp_type_error_handling(self):
         """Test handling of TypeError when converting MPP value"""
         import tiffslide
+
         wsi = MagicMock()
         # Return a value that can't be converted to float
         wsi.properties = {tiffslide.PROPERTY_NAME_MPP_X: object()}
-        
+
         mpp = get_slide_mpp(wsi, default_mpp=0.7)
-        
+
         # Should catch TypeError and use default
         assert mpp == 0.7
-    
+
     def test_get_slide_mpp_value_error_handling(self):
         """Test handling of ValueError when converting invalid string"""
         import tiffslide
-        
+
         wsi = MagicMock()
         wsi.properties = {tiffslide.PROPERTY_NAME_MPP_X: "not-a-number"}
-        
+
         mpp = get_slide_mpp(wsi, default_mpp=0.8)
-        
+
         # Should catch ValueError and use default
         assert mpp == 0.8
-    
+
     def test_get_slide_mpp_zero_magnification_handling(self):
         """Test that zero magnification falls back to default MPP (no ZeroDivisionError)."""
         import tiffslide
@@ -227,98 +220,92 @@ class TestGetSlideMPP:
 
         mpp = get_slide_mpp(wsi)
         assert mpp == 0.5  # falls back to default
-    
+
     def test_get_slide_mpp_priority_order(self):
         """Test that standard property takes priority over alternatives"""
         import tiffslide
-        
+
         wsi = MagicMock()
         wsi.properties = {
             tiffslide.PROPERTY_NAME_MPP_X: "0.25",  # Standard property
-            'aperio.MPP': "0.5",  # Alternative property
-            'aperio.AppMag': "10"  # Magnification
+            "aperio.MPP": "0.5",  # Alternative property
+            "aperio.AppMag": "10",  # Magnification
         }
-        
+
         mpp = get_slide_mpp(wsi)
-        
+
         # Should use standard property (0.25), not alternatives
         assert mpp == 0.25
-    
+
     def test_get_slide_mpp_magnification_priority_order(self):
         """Test that aperio.AppMag takes priority over other magnification properties"""
         import tiffslide
-        
+
         wsi = MagicMock()
         wsi.properties = {
             tiffslide.PROPERTY_NAME_MPP_X: None,
-            'aperio.AppMag': "40",  # Should use this
-            'openslide.objective-power': "20",
-            'tiffslide.objective-power': "10"
+            "aperio.AppMag": "40",  # Should use this
+            "openslide.objective-power": "20",
+            "tiffslide.objective-power": "10",
         }
-        
+
         mpp = get_slide_mpp(wsi)
-        
+
         # Should use aperio.AppMag (40x -> 0.25 MPP)
         assert mpp == 0.25
-    
+
     def test_get_slide_mpp_logging_standard_property(self):
         """Test logging when MPP found in standard property"""
         import tiffslide
-        
+
         wsi = MagicMock()
         wsi.properties = {tiffslide.PROPERTY_NAME_MPP_X: "0.5"}
-        
-        with patch('mussel.utils.segment.logger') as mock_logger:
+
+        with patch("mussel.utils.segment.logger") as mock_logger:
             get_slide_mpp(wsi)
-            
+
             # Should log info message
             mock_logger.info.assert_called()
             call_args = str(mock_logger.info.call_args)
             assert "0.5" in call_args
-    
+
     def test_get_slide_mpp_logging_alternate_property(self):
         """Test logging when MPP found in alternate property"""
         import tiffslide
-        
+
         wsi = MagicMock()
-        wsi.properties = {
-            tiffslide.PROPERTY_NAME_MPP_X: None,
-            'aperio.MPP': "0.25"
-        }
-        
-        with patch('mussel.utils.segment.logger') as mock_logger:
+        wsi.properties = {tiffslide.PROPERTY_NAME_MPP_X: None, "aperio.MPP": "0.25"}
+
+        with patch("mussel.utils.segment.logger") as mock_logger:
             get_slide_mpp(wsi)
-            
+
             # Should log info about alternate property
             assert mock_logger.info.call_count >= 1
             calls_str = str(mock_logger.info.call_args_list)
             assert "aperio.MPP" in calls_str
-    
+
     def test_get_slide_mpp_logging_magnification_estimation(self):
         """Test logging when MPP estimated from magnification"""
         import tiffslide
-        
+
         wsi = MagicMock()
-        wsi.properties = {
-            tiffslide.PROPERTY_NAME_MPP_X: None,
-            'aperio.AppMag': "20"
-        }
-        
-        with patch('mussel.utils.segment.logger') as mock_logger:
+        wsi.properties = {tiffslide.PROPERTY_NAME_MPP_X: None, "aperio.AppMag": "20"}
+
+        with patch("mussel.utils.segment.logger") as mock_logger:
             get_slide_mpp(wsi)
-            
+
             # Should log warning about estimation
             mock_logger.warning.assert_called_once()
             call_args = str(mock_logger.warning.call_args)
             assert "estimated" in call_args.lower()
             assert "20" in call_args  # magnification value
-    
+
     def test_get_slide_mpp_logging_default_fallback(self):
         """Test logging when falling back to default MPP"""
         wsi = MagicMock()
         wsi.properties = {}
 
-        with patch('mussel.utils.segment.logger') as mock_logger:
+        with patch("mussel.utils.segment.logger") as mock_logger:
             get_slide_mpp(wsi)
 
             # Should log warning about using default
@@ -333,7 +320,7 @@ class TestGetSlideMPP:
         wsi = MagicMock()
         wsi.properties = {
             tiffslide.PROPERTY_NAME_MPP_X: None,
-            "tiff.XResolution": "40000",   # 40000 px/inch → 25400/40000 = 0.635 µm/px
+            "tiff.XResolution": "40000",  # 40000 px/inch → 25400/40000 = 0.635 µm/px
             "tiff.ResolutionUnit": "INCH",
         }
 
@@ -347,7 +334,7 @@ class TestGetSlideMPP:
         wsi = MagicMock()
         wsi.properties = {
             tiffslide.PROPERTY_NAME_MPP_X: None,
-            "tiff.XResolution": "20000",   # 20000 px/cm → 10000/20000 = 0.5 µm/px
+            "tiff.XResolution": "20000",  # 20000 px/cm → 10000/20000 = 0.5 µm/px
             "tiff.ResolutionUnit": "CENTIMETER",
         }
 
@@ -361,7 +348,7 @@ class TestGetSlideMPP:
         wsi = MagicMock()
         wsi.properties = {
             tiffslide.PROPERTY_NAME_MPP_X: None,
-            "tiff.XResolution": "2.0",   # 2 px/µm → 0.5 µm/px
+            "tiff.XResolution": "2.0",  # 2 px/µm → 0.5 µm/px
             "tiff.ResolutionUnit": "MICROMETER",
         }
 
@@ -398,62 +385,71 @@ class TestGetSlideMPP:
 
 class TestDrawSlideMask:
     """Test suite for draw_slide_mask function resource cleanup"""
-    
+
     def test_draw_slide_mask_closes_wsi_on_success(self):
         """Test that WSI is closed after successful execution"""
-        from unittest.mock import MagicMock, patch, call
+        from unittest.mock import MagicMock, call, patch
+
         import shapely
-        
+
         # Create mock WSI
         mock_wsi = MagicMock()
         mock_wsi.level_dimensions = [(1000, 1000), (500, 500)]
         mock_wsi.level_downsamples = [1.0, 2.0]
         mock_wsi.get_best_level_for_downsample.return_value = 1
-        
+
         # Mock read_region to return a simple image
         mock_image = MagicMock()
         mock_image.convert.return_value = mock_image
         mock_wsi.read_region.return_value = mock_image
-        
+
         # Create a simple polygon
         polygon = shapely.geometry.box(0, 0, 100, 100)
-        
-        with patch('mussel.utils.segment.tiffslide.open_slide', return_value=mock_wsi):
-            with patch('mussel.utils.segment.np.array', return_value=[[0, 0, 0]]):
-                with patch('mussel.utils.segment.Image.fromarray') as mock_fromarray:
-                    with patch('mussel.utils.segment.scale_geometry', side_effect=lambda g, s: g):
+
+        with patch("mussel.utils.segment.tiffslide.open_slide", return_value=mock_wsi):
+            with patch("mussel.utils.segment.np.array", return_value=[[0, 0, 0]]):
+                with patch("mussel.utils.segment.Image.fromarray") as mock_fromarray:
+                    with patch(
+                        "mussel.utils.segment.scale_geometry",
+                        side_effect=lambda g, s: g,
+                    ):
                         mock_img = MagicMock()
                         mock_img.size = (1000, 1000)
                         mock_fromarray.return_value = mock_img
-                        
+
                         from mussel.utils.segment import draw_slide_mask
+
                         result = draw_slide_mask("/fake/path.svs", polygon)
-                        
+
                         # Verify WSI was closed
                         mock_wsi.close.assert_called_once()
-    
+
     def test_draw_slide_mask_closes_wsi_on_exception(self):
         """Test that WSI is closed even if exception occurs during processing"""
         from unittest.mock import MagicMock, patch
+
         import shapely
-        
+
         # Create mock WSI
         mock_wsi = MagicMock()
         mock_wsi.level_dimensions = [(1000, 1000)]
-        
+
         # Make read_region raise an exception
         mock_wsi.read_region.side_effect = RuntimeError("Simulated error")
-        
+
         polygon = shapely.geometry.box(0, 0, 100, 100)
-        
-        with patch('mussel.utils.segment.tiffslide.open_slide', return_value=mock_wsi):
-            with patch('mussel.utils.segment._assert_level_downsamples', return_value=[(1.0, 1.0)]):
+
+        with patch("mussel.utils.segment.tiffslide.open_slide", return_value=mock_wsi):
+            with patch(
+                "mussel.utils.segment._assert_level_downsamples",
+                return_value=[(1.0, 1.0)],
+            ):
                 from mussel.utils.segment import draw_slide_mask
-                
+
                 # Should raise exception
                 with pytest.raises(RuntimeError, match="Simulated error"):
                     draw_slide_mask("/fake/path.svs", polygon)
-                
+
                 # But WSI should still be closed
                 mock_wsi.close.assert_called_once()
 
@@ -462,12 +458,12 @@ def test_segment_tissue_closes_wsi_on_early_return_dimension_error():
     """Test that segment_tissue closes WSI when returning early due to large dimensions."""
     mock_wsi = MagicMock()
     mock_wsi.level_dimensions = [(10**7, 10**7)]  # Triggers width * height > 1e12
-    
-    with patch('mussel.utils.segment.tiffslide.open_slide', return_value=mock_wsi):
+
+    with patch("mussel.utils.segment.tiffslide.open_slide", return_value=mock_wsi):
         from mussel.utils.segment import segment_tissue
-        
+
         result = segment_tissue("/fake/path.svs", seg_level=0)
-        
+
         # Should return None due to dimension error
         assert result is None
         # But WSI should still be closed
@@ -479,19 +475,24 @@ def test_segment_tissue_closes_wsi_on_early_return_no_contours():
     mock_wsi = MagicMock()
     mock_wsi.level_dimensions = [(1000, 1000), (500, 500)]
     mock_wsi.get_best_level_for_downsample.return_value = 1
-    
+
     # Mock read_region to return a blank image (no tissue)
     mock_img = np.zeros((500, 500, 3), dtype=np.uint8)
     mock_wsi.read_region.return_value = mock_img
-    
-    with patch('mussel.utils.segment.tiffslide.open_slide', return_value=mock_wsi):
-        with patch('mussel.utils.segment.get_slide_mpp', return_value=0.25):
-            with patch('mussel.utils.segment._assert_level_downsamples', return_value=[(1.0, 1.0), (2.0, 2.0)]):
-                with patch('cv2.findContours', return_value=([], None)):  # No contours found
+
+    with patch("mussel.utils.segment.tiffslide.open_slide", return_value=mock_wsi):
+        with patch("mussel.utils.segment.get_slide_mpp", return_value=0.25):
+            with patch(
+                "mussel.utils.segment._assert_level_downsamples",
+                return_value=[(1.0, 1.0), (2.0, 2.0)],
+            ):
+                with patch(
+                    "cv2.findContours", return_value=([], None)
+                ):  # No contours found
                     from mussel.utils.segment import segment_tissue
-                    
+
                     result = segment_tissue("/fake/path.svs")
-                    
+
                     # Should return None due to no contours
                     assert result is None
                     # But WSI should still be closed
@@ -503,14 +504,14 @@ def test_segment_tissue_closes_wsi_on_exception():
     mock_wsi = MagicMock()
     mock_wsi.level_dimensions = [(1000, 1000)]
     mock_wsi.read_region.side_effect = RuntimeError("Simulated read error")
-    
-    with patch('mussel.utils.segment.tiffslide.open_slide', return_value=mock_wsi):
-        with patch('mussel.utils.segment.get_slide_mpp', return_value=0.25):
+
+    with patch("mussel.utils.segment.tiffslide.open_slide", return_value=mock_wsi):
+        with patch("mussel.utils.segment.get_slide_mpp", return_value=0.25):
             from mussel.utils.segment import segment_tissue
-            
+
             with pytest.raises(RuntimeError, match="Simulated read error"):
                 segment_tissue("/fake/path.svs", seg_level=0)
-            
+
             # WSI should still be closed despite exception
             mock_wsi.close.assert_called_once()
 
@@ -520,21 +521,21 @@ def test_save_patches_png_closes_wsi_and_pool_on_success(tmp_path):
     mock_wsi = MagicMock()
     mock_wsi.level_dimensions = [(1000, 1000)]
     mock_pool = MagicMock()
-    
+
     coords = [(0, 0), (256, 0), (0, 256)]
-    
-    with patch('mussel.utils.segment.tiffslide.open_slide', return_value=mock_wsi):
-        with patch('mussel.utils.segment.mp.Pool', return_value=mock_pool):
-            with patch('mussel.utils.segment.get_slide_mpp', return_value=0.5):
+
+    with patch("mussel.utils.segment.tiffslide.open_slide", return_value=mock_wsi):
+        with patch("mussel.utils.segment.mp.Pool", return_value=mock_pool):
+            with patch("mussel.utils.segment.get_slide_mpp", return_value=0.5):
                 from mussel.utils.segment import save_patches_png
-                
+
                 save_patches_png(
                     slide_path="/fake/path.svs",
                     coords=coords,
                     save_dir=str(tmp_path / "output"),
                     num_workers=2,
                 )
-                
+
                 # Both WSI and pool should be closed
                 mock_wsi.close.assert_called_once()
                 mock_pool.close.assert_called_once()
@@ -547,14 +548,14 @@ def test_save_patches_png_closes_wsi_and_pool_on_exception(tmp_path):
     mock_wsi.level_dimensions = [(1000, 1000)]
     mock_pool = MagicMock()
     mock_pool.starmap.side_effect = RuntimeError("Simulated pool error")
-    
+
     coords = [(0, 0), (256, 0)]
-    
-    with patch('mussel.utils.segment.tiffslide.open_slide', return_value=mock_wsi):
-        with patch('mussel.utils.segment.mp.Pool', return_value=mock_pool):
-            with patch('mussel.utils.segment.get_slide_mpp', return_value=0.5):
+
+    with patch("mussel.utils.segment.tiffslide.open_slide", return_value=mock_wsi):
+        with patch("mussel.utils.segment.mp.Pool", return_value=mock_pool):
+            with patch("mussel.utils.segment.get_slide_mpp", return_value=0.5):
                 from mussel.utils.segment import save_patches_png
-                
+
                 with pytest.raises(RuntimeError, match="Simulated pool error"):
                     save_patches_png(
                         slide_path="/fake/path.svs",
@@ -562,7 +563,7 @@ def test_save_patches_png_closes_wsi_and_pool_on_exception(tmp_path):
                         save_dir=str(tmp_path / "output"),
                         num_workers=2,
                     )
-                
+
                 # Both WSI and pool should still be closed despite exception
                 mock_wsi.close.assert_called_once()
                 mock_pool.close.assert_called_once()
@@ -601,7 +602,9 @@ class TestTissueAreaThresholdScaling:
         mock_wsi.read_region.return_value = img
         return mock_wsi
 
-    def _run(self, mock_wsi, seg_level_ds, tissue_area_threshold, patch_size=256, mpp=0.5):
+    def _run(
+        self, mock_wsi, seg_level_ds, tissue_area_threshold, patch_size=256, mpp=0.5
+    ):
         from mussel.utils.segment import segment_tissue
 
         with (
@@ -632,7 +635,7 @@ class TestTissueAreaThresholdScaling:
         ds = 4.0
         patch_size, mpp_val = 256, 0.5
         native_patch = patch_size / mpp_val  # 512
-        seg_patch_area = int(native_patch ** 2 / ds ** 2)  # 16384
+        seg_patch_area = int(native_patch**2 / ds**2)  # 16384
 
         def _make_wsi_with_island(island_px):
             slide_w, slide_h = 16384, 16384
@@ -650,14 +653,22 @@ class TestTissueAreaThresholdScaling:
             return mock_wsi
 
         # Island bigger than one patch → found
-        big_wsi = _make_wsi_with_island(island_px=int(seg_patch_area ** 0.5) + 5)
-        result = self._run(big_wsi, ds, tissue_area_threshold=1, patch_size=patch_size, mpp=mpp_val)
-        assert result is not None, "Island > 1 native patch should be found at threshold=1"
+        big_wsi = _make_wsi_with_island(island_px=int(seg_patch_area**0.5) + 5)
+        result = self._run(
+            big_wsi, ds, tissue_area_threshold=1, patch_size=patch_size, mpp=mpp_val
+        )
+        assert (
+            result is not None
+        ), "Island > 1 native patch should be found at threshold=1"
 
         # Island much smaller than one patch → filtered
         small_wsi = _make_wsi_with_island(island_px=10)
-        result = self._run(small_wsi, ds, tissue_area_threshold=1, patch_size=patch_size, mpp=mpp_val)
-        assert result is None, "Island << 1 native patch should be filtered at threshold=1"
+        result = self._run(
+            small_wsi, ds, tissue_area_threshold=1, patch_size=patch_size, mpp=mpp_val
+        )
+        assert (
+            result is None
+        ), "Island << 1 native patch should be filtered at threshold=1"
 
     def test_threshold_scales_with_native_patch_size_not_ref_patch_size(self):
         """
@@ -673,8 +684,8 @@ class TestTissueAreaThresholdScaling:
         """
         ds = 4.0
         slide_w, slide_h = 8192, 8192
-        seg_w = int(slide_w / ds)   # 2048
-        seg_h = int(slide_h / ds)   # 2048
+        seg_w = int(slide_w / ds)  # 2048
+        seg_h = int(slide_h / ds)  # 2048
         mock_wsi = MagicMock()
         mock_wsi.level_dimensions = [(slide_w, slide_h), (seg_w, seg_h)]
         mock_wsi.level_downsamples = [1.0, ds]
@@ -682,11 +693,14 @@ class TestTissueAreaThresholdScaling:
         img = np.zeros((seg_h, seg_w, 3), dtype=np.uint8)
         island_half = 45  # 90×90 = 8100 seg-px
         cy, cx = seg_h // 2, seg_w // 2
-        img[cy - island_half : cy + island_half,
-            cx - island_half : cx + island_half] = [210, 130, 160]
+        img[
+            cy - island_half : cy + island_half, cx - island_half : cx + island_half
+        ] = [210, 130, 160]
         mock_wsi.read_region.return_value = img
 
-        result = self._run(mock_wsi, ds, tissue_area_threshold=1, patch_size=256, mpp=0.5)
+        result = self._run(
+            mock_wsi, ds, tissue_area_threshold=1, patch_size=256, mpp=0.5
+        )
         # New formula: threshold = 4096 seg-px < 8100 → should be found
         assert result is not None, (
             "Island of 8100 seg-px should pass threshold=1 under the fixed formula "
@@ -719,19 +733,20 @@ class TestTissueAreaThresholdScaling:
             img[cy - half : cy + half, cx - half : cx + half] = [210, 130, 160]
             mock_wsi.read_region.return_value = img
 
-            result = self._run(mock_wsi, ds, tissue_area_threshold=1, patch_size=patch_size, mpp=mpp)
-            assert result is not None, (
-                f"4×4 patch tissue region should be found at threshold=1, ds={ds}"
+            result = self._run(
+                mock_wsi, ds, tissue_area_threshold=1, patch_size=patch_size, mpp=mpp
             )
+            assert (
+                result is not None
+            ), f"4×4 patch tissue region should be found at threshold=1, ds={ds}"
             _, _, coords, _ = result
             assert len(coords) > 0, f"Expected patches at ds={ds}"
-
-
 
 
 def _make_mock_wsi_with_tissue(width=4096, height=4096):
     """Return a mock WSI that produces a solid-white 64×64 thumbnail (all tissue)."""
     import numpy as np
+
     mock_wsi = MagicMock()
     mock_wsi.level_dimensions = [(width, height), (width // 4, height // 4)]
     mock_wsi.level_downsamples = [1.0, 4.0]
@@ -769,7 +784,11 @@ class TestSegmentTissueOverlap:
         # Reset the mock read_region so the second call returns the same image
         mock_wsi.read_region.reset_mock()
         result_explicit = _run_segment_with_mocks(
-            mock_wsi, seg_level=1, patch_size=256, step_size=256, tissue_area_threshold=1
+            mock_wsi,
+            seg_level=1,
+            patch_size=256,
+            step_size=256,
+            tissue_area_threshold=1,
         )
         # Both should return the same number of patches (non-overlapping grid)
         if result_no_overlap is not None and result_explicit is not None:
@@ -808,7 +827,11 @@ class TestSegmentTissueOverlap:
         ):
             with pytest.raises(ValueError, match="step_size"):
                 segment_tissue(
-                    "/fake/slide.svs", seg_level=0, patch_size=256, overlap=64, step_size=192
+                    "/fake/slide.svs",
+                    seg_level=0,
+                    patch_size=256,
+                    overlap=64,
+                    step_size=192,
                 )
 
     def test_overlap_equal_to_patch_size_raises(self):
@@ -823,7 +846,9 @@ class TestSegmentTissueOverlap:
             patch("mussel.utils.segment.get_slide_mpp", return_value=0.5),
         ):
             with pytest.raises(ValueError, match="overlap"):
-                segment_tissue("/fake/slide.svs", seg_level=0, patch_size=256, overlap=256)
+                segment_tissue(
+                    "/fake/slide.svs", seg_level=0, patch_size=256, overlap=256
+                )
 
     def test_overlap_greater_than_patch_size_raises(self):
         """overlap > patch_size must raise ValueError."""
@@ -837,7 +862,9 @@ class TestSegmentTissueOverlap:
             patch("mussel.utils.segment.get_slide_mpp", return_value=0.5),
         ):
             with pytest.raises(ValueError, match="overlap"):
-                segment_tissue("/fake/slide.svs", seg_level=0, patch_size=256, overlap=300)
+                segment_tissue(
+                    "/fake/slide.svs", seg_level=0, patch_size=256, overlap=300
+                )
 
     def test_negative_overlap_raises(self):
         """Negative overlap must raise ValueError (would create gaps, not overlap)."""
@@ -851,7 +878,9 @@ class TestSegmentTissueOverlap:
             patch("mussel.utils.segment.get_slide_mpp", return_value=0.5),
         ):
             with pytest.raises(ValueError, match="non-negative"):
-                segment_tissue("/fake/slide.svs", seg_level=0, patch_size=256, overlap=-50)
+                segment_tissue(
+                    "/fake/slide.svs", seg_level=0, patch_size=256, overlap=-50
+                )
 
 
 class TestSegmentTissueMinTissueProportion:
@@ -859,12 +888,15 @@ class TestSegmentTissueMinTissueProportion:
 
     def test_min_tissue_proportion_zero_keeps_all_patches(self):
         """min_tissue_proportion=0.0 should not remove any patches."""
-        from mussel.utils.segment import partition, contours_to_polygon
-        import numpy as np
         import cv2
+        import numpy as np
+
+        from mussel.utils.segment import contours_to_polygon, partition
 
         # Build a simple polygon covering a 512×512 region
-        contour = np.array([[[0, 0]], [[512, 0]], [[512, 512]], [[0, 512]]], dtype=np.int32)
+        contour = np.array(
+            [[[0, 0]], [[512, 0]], [[512, 512]], [[0, 512]]], dtype=np.int32
+        )
         mock_wsi = MagicMock()
         mock_wsi.level_dimensions = [(1024, 1024), (256, 256)]
         mock_wsi.level_downsamples = [1.0, 4.0]
@@ -933,14 +965,17 @@ class TestSegmentTissueArtifactRemover:
 
         assert len(calls) == 1, "artifact_remover_fn should be called exactly once"
         img_shape, mask_shape, mpp = calls[0]
-        assert len(img_shape) == 3 and img_shape[2] in (3, 4), (
-            f"Expected RGB img, got shape {img_shape}"
-        )
+        assert len(img_shape) == 3 and img_shape[2] in (
+            3,
+            4,
+        ), f"Expected RGB img, got shape {img_shape}"
         assert len(mask_shape) == 2, f"Expected 2D mask, got shape {mask_shape}"
-        assert img_shape[:2] == mask_shape, (
-            f"img and mask spatial dims must match: {img_shape[:2]} vs {mask_shape}"
-        )
-        assert isinstance(mpp, float) and mpp > 0, f"Expected positive float mpp, got {mpp}"
+        assert (
+            img_shape[:2] == mask_shape
+        ), f"img and mask spatial dims must match: {img_shape[:2]} vs {mask_shape}"
+        assert (
+            isinstance(mpp, float) and mpp > 0
+        ), f"Expected positive float mpp, got {mpp}"
 
     def test_artifact_remover_fn_not_called_when_flags_false(self, caplog):
         """artifact_remover_fn with no flag set should warn and not call the function."""
@@ -964,10 +999,12 @@ class TestSegmentTissueArtifactRemover:
                 # remove_artifacts and remove_penmarks both default to False
             )
 
-        assert len(calls) == 0, "artifact_remover_fn should NOT be called when flags are False"
-        assert any("artifact_remover_fn" in msg for msg in caplog.messages), (
-            "Expected warning about artifact_remover_fn provided but flags are False"
-        )
+        assert (
+            len(calls) == 0
+        ), "artifact_remover_fn should NOT be called when flags are False"
+        assert any(
+            "artifact_remover_fn" in msg for msg in caplog.messages
+        ), "Expected warning about artifact_remover_fn provided but flags are False"
 
     def test_remove_artifacts_flag_without_fn_logs_warning(self, caplog):
         """remove_artifacts=True with no fn should log a warning, not crash."""
@@ -985,9 +1022,9 @@ class TestSegmentTissueArtifactRemover:
                 artifact_remover_fn=None,
             )
 
-        assert any("artifact_remover_fn" in msg for msg in caplog.messages), (
-            "Expected warning about missing artifact_remover_fn"
-        )
+        assert any(
+            "artifact_remover_fn" in msg for msg in caplog.messages
+        ), "Expected warning about missing artifact_remover_fn"
 
     def test_remove_penmarks_flag_without_fn_logs_warning(self, caplog):
         """remove_penmarks=True with no fn should log a warning, not crash."""
@@ -1013,11 +1050,83 @@ class TestSegmentTissueSegModel:
 
     def test_seg_model_classic_is_default(self):
         """seg_model defaults to 'classic' — no error without torch."""
-        from mussel.utils.segment import segment_tissue
         import inspect
+
+        from mussel.utils.segment import segment_tissue
 
         sig = inspect.signature(segment_tissue)
         assert sig.parameters["seg_model"].default == "classic"
+
+    def test_seg_model_otsu_accepted(self):
+        """seg_model='otsu' is a valid value — no ValueError raised."""
+        mock_wsi = _make_mock_wsi_with_tissue()
+        # Use the shared helper (same pattern as other classic-mode tests).
+        result = _run_segment_with_mocks(
+            mock_wsi,
+            seg_level=1,
+            patch_size=256,
+            mpp=0.5,
+            tissue_area_threshold=1,
+            seg_model="otsu",
+        )
+        # Whether or not tissue is found, seg_model should be stored in attrs.
+        if result is not None:
+            _, _, _, attrs = result
+            assert attrs["seg_model"] == "otsu"
+
+    def test_use_otsu_deprecated_overrides_seg_model(self):
+        """use_otsu=True emits DeprecationWarning and acts as seg_model='otsu'."""
+        mock_wsi = _make_mock_wsi_with_tissue()
+        import warnings
+
+        with warnings.catch_warnings(record=True) as w:
+            warnings.simplefilter("always")
+            result = _run_segment_with_mocks(
+                mock_wsi,
+                seg_level=1,
+                patch_size=256,
+                mpp=0.5,
+                tissue_area_threshold=1,
+                use_otsu=True,
+            )
+        dep_warnings = [x for x in w if issubclass(x.category, DeprecationWarning)]
+        assert len(dep_warnings) == 1
+        assert "seg_model='otsu'" in str(dep_warnings[0].message)
+        if result is not None:
+            _, _, _, attrs = result
+            assert attrs["seg_model"] == "otsu"
+
+    def test_seg_model_neural_warns_on_classic_params(self):
+        """seg_model='neural' logs a warning when classic-only params are non-default."""
+        mock_wsi = _make_mock_wsi_with_tissue()
+        fake_mask = np.zeros((64, 64), dtype=np.uint8)
+        fake_mask[16:48, 16:48] = 255
+
+        with (
+            patch("mussel.utils.segment.tiffslide.open_slide", return_value=mock_wsi),
+            patch("mussel.utils.segment.get_slide_mpp", return_value=0.5),
+            patch(
+                "mussel.utils.segment._assert_level_downsamples",
+                return_value=[(1.0, 1.0), (4.0, 4.0)],
+            ),
+            patch(
+                "mussel.utils.segment._segment_tissue_neural",
+                return_value=fake_mask,
+            ),
+            patch("mussel.utils.segment.logger") as mock_logger,
+        ):
+            from mussel.utils.segment import segment_tissue
+
+            segment_tissue(
+                "/fake/slide.svs",
+                patch_size=256,
+                mpp=0.5,
+                tissue_area_threshold=1,
+                seg_model="neural",
+                median_blur_ksize=11,  # non-default — should trigger warning
+            )
+            warning_calls = [str(call) for call in mock_logger.warning.call_args_list]
+            assert any("median_blur_ksize" in c for c in warning_calls)
 
     def test_seg_model_neural_calls_neural_segmenter(self):
         """seg_model='neural' delegates to _segment_tissue_neural."""
@@ -1069,5 +1178,3 @@ class TestSegmentTissueSegModel:
                     tissue_area_threshold=1,
                     seg_model="hest",
                 )
-
-

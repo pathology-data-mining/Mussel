@@ -1,6 +1,18 @@
 import logging
 
-import tiffslide as openslide
+
+# Circular-import guard: same as h5.py — lazy import to avoid
+# mussel.datasets → mussel.utils → feature_extract → mussel.datasets cycle.
+class _BackendShim:
+    @staticmethod
+    def open_slide(path):
+        from mussel.utils.wsi_backend import \
+            open_slide as _open_slide  # noqa: PLC0415
+
+        return _open_slide(path)
+
+
+openslide = _BackendShim()
 from torch.utils.data import Dataset
 
 logger = logging.getLogger(__name__)
@@ -43,9 +55,9 @@ class WholeSlideImageTileCoordDataset(Dataset):
         self.length = len(limit_to_indices) if limit_to_indices else len(coords)
 
         if preprocess is not None:
-            assert not use_imagenet_rgb_dist, (
-                "Cannot use custom preprocess with ImageNet RGB dist"
-            )
+            assert (
+                not use_imagenet_rgb_dist
+            ), "Cannot use custom preprocess with ImageNet RGB dist"
             self.roi_transforms = preprocess
         else:
             self.roi_transforms = eval_transforms(
@@ -93,7 +105,9 @@ class WholeSlideImageTileCoordDataset(Dataset):
             # Handle JPEG decoding errors (e.g., unsupported JPEG markers in NDPI files)
             # Return None to indicate this tile should be skipped
             if "Jpeg8Error" in str(type(e).__name__) or "imagecodecs" in str(e):
-                logger.warning(f"Skipping corrupted tile at {coord} due to JPEG decode error: {e}")
+                logger.warning(
+                    f"Skipping corrupted tile at {coord} due to JPEG decode error: {e}"
+                )
             else:
                 logger.error(f"Error reading tile at {coord}: {e}")
             return None, coord

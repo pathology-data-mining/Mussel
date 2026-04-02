@@ -124,6 +124,16 @@ PyTorch is required for the following patch encoders:
 | CONCH v1.5 | `CONCH1_5` | 🔒 gated | [MahmoodLab/TITAN](https://huggingface.co/MahmoodLab/TITAN) |
 | GPFM | `GPFM` | public | [majiabo/GPFM](https://huggingface.co/majiabo/GPFM) |
 | Hibou-L | `HIBOU_L` | 🔒 gated | [histai/hibou-L](https://huggingface.co/histai/hibou-L) |
+| CONCH v1.0 | `CONCH_V1` | 🔒 gated | [MahmoodLab/CONCH](https://huggingface.co/MahmoodLab/CONCH) |
+| Kaiko ViT-S/8 | `KAIKO_VITS8` | public | [1aurent/vit_small_patch8_224.kaiko_ai_towards_large_pathology_fms](https://huggingface.co/1aurent/vit_small_patch8_224.kaiko_ai_towards_large_pathology_fms) |
+| Kaiko ViT-S/16 | `KAIKO_VITS16` | public | [1aurent/vit_small_patch16_224.kaiko_ai_towards_large_pathology_fms](https://huggingface.co/1aurent/vit_small_patch16_224.kaiko_ai_towards_large_pathology_fms) |
+| Kaiko ViT-B/8 | `KAIKO_VITB8` | public | [1aurent/vit_base_patch8_224.kaiko_ai_towards_large_pathology_fms](https://huggingface.co/1aurent/vit_base_patch8_224.kaiko_ai_towards_large_pathology_fms) |
+| Kaiko ViT-B/16 | `KAIKO_VITB16` | public | [1aurent/vit_base_patch16_224.kaiko_ai_towards_large_pathology_fms](https://huggingface.co/1aurent/vit_base_patch16_224.kaiko_ai_towards_large_pathology_fms) |
+| Kaiko ViT-L/14 | `KAIKO_VITL14` | public | [1aurent/vit_large_patch14_reg4_224.kaiko_ai_towards_large_pathology_fms](https://huggingface.co/1aurent/vit_large_patch14_reg4_224.kaiko_ai_towards_large_pathology_fms) |
+| Lunit DINO ViT-S/8 | `LUNIT_VITS8` | public | [1aurent/vit_small_patch8_224.lunit_dino](https://huggingface.co/1aurent/vit_small_patch8_224.lunit_dino) |
+| Lunit DINO ViT-S/16 | `LUNIT_VITS16` | public | [1aurent/vit_small_patch16_224.lunit_dino](https://huggingface.co/1aurent/vit_small_patch16_224.lunit_dino) |
+| OpenMidnight | `OPENMIDNIGHT` | 🔒 gated | [SophontAI/OpenMidnight](https://huggingface.co/SophontAI/OpenMidnight) |
+| GenBio-PathFM | `GENBIO_PATHFM` | 🔒 gated | [genbio-ai/genbio-pathfm](https://huggingface.co/genbio-ai/genbio-pathfm) |
 
 And the following slide encoders (aggregate patch features into a single slide embedding):
 
@@ -148,6 +158,10 @@ export HF_TOKEN=hf_...
 | CHIEF (`CHIEF_SLIDE`) | [Google Drive folder](https://drive.google.com/drive/folders/1uRv9A1HuTW5m_pJoyMzdN31bE1i-tDaV) | Request via [hms-dbmi/CHIEF](https://github.com/hms-dbmi/CHIEF); `gdown` downloads automatically on first use |
 
 TransPath (`CTRANSPATH`) and CHIEF (`CHIEF_SLIDE`) are downloaded automatically via `gdown` on first use (cached in the HuggingFace hub cache directory).
+
+GenBio-PathFM (`GENBIO_PATHFM`) downloads its model architecture code from GitHub on first use and caches it at `~/.cache/mussel/genbio_pathfm/`. The model weights are downloaded from HuggingFace (requires a token with access to `genbio-ai/genbio-pathfm`).
+
+OpenMidnight (`OPENMIDNIGHT`) uses the DINOv2 ViT-G/14 architecture from the `facebookresearch/dinov2` torch.hub repository. On first use, Mussel downloads the repository code and caches it at `~/.cache/torch/hub/facebookresearch_dinov2_main/`. The model weights are downloaded from HuggingFace (requires a token with access to `SophontAI/OpenMidnight`).
 
 #### TensorFlow
 
@@ -254,6 +268,7 @@ The tools currently available from Mussel are,
 * `merge_annotation_features` - merge tile features with annotations from a BMP file.
 * `linear_probe_benchmark` - benchmark a linear probe classifier on features extracted from a slide
 * `save_model` - download and save a foundation model locally
+* `convert` - convert whole-slide images to pyramidal TIFF format (single file or batch)
 
 These are described, with examples, in the accompanying document, [README-commands.md](README-commands.md)
 
