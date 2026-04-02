@@ -31,6 +31,10 @@ import os
 from pathlib import Path
 from typing import Any, Optional
 
+import numpy as np
+import tiffslide
+from PIL import Image as PILImage
+
 logger = logging.getLogger(__name__)
 
 # Formats that CuCIM can handle natively.
@@ -82,9 +86,7 @@ def open_slide(path: str, backend: Optional[str] = None) -> Any:
 
 
 def _open_tiffslide(path: str) -> Any:
-    import tiffslide as openslide
-
-    return openslide.open_slide(path)
+    return tiffslide.open_slide(path)
 
 
 def _open_cucim(path: str) -> "CuCIMSlide":
@@ -170,14 +172,10 @@ class CuCIMSlide(_SlideBase):
             level: Pyramid level.
             size: (width, height) of the region at the requested level.
         """
-        from PIL import Image as PILImage
-
         x, y = int(location[0]), int(location[1])
         w, h = int(size[0]), int(size[1])
         region = self._img.read_region(location=(x, y), size=(w, h), level=level)
         # CuCIM returns a numpy array (H, W, C) or similar; convert to PIL.
-        import numpy as np
-
         arr = np.asarray(region)
         if arr.ndim == 3 and arr.shape[2] == 4:
             return PILImage.fromarray(arr, mode="RGBA")
@@ -214,8 +212,6 @@ class OmeZarrSlide(_SlideBase):
     @staticmethod
     def _parse_multiscales(store):
         """Extract sorted pyramid arrays and their downsamples."""
-        import numpy as np
-
         attrs = dict(store.attrs)
         multiscales = attrs.get("multiscales", [{}])[0]
         datasets = multiscales.get("datasets", [])
@@ -248,10 +244,6 @@ class OmeZarrSlide(_SlideBase):
 
     def read_region(self, location, level: int, size) -> Any:
         """Return a PIL Image for the requested region."""
-        from PIL import Image as PILImage
-
-        import numpy as np
-
         x, y = int(location[0]), int(location[1])
         w, h = int(size[0]), int(size[1])
 

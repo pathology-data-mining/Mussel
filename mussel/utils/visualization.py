@@ -7,6 +7,7 @@ from typing import Optional, Tuple
 import cv2
 import matplotlib.pyplot as plt
 import numpy as np
+import tiffslide as openslide
 from PIL import Image
 
 from mussel.utils.segment import get_level_for_magnification
@@ -153,8 +154,6 @@ def visualize_heatmap(
     Returns:
         Absolute path to the saved heatmap image.
     """
-    import tiffslide as openslide
-
     wsi = openslide.open_slide(slide_path)
 
     if normalize:

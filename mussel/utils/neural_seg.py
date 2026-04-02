@@ -25,7 +25,15 @@ import warnings
 from pathlib import Path
 from typing import Optional
 
+import cv2
 import numpy as np
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+from huggingface_hub import snapshot_download
+from PIL import Image
+from torchvision import transforms
+from torchvision.models.segmentation import deeplabv3_resnet50
 
 from mussel.models.base import IMAGENET_MEAN, IMAGENET_STD
 
@@ -68,14 +76,6 @@ class NeuralTissueSegmenter:
         batch_size: int = 8,
         confidence_thresh: float = 0.5,
     ):
-        try:
-            import torch
-        except ImportError as exc:
-            raise ImportError(
-                "Neural tissue segmentation (seg_model='neural') requires PyTorch. "
-                "Install it with: uv sync --extra torch-gpu"
-            ) from exc
-
         if device == "auto":
             self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         else:
@@ -105,8 +105,6 @@ class NeuralTissueSegmenter:
             Binary uint8 mask of shape ``(H, W)`` where 255 = tissue and
             0 = background, at the same spatial resolution as ``img``.
         """
-        import torch
-
         self._ensure_model_loaded()
 
         H, W = img.shape[:2]
@@ -116,7 +114,6 @@ class NeuralTissueSegmenter:
         if scale != 1.0:
             target_H = max(1, int(round(H * scale)))
             target_W = max(1, int(round(W * scale)))
-            import cv2
             resized = cv2.resize(img, (target_W, target_H), interpolation=cv2.INTER_CUBIC)
         else:
             target_H, target_W = H, W
@@ -127,7 +124,6 @@ class NeuralTissueSegmenter:
 
         # 3. Resize prediction mask back to the original image resolution.
         if scale != 1.0:
-            import cv2
             full_mask = cv2.resize(full_mask, (W, H), interpolation=cv2.INTER_NEAREST)
 
         return (full_mask * 255).astype(np.uint8)
@@ -140,9 +136,6 @@ class NeuralTissueSegmenter:
         """Load the model and transforms if not already done."""
         if self._model is not None:
             return
-
-        import torch
-        from torchvision import transforms
 
         weights_path = self._weights_path or _download_checkpoint()
         self._model = self._build_model(weights_path)
@@ -158,10 +151,6 @@ class NeuralTissueSegmenter:
 
     def _build_model(self, weights_path: str):
         """Build and load the DeepLabV3 model from a checkpoint file."""
-        import torch
-        import torch.nn as nn
-        from torchvision.models.segmentation import deeplabv3_resnet50
-
         model = deeplabv3_resnet50(weights=None)
         model.classifier[4] = nn.Conv2d(256, 2, kernel_size=1, stride=1)
 
@@ -186,10 +175,6 @@ class NeuralTissueSegmenter:
         self, img: np.ndarray, H: int, W: int
     ) -> np.ndarray:
         """Tile `img` into patches, run inference, and assemble the mask."""
-        import torch
-        import torch.nn.functional as F
-        from PIL import Image
-
         patch_size = _INPUT_SIZE
         full_mask = np.zeros((H, W), dtype=np.uint8)
 
@@ -248,17 +233,8 @@ def _download_checkpoint() -> str:
         Absolute path to the local checkpoint file.
 
     Raises:
-        ImportError: If ``huggingface_hub`` is not installed.
         OSError: If the download fails and no cached copy exists.
     """
-    try:
-        from huggingface_hub import snapshot_download
-    except ImportError as exc:
-        raise ImportError(
-            "huggingface_hub is required to download neural segmentation weights. "
-            "Install Mussel with --extra torch-gpu or --extra torch-cpu."
-        ) from exc
-
     cache_dir = os.environ.get("MUSSEL_MODEL_CACHE", None)
     logger.info(f"Downloading {_CKPT_FILENAME} from {_HF_REPO_ID} …")
     local_dir = snapshot_download(

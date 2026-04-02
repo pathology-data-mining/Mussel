@@ -17,7 +17,9 @@ from pathlib import Path
 from typing import Dict, Optional
 
 import numpy as np
+import pandas as pd
 from PIL import Image
+from tqdm import tqdm
 
 logger = logging.getLogger(__name__)
 
@@ -120,9 +122,6 @@ class AnyToTiffConverter:
             downscale_by: Integer downsample factor (≥1).  ``2`` halves resolution.
             num_workers: Worker processes.  ``0`` uses all available CPUs.
         """
-        import pandas as pd
-        from tqdm import tqdm
-
         if downscale_by < 1:
             raise ValueError(f"downscale_by must be ≥ 1, got {downscale_by}.")
         if num_workers < 0:

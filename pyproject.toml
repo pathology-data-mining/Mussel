@@ -26,6 +26,7 @@ dependencies = [
   "configargparse>=1.7.1",
   "environs",
   "sacremoses",
+  "tqdm",
 ]
 
 [dependency-groups]
@@ -90,7 +91,6 @@ dev = [
 "convert" = [
   "pyvips",
   "aicsimageio",
-  "tqdm",
 ]
 "cucim" = [
   "cucim",
