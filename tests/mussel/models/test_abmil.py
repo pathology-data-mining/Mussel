@@ -163,7 +163,7 @@ class TestABMILSlideModel:
         assert torch.allclose(out1, out2, atol=1e-5), "Reloaded model should be identical"
 
     def test_get_model_fun_inference(self, tmp_path):
-        """get_model_fun() returns a callable that produces [1, D] output."""
+        """get_model_fun() returns a callable that produces [D] output (batch dim squeezed)."""
         D = 64
         ckpt = _make_checkpoint(tmp_path, feature_dim=D)
         model = ABMILSlideModel(model_path=ckpt, use_gpu=False)
@@ -171,7 +171,7 @@ class TestABMILSlideModel:
 
         x = torch.randn(1, 25, D)
         result = model_fn(x)
-        assert result.shape == (1, D), f"Expected (1, {D}), got {result.shape}"
+        assert result.shape == (D,), f"Expected ({D},), got {result.shape}"
         assert result.device == torch.device("cpu"), "Output should be on CPU"
 
     def test_get_preprocessing_fun_is_none(self, tmp_path):

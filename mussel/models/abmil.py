@@ -268,14 +268,14 @@ class ABMILSlideModel(TorchModel):
 
         Returns:
             Callable that takes patch features ``[1, N, D]`` and returns a
-            slide-level embedding ``[1, D]``.
+            slide-level embedding ``[D]`` (batch dim squeezed).
         """
 
         def model_fun(patch_features: torch.Tensor) -> torch.Tensor:
             with torch.no_grad(), torch.inference_mode():
                 patch_features = patch_features.to(self.device, non_blocking=True)
                 slide_emb = self.obj(patch_features)   # [1, D]
-                return slide_emb.cpu()
+                return slide_emb.squeeze(0).cpu()      # [D]
 
         return model_fun
 

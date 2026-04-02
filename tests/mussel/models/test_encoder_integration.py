@@ -38,9 +38,15 @@ _TESTDATA = Path(__file__).parent.parent.parent / "testdata"
 _SLIDE_PATH = str(_TESTDATA / "948176.svs")
 _PATCH_H5 = str(_TESTDATA / "948176.patch.h5")
 
-# All patch encoder model types (excludes slide encoders)
+# Slide encoders that are *encoder-agnostic* (not listed in SLIDE_ENCODER_COMPATIBILITY
+# because they work with any patch encoder — e.g. ABMIL).
+_AGNOSTIC_SLIDE_ENCODERS = {ModelType.ABMIL_SLIDE}
+
+# All patch encoder model types (excludes slide encoders, both compatibility-based
+# and encoder-agnostic ones).
 _SLIDE_ENCODERS = set(SLIDE_ENCODER_COMPATIBILITY.keys())
-_PATCH_ENCODER_TYPES = [mt for mt in ModelType if mt not in _SLIDE_ENCODERS]
+_ALL_SLIDE_ENCODERS = _SLIDE_ENCODERS | _AGNOSTIC_SLIDE_ENCODERS
+_PATCH_ENCODER_TYPES = [mt for mt in ModelType if mt not in _ALL_SLIDE_ENCODERS]
 _SLIDE_ENCODER_TYPES = list(_SLIDE_ENCODERS)
 
 # Expected feature dimension per patch encoder (used to synthesise fake features
@@ -449,3 +455,92 @@ def test_patch_encoder_matches_snapshot(tmp_path, model_type, use_gpu, update_sn
         )
 
     run()
+
+
+# ---------------------------------------------------------------------------
+# Encoder-agnostic slide encoder integration tests (ABMIL)
+# ---------------------------------------------------------------------------
+
+
+def _make_abmil_checkpoint(tmp_path: Path, feature_dim: int = 512) -> str:
+    """Write a minimal ABMIL checkpoint to disk and return its path."""
+    from mussel.models.abmil import _ABMILSlideEncoder
+
+    config = {
+        "feature_dim": feature_dim,
+        "head_dim": 64,
+        "n_heads": 4,
+        "dropout": 0.0,
+        "gated": False,
+    }
+    enc = _ABMILSlideEncoder(**config)
+    path = str(tmp_path / "abmil_test.pt")
+    torch.save({"config": config, "state_dict": enc.state_dict()}, path)
+    return path
+
+
+@pytest.mark.slow
+@pytest.mark.integration
+@pytest.mark.timeout(120)
+@pytest.mark.parametrize("feature_dim,n_patches", [
+    (512, 64),    # typical CONCH v1.0 / CLIP feature dim
+    (1024, 32),   # typical UNI / RESNET50 feature dim
+], ids=["dim512", "dim1024"])
+def test_abmil_slide_encoder_aggregates_features(tmp_path, feature_dim, n_patches, use_gpu):
+    """ABMIL slide encoder aggregates synthetic patch features into a slide embedding.
+
+    Tests:
+    - Output is a 1-D numpy array of the expected feature dimension.
+    - Output is finite and non-zero.
+    - Model can be loaded from a checkpoint and run end-to-end.
+    """
+    from mussel.models.abmil import ABMILSlideModel
+
+    ckpt_path = _make_abmil_checkpoint(tmp_path, feature_dim=feature_dim)
+    model = ABMILSlideModel(model_path=ckpt_path, use_gpu=use_gpu)
+    model_fn = model.get_model_fun()
+
+    rng = np.random.default_rng(42)
+    fake_features = rng.standard_normal((1, n_patches, feature_dim)).astype(np.float32)
+    features_tensor = torch.from_numpy(fake_features)
+
+    result = model_fn(features_tensor)
+
+    assert result.shape == (feature_dim,), (
+        f"Expected ({feature_dim},), got {result.shape}"
+    )
+    result_np = result.numpy()
+    assert np.all(np.isfinite(result_np)), "Result contains NaN or Inf"
+    assert not np.all(result_np == 0), "All result values are zero"
+
+
+@pytest.mark.slow
+@pytest.mark.integration
+@pytest.mark.timeout(120)
+def test_abmil_slide_encoder_via_apply_slide_aggregation(tmp_path, use_gpu):
+    """ABMILSlideModel is accessible through the _apply_slide_aggregation API."""
+    feature_dim = 256
+    n_patches = 48
+    ckpt_path = _make_abmil_checkpoint(tmp_path, feature_dim=feature_dim)
+
+    rng = np.random.default_rng(0)
+    fake_features = rng.standard_normal((n_patches, feature_dim)).astype(np.float32)
+    fake_coords = np.stack([
+        np.arange(n_patches) * 256,
+        np.zeros(n_patches, dtype=np.int64),
+    ], axis=1).astype(np.int64)
+
+    result = _apply_slide_aggregation(
+        features=fake_features,
+        aggregation_method="model",
+        slide_model_type=ModelType.ABMIL_SLIDE,
+        slide_model_path=ckpt_path,
+        use_gpu=use_gpu,
+        coords=fake_coords,
+        patch_size=256,
+    )
+
+    assert isinstance(result, np.ndarray)
+    assert result.ndim == 1
+    assert result.size == feature_dim
+    assert np.all(np.isfinite(result))
