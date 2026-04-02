@@ -145,7 +145,7 @@ class AnyToTiffConverter:
             if not os.path.exists(img_path):
                 skipped_missing.append(filename)
                 continue
-            ext = "".join(Path(filename).suffixes).lower()
+            ext = _splitext(filename)[1].lower()
             if ext not in SUPPORTED_EXTENSIONS:
                 skipped_unsupported.append(filename)
                 continue

@@ -256,7 +256,7 @@ class OmeZarrSlide(_SlideBase):
         # Shape: (... C, H, W) or (... H, W, C) — handle both.
         ndim = arr.ndim
         if ndim == 4:
-            # (T/Z, C, H, W) or (C, Z, H, W) — assume (C, Z, H, W) or (1, C, H, W)
+            # Assume (T, C, H, W) — take first timepoint, all channels.
             region = np.asarray(arr[0, :, yl : yl + h, xl : xl + w])
             region = np.transpose(region, (1, 2, 0))  # (H, W, C)
         elif ndim == 3:
