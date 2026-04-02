@@ -141,6 +141,7 @@ SVS_PATH = "tests/testdata/948176.svs"
 PATCH_SIZE_LEVEL0 = 256
 
 
+@pytest.mark.slow
 @pytest.mark.skipif(
     not os.path.exists(SVS_PATH),
     reason="Test slide not available",

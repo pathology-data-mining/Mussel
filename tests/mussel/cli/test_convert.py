@@ -207,3 +207,92 @@ class TestConvertCLIEndToEnd:
         call_args = mock_save.call_args
         assert call_args.args[1] == "real"
         assert call_args.args[2] == pytest.approx(0.5)
+
+
+# ---------------------------------------------------------------------------
+# Integration tests (require pyvips — skipped when not installed)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.slow
+class TestConvertCLIIntegration:
+    """Integration tests that exercise the real pyvips pipeline end-to-end.
+
+    Automatically skipped when pyvips is not installed.
+    """
+
+    @pytest.fixture(autouse=True)
+    def require_pyvips(self):
+        pytest.importorskip("pyvips", reason="pyvips not installed")
+
+    def test_single_file_produces_readable_tiff(self, tmp_path):
+        """PNG → pyramidal TIFF via pyvips; output is readable by tiffslide."""
+        png = _make_png(tmp_path, name="slide.png", size=(128, 128))
+        out_dir = tmp_path / "out"
+
+        cfg = ConvertConfig(input_path=png, output_dir=str(out_dir), mpp=0.5)
+        convert_module.main(cfg)
+
+        out_tiff = out_dir / "slide.tiff"
+        assert out_tiff.exists(), f"Expected output TIFF at {out_tiff}"
+
+        import tiffslide
+        with tiffslide.open_slide(str(out_tiff)) as wsi:
+            w, h = wsi.level_dimensions[0]
+            assert w == 128 and h == 128, f"Expected 128x128 at level 0, got {w}x{h}"
+            region = wsi.read_region((0, 0), 0, (32, 32)).convert("RGB")
+            assert region.size == (32, 32)
+
+    def test_batch_mode_converts_multiple_files(self, tmp_path):
+        """Batch mode converts all PNGs listed in the CSV."""
+        slides_dir = tmp_path / "slides"
+        slides_dir.mkdir()
+
+        # Create two PNGs
+        for name, size in [("a.png", (64, 64)), ("b.png", (32, 48))]:
+            _make_png(slides_dir, name=name, size=size)
+
+        csv_path = _make_mpp_csv(tmp_path, [("a.png", 0.5), ("b.png", 0.25)])
+        out_dir = tmp_path / "out"
+
+        cfg = ConvertConfig(
+            input_path=str(slides_dir),
+            output_dir=str(out_dir),
+            mpp_csv=csv_path,
+            num_workers=1,
+        )
+        convert_module.main(cfg)
+
+        assert (out_dir / "a.tiff").exists(), "Expected a.tiff"
+        assert (out_dir / "b.tiff").exists(), "Expected b.tiff"
+
+    def test_bigtiff_flag_creates_file(self, tmp_path):
+        """bigtiff=True path executes without error for a small file."""
+        png = _make_png(tmp_path, name="big.png", size=(64, 64))
+        out_dir = tmp_path / "out"
+
+        cfg = ConvertConfig(
+            input_path=png, output_dir=str(out_dir), mpp=0.5, bigtiff=True
+        )
+        convert_module.main(cfg)
+        assert (out_dir / "big.tiff").exists()
+
+    def test_output_tiff_has_correct_mpp_metadata(self, tmp_path):
+        """The converted TIFF's MPP property matches the requested mpp."""
+        png = _make_png(tmp_path, name="mpp_test.png", size=(64, 64))
+        out_dir = tmp_path / "out"
+        target_mpp = 0.25
+
+        cfg = ConvertConfig(input_path=png, output_dir=str(out_dir), mpp=target_mpp)
+        convert_module.main(cfg)
+
+        import tiffslide
+        with tiffslide.open_slide(str(out_dir / "mpp_test.tiff")) as wsi:
+            mpp_x = wsi.properties.get("tiffslide.mpp-x") or wsi.properties.get(
+                "openslide.mpp-x"
+            )
+            if mpp_x is not None:
+                assert abs(float(mpp_x) - target_mpp) < 0.05, (
+                    f"Expected MPP ~{target_mpp}, got {mpp_x}"
+                )
+
