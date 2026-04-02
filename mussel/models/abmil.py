@@ -1,4 +1,4 @@
-"""ABMIL (Attention-Based MIL) slide encoder – self-contained, no TRIDENT dependency."""
+"""ABMIL (Attention-Based MIL) slide encoder."""
 
 import logging
 from pathlib import Path

@@ -475,7 +475,7 @@ def _segment_tissue_neural(img: np.ndarray, slide_mpp: float) -> np.ndarray:
 
     Uses a DeepLabV3-ResNet50 model (pre-trained on histopathology slides) to
     segment tissue from background.  The model and inference pipeline are
-    implemented directly in Mussel — no HEST or TRIDENT package is required.
+    implemented directly in Mussel — no HEST package is required.
     PyTorch and torchvision must be installed (``uv sync --extra torch-gpu``).
 
     Weights are downloaded automatically from ``MahmoodLab/hest-tissue-seg``

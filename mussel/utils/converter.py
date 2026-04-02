@@ -8,9 +8,6 @@ Optional dependencies (install as needed):
     pip install pyvips
     pip install "aicsimageio[bioformats]"   # requires Java for Bio-Formats
     pip install pylibCZIrw                  # for CZI (Zeiss)
-
-References:
-    TRIDENT Converter.py — https://github.com/mahmoodlab/TRIDENT
 """
 
 import logging

@@ -5,7 +5,7 @@ DeepLabV3 model (ResNet-50 backbone) trained on histopathology slides.
 
 The model architecture and pre-trained weights are from the HEST tissue
 segmentation project (MahmoodLab/hest-tissue-seg on HuggingFace).
-This implementation is independent of the HEST and TRIDENT packages —
+This implementation is independent of the HEST package —
 it only requires ``torch``, ``torchvision``, and ``huggingface_hub``
 (all included in Mussel's ``torch-gpu`` / ``torch-cpu`` extras).
 
