@@ -18,6 +18,10 @@ class ConvertConfig:
         input_path: Path to a single slide file OR a directory of slides for
             batch conversion.
         output_dir: Directory where converted TIFF files will be written.
+            Each input file ``<stem>.<ext>`` produces ``output_dir/<stem>.tiff``
+            (compound extensions such as ``.ome.tiff`` are collapsed to a single
+            stem, e.g. ``slide.ome.tiff`` → ``output_dir/slide.tiff``).
+            The directory is created automatically if it does not exist.
         mpp: Microns-per-pixel of the source image.  Required for single-file
             mode.  Ignored in batch mode (MPP comes from ``mpp_csv``).
         mpp_csv: Path to a CSV with columns ``wsi`` (filename with extension)
@@ -55,6 +59,13 @@ CSV format (mpp.csv):
   wsi,mpp
   slide1.lif,0.25
   slide2.vsi,0.50
+
+Output layout:
+  Each input file <stem>.<ext> is written to output_dir/<stem>.tiff.
+  Example:
+    ./wsis/TCGA-AB-1234.svs  →  ./tiffs/TCGA-AB-1234.tiff
+    ./wsis/scan.ome.tiff     →  ./tiffs/scan.tiff
+  The output_dir is created automatically if it does not exist.
 """
 
 cs = ConfigStore.instance()
