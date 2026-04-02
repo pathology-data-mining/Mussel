@@ -117,11 +117,37 @@ def _open_zarr(path: str) -> "OmeZarrSlide":
 
 
 # ---------------------------------------------------------------------------
+# Shared base for tiffslide-compatible wrappers
+# ---------------------------------------------------------------------------
+
+
+class _SlideBase:
+    """Mixin providing shared tiffslide-compatible API for backend wrappers."""
+
+    def get_best_level_for_downsample(self, downsample: float) -> int:
+        """Return the largest level whose downsample factor is ≤ ``downsample``."""
+        best = 0
+        for i, ds in enumerate(self.level_downsamples):
+            if ds <= downsample:
+                best = i
+        return best
+
+    def close(self) -> None:
+        pass
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *args):
+        self.close()
+
+
+# ---------------------------------------------------------------------------
 # CuCIM wrapper — presents tiffslide-compatible API
 # ---------------------------------------------------------------------------
 
 
-class CuCIMSlide:
+class CuCIMSlide(_SlideBase):
     """Thin wrapper around ``cucim.CuImage`` with tiffslide-compatible API."""
 
     def __init__(self, cuimage: Any) -> None:
@@ -157,25 +183,11 @@ class CuCIMSlide:
             return PILImage.fromarray(arr, mode="RGBA")
         return PILImage.fromarray(arr, mode="RGB")
 
-    def get_best_level_for_downsample(self, downsample: float) -> int:
-        """Return the largest level with downsample ≤ the requested value."""
-        best = 0
-        for i, ds in enumerate(self.level_downsamples):
-            if ds <= downsample:
-                best = i
-        return best
-
     def close(self) -> None:
         try:
             self._img.close()
         except Exception:
             pass
-
-    def __enter__(self):
-        return self
-
-    def __exit__(self, *args):
-        self.close()
 
 
 # ---------------------------------------------------------------------------
@@ -183,7 +195,7 @@ class CuCIMSlide:
 # ---------------------------------------------------------------------------
 
 
-class OmeZarrSlide:
+class OmeZarrSlide(_SlideBase):
     """Thin wrapper around an OME-Zarr store with tiffslide-compatible API.
 
     Supports OME-Zarr v0.4 multiscale arrays stored as a single series.
@@ -267,19 +279,3 @@ class OmeZarrSlide:
 
         region = region[:, :, :3].astype(np.uint8) if region.ndim == 3 else region.astype(np.uint8)
         return PILImage.fromarray(region, mode="RGB")
-
-    def get_best_level_for_downsample(self, downsample: float) -> int:
-        best = 0
-        for i, ds in enumerate(self.level_downsamples):
-            if ds <= downsample:
-                best = i
-        return best
-
-    def close(self) -> None:
-        pass
-
-    def __enter__(self):
-        return self
-
-    def __exit__(self, *args):
-        self.close()

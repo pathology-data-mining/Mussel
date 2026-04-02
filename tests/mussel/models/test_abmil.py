@@ -74,17 +74,17 @@ class TestABMILModule:
         )
 
     def test_input_dimension_assertion(self):
-        """Non-3D input should raise AssertionError."""
+        """Non-3D input should raise ValueError."""
         model = ABMIL(feature_dim=32, head_dim=16, n_heads=1)
-        with pytest.raises(AssertionError):
+        with pytest.raises(ValueError):
             model(torch.randn(10, 32))  # 2D, not 3D
 
     def test_mask_shape_assertion(self):
-        """Mask with wrong batch dimension should raise AssertionError."""
+        """Mask with wrong batch dimension should raise ValueError."""
         model = ABMIL(feature_dim=32, head_dim=16, n_heads=1)
         x = torch.randn(2, 10, 32)
         bad_mask = torch.ones(3, 10, dtype=torch.bool)  # batch dim mismatch
-        with pytest.raises(AssertionError):
+        with pytest.raises(ValueError):
             model(x, attn_mask=bad_mask)
 
 

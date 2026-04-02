@@ -91,16 +91,19 @@ class ABMIL(nn.Module):
             - aggregated_features: ``[B, n_branches, D]``
             - attention_scores: ``[B, n_branches, n_heads, N]``
         """
-        assert features.dim() == 3, (
-            f"Input features must be 3-dimensional (B x N x D). Got {features.shape}."
-        )
+        if features.dim() != 3:
+            raise ValueError(
+                f"Input features must be 3-dimensional (B x N x D). Got {features.shape}."
+            )
         if attn_mask is not None:
-            assert attn_mask.dim() == 2, (
-                f"Attention mask must be 2-dimensional (B x N). Got {attn_mask.shape}."
-            )
-            assert features.shape[:2] == attn_mask.shape, (
-                f"Batch size and N must match: {features.shape[:2]} vs {attn_mask.shape}."
-            )
+            if attn_mask.dim() != 2:
+                raise ValueError(
+                    f"Attention mask must be 2-dimensional (B x N). Got {attn_mask.shape}."
+                )
+            if features.shape[:2] != attn_mask.shape:
+                raise ValueError(
+                    f"Batch size and N must match: {features.shape[:2]} vs {attn_mask.shape}."
+                )
 
         head_attentions: List[torch.Tensor] = []
         head_features: List[torch.Tensor] = []

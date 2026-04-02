@@ -271,3 +271,36 @@ class TorchModel(Model):
         """
         with open(save_path, "wb") as f:
             pickle.dump(self.obj, f)
+
+
+class _TimmHfHubBase(TorchModel):
+    """Shared base for timm models loaded directly from HuggingFace Hub.
+
+    Subclasses set ``_default_model_type`` to their :class:`ModelType` entry.
+    The ``model_path`` is expected to be a ``hf-hub:<org>/<repo>`` string;
+    ``timm.create_model`` handles the download and caching.
+
+    Example::
+
+        @register_model(ModelType.MY_MODEL)
+        class MyModel(_TimmHfHubBase):
+            _default_model_type = ModelType.MY_MODEL
+    """
+
+    _default_model_type: "ModelType"
+
+    def __init__(
+        self,
+        model_path,
+        use_gpu: bool = True,
+        gpu_device_id: int | List[int] | None = None,
+    ):
+        if model_path is None:
+            model_path = self._default_model_type.path
+        model_obj = None
+        if model_path.startswith("hf-hub:"):
+            model_obj = timm.create_model(model_path, pretrained=True, num_classes=0)
+        super().__init__(model_path, model_obj, use_gpu, gpu_device_id)
+
+    def get_preprocessing_fun(self) -> Callable:
+        return _timm_preprocessing(self.obj)
