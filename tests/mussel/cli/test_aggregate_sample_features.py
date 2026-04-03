@@ -1,6 +1,7 @@
 import h5py
 import numpy as np
 import pytest
+import torch
 
 from mussel.utils.feature_extract import subsample_tiles
 
@@ -160,6 +161,23 @@ def test_aggregate_sample_features_multi_slide(tmp_path):
     assert results["sampleX"][1].shape == (35, 2)
 
 
+def test_aggregate_sample_features_save_pt_false(tmp_path):
+    """save_pt=False — only H5 is written, no PT file."""
+    h5_a = tmp_path / "slide_a.h5"
+    _write_fake_h5(h5_a, n_tiles=10, seed=0)
+
+    cfg = AggregateSampleFeaturesConfig(
+        patch_features_h5_paths=[str(h5_a)],
+        sample_ids=["s1"],
+        output_dir=str(tmp_path / "out"),
+        save_pt=False,
+    )
+    mussel.cli.aggregate_sample_features.main(OmegaConf.structured(cfg))
+
+    assert (tmp_path / "out" / "s1.features.h5").exists()
+    assert not (tmp_path / "out" / "s1.features.pt").exists()
+
+
 def test_aggregate_sample_features_two_samples(tmp_path):
     """Three slides, two samples — two entries in result."""
     rng = np.random.default_rng(0)
@@ -234,6 +252,8 @@ def test_aggregate_sample_features_cli(tmp_path):
         assert f["features"].shape[0] == 30  # 25+20=45 → subsampled to 30
     with h5py.File(tmp_path / "samples" / "P2.features.h5") as f:
         assert f["features"].shape[0] == 30  # 30 ≤ 30, no subsampling
+    assert (tmp_path / "samples" / "P1.features.pt").exists()
+    assert (tmp_path / "samples" / "P2.features.pt").exists()
 
 
 def test_cli_mismatched_lengths_raises(tmp_path):
