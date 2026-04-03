@@ -874,6 +874,7 @@ def draw_slide_mask(
     polygons: shapely.Geometry | List[shapely.Geometry],
     vis_level=0,
     outline="black",
+    outline_width=1,
     fill=(255, 0, 0, 80),
     max_size=None,
     custom_downsample=None,
@@ -908,9 +909,9 @@ def draw_slide_mask(
             scaled_polygon = scale_geometry(polygon, scale[0])
             if isinstance(polygon, MultiPolygon):
                 for geom in scaled_polygon.geoms:
-                    draw.polygon(geom.exterior.coords, outline=outline, fill=fill)
+                    draw.polygon(geom.exterior.coords, outline=outline, fill=fill, width=outline_width)
             else:
-                draw.polygon(scaled_polygon.exterior.coords, outline=outline, fill=fill)
+                draw.polygon(scaled_polygon.exterior.coords, outline=outline, fill=fill, width=outline_width)
 
         image_width, image_height = img.size
         if custom_downsample and custom_downsample > 1:
