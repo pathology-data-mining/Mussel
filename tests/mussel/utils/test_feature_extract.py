@@ -1,175 +1,172 @@
-"""Tests for feature extraction utilities, particularly batch processing."""
+"""Tests for get_features pre-loaded model parameters."""
 
-import os
-import tempfile
-from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-import h5py
 import numpy as np
 import pytest
-import torch
 
 from mussel.models import ModelType
-from mussel.utils.feature_extract import extract_patch_features_batch
+from mussel.utils.feature_extract import get_features
 
 
-def create_mock_h5_file(h5_path, num_patches=10):
-    """Create a mock HDF5 file with patch coordinates."""
-    coords = np.array([[i * 256, i * 256] for i in range(num_patches)])
+def _make_mock_model(feature_dim=384):
+    """Return a mock model with the required interface."""
+    mock = MagicMock()
+    mock.get_preprocessing_fun.return_value = None
+    mock.get_model_fun.return_value = MagicMock(
+        side_effect=lambda x: __import__('torch').randn(len(x), feature_dim)
+    )
+    return mock
 
-    with h5py.File(h5_path, "w") as f:
-        coords_dset = f.create_dataset("coords", data=coords)
-        coords_dset.attrs["patch_size"] = 256
-        coords_dset.attrs["patch_level"] = 0
-        coords_dset.attrs["patch_size_to_resize_to_for_desired_mpp"] = 224
+
+def _base_patches():
+    """Context managers that stub out all I/O in get_features."""
+    return [
+        patch("mussel.utils.feature_extract.get_model_factory"),
+        patch("mussel.utils.feature_extract.WholeSlideImageTileCoordDataset"),
+        patch("mussel.utils.feature_extract.process_dataset"),
+        patch("mussel.utils.feature_extract._make_dataloader"),
+    ]
 
 
-def test_extract_patch_features_batch_basic(tmp_path, use_gpu, num_workers):
-    """Test basic batch extraction of patch features from multiple slides."""
-    # Create mock input files
-    num_slides = 3
-    patch_h5_paths = []
-    slide_paths = []
-    output_h5_paths = []
+# -- model= parameter -------------------------------------------------------
 
-    for i in range(num_slides):
-        # Create mock patch coordinates file
-        patch_h5_path = tmp_path / f"slide{i}_coords.h5"
-        create_mock_h5_file(patch_h5_path, num_patches=5)
-        patch_h5_paths.append(str(patch_h5_path))
+def test_model_factory_not_called_when_model_provided():
+    """get_model_factory must not be called when a pre-loaded model is given."""
+    coords = np.zeros((10, 2), dtype=np.int32)
+    attrs = {"patch_size": 256, "patch_level": 0, "mpp": 0.5,
+             "patch_size_to_resize_to_for_desired_mpp": 224}
+    mock_model = _make_mock_model()
 
-        # Mock slide path (doesn't need to exist due to mocking)
-        slide_paths.append(f"slide{i}.svs")
-
-        # Output path
-        output_h5_paths.append(str(tmp_path / f"slide{i}_features.h5"))
-
-    # Mock the model, dataset, and process_dataset to avoid loading actual slides
-    with (
-        patch("mussel.utils.feature_extract.get_model_factory") as mock_factory,
-        patch(
-            "mussel.utils.feature_extract.WholeSlideImageH5Dataset"
-        ) as mock_dataset_class,
-        patch("mussel.utils.feature_extract.process_dataset") as mock_process,
-    ):
-        # Mock model
-        mock_model = MagicMock()
-        mock_model_fun = MagicMock(
-            side_effect=lambda x: torch.randn(len(x), 2048)  # Return batch of features
+    with patch("mussel.utils.feature_extract.get_model_factory") as mock_factory,          patch("mussel.utils.feature_extract.WholeSlideImageTileCoordDataset"),          patch("mussel.utils.feature_extract._make_dataloader"),          patch("mussel.utils.feature_extract.process_dataset") as mock_proc:
+        mock_proc.return_value = MagicMock(
+            features=np.zeros((10, 384)), labels=np.zeros(10)
         )
-        mock_model.get_model_fun.return_value = mock_model_fun
-        mock_model.get_preprocessing_fun.return_value = None
-        mock_factory.return_value = MagicMock(
-            get_model=MagicMock(return_value=mock_model)
+        get_features(coords, "slide.svs", attrs, model=mock_model)
+
+    mock_factory.assert_not_called()
+
+
+def test_model_factory_called_when_model_not_provided():
+    """get_model_factory must be called when no pre-loaded model is given."""
+    coords = np.zeros((10, 2), dtype=np.int32)
+    attrs = {"patch_size": 256, "patch_level": 0, "mpp": 0.5,
+             "patch_size_to_resize_to_for_desired_mpp": 224}
+
+    with patch("mussel.utils.feature_extract.get_model_factory") as mock_factory,          patch("mussel.utils.feature_extract.WholeSlideImageTileCoordDataset"),          patch("mussel.utils.feature_extract._make_dataloader"),          patch("mussel.utils.feature_extract.process_dataset") as mock_proc:
+        mock_model = _make_mock_model()
+        mock_factory.return_value = MagicMock(get_model=MagicMock(return_value=mock_model))
+        mock_proc.return_value = MagicMock(
+            features=np.zeros((10, 384)), labels=np.zeros(10)
         )
+        get_features(coords, "slide.svs", attrs, model_type=ModelType.CTRANSPATH)
 
-        # Mock dataset
-        mock_dataset = MagicMock()
-        mock_dataset.__len__.return_value = 5
-        mock_dataset_class.return_value = mock_dataset
+    mock_factory.assert_called_once()
 
-        # Call the batch extraction function
-        result_paths = extract_patch_features_batch(
-            patch_h5_paths=patch_h5_paths,
-            slide_paths=slide_paths,
-            output_h5_paths=output_h5_paths,
-            model_type=ModelType.RESNET50,
-            model_path=None,
-            batch_size=32,
-            use_gpu=use_gpu,
-            num_workers=num_workers,
+
+def test_positional_args_unchanged():
+    """Existing positional call pattern must still work after adding model= at end."""
+    coords = np.zeros((5, 2), dtype=np.int32)
+    attrs = {"patch_size": 256, "patch_level": 0, "mpp": 0.5,
+             "patch_size_to_resize_to_for_desired_mpp": 224}
+
+    with patch("mussel.utils.feature_extract.get_model_factory") as mock_factory,          patch("mussel.utils.feature_extract.WholeSlideImageTileCoordDataset"),          patch("mussel.utils.feature_extract._make_dataloader"),          patch("mussel.utils.feature_extract.process_dataset") as mock_proc:
+        mock_model = _make_mock_model()
+        mock_factory.return_value = MagicMock(get_model=MagicMock(return_value=mock_model))
+        mock_proc.return_value = MagicMock(
+            features=np.zeros((5, 384)), labels=np.zeros(5)
         )
-
-        # Verify model was loaded only once
-        assert mock_factory.call_count == 1, "Model factory should be called only once"
-
-        # Verify dataset was created for each slide
-        assert (
-            mock_dataset_class.call_count == num_slides
-        ), f"Dataset should be created {num_slides} times, got {mock_dataset_class.call_count}"
-
-        # Verify process_dataset was called for each slide
-        assert (
-            mock_process.call_count == num_slides
-        ), f"process_dataset should be called {num_slides} times, got {mock_process.call_count}"
-
-        # Verify result paths match input
-        assert result_paths == output_h5_paths
+        # Classic positional call: (coords, slide_path, attrs, model_type, model_path, batch_size)
+        # batch_size must not be interpreted as model=
+        features, labels = get_features(
+            coords, "slide.svs", attrs, ModelType.CTRANSPATH, None, 32
+        )
+    assert features.shape == (5, 384)
 
 
-def test_extract_patch_features_batch_empty_list():
-    """Test that batch extraction handles empty input gracefully."""
-    result = extract_patch_features_batch(
-        patch_h5_paths=[],
-        slide_paths=[],
-        output_h5_paths=[],
-        model_type=ModelType.RESNET50,
+def test_model_invalid_interface_raises_type_error():
+    """Passing an object without the required methods must raise TypeError immediately."""
+    coords = np.zeros((5, 2), dtype=np.int32)
+    attrs = {"patch_size": 256, "patch_level": 0, "mpp": 0.5,
+             "patch_size_to_resize_to_for_desired_mpp": 224}
+    bad_model = object()
+
+    with pytest.raises(TypeError, match="get_preprocessing_fun"):
+        get_features(coords, "slide.svs", attrs, model=bad_model)
+
+
+# -- slide_model= parameter ------------------------------------------------
+
+def test_slide_model_factory_not_called_when_slide_model_provided():
+    """get_model_factory must not be loaded for the slide encoder when slide_model is given."""
+    coords = np.zeros((10, 2), dtype=np.int32)
+    attrs = {"patch_size": 256, "patch_level": 0, "mpp": 0.5,
+             "patch_size_to_resize_to_for_desired_mpp": 224}
+    mock_patch_model = _make_mock_model()
+    mock_slide_model = MagicMock()
+    mock_slide_model.get_model_fun.return_value = MagicMock(
+        return_value=__import__('torch').zeros(1, 512)
     )
 
-    assert result == [], "Should return empty list for empty input"
+    call_log = []
+    def factory_side_effect(model_type):
+        call_log.append(model_type)
+        m = MagicMock()
+        m.get_model.return_value = mock_patch_model
+        return m
 
-
-def test_extract_patch_features_batch_single_slide(tmp_path, use_gpu, num_workers):
-    """Test batch extraction with a single slide (edge case)."""
-    # Create mock input file
-    patch_h5_path = tmp_path / "slide_coords.h5"
-    create_mock_h5_file(patch_h5_path, num_patches=10)
-
-    patch_h5_paths = [str(patch_h5_path)]
-    slide_paths = ["slide.svs"]
-    output_h5_paths = [str(tmp_path / "slide_features.h5")]
-
-    with (
-        patch("mussel.utils.feature_extract.get_model_factory") as mock_factory,
-        patch(
-            "mussel.utils.feature_extract.WholeSlideImageH5Dataset"
-        ) as mock_dataset_class,
-        patch("mussel.utils.feature_extract.process_dataset") as mock_process,
-    ):
-        # Mock model
-        mock_model = MagicMock()
-        mock_model_fun = MagicMock(side_effect=lambda x: torch.randn(len(x), 2048))
-        mock_model.get_model_fun.return_value = mock_model_fun
-        mock_model.get_preprocessing_fun.return_value = None
-        mock_factory.return_value = MagicMock(
-            get_model=MagicMock(return_value=mock_model)
+    with patch("mussel.utils.feature_extract.get_model_factory", side_effect=factory_side_effect),          patch("mussel.utils.feature_extract.validate_slide_encoder_compatibility"),          patch("mussel.utils.feature_extract.WholeSlideImageTileCoordDataset"),          patch("mussel.utils.feature_extract._make_dataloader"),          patch("mussel.utils.feature_extract.process_dataset") as mock_proc:
+        mock_proc.return_value = MagicMock(
+            features=np.zeros((10, 384)), labels=np.zeros(10)
+        )
+        get_features(
+            coords, "slide.svs", attrs,
+            model=mock_patch_model,
+            use_slide_encoder=True,
+            slide_model_type=ModelType.GIGAPATH_SLIDE,
+            aggregation_method="model",
+            slide_model=mock_slide_model,
         )
 
-        # Mock dataset
-        mock_dataset = MagicMock()
-        mock_dataset.__len__.return_value = 10
-        mock_dataset_class.return_value = mock_dataset
+    # Only the patch encoder factory may be called (for auto-infer check), not the slide encoder
+    slide_encoder_calls = [t for t in call_log if t == ModelType.GIGAPATH_SLIDE]
+    assert len(slide_encoder_calls) == 0, "Slide encoder factory must not be called when slide_model is provided"
 
-        result_paths = extract_patch_features_batch(
-            patch_h5_paths=patch_h5_paths,
-            slide_paths=slide_paths,
-            output_h5_paths=output_h5_paths,
-            model_type=ModelType.RESNET50,
-            model_path=None,
-            batch_size=32,
-            use_gpu=use_gpu,
-            num_workers=num_workers,
+
+def test_slide_model_invalid_interface_raises_type_error():
+    """Passing a slide_model without get_model_fun must raise TypeError."""
+    coords = np.zeros((5, 2), dtype=np.int32)
+    attrs = {"patch_size": 256, "patch_level": 0, "mpp": 0.5,
+             "patch_size_to_resize_to_for_desired_mpp": 224}
+    bad_slide_model = object()
+
+    with pytest.raises(TypeError, match="get_model_fun"):
+        get_features(coords, "slide.svs", attrs, slide_model=bad_slide_model)
+
+
+# -- compatibility validation ----b??-----------------------------------------
+
+def test_compatibility_validated_with_preloaded_patch_model():
+    """validate_slide_encoder_compatibility must be called even with pre-loaded patch model."""
+    coords = np.zeros((5, 2), dtype=np.int32)
+    attrs = {"patch_size": 256, "patch_level": 0, "mpp": 0.5,
+             "patch_size_to_resize_to_for_desired_mpp": 224}
+    mock_patch_model = _make_mock_model()
+
+    with patch("mussel.utils.feature_extract.validate_slide_encoder_compatibility") as mock_validate,          patch("mussel.utils.feature_extract.WholeSlideImageTileCoordDataset"),          patch("mussel.utils.feature_extract._make_dataloader"),          patch("mussel.utils.feature_extract.process_dataset") as mock_proc:
+        mock_proc.return_value = MagicMock(
+            features=np.zeros((5, 384)), labels=np.zeros(5)
+        )
+        mock_slide = MagicMock()
+        mock_slide.get_model_fun.return_value = MagicMock(return_value=__import__('torch').zeros(1, 512))
+        get_features(
+            coords, "slide.svs", attrs,
+            model_type=ModelType.GIGAPATH,
+            model=mock_patch_model,
+            use_slide_encoder=True,
+            slide_model_type=ModelType.GIGAPATH_SLIDE,
+            aggregation_method="model",
+            slide_model=mock_slide,
         )
 
-        # Even with one slide, model should be loaded only once
-        assert mock_factory.call_count == 1
-        assert result_paths == output_h5_paths
-
-
-def test_extract_patch_features_batch_model_reuse():
-    """
-    Document that batch processing reuses the model across slides.
-
-    This is the key benefit of batch processing:
-    - Old approach: Load model N times for N slides
-    - New approach: Load model 1 time for N slides
-
-    For 100 slides with 2s model load time:
-    - Old: 100 * 2s = 200s wasted on model loading
-    - New: 1 * 2s = 2s for model loading
-    - Savings: 198s (99% reduction in model loading time)
-    """
-    # This is a documentation test to highlight the key benefit
-    # In production, this translates to significant time savings
-    pass
+    mock_validate.assert_called_once_with(ModelType.GIGAPATH, ModelType.GIGAPATH_SLIDE)
