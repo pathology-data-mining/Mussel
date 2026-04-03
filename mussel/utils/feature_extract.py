@@ -1931,49 +1931,48 @@ def subsample_tiles(
 
 
 def aggregate_sample_features(
-    patch_features_h5_paths: List[str],
+    features_list: List[np.ndarray],
+    coords_list: List[np.ndarray],
     sample_ids: List[str],
-    output_dir: str,
-    output_h5_suffix: str = "features.h5",
     max_tiles: Optional[int] = None,
     subsampling_strategy: str = "random",
     seed: int = 42,
-) -> None:
-    """Concatenate per-slide patch features into one H5 per sample.
+) -> dict:
+    """Concatenate per-slide patch features into one array per sample.
 
-    Reads per-slide feature H5 files (each with ``features`` (N_i, D) and
-    ``coords`` (N_i, 2) datasets), groups them by ``sample_id``, concatenates
-    on the tile axis, optionally subsamples to ``max_tiles``, and writes one
-    output H5 per unique sample.
+    Groups slides by ``sample_id``, concatenates their features and coordinates
+    on the tile axis, and optionally subsamples to ``max_tiles``.
 
     Args:
-        patch_features_h5_paths: Paths to per-slide feature H5 files
-            (produced by ``extract_features``).
+        features_list: Per-slide feature arrays, each of shape ``(N_i, D)``.
+        coords_list: Per-slide coordinate arrays, each of shape ``(N_i, 2)``.
+            Must have the same length as ``features_list``.
         sample_ids: Sample identifier for each slide (same length as
-            ``patch_features_h5_paths``).  Slides with the same ``sample_id``
-            are concatenated together.
-        output_dir: Directory where one ``{sample_id}.{output_h5_suffix}`` file
-            is written per unique sample.
-        output_h5_suffix: Filename suffix for output files (default
-            ``"features.h5"``).
+            ``features_list``).  Slides with the same ``sample_id`` are
+            concatenated together.
         max_tiles: If set, subsample each sample to at most this many tiles
             after concatenation.  ``None`` keeps all tiles.
         subsampling_strategy: Strategy when subsampling — ``"random"``,
             ``"proportional"``, or ``"equal"``.  Ignored when ``max_tiles``
             is ``None`` or total tiles ≤ ``max_tiles``.
         seed: Random seed for subsampling reproducibility (default ``42``).
-    """
-    if len(patch_features_h5_paths) != len(sample_ids):
-        raise ValueError(
-            f"patch_features_h5_paths ({len(patch_features_h5_paths)}) and "
-            f"sample_ids ({len(sample_ids)}) must have the same length."
-        )
 
-    os.makedirs(output_dir, exist_ok=True)
+    Returns:
+        Ordered dict mapping each unique ``sample_id`` to a
+        ``(features, coords)`` tuple of concatenated (and optionally
+        subsampled) arrays.
+    """
+    if not (len(features_list) == len(coords_list) == len(sample_ids)):
+        raise ValueError(
+            f"features_list ({len(features_list)}), coords_list ({len(coords_list)}), "
+            f"and sample_ids ({len(sample_ids)}) must all have the same length."
+        )
 
     groups: dict = collections.OrderedDict()
     for idx, sid in enumerate(sample_ids):
         groups.setdefault(sid, []).append(idx)
+
+    results: dict = collections.OrderedDict()
 
     for sample_id, indices in groups.items():
         logger.info("Aggregating sample %s from %d slide(s)", sample_id, len(indices))
@@ -1983,14 +1982,12 @@ def aggregate_sample_features(
         slide_sizes = []
 
         for i in indices:
-            h5_path = patch_features_h5_paths[i]
-            with h5py.File(h5_path, "r") as h5:
-                feats = np.array(h5["features"])
-                coords = h5["coords"][:]
+            feats = features_list[i]
+            coords = coords_list[i]
             all_features.append(feats)
             all_coords.append(coords)
             slide_sizes.append(len(feats))
-            logger.debug("  slide %d: %d tiles from %s", i, len(feats), h5_path)
+            logger.debug("  slide %d: %d tiles", i, len(feats))
 
         features = np.concatenate(all_features, axis=0)
         coords = np.concatenate(all_coords, axis=0)
@@ -2011,11 +2008,12 @@ def aggregate_sample_features(
                 max_tiles,
             )
 
-        out_path = os.path.join(output_dir, f"{sample_id}.{output_h5_suffix}")
-        save_hdf5(out_path, {"features": features, "coords": coords}, mode="w")
         logger.info(
-            "Wrote %s (%d tiles, dim=%d)", out_path, len(features), features.shape[1]
+            "Sample %s: %d tiles, dim=%d", sample_id, len(features), features.shape[1]
         )
+        results[sample_id] = (features, coords)
+
+    return results
 
 
 @timed

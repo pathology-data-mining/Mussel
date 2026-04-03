@@ -125,88 +125,77 @@ from mussel.utils.feature_extract import \
 
 def test_aggregate_sample_features_single_slide(tmp_path):
     """One slide per sample — output equals input."""
-    h5_a = tmp_path / "slide_a.h5"
-    feats_a, coords_a = _write_fake_h5(h5_a, n_tiles=30)
+    feats_a, coords_a = _make_data(30)
 
-    _aggregate_sample_features(
-        patch_features_h5_paths=[str(h5_a)],
+    results = _aggregate_sample_features(
+        features_list=[feats_a],
+        coords_list=[coords_a],
         sample_ids=["sample1"],
-        output_dir=str(tmp_path / "out"),
-        output_h5_suffix="features.h5",
         max_tiles=None,
         subsampling_strategy="random",
         seed=42,
     )
 
-    out_h5 = tmp_path / "out" / "sample1.features.h5"
-    assert out_h5.exists()
-    with h5py.File(out_h5) as f:
-        np.testing.assert_array_equal(f["features"][:], feats_a)
-        np.testing.assert_array_equal(f["coords"][:], coords_a)
+    assert "sample1" in results
+    np.testing.assert_array_equal(results["sample1"][0], feats_a)
+    np.testing.assert_array_equal(results["sample1"][1], coords_a)
 
 
 def test_aggregate_sample_features_multi_slide(tmp_path):
     """Two slides per sample — features are concatenated."""
-    h5_a = tmp_path / "slide_a.h5"
-    h5_b = tmp_path / "slide_b.h5"
-    _write_fake_h5(h5_a, n_tiles=20, seed=1)
-    _write_fake_h5(h5_b, n_tiles=15, seed=2)
+    rng = np.random.default_rng(0)
+    feats_a = rng.random((20, 4)).astype(np.float32)
+    coords_a = rng.integers(0, 1000, (20, 2))
+    feats_b = rng.random((15, 4)).astype(np.float32)
+    coords_b = rng.integers(0, 1000, (15, 2))
 
-    _aggregate_sample_features(
-        patch_features_h5_paths=[str(h5_a), str(h5_b)],
+    results = _aggregate_sample_features(
+        features_list=[feats_a, feats_b],
+        coords_list=[coords_a, coords_b],
         sample_ids=["sampleX", "sampleX"],
-        output_dir=str(tmp_path / "out"),
         max_tiles=None,
     )
 
-    out_h5 = tmp_path / "out" / "sampleX.features.h5"
-    assert out_h5.exists()
-    with h5py.File(out_h5) as f:
-        assert f["features"].shape == (35, 4)
-        assert f["coords"].shape == (35, 2)
+    assert results["sampleX"][0].shape == (35, 4)
+    assert results["sampleX"][1].shape == (35, 2)
 
 
 def test_aggregate_sample_features_two_samples(tmp_path):
-    """Three slides, two samples — two output files."""
-    paths = [tmp_path / f"s{i}.h5" for i in range(3)]
-    for i, p in enumerate(paths):
-        _write_fake_h5(p, n_tiles=10, seed=i)
+    """Three slides, two samples — two entries in result."""
+    rng = np.random.default_rng(0)
+    slides = [(rng.random((10, 4)).astype(np.float32), rng.integers(0, 1000, (10, 2))) for _ in range(3)]
+    features_list = [f for f, _ in slides]
+    coords_list = [c for _, c in slides]
 
-    _aggregate_sample_features(
-        patch_features_h5_paths=[str(p) for p in paths],
+    results = _aggregate_sample_features(
+        features_list=features_list,
+        coords_list=coords_list,
         sample_ids=["sA", "sA", "sB"],
-        output_dir=str(tmp_path / "out"),
         max_tiles=None,
     )
 
-    out_a = tmp_path / "out" / "sA.features.h5"
-    out_b = tmp_path / "out" / "sB.features.h5"
-    assert out_a.exists() and out_b.exists()
-    with h5py.File(out_a) as f:
-        assert f["features"].shape[0] == 20
-    with h5py.File(out_b) as f:
-        assert f["features"].shape[0] == 10
+    assert results["sA"][0].shape[0] == 20
+    assert results["sB"][0].shape[0] == 10
 
 
 def test_aggregate_sample_features_with_subsampling(tmp_path):
     """Subsampling reduces output to max_tiles."""
-    h5_a = tmp_path / "s0.h5"
-    h5_b = tmp_path / "s1.h5"
-    _write_fake_h5(h5_a, n_tiles=80, seed=0)
-    _write_fake_h5(h5_b, n_tiles=60, seed=1)
+    rng = np.random.default_rng(0)
+    feats_a = rng.random((80, 4)).astype(np.float32)
+    coords_a = rng.integers(0, 1000, (80, 2))
+    feats_b = rng.random((60, 4)).astype(np.float32)
+    coords_b = rng.integers(0, 1000, (60, 2))
 
-    _aggregate_sample_features(
-        patch_features_h5_paths=[str(h5_a), str(h5_b)],
+    results = _aggregate_sample_features(
+        features_list=[feats_a, feats_b],
+        coords_list=[coords_a, coords_b],
         sample_ids=["big", "big"],
-        output_dir=str(tmp_path / "out"),
         max_tiles=50,
         subsampling_strategy="random",
         seed=99,
     )
 
-    out_h5 = tmp_path / "out" / "big.features.h5"
-    with h5py.File(out_h5) as f:
-        assert f["features"].shape[0] == 50
+    assert results["big"][0].shape[0] == 50
 
 
 # =============================================================================
