@@ -1937,7 +1937,7 @@ def aggregate_sample_features(
     max_tiles: Optional[int] = None,
     subsampling_strategy: str = "random",
     seed: int = 42,
-) -> dict:
+) -> dict[str, tuple[np.ndarray, np.ndarray]]:
     """Concatenate per-slide patch features into one array per sample.
 
     Groups slides by ``sample_id``, concatenates their features and coordinates
@@ -1968,11 +1968,29 @@ def aggregate_sample_features(
             f"and sample_ids ({len(sample_ids)}) must all have the same length."
         )
 
-    groups: dict = collections.OrderedDict()
+    for i, (feats, coords) in enumerate(zip(features_list, coords_list)):
+        sid = sample_ids[i]
+        if feats.ndim != 2:
+            raise ValueError(
+                f"features_list[{i}] (sample_id={sid!r}) must be 2-D, "
+                f"got shape {feats.shape}."
+            )
+        if coords.ndim != 2 or coords.shape[1] != 2:
+            raise ValueError(
+                f"coords_list[{i}] (sample_id={sid!r}) must have shape (N, 2), "
+                f"got shape {coords.shape}."
+            )
+        if len(feats) != len(coords):
+            raise ValueError(
+                f"features_list[{i}] and coords_list[{i}] (sample_id={sid!r}) "
+                f"have different lengths: {len(feats)} vs {len(coords)}."
+            )
+
+    groups: dict[str, list[int]] = {}
     for idx, sid in enumerate(sample_ids):
         groups.setdefault(sid, []).append(idx)
 
-    results: dict = collections.OrderedDict()
+    results: dict[str, tuple[np.ndarray, np.ndarray]] = {}
 
     for sample_id, indices in groups.items():
         logger.info("Aggregating sample %s from %d slide(s)", sample_id, len(indices))
