@@ -820,6 +820,7 @@ def get_features(
     attrs: dict,
     model_type: ModelType = ModelType.CLIP,
     model_path: Optional[str] = None,
+    model=None,
     batch_size: int = 64,
     use_gpu: bool = True,
     gpu_device_id: Optional[Union[int, List[int]]] = None,
@@ -842,6 +843,9 @@ def get_features(
             When using model-based aggregation with a slide encoder, this will be automatically
             set to the required patch encoder if not already specified correctly.
         model_path: Optional path to model weights.
+        model: Optional pre-loaded model instance. If provided, model_type and
+            model_path are ignored — useful for batch workflows where the model
+            is loaded once and reused across many slides.
         batch_size: Batch size for feature extraction (default: 64).
         use_gpu: Whether to use GPU for inference (default: True).
         gpu_device_id: GPU device ID to use.
@@ -859,43 +863,46 @@ def get_features(
     Returns:
         Tuple of (features array, labels array).
     """
-    logger.info("loading model checkpoint")
+    if model is None:
+        logger.info("loading model checkpoint")
 
-    if gpu_device_ids:
-        gpu_device_id = gpu_device_ids
+        if gpu_device_ids:
+            gpu_device_id = gpu_device_ids
 
-    # Auto-set aggregation_method to "model" if slide_model_type is specified
-    if (
-        use_slide_encoder
-        and slide_model_type is not None
-        and aggregation_method != "model"
-    ):
-        logger.info(
-            f"Auto-setting aggregation_method to 'model' since slide_model_type "
-            f"({slide_model_type}) is specified"
-        )
-        aggregation_method = "model"
-
-    # Auto-infer patch encoder from slide encoder if using model-based aggregation
-    if (
-        use_slide_encoder
-        and aggregation_method == "model"
-        and slide_model_type is not None
-    ):
-        required_patch_encoder = get_required_patch_encoder(slide_model_type)
-        if model_type != required_patch_encoder:
+        # Auto-set aggregation_method to "model" if slide_model_type is specified
+        if (
+            use_slide_encoder
+            and slide_model_type is not None
+            and aggregation_method != "model"
+        ):
             logger.info(
-                f"Auto-selecting patch encoder {required_patch_encoder} "
-                f"as required by slide encoder {slide_model_type}"
+                f"Auto-setting aggregation_method to 'model' since slide_model_type "
+                f"({slide_model_type}) is specified"
             )
-            model_type = required_patch_encoder
-        # Validate compatibility
-        validate_slide_encoder_compatibility(model_type, slide_model_type)
+            aggregation_method = "model"
 
-    model_factory = get_model_factory(model_type)
-    if model_factory is None:
-        raise ValueError("model not recognized")
-    model = model_factory.get_model(model_path, use_gpu, gpu_device_id)
+        # Auto-infer patch encoder from slide encoder if using model-based aggregation
+        if (
+            use_slide_encoder
+            and aggregation_method == "model"
+            and slide_model_type is not None
+        ):
+            required_patch_encoder = get_required_patch_encoder(slide_model_type)
+            if model_type != required_patch_encoder:
+                logger.info(
+                    f"Auto-selecting patch encoder {required_patch_encoder} "
+                    f"as required by slide encoder {slide_model_type}"
+                )
+                model_type = required_patch_encoder
+            # Validate compatibility
+            validate_slide_encoder_compatibility(model_type, slide_model_type)
+
+        model_factory = get_model_factory(model_type)
+        if model_factory is None:
+            raise ValueError("model not recognized")
+        model = model_factory.get_model(model_path, use_gpu, gpu_device_id)
+    else:
+        logger.info("using pre-loaded model")
     preprocessing = model.get_preprocessing_fun()
 
     dataset = WholeSlideImageTileCoordDataset(
