@@ -124,6 +124,35 @@ from mussel.utils.feature_extract import \
     aggregate_sample_features as _aggregate_sample_features
 
 
+def test_aggregate_sample_features_invalid_shapes():
+    """Per-slide validation raises informative ValueError on bad input."""
+    feats, coords = _make_data(10)
+
+    # 1-D features array
+    with pytest.raises(ValueError, match="2-D"):
+        _aggregate_sample_features(
+            features_list=[feats.ravel()],
+            coords_list=[coords],
+            sample_ids=["s"],
+        )
+
+    # coords wrong second dim
+    with pytest.raises(ValueError, match=r"\(N, 2\)"):
+        _aggregate_sample_features(
+            features_list=[feats],
+            coords_list=[coords[:, :1]],
+            sample_ids=["s"],
+        )
+
+    # mismatched lengths
+    with pytest.raises(ValueError, match="different lengths"):
+        _aggregate_sample_features(
+            features_list=[feats],
+            coords_list=[coords[:5]],
+            sample_ids=["s"],
+        )
+
+
 def test_aggregate_sample_features_single_slide(tmp_path):
     """One slide per sample — output equals input."""
     feats_a, coords_a = _make_data(30)
@@ -159,6 +188,12 @@ def test_aggregate_sample_features_multi_slide(tmp_path):
 
     assert results["sampleX"][0].shape == (35, 4)
     assert results["sampleX"][1].shape == (35, 2)
+    np.testing.assert_array_equal(
+        results["sampleX"][0], np.concatenate([feats_a, feats_b], axis=0)
+    )
+    np.testing.assert_array_equal(
+        results["sampleX"][1], np.concatenate([coords_a, coords_b], axis=0)
+    )
 
 
 def test_aggregate_sample_features_save_pt_false(tmp_path):
@@ -197,23 +232,39 @@ def test_aggregate_sample_features_two_samples(tmp_path):
 
 
 def test_aggregate_sample_features_with_subsampling(tmp_path):
-    """Subsampling reduces output to max_tiles."""
-    rng = np.random.default_rng(0)
-    feats_a = rng.random((80, 4)).astype(np.float32)
-    coords_a = rng.integers(0, 1000, (80, 2))
-    feats_b = rng.random((60, 4)).astype(np.float32)
-    coords_b = rng.integers(0, 1000, (60, 2))
+    """Subsampling reduces output to max_tiles, is reproducible, and keeps features/coords aligned."""
+    # Use identifiable rows: feature row i has value i in all dims, coord row i
+    # is (i, i). After subsampling, each selected feature row must equal its
+    # corresponding coord row, proving the two arrays stay in sync.
+    n_a, n_b = 80, 60
+    feats_a = np.tile(np.arange(n_a, dtype=np.float32)[:, None], (1, 4))
+    coords_a = np.tile(np.arange(n_a)[:, None], (1, 2))
+    feats_b = np.tile(np.arange(n_a, n_a + n_b, dtype=np.float32)[:, None], (1, 4))
+    coords_b = np.tile(np.arange(n_a, n_a + n_b)[:, None], (1, 2))
 
-    results = _aggregate_sample_features(
-        features_list=[feats_a, feats_b],
-        coords_list=[coords_a, coords_b],
-        sample_ids=["big", "big"],
-        max_tiles=50,
-        subsampling_strategy="random",
-        seed=99,
-    )
+    def run():
+        return _aggregate_sample_features(
+            features_list=[feats_a, feats_b],
+            coords_list=[coords_a, coords_b],
+            sample_ids=["big", "big"],
+            max_tiles=50,
+            subsampling_strategy="random",
+            seed=99,
+        )
 
-    assert results["big"][0].shape[0] == 50
+    r1 = run()
+    r2 = run()
+    f_out, c_out = r1["big"]
+
+    assert f_out.shape[0] == 50
+    assert c_out.shape[0] == 50
+
+    # Reproducible with same seed
+    np.testing.assert_array_equal(r1["big"][0], r2["big"][0])
+    np.testing.assert_array_equal(r1["big"][1], r2["big"][1])
+
+    # features and coords remain aligned: feature value == coord value for each row
+    np.testing.assert_array_equal(f_out[:, 0].astype(np.int64), c_out[:, 0])
 
 
 # =============================================================================

@@ -1,3 +1,4 @@
+import collections
 import logging
 import os
 from dataclasses import dataclass, field
@@ -126,24 +127,32 @@ def main(cfg: AggregateSampleFeaturesConfig):
             f"sample_ids ({len(sample_ids)}) must have the same length."
         )
 
-    features_list = []
-    coords_list = []
-    for h5_path in patch_features_h5_paths:
-        with h5py.File(h5_path, "r") as h5:
-            features_list.append(np.array(h5["features"]))
-            coords_list.append(h5["coords"][:])
-
-    results = aggregate_sample_features(
-        features_list=features_list,
-        coords_list=coords_list,
-        sample_ids=sample_ids,
-        max_tiles=cfg.max_tiles,
-        subsampling_strategy=cfg.subsampling_strategy,
-        seed=cfg.seed,
-    )
+    # Group indices by sample_id first so we only hold one sample's slides in
+    # memory at a time, keeping peak memory proportional to the largest sample
+    # rather than the entire input set.
+    groups: dict = collections.OrderedDict()
+    for idx, sid in enumerate(sample_ids):
+        groups.setdefault(sid, []).append(idx)
 
     os.makedirs(cfg.output_dir, exist_ok=True)
-    for sample_id, (features, coords) in results.items():
+    for sample_id, indices in groups.items():
+        features_list = []
+        coords_list = []
+        for i in indices:
+            with h5py.File(patch_features_h5_paths[i], "r") as h5:
+                features_list.append(np.array(h5["features"]))
+                coords_list.append(h5["coords"][:])
+
+        result = aggregate_sample_features(
+            features_list=features_list,
+            coords_list=coords_list,
+            sample_ids=[sample_id] * len(indices),
+            max_tiles=cfg.max_tiles,
+            subsampling_strategy=cfg.subsampling_strategy,
+            seed=cfg.seed,
+        )
+
+        features, coords = result[sample_id]
         out_h5 = os.path.join(cfg.output_dir, f"{sample_id}.{cfg.output_h5_suffix}")
         save_hdf5(out_h5, {"features": features, "coords": coords}, mode="w")
         logger.info(
