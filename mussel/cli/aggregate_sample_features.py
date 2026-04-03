@@ -1,12 +1,16 @@
 import logging
+import os
 from dataclasses import dataclass, field
 from typing import List, Optional
 
+import h5py
 import hydra
+import numpy as np
 from hydra.conf import HelpConf, HydraConf
 from hydra.core.config_store import ConfigStore
 
 from mussel.utils.feature_extract import aggregate_sample_features
+from mussel.utils.file import save_hdf5
 
 logger = logging.getLogger(__name__)
 
@@ -97,15 +101,38 @@ def main(cfg: AggregateSampleFeaturesConfig):
             cfg.seed,
         )
 
-    aggregate_sample_features(
-        patch_features_h5_paths=list(cfg.patch_features_h5_paths),
-        sample_ids=list(cfg.sample_ids),
-        output_dir=cfg.output_dir,
-        output_h5_suffix=cfg.output_h5_suffix,
+    patch_features_h5_paths = list(cfg.patch_features_h5_paths)
+    sample_ids = list(cfg.sample_ids)
+
+    if len(patch_features_h5_paths) != len(sample_ids):
+        raise ValueError(
+            f"patch_features_h5_paths ({len(patch_features_h5_paths)}) and "
+            f"sample_ids ({len(sample_ids)}) must have the same length."
+        )
+
+    features_list = []
+    coords_list = []
+    for h5_path in patch_features_h5_paths:
+        with h5py.File(h5_path, "r") as h5:
+            features_list.append(np.array(h5["features"]))
+            coords_list.append(h5["coords"][:])
+
+    results = aggregate_sample_features(
+        features_list=features_list,
+        coords_list=coords_list,
+        sample_ids=sample_ids,
         max_tiles=cfg.max_tiles,
         subsampling_strategy=cfg.subsampling_strategy,
         seed=cfg.seed,
     )
+
+    os.makedirs(cfg.output_dir, exist_ok=True)
+    for sample_id, (features, coords) in results.items():
+        out_path = os.path.join(cfg.output_dir, f"{sample_id}.{cfg.output_h5_suffix}")
+        save_hdf5(out_path, {"features": features, "coords": coords}, mode="w")
+        logger.info(
+            "Wrote %s (%d tiles, dim=%d)", out_path, len(features), features.shape[1]
+        )
 
     logger.info("Done.")
 
