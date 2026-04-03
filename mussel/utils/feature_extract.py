@@ -1986,11 +1986,11 @@ def aggregate_sample_features(
                 f"have different lengths: {len(feats)} vs {len(coords)}."
             )
 
-    groups: dict[str, list[int]] = collections.OrderedDict()
+    groups: dict[str, list[int]] = {}
     for idx, sid in enumerate(sample_ids):
         groups.setdefault(sid, []).append(idx)
 
-    results: dict[str, tuple[np.ndarray, np.ndarray]] = collections.OrderedDict()
+    results: dict[str, tuple[np.ndarray, np.ndarray]] = {}
 
     for sample_id, indices in groups.items():
         logger.info("Aggregating sample %s from %d slide(s)", sample_id, len(indices))

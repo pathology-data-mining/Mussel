@@ -1,4 +1,3 @@
-import collections
 import logging
 import os
 from dataclasses import dataclass, field
@@ -130,7 +129,7 @@ def main(cfg: AggregateSampleFeaturesConfig):
     # Group indices by sample_id first so we only hold one sample's slides in
     # memory at a time, keeping peak memory proportional to the largest sample
     # rather than the entire input set.
-    groups: dict = collections.OrderedDict()
+    groups: dict[str, list[int]] = {}
     for idx, sid in enumerate(sample_ids):
         groups.setdefault(sid, []).append(idx)
 
