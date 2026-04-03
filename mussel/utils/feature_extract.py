@@ -681,6 +681,7 @@ def _apply_slide_aggregation(
     gpu_device_ids: Optional[List[int]] = None,
     coords: Optional[np.ndarray] = None,
     patch_size: Optional[int] = None,
+    slide_model=None,
 ) -> np.ndarray:
     """Apply slide-level aggregation to patch features.
 
@@ -698,6 +699,8 @@ def _apply_slide_aggregation(
         coords: Optional numpy array of patch coordinates (required for some slide encoders like GIGAPATH_SLIDE, TITAN_SLIDE).
         patch_size: Optional patch size at level 0 (required for TITAN_SLIDE).
             If not provided, will be extracted from h5 file 'coords' attributes or default to 256.
+        slide_model: Optional pre-loaded slide encoder model instance. If provided,
+            slide_model_type and slide_model_path are ignored.
 
     Returns:
         Numpy array of aggregated features.
@@ -732,12 +735,16 @@ def _apply_slide_aggregation(
         if gpu_device_ids:
             gpu_device_id = gpu_device_ids
 
-        # Load the slide encoder model
-        model_factory = get_model_factory(slide_model_type)
-        if model_factory is None:
-            raise ValueError(f"Slide model type {slide_model_type} not recognized")
-        model = model_factory.get_model(slide_model_path, use_gpu, gpu_device_id)
-        model_fun = model.get_model_fun()
+        # Load or use pre-loaded slide encoder model
+        if slide_model is not None:
+            logger.info("using pre-loaded slide model")
+            model_fun = slide_model.get_model_fun()
+        else:
+            model_factory = get_model_factory(slide_model_type)
+            if model_factory is None:
+                raise ValueError(f"Slide model type {slide_model_type} not recognized")
+            slide_model = model_factory.get_model(slide_model_path, use_gpu, gpu_device_id)
+            model_fun = slide_model.get_model_fun()
 
         # Convert features to tensor and apply model
         features_tensor = torch.from_numpy(features).unsqueeze(0)  # Add batch dimension
@@ -820,7 +827,6 @@ def get_features(
     attrs: dict,
     model_type: ModelType = ModelType.CLIP,
     model_path: Optional[str] = None,
-    model=None,
     batch_size: int = 64,
     use_gpu: bool = True,
     gpu_device_id: Optional[Union[int, List[int]]] = None,
@@ -832,6 +838,8 @@ def get_features(
     slide_model_type: Optional[ModelType] = None,
     slide_model_path: Optional[str] = None,
     aggregation_method: str = "identity",
+    model=None,
+    slide_model=None,
 ) -> tuple[np.ndarray, np.ndarray]:
     """Extract features from whole slide image tiles.
 
@@ -842,9 +850,7 @@ def get_features(
         model_type: Type of foundation model to use (default: ModelType.CLIP).
             When using model-based aggregation with a slide encoder, this will be automatically
             set to the required patch encoder if not already specified correctly.
-        model_path: Optional path to model weights.
-        model: Optional pre-loaded model instance. If provided, model_type and
-            model_path are ignored — useful for batch workflows where the model
+        model_path: Optional path to model weights. — useful for batch workflows where the model
             is loaded once and reused across many slides.
         batch_size: Batch size for feature extraction (default: 64).
         use_gpu: Whether to use GPU for inference (default: True).
@@ -859,34 +865,45 @@ def get_features(
         slide_model_path: Optional path to slide encoder model weights.
         aggregation_method: Aggregation method when using slide encoder (default: "identity").
             Options: "identity", "mean", "max", "model".
+        model: Optional pre-loaded patch encoder model instance. If provided,
+            model_type and model_path are ignored.
+        slide_model: Optional pre-loaded slide encoder model instance. If provided,
+            slide_model_type and slide_model_path are ignored for slide encoding.
 
     Returns:
         Tuple of (features array, labels array).
     """
-    if model is None:
-        logger.info("loading model checkpoint")
-
-        if gpu_device_ids:
-            gpu_device_id = gpu_device_ids
-
-        # Auto-set aggregation_method to "model" if slide_model_type is specified
-        if (
-            use_slide_encoder
-            and slide_model_type is not None
-            and aggregation_method != "model"
+    # Validate pre-loaded model interfaces up-front.
+    if model is not None:
+        if not callable(getattr(model, "get_preprocessing_fun", None)) or not callable(
+            getattr(model, "get_model_fun", None)
         ):
-            logger.info(
-                f"Auto-setting aggregation_method to 'model' since slide_model_type "
-                f"({slide_model_type}) is specified"
+            raise TypeError(
+                "model must provide callable get_preprocessing_fun() and get_model_fun() methods"
             )
-            aggregation_method = "model"
+    if slide_model is not None:
+        if not callable(getattr(slide_model, "get_model_fun", None)):
+            raise TypeError("slide_model must provide a callable get_model_fun() method")
 
-        # Auto-infer patch encoder from slide encoder if using model-based aggregation
-        if (
-            use_slide_encoder
-            and aggregation_method == "model"
-            and slide_model_type is not None
-        ):
+    if gpu_device_ids:
+        gpu_device_id = gpu_device_ids
+
+    # Auto-set aggregation_method unconditionally so pre-loaded models also trigger slide encoding.
+    if (
+        use_slide_encoder
+        and slide_model_type is not None
+        and aggregation_method != "model"
+    ):
+        logger.info(
+            f"Auto-setting aggregation_method to 'model' since slide_model_type "
+            f"({slide_model_type}) is specified"
+        )
+        aggregation_method = "model"
+
+    # Validate patch/slide encoder compatibility regardless of how models are provided.
+    if use_slide_encoder and aggregation_method == "model" and slide_model_type is not None:
+        if model is None:
+            # Auto-infer required patch encoder when loading from disk.
             required_patch_encoder = get_required_patch_encoder(slide_model_type)
             if model_type != required_patch_encoder:
                 logger.info(
@@ -894,9 +911,11 @@ def get_features(
                     f"as required by slide encoder {slide_model_type}"
                 )
                 model_type = required_patch_encoder
-            # Validate compatibility
-            validate_slide_encoder_compatibility(model_type, slide_model_type)
+        validate_slide_encoder_compatibility(model_type, slide_model_type)
 
+    # Load patch encoder from disk, or use the pre-loaded instance.
+    if model is None:
+        logger.info("loading model checkpoint")
         model_factory = get_model_factory(model_type)
         if model_factory is None:
             raise ValueError("model not recognized")
@@ -950,6 +969,7 @@ def get_features(
             gpu_device_ids=gpu_device_ids,
             coords=coords,
             patch_size=patch_size,
+            slide_model=slide_model,
         )
 
     return features, labels
