@@ -273,3 +273,36 @@ def test_bootstrap_ci_auc_bounds():
 
     lo, hi = _bootstrap_ci_auc(pipe, X, y, n_bootstrap=100, random_state=0)
     assert 0.0 <= lo <= hi <= 1.0
+
+
+def test_positive_annotation_label_one(tmp_path):
+    """positive_annotation_label=1 treats annotation==1 as positive (class-mapped 0/1 data)."""
+    # Simulate post-class-mapping parquet: annotation is already 0 or 1
+    rng = np.random.default_rng(7)
+    rows = []
+    for s in range(20):
+        slide_id = f"slide_{s:03d}"
+        annotation = 1 if s < 10 else 0  # 0/1 labels, not 1/2
+        for t in range(10):
+            row = {
+                "slide_id": slide_id,
+                "annotation": annotation,
+                "overlap_area": 0.8,
+                "tile_area": 1.0,
+                "geometry": box(t * 256, 0, (t + 1) * 256, 256),
+            }
+            for i, v in enumerate(rng.standard_normal(8)):
+                row[f"feature_{i}"] = v
+            rows.append(row)
+    gdf = gpd.GeoDataFrame(rows, geometry="geometry")
+    parquet_path = str(tmp_path / "features_01.parquet")
+    gdf.to_parquet(parquet_path)
+
+    cfg = _cfg(tmp_path, parquet_path, positive_annotation_label=1, n_seeds=1, n_bootstrap=10)
+    main(cfg)
+
+    with open(cfg.output_summary_json) as f:
+        summary = json.load(f)
+
+    # Both classes should be present, so AUC is meaningful (> 0)
+    assert summary["test"]["tile_auc_roc"]["mean"] > 0.0

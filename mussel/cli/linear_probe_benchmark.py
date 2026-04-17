@@ -43,7 +43,8 @@ class LinearProbeBenchmarkConfig:
     output_calibration_png (str): Calibration curves for val and test splits (PNG).
     output_cv_results_csv (str): Full GridSearchCV cv_results_ table (CSV).
     output_summary_json (str): All scalar metrics, mean +/- std across seeds (JSON).
-    features_annotation_parquet_path (str): GeoParquet with tile features and annotations.
+    positive_annotation_label (int): Annotation value treated as the positive class (default 2
+        for raw BMP annotations; set to 1 when class_mapping has already remapped to 0/1).
     annotation_percent_filter_threshold (float): Min overlap fraction to include a tile.
     test_size (float): Fraction of slides held out as test set.
     val_size (float): Fraction of all slides held out as validation set.
@@ -80,6 +81,7 @@ class LinearProbeBenchmarkConfig:
     n_top_features: int = 20
     n_seeds: int = 5
     n_bootstrap: int = 1000
+    positive_annotation_label: int = 2
 
 
 desc_doc = """== ${hydra.help.app_name} ==
@@ -223,7 +225,7 @@ def _bootstrap_ci_auc(clf, X, y, n_bootstrap, random_state):
     return float(np.percentile(scores, 2.5)), float(np.percentile(scores, 97.5))
 
 
-# ── Plot helpers ───────────b��──────────────────────────────────────────────────
+# ── Plot helpers ───────────b��──────────────────────────────────────────────────
 
 
 def _plot_roc_curves(clf, val_df, test_df, output_path):
@@ -358,7 +360,7 @@ def main(cfg: LinearProbeBenchmarkConfig):
     df_filtered = df.query(
         f"overlap_area > {cfg.annotation_percent_filter_threshold} * tile_area"
     )
-    df_filtered = df_filtered.assign(y=(df_filtered.annotation == 2).astype(int))
+    df_filtered = df_filtered.assign(y=(df_filtered.annotation == cfg.positive_annotation_label).astype(int))
     feature_cols = [c for c in df_filtered.columns if c.startswith("feature_")]
 
     seeds = [cfg.random_state + i for i in range(cfg.n_seeds)]

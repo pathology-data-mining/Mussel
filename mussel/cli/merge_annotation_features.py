@@ -90,18 +90,22 @@ def main(cfg: MergeAnnotationFeaturesConfig):
 
     logger.info(f"Reading annotations from {cfg.annotation_bmp_path}...")
     img_arr = np.array(Image.open(cfg.annotation_bmp_path))
+
+    class_mapping = None
     if cfg.class_mapping_yaml_path is not None:
         with open(cfg.class_mapping_yaml_path, "r") as f:
             class_mapping = yaml.safe_load(f)
-        classes, inv = np.unique(img_arr, return_inverse=True)
-        img_arr = np.array([class_mapping[int(x)] for x in classes])[inv].reshape(
-            img_arr.shape
-        )
-    else:
-        classes = np.unique(img_arr)
+
+    # When class_mapping is used, iterate over raw (original) classes so each
+    # raw annotation region gets its own polygon, then store the mapped label.
+    # Without class_mapping, iterate over pixel values directly.
+    raw_classes = np.unique(img_arr)
 
     gdfs = []
-    for clss in classes:
+    for clss in raw_classes:
+        if clss == 0:
+            # Pixel value 0 is the unannotated background; always skip.
+            continue
         class_img_arr = (img_arr == clss).astype(np.uint8)
         contours, hierarchy = cv2.findContours(
             class_img_arr, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE
@@ -111,12 +115,11 @@ def main(cfg: MergeAnnotationFeaturesConfig):
             class_gdf = gpd.GeoDataFrame(geometry=list(class_polygon.geoms))
         else:
             class_gdf = gpd.GeoDataFrame(geometry=[class_polygon])
-        class_gdf = class_gdf.assign(annotation=clss)
+        annotation_val = class_mapping[int(clss)] if class_mapping is not None else clss
+        class_gdf = class_gdf.assign(annotation=annotation_val)
         class_gdf = class_gdf.assign(annotation_area=class_gdf.area)
         gdfs.append(class_gdf)
     gdf = pd.concat(gdfs)
-
-    gdf = gdf[gdf.annotation != 0]
     if len(gdf) == 0:
         logger.info("No annotated tiles found")
         return
