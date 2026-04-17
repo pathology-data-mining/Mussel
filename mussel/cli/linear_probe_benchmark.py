@@ -21,7 +21,7 @@ from sklearn.metrics import (
     f1_score,
     roc_auc_score,
 )
-from sklearn.model_selection import GridSearchCV, train_test_split
+from sklearn.model_selection import GridSearchCV
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler
 
@@ -106,48 +106,29 @@ cs.store(name="linear_probe_benchmark_config", node=LinearProbeBenchmarkConfig)
 
 
 def _split_by_slide(df, test_size, val_size, random_state):
-    """Stratified train / val / test split at slide level.
+    """Random train / val / test split at slide level.
 
-    Each slide is assigned a binary label: 1 if it contains at least one
-    positive tile, 0 if all its tiles are negative.  Splits are stratified
-    by that slide-level label when possible; falls back to non-stratified
-    when any label class has too few slides.
+    Splits are done at the slide level so all tiles from a given slide land
+    in the same partition, preventing data leakage from slide-specific
+    artefacts (staining, scanner, tissue prep).  Tile-level labels are not
+    used for stratification — the split is purely random over slides.
     """
-    slide_labels = df.groupby("slide_id")["y"].max().reset_index()
-    slide_ids = slide_labels["slide_id"].values
-    strat = slide_labels["y"].values
-    label_counts = slide_labels["y"].value_counts().to_dict()
-    logger.info("Slide-level label distribution: %s  (total=%d slides)", label_counts, len(slide_ids))
-    strat = slide_labels["y"].values
+    slide_ids = df["slide_id"].unique()
+    rng = np.random.RandomState(random_state)
+    slide_ids = rng.permutation(slide_ids)
 
-    try:
-        train_ids, test_ids, train_strat, _ = train_test_split(
-            slide_ids, strat, test_size=test_size, random_state=random_state, stratify=strat
-        )
-    except ValueError as exc:
-        logger.warning(
-            "Stratified train/test split failed (%s); falling back to non-stratified split", exc
-        )
-        train_ids, test_ids, train_strat, _ = train_test_split(
-            slide_ids, strat, test_size=test_size, random_state=random_state
-        )
+    n = len(slide_ids)
+    n_test = max(1, int(round(n * test_size)))
+    n_val  = max(1, int(round(n * val_size)))
+    n_train = n - n_test - n_val
 
-    try:
-        train_ids, val_ids = train_test_split(
-            train_ids,
-            test_size=val_size / (1 - test_size),
-            random_state=random_state,
-            stratify=train_strat,
-        )
-    except ValueError as exc:
-        logger.warning(
-            "Stratified train/val split failed (%s); falling back to non-stratified split", exc
-        )
-        train_ids, val_ids = train_test_split(
-            train_ids,
-            test_size=val_size / (1 - test_size),
-            random_state=random_state,
-        )
+    logger.info(
+        "Slide split: total=%d  train=%d  val=%d  test=%d", n, n_train, n_val, n_test
+    )
+
+    test_ids  = set(slide_ids[:n_test])
+    val_ids   = set(slide_ids[n_test : n_test + n_val])
+    train_ids = set(slide_ids[n_test + n_val :])
 
     return (
         df[df["slide_id"].isin(train_ids)],
