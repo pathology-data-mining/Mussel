@@ -106,20 +106,44 @@ cs.store(name="linear_probe_benchmark_config", node=LinearProbeBenchmarkConfig)
 
 
 def _split_by_slide(df, test_size, val_size, random_state):
-    """Stratified train / val / test split at slide level."""
+    """Stratified train / val / test split at slide level.
+
+    Falls back to non-stratified splits when any class has too few members
+    for stratification (e.g. a class with only 1 slide).
+    """
     slide_labels = df.groupby("slide_id")["y"].max().reset_index()
     slide_ids = slide_labels["slide_id"].values
     strat = slide_labels["y"].values
 
-    train_ids, test_ids, train_strat, _ = train_test_split(
-        slide_ids, strat, test_size=test_size, random_state=random_state, stratify=strat
-    )
-    train_ids, val_ids = train_test_split(
-        train_ids,
-        test_size=val_size / (1 - test_size),
-        random_state=random_state,
-        stratify=train_strat,
-    )
+    try:
+        train_ids, test_ids, train_strat, _ = train_test_split(
+            slide_ids, strat, test_size=test_size, random_state=random_state, stratify=strat
+        )
+    except ValueError as exc:
+        logger.warning(
+            "Stratified train/test split failed (%s); falling back to non-stratified split", exc
+        )
+        train_ids, test_ids, train_strat, _ = train_test_split(
+            slide_ids, strat, test_size=test_size, random_state=random_state
+        )
+
+    try:
+        train_ids, val_ids = train_test_split(
+            train_ids,
+            test_size=val_size / (1 - test_size),
+            random_state=random_state,
+            stratify=train_strat,
+        )
+    except ValueError as exc:
+        logger.warning(
+            "Stratified train/val split failed (%s); falling back to non-stratified split", exc
+        )
+        train_ids, val_ids = train_test_split(
+            train_ids,
+            test_size=val_size / (1 - test_size),
+            random_state=random_state,
+        )
+
     return (
         df[df["slide_id"].isin(train_ids)],
         df[df["slide_id"].isin(val_ids)],
