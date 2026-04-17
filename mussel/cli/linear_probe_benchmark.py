@@ -108,11 +108,16 @@ cs.store(name="linear_probe_benchmark_config", node=LinearProbeBenchmarkConfig)
 def _split_by_slide(df, test_size, val_size, random_state):
     """Stratified train / val / test split at slide level.
 
-    Falls back to non-stratified splits when any class has too few members
-    for stratification (e.g. a class with only 1 slide).
+    Each slide is assigned a binary label: 1 if it contains at least one
+    positive tile, 0 if all its tiles are negative.  Splits are stratified
+    by that slide-level label when possible; falls back to non-stratified
+    when any label class has too few slides.
     """
     slide_labels = df.groupby("slide_id")["y"].max().reset_index()
     slide_ids = slide_labels["slide_id"].values
+    strat = slide_labels["y"].values
+    label_counts = slide_labels["y"].value_counts().to_dict()
+    logger.info("Slide-level label distribution: %s  (total=%d slides)", label_counts, len(slide_ids))
     strat = slide_labels["y"].values
 
     try:
