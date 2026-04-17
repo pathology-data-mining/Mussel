@@ -74,7 +74,7 @@ class LinearProbeBenchmarkConfig:
     val_size: float = 0.1
     random_state: int = 42
     cv: int = 5
-    C_values: List[float] = field(default_factory=lambda: [0.001, 0.01, 0.1, 1.0, 10.0])
+    C_values: List[float] = field(default_factory=lambda: [0.00001, 0.0001, 0.001, 0.01, 0.1, 1.0, 10.0])
     penalties: List[str] = field(default_factory=lambda: ["l2"])
     max_iter: int = 5000
     n_top_features: int = 20
