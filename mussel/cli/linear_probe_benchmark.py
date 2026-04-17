@@ -55,6 +55,9 @@ class LinearProbeBenchmarkConfig:
     n_top_features (int): Number of features shown in the importance plot.
     n_seeds (int): Number of random seeds; mean +/- std reported across seeds.
     n_bootstrap (int): Bootstrap resamples for 95% CI on test AUC-ROC (primary seed).
+    multiclass (bool): If True, treat annotation values directly as class labels (multiclass
+        logistic regression). Background (annotation == 0) tiles are excluded.
+        Use with a class_mapping that emits ≥ 3 distinct non-zero labels.
     """
 
     output_csv: str = "classification_report.csv"
@@ -81,6 +84,7 @@ class LinearProbeBenchmarkConfig:
     n_seeds: int = 5
     n_bootstrap: int = 1000
     positive_annotation_label: int = 2
+    multiclass: bool = False
 
 
 desc_doc = """== ${hydra.help.app_name} ==
@@ -137,20 +141,47 @@ def _split_by_slide(df, test_size, val_size, random_state):
     )
 
 
-def _log_split_stats(train_df, val_df, test_df):
+def _log_split_stats(train_df, val_df, test_df, is_multiclass=False):
     for name, d in [("train", train_df), ("val", val_df), ("test", test_df)]:
-        logger.info(
-            f"  {name:5s}: {len(d):6d} tiles  {d['slide_id'].nunique():3d} slides  "
-            f"pos_rate={d['y'].mean():.3f}"
-        )
+        if is_multiclass:
+            counts = d["y"].value_counts().sort_index().to_dict()
+            logger.info(
+                f"  {name:5s}: {len(d):6d} tiles  {d['slide_id'].nunique():3d} slides  class_counts={counts}"
+            )
+        else:
+            logger.info(
+                f"  {name:5s}: {len(d):6d} tiles  {d['slide_id'].nunique():3d} slides  "
+                f"pos_rate={d['y'].mean():.3f}"
+            )
 
 
 # ── Metrics helpers ───────────────────────────────────────────────────────────
 
 
-def _compute_metrics(df, y_prob, split_name):
-    """Compute tile-level and slide-level metrics from pre-computed probabilities."""
+def _compute_metrics(df, y_prob, split_name, classes=None):
+    """Compute tile-level and slide-level metrics from pre-computed probabilities.
+
+    y_prob: 1-D array (binary) or 2-D array shape (n, n_classes) (multiclass).
+    classes: ndarray of class labels corresponding to y_prob columns (multiclass only).
+    """
     y = df["y"].values
+    is_multiclass = y_prob.ndim == 2
+
+    if is_multiclass:
+        y_pred = classes[np.argmax(y_prob, axis=1)]
+        metrics = {
+            "tile_f1": float(f1_score(y, y_pred, average="macro", zero_division=0)),
+            "tile_auc_roc": float(
+                roc_auc_score(y, y_prob, multi_class="ovr", average="macro")
+            ),
+        }
+        logger.info(
+            f"[{split_name} tiles]  F1={metrics['tile_f1']:.4f}  "
+            f"AUC(OvR)={metrics['tile_auc_roc']:.4f}"
+        )
+        # Slide-level aggregation is ambiguous for multiclass — skip.
+        return metrics
+
     y_pred = (y_prob >= 0.5).astype(int)
 
     metrics = {
@@ -196,33 +227,46 @@ def _compute_metrics(df, y_prob, split_name):
 
 
 def _save_confusion_matrix(y, y_pred, y_prob, output_csv, output_png, split_name, metrics):
+    is_multiclass = np.asarray(y_prob).ndim == 2
 
     report = pd.DataFrame(classification_report(y, y_pred, output_dict=True))
     report.loc["auc_roc"] = np.nan
-    report.loc["average_precision"] = np.nan
     report.at["auc_roc", "weighted avg"] = metrics["tile_auc_roc"]
-    report.at["average_precision", "weighted avg"] = metrics["tile_average_precision"]
+    if not is_multiclass:
+        report.loc["average_precision"] = np.nan
+        report.at["average_precision", "weighted avg"] = metrics["tile_average_precision"]
     report.to_csv(output_csv)
+
+    title_suffix = f"F1={metrics['tile_f1']:.3f}  AUC={'(OvR) ' if is_multiclass else ''}{metrics['tile_auc_roc']:.3f}"
+    if not is_multiclass:
+        title_suffix += f"  AP={metrics['tile_average_precision']:.3f}"
 
     fig, ax = plt.subplots()
     ConfusionMatrixDisplay.from_predictions(y, y_pred, ax=ax)
-    ax.set_title(
-        f"{split_name} — F1={metrics['tile_f1']:.3f}  "
-        f"AUC={metrics['tile_auc_roc']:.3f}  AP={metrics['tile_average_precision']:.3f}"
-    )
+    ax.set_title(f"{split_name} — {title_suffix}")
     fig.savefig(output_png, dpi=150, bbox_inches="tight")
     plt.close(fig)
 
 
-def _bootstrap_ci_auc(y_prob, y, n_bootstrap, random_state):
-    """95% bootstrap CI for AUC-ROC; resamples pre-computed probabilities."""
+def _bootstrap_ci_auc(y_prob, y, n_bootstrap, random_state, classes=None):
+    """95% bootstrap CI for AUC-ROC; resamples pre-computed probabilities.
+
+    For multiclass, y_prob is 2-D and OvR macro AUC is used.
+    """
+    is_multiclass = np.asarray(y_prob).ndim == 2
+    n_classes = len(classes) if classes is not None else 2
     rng = np.random.RandomState(random_state)
     scores = []
     for _ in range(n_bootstrap):
         idx = rng.randint(0, len(y), len(y))
-        if len(np.unique(y[idx])) < 2:
+        if len(np.unique(y[idx])) < (n_classes if is_multiclass else 2):
             continue
-        scores.append(roc_auc_score(y[idx], y_prob[idx]))
+        if is_multiclass:
+            scores.append(
+                roc_auc_score(y[idx], y_prob[idx], multi_class="ovr", average="macro")
+            )
+        else:
+            scores.append(roc_auc_score(y[idx], y_prob[idx]))
     if not scores:
         return float("nan"), float("nan")
     return float(np.percentile(scores, 2.5)), float(np.percentile(scores, 97.5))
@@ -232,22 +276,48 @@ def _bootstrap_ci_auc(y_prob, y, n_bootstrap, random_state):
 
 
 
-def _plot_roc_curves(val_y, val_prob, test_y, test_prob, output_path):
-    """ROC curves for val and test on the same axes."""
-    fig, ax = plt.subplots(figsize=(6, 5))
-    for name, y, prob in [("val", val_y, val_prob), ("test", test_y, test_prob)]:
-        RocCurveDisplay.from_predictions(y, prob, ax=ax, name=name)
-    ax.set_title("ROC Curve")
+def _plot_roc_curves(val_y, val_prob, test_y, test_prob, output_path, classes=None):
+    """ROC curves for val and test.  OvR per-class curves for multiclass."""
+    is_multiclass = np.asarray(val_prob).ndim == 2
+    if is_multiclass:
+        fig, axes = plt.subplots(1, 2, figsize=(12, 5))
+        for ax, (split_name, y, prob) in zip(
+            axes, [("val", val_y, val_prob), ("test", test_y, test_prob)]
+        ):
+            for i, cls in enumerate(classes):
+                RocCurveDisplay.from_predictions(
+                    (y == cls).astype(int), prob[:, i], ax=ax, name=f"class {cls}"
+                )
+            ax.set_title(f"ROC Curves — {split_name} (OvR)")
+        fig.suptitle("One-vs-Rest ROC Curves")
+    else:
+        fig, ax = plt.subplots(figsize=(6, 5))
+        for name, y, prob in [("val", val_y, val_prob), ("test", test_y, test_prob)]:
+            RocCurveDisplay.from_predictions(y, prob, ax=ax, name=name)
+        ax.set_title("ROC Curve")
     fig.savefig(output_path, dpi=150, bbox_inches="tight")
     plt.close(fig)
 
 
-def _plot_pr_curves(val_y, val_prob, test_y, test_prob, output_path):
-    """Precision-recall curves for val and test on the same axes."""
-    fig, ax = plt.subplots(figsize=(6, 5))
-    for name, y, prob in [("val", val_y, val_prob), ("test", test_y, test_prob)]:
-        PrecisionRecallDisplay.from_predictions(y, prob, ax=ax, name=name)
-    ax.set_title("Precision-Recall Curve")
+def _plot_pr_curves(val_y, val_prob, test_y, test_prob, output_path, classes=None):
+    """Precision-recall curves for val and test.  OvR per-class for multiclass."""
+    is_multiclass = np.asarray(val_prob).ndim == 2
+    if is_multiclass:
+        fig, axes = plt.subplots(1, 2, figsize=(12, 5))
+        for ax, (split_name, y, prob) in zip(
+            axes, [("val", val_y, val_prob), ("test", test_y, test_prob)]
+        ):
+            for i, cls in enumerate(classes):
+                PrecisionRecallDisplay.from_predictions(
+                    (y == cls).astype(int), prob[:, i], ax=ax, name=f"class {cls}"
+                )
+            ax.set_title(f"PR Curves — {split_name} (OvR)")
+        fig.suptitle("One-vs-Rest Precision-Recall Curves")
+    else:
+        fig, ax = plt.subplots(figsize=(6, 5))
+        for name, y, prob in [("val", val_y, val_prob), ("test", test_y, test_prob)]:
+            PrecisionRecallDisplay.from_predictions(y, prob, ax=ax, name=name)
+        ax.set_title("Precision-Recall Curve")
     fig.savefig(output_path, dpi=150, bbox_inches="tight")
     plt.close(fig)
 
@@ -312,11 +382,19 @@ def _plot_gs_heatmap(search, output_path):
 
 
 def _plot_feature_importance(clf, scaler, feature_names, n_top, output_path):
-    """Horizontal bar chart of top features by absolute logistic-regression coefficient."""
-    # clf is a bare LogisticRegression; coef_ is already in the scaled feature space
-    coef = clf.coef_[0]
-    top_idx = np.argsort(np.abs(coef))[::-1][:n_top]
-    # Reverse so largest magnitude appears at the top of the horizontal bar chart
+    """Horizontal bar chart of top features by absolute logistic-regression coefficient.
+
+    For multiclass (coef_ shape (n_classes, n_features)), the L2 norm across classes
+    is used so a single importance score summarises all classes.
+    """
+    if clf.coef_.shape[0] == 1:
+        coef = clf.coef_[0]
+        title = f"Top {n_top} Feature Importances by |Coefficient|"
+    else:
+        coef = np.linalg.norm(clf.coef_, axis=0)
+        title = f"Top {n_top} Feature Importances by ‖Coefficient‖₂ (multiclass)"
+
+    top_idx = np.argsort(coef)[::-1][:n_top]
     top_names = [feature_names[i] for i in top_idx][::-1]
     top_coef = coef[top_idx][::-1]
 
@@ -327,13 +405,16 @@ def _plot_feature_importance(clf, scaler, feature_names, n_top, output_path):
     ax.set_yticklabels(top_names, fontsize=8)
     ax.axvline(0, color="black", linewidth=0.8)
     ax.set_xlabel("Coefficient (scaled feature space)")
-    ax.set_title(f"Top {n_top} Feature Importances by |Coefficient|")
+    ax.set_title(title)
     fig.savefig(output_path, dpi=150, bbox_inches="tight")
     plt.close(fig)
 
 
 def _plot_calibration(val_y, val_prob, test_y, test_prob, output_path):
-    """Calibration curves for val and test on the same axes."""
+    """Calibration curves for val and test on the same axes (binary only)."""
+    if np.asarray(val_prob).ndim == 2:
+        logger.info("Calibration curve skipped for multiclass mode.")
+        return
     fig, ax = plt.subplots(figsize=(6, 5))
     for name, y, prob in [("val", val_y, val_prob), ("test", test_y, test_prob)]:
         CalibrationDisplay.from_predictions(y, prob, ax=ax, name=name, n_bins=10)
@@ -368,7 +449,20 @@ def main(cfg: LinearProbeBenchmarkConfig):
     df_filtered = df.query(
         f"overlap_area > {cfg.annotation_percent_filter_threshold} * tile_area"
     )
-    df_filtered = df_filtered.assign(y=(df_filtered.annotation == cfg.positive_annotation_label).astype(int))
+
+    if cfg.multiclass:
+        # Exclude background (annotation == 0); use raw annotation value as y.
+        df_filtered = df_filtered[df_filtered["annotation"] != 0]
+        df_filtered = df_filtered.assign(y=df_filtered["annotation"].astype(int))
+        n_classes = df_filtered["y"].nunique()
+        logger.info(
+            "Multiclass mode: %d classes → %s", n_classes, sorted(df_filtered["y"].unique())
+        )
+    else:
+        df_filtered = df_filtered.assign(
+            y=(df_filtered.annotation == cfg.positive_annotation_label).astype(int)
+        )
+
     feature_cols = [c for c in df_filtered.columns if c.startswith("feature_")]
 
     # Pre-cast feature matrix to float32 once — halves memory bandwidth for all
@@ -386,6 +480,9 @@ def main(cfg: LinearProbeBenchmarkConfig):
     _max_iter = cfg.max_iter if _needs_saga else min(cfg.max_iter, 1000)
     logger.info("solver=%s  max_iter=%d", _solver, _max_iter)
 
+    # Multiclass: OvR AUC; binary: standard AUC.
+    _scoring = "roc_auc_ovr" if cfg.multiclass else "roc_auc"
+
     seeds = [cfg.random_state + i for i in range(cfg.n_seeds)]
     all_val_metrics: list = []
     all_test_metrics: list = []
@@ -397,7 +494,7 @@ def main(cfg: LinearProbeBenchmarkConfig):
         train_df, val_df, test_df = _split_by_slide(
             df_filtered, cfg.test_size, cfg.val_size, seed
         )
-        _log_split_stats(train_df, val_df, test_df)
+        _log_split_stats(train_df, val_df, test_df, is_multiclass=cfg.multiclass)
 
         train_idx = train_df.index
         val_idx   = val_df.index
@@ -417,7 +514,7 @@ def main(cfg: LinearProbeBenchmarkConfig):
                 LogisticRegression(solver=_solver, max_iter=_max_iter),
                 {"C": list(cfg.C_values), "penalty": list(cfg.penalties)},
                 cv=cfg.cv,
-                scoring="roc_auc",
+                scoring=_scoring,
                 n_jobs=-1,
                 return_train_score=True,
             )
@@ -433,13 +530,19 @@ def main(cfg: LinearProbeBenchmarkConfig):
             search = None
 
         # Compute predictions once per split; all helpers reuse these arrays.
+        # Multiclass: full probability matrix (n × n_classes); binary: 1-D vector.
         y_val = val_df["y"].values
-        prob_val = best.predict_proba(X_val)[:, 1]
         y_test = test_df["y"].values
-        prob_test = best.predict_proba(X_test)[:, 1]
+        _classes = best.classes_ if cfg.multiclass else None
+        if cfg.multiclass:
+            prob_val  = best.predict_proba(X_val)
+            prob_test = best.predict_proba(X_test)
+        else:
+            prob_val  = best.predict_proba(X_val)[:, 1]
+            prob_test = best.predict_proba(X_test)[:, 1]
 
-        val_m = _compute_metrics(val_df, prob_val, "val")
-        test_m = _compute_metrics(test_df, prob_test, "test")
+        val_m  = _compute_metrics(val_df,  prob_val,  "val",  classes=_classes)
+        test_m = _compute_metrics(test_df, prob_test, "test", classes=_classes)
         all_val_metrics.append(val_m)
         all_test_metrics.append(test_m)
 
@@ -448,8 +551,14 @@ def main(cfg: LinearProbeBenchmarkConfig):
             primary_val_df, primary_test_df = val_df, test_df
             primary_val_y, primary_val_prob = y_val, prob_val
             primary_test_y, primary_test_prob = y_test, prob_test
-            _save_confusion_matrix(y_val, (prob_val >= 0.5).astype(int), prob_val, cfg.output_csv, cfg.output_png, "val", val_m)
-            _save_confusion_matrix(y_test, (prob_test >= 0.5).astype(int), prob_test, cfg.output_test_csv, cfg.output_test_png, "test", test_m)
+            if cfg.multiclass:
+                y_pred_val  = _classes[np.argmax(prob_val,  axis=1)]
+                y_pred_test = _classes[np.argmax(prob_test, axis=1)]
+            else:
+                y_pred_val  = (prob_val  >= 0.5).astype(int)
+                y_pred_test = (prob_test >= 0.5).astype(int)
+            _save_confusion_matrix(y_val,  y_pred_val,  prob_val,  cfg.output_csv,      cfg.output_png,      "val",  val_m)
+            _save_confusion_matrix(y_test, y_pred_test, prob_test, cfg.output_test_csv, cfg.output_test_png, "test", test_m)
 
     # ── Multi-seed summary ────────────────────────────────────────────────────
     all_keys = sorted({k for m in all_val_metrics + all_test_metrics for k in m})
@@ -470,8 +579,10 @@ def main(cfg: LinearProbeBenchmarkConfig):
             logger.info(f"[{split_name}] {key}: {mean:.4f} +/- {std:.4f}")
 
     # ── Bootstrap CI on test AUC (primary seed) ───────────────────────────────
+    _primary_classes = primary_best.classes_ if cfg.multiclass else None
     ci_lo, ci_hi = _bootstrap_ci_auc(
-        primary_test_prob, primary_test_y, cfg.n_bootstrap, cfg.random_state
+        primary_test_prob, primary_test_y, cfg.n_bootstrap, cfg.random_state,
+        classes=_primary_classes,
     )
     summary["test"]["tile_auc_roc"]["bootstrap_ci_95"] = [ci_lo, ci_hi]
     logger.info(f"[test] tile_auc_roc bootstrap 95% CI: [{ci_lo:.4f}, {ci_hi:.4f}]")
@@ -482,8 +593,8 @@ def main(cfg: LinearProbeBenchmarkConfig):
         json.dump(_sanitize_for_json(summary), f, indent=2)
 
     # ── Plots (primary seed) ──────────────────────────────────────────────────
-    _plot_roc_curves(primary_val_y, primary_val_prob, primary_test_y, primary_test_prob, cfg.output_roc_png)
-    _plot_pr_curves(primary_val_y, primary_val_prob, primary_test_y, primary_test_prob, cfg.output_pr_png)
+    _plot_roc_curves(primary_val_y, primary_val_prob, primary_test_y, primary_test_prob, cfg.output_roc_png, classes=_primary_classes)
+    _plot_pr_curves(primary_val_y, primary_val_prob, primary_test_y, primary_test_prob, cfg.output_pr_png, classes=_primary_classes)
     _plot_gs_heatmap(primary_search, cfg.output_gs_heatmap_png)
     _plot_feature_importance(
         primary_best, primary_scaler, feature_cols, cfg.n_top_features, cfg.output_feature_importance_png
