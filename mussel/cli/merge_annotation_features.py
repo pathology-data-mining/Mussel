@@ -115,7 +115,13 @@ def main(cfg: MergeAnnotationFeaturesConfig):
             class_gdf = gpd.GeoDataFrame(geometry=list(class_polygon.geoms))
         else:
             class_gdf = gpd.GeoDataFrame(geometry=[class_polygon])
-        annotation_val = class_mapping[int(clss)] if class_mapping is not None else clss
+        if class_mapping is not None:
+            annotation_val = class_mapping.get(int(clss))
+            if annotation_val is None:
+                logger.debug(f"Skipping pixel value {clss} not found in class_mapping")
+                continue
+        else:
+            annotation_val = clss
         class_gdf = class_gdf.assign(annotation=annotation_val)
         class_gdf = class_gdf.assign(annotation_area=class_gdf.area)
         gdfs.append(class_gdf)
