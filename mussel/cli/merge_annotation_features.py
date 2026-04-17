@@ -2,8 +2,6 @@ import logging
 from dataclasses import dataclass
 from typing import Optional
 
-import cv2
-import geopandas as gpd
 import h5py
 import hydra
 import numpy as np
@@ -11,14 +9,10 @@ import pandas as pd
 import yaml
 from hydra.conf import HelpConf, HydraConf
 from hydra.core.config_store import ConfigStore
-from omegaconf import MISSING, OmegaConf
+from omegaconf import MISSING
+from PIL import Image
 
 logger = logging.getLogger(__name__)
-from PIL import Image
-from shapely.geometry import MultiPolygon
-from shapely import box as shapely_box
-
-from mussel.utils.segment import contours_to_polygon
 
 Image.MAX_IMAGE_PIXELS = None
 
@@ -59,28 +53,87 @@ cs.store(
 cs.store(name="merge_annotation_features_config", node=MergeAnnotationFeaturesConfig)
 
 
+def _raster_merge(coords, features_arr, img_arr, tile_size, class_mapping):
+    """
+    Pixel-space tile/annotation merge.
+
+    For each tile, counts how many pixels of each annotation class fall inside
+    it using np.bincount on the uint8 BMP slice.  Avoids shapely polygon
+    construction and geopandas overlay entirely.
+
+    Returns a plain DataFrame with columns:
+        feature_0 ... feature_N, annotation, overlap_area, tile_area, tile_size
+    """
+    H, W = img_arr.shape
+    n_tiles = len(coords)
+    n_features = features_arr.shape[1]
+    feature_col_names = [f"feature_{k}" for k in range(n_features)]
+
+    i_arr = coords[:, 0].astype(np.int64)
+    j_arr = coords[:, 1].astype(np.int64)
+    i_end = np.minimum(i_arr + tile_size, W)
+    j_end = np.minimum(j_arr + tile_size, H)
+    actual_tile_areas = (j_end - j_arr) * (i_end - i_arr)
+
+    # Build a flat uint8->int64 lookup for the class mapping (-1 = skip).
+    lookup = np.full(256, -1, dtype=np.int64)
+    if class_mapping is not None:
+        for raw_cls, mapped_val in class_mapping.items():
+            raw_cls = int(raw_cls)
+            if 0 <= raw_cls <= 255:
+                lookup[raw_cls] = int(mapped_val)
+    else:
+        for v in range(1, 256):
+            lookup[v] = v
+
+    # Single pass over tiles: np.bincount(uint8) is O(n+256) -- no sort needed.
+    per_class: dict = {}  # mapped_val -> [(tile_idx, overlap_count, tile_area)]
+    for k in range(n_tiles):
+        tile = img_arr[j_arr[k] : j_end[k], i_arr[k] : i_end[k]]
+        bin_cnt = np.bincount(tile.ravel(), minlength=256)
+        tile_area = int(actual_tile_areas[k])
+        for raw_cls in np.nonzero(bin_cnt)[0]:
+            if raw_cls == 0:
+                continue
+            mapped_val = int(lookup[raw_cls])
+            if mapped_val == -1:
+                logger.debug("Skipping pixel value %d not in class_mapping", raw_cls)
+                continue
+            per_class.setdefault(mapped_val, []).append(
+                (k, int(bin_cnt[raw_cls]), tile_area)
+            )
+
+    if not per_class:
+        logger.info("No annotated tiles found")
+        return pd.DataFrame()
+
+    dfs = []
+    for mapped_val, records in per_class.items():
+        tile_idxs = [r[0] for r in records]
+        df = pd.DataFrame(features_arr[tile_idxs], columns=feature_col_names)
+        df["annotation"] = mapped_val
+        df["overlap_area"] = [r[1] for r in records]
+        df["tile_area"] = [r[2] for r in records]
+        df["tile_size"] = tile_size
+        dfs.append(df)
+
+    return pd.concat(dfs, ignore_index=True)
+
+
 @hydra.main(
     version_base=None, config_path=".", config_name="merge_annotation_features_config"
 )
 def main(cfg: MergeAnnotationFeaturesConfig):
     """Merge tile features with annotations from a BMP file."""
     with open(cfg.features_h5_path, "rb") as f:
-        logger.info(f"Reading features from {cfg.features_h5_path}...")
+        logger.info("Reading features from %s...", cfg.features_h5_path)
         tiles_h5 = h5py.File(f, "r")
-        tile_size = tiles_h5["coords"].attrs.get("patch_size")
+        tile_size = int(tiles_h5["coords"].attrs.get("patch_size"))
+        coords = np.array(tiles_h5["coords"])        # (N, 2): [x, y]
+        features_arr = np.array(tiles_h5["features"])  # (N, D)
+        logger.info("Loaded %d tiles  feature_dim=%d", len(coords), features_arr.shape[1])
 
-        coords = np.array(tiles_h5["coords"])  # shape (N, 2): [i, j]
-        i_arr, j_arr = coords[:, 0], coords[:, 1]
-        tiles = shapely_box(i_arr, j_arr, i_arr + tile_size, j_arr + tile_size)
-        tiles_gdf = gpd.GeoDataFrame(
-            pd.DataFrame(tiles_h5["features"]).add_prefix("feature_", axis=1),
-            geometry=tiles,
-        )
-        tiles_gdf["tile_size"] = tile_size
-        tiles_gdf["tile_area"] = tiles_gdf.area
-        logger.info(f"Loaded {len(tiles_gdf)} tiles")
-
-    logger.info(f"Reading annotations from {cfg.annotation_bmp_path}...")
+    logger.info("Reading annotations from %s...", cfg.annotation_bmp_path)
     img_arr = np.array(Image.open(cfg.annotation_bmp_path))
 
     class_mapping = None
@@ -88,48 +141,16 @@ def main(cfg: MergeAnnotationFeaturesConfig):
         with open(cfg.class_mapping_yaml_path, "r") as f:
             class_mapping = yaml.safe_load(f)
 
-    # When class_mapping is used, iterate over raw (original) classes so each
-    # raw annotation region gets its own polygon, then store the mapped label.
-    # Without class_mapping, iterate over pixel values directly.
-    raw_classes = np.unique(img_arr)
+    result = _raster_merge(coords, features_arr, img_arr, tile_size, class_mapping)
 
-    gdfs = []
-    for clss in raw_classes:
-        if clss == 0:
-            # Pixel value 0 is the unannotated background; always skip.
-            continue
-        class_img_arr = (img_arr == clss).astype(np.uint8)
-        contours, hierarchy = cv2.findContours(
-            class_img_arr, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE
-        )
-        class_polygon = contours_to_polygon(contours)
-        if isinstance(class_polygon, MultiPolygon):
-            class_gdf = gpd.GeoDataFrame(geometry=list(class_polygon.geoms))
-        else:
-            class_gdf = gpd.GeoDataFrame(geometry=[class_polygon])
-        if class_mapping is not None:
-            annotation_val = class_mapping.get(int(clss))
-            if annotation_val is None:
-                logger.debug(f"Skipping pixel value {clss} not found in class_mapping")
-                continue
-        else:
-            annotation_val = clss
-        class_gdf = class_gdf.assign(annotation=annotation_val)
-        class_gdf = class_gdf.assign(annotation_area=class_gdf.area)
-        gdfs.append(class_gdf)
-    gdf = pd.concat(gdfs)
-    if len(gdf) == 0:
-        logger.info("No annotated tiles found")
+    if result.empty:
         return
 
-    gdf = tiles_gdf.overlay(gdf, how="intersection")
-    gdf = gdf.assign(overlap_area=gdf.area)
-
-    logger.info(f"Writing merged results to {cfg.output_parquet_path}")
     if cfg.slide_id is not None:
-        gdf = gdf.assign(slide_id=cfg.slide_id)
+        result["slide_id"] = cfg.slide_id
 
-    gdf.to_parquet(cfg.output_parquet_path)
+    logger.info("Writing %d rows to %s", len(result), cfg.output_parquet_path)
+    result.to_parquet(cfg.output_parquet_path)
 
 
 if __name__ == "__main__":
