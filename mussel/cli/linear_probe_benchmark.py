@@ -1,5 +1,6 @@
 import json
 import logging
+import math
 from dataclasses import dataclass, field
 from typing import List
 
@@ -341,6 +342,17 @@ def _plot_calibration(val_y, val_prob, test_y, test_prob, output_path):
     plt.close(fig)
 
 
+def _sanitize_for_json(obj):
+    """Recursively replace float NaN/Inf with None so json.dump produces valid JSON."""
+    if isinstance(obj, float) and (math.isnan(obj) or math.isinf(obj)):
+        return None
+    if isinstance(obj, dict):
+        return {k: _sanitize_for_json(v) for k, v in obj.items()}
+    if isinstance(obj, list):
+        return [_sanitize_for_json(v) for v in obj]
+    return obj
+
+
 # ── Main ──────────────────────────────────────────────────────────────────────
 
 
@@ -361,6 +373,8 @@ def main(cfg: LinearProbeBenchmarkConfig):
 
     # Pre-cast feature matrix to float32 once — halves memory bandwidth for all
     # subsequent matrix operations (StandardScaler, LogisticRegression).
+    # Reset index first so df_filtered.index matches positional indices in the array.
+    df_filtered = df_filtered.reset_index(drop=True)
     feature_arr_f32 = df_filtered[feature_cols].values.astype(np.float32)
     df_filtered = df_filtered.drop(columns=feature_cols)  # free float64 memory
     df_filtered = df_filtered.copy()  # defragment after drop
@@ -455,7 +469,7 @@ def main(cfg: LinearProbeBenchmarkConfig):
     # ── Save tabular outputs ──────────────────────────────────────────────────
     pd.DataFrame(primary_search.cv_results_).to_csv(cfg.output_cv_results_csv, index=False)
     with open(cfg.output_summary_json, "w") as f:
-        json.dump(summary, f, indent=2)
+        json.dump(_sanitize_for_json(summary), f, indent=2)
 
     # ── Plots (primary seed) ──────────────────────────────────────────────────
     _plot_roc_curves(primary_val_y, primary_val_prob, primary_test_y, primary_test_prob, cfg.output_roc_png)
