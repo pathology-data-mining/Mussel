@@ -22,7 +22,6 @@ from sklearn.metrics import (
     roc_auc_score,
 )
 from sklearn.model_selection import GridSearchCV
-from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler
 
 logger = logging.getLogger(__name__)
@@ -255,14 +254,14 @@ def _plot_pr_curves(val_y, val_prob, test_y, test_prob, output_path):
 def _plot_gs_heatmap(search, output_path):
     """Heatmap of mean CV AUC by C x penalty; falls back to a line plot for a single penalty."""
     results = pd.DataFrame(search.cv_results_)
-    results["param_clf__C"] = results["param_clf__C"].astype(float)
-    results["param_clf__penalty"] = results["param_clf__penalty"].astype(str)
-    penalties = results["param_clf__penalty"].unique()
+    results["param_C"] = results["param_C"].astype(float)
+    results["param_penalty"] = results["param_penalty"].astype(str)
+    penalties = results["param_penalty"].unique()
 
     if len(penalties) > 1:
         pivot = results.pivot_table(
-            index="param_clf__penalty",
-            columns="param_clf__C",
+            index="param_penalty",
+            columns="param_C",
             values="mean_test_score",
         )
         fig, ax = plt.subplots(
@@ -289,18 +288,18 @@ def _plot_gs_heatmap(search, output_path):
                     fontsize=8,
                 )
     else:
-        c_vals = sorted(results["param_clf__C"].unique())
+        c_vals = sorted(results["param_C"].unique())
         scores = [
-            results.loc[results["param_clf__C"] == c, "mean_test_score"].values[0]
+            results.loc[results["param_C"] == c, "mean_test_score"].values[0]
             for c in c_vals
         ]
         fig, ax = plt.subplots(figsize=(6, 4))
         ax.semilogx(c_vals, scores, marker="o")
         ax.axvline(
-            search.best_params_["clf__C"],
+            search.best_params_["C"],
             color="r",
             linestyle="--",
-            label=f"best C={search.best_params_['clf__C']:.3g}",
+            label=f"best C={search.best_params_['C']:.3g}",
         )
         ax.set_xlabel("C")
         ax.set_ylabel("Mean CV AUC-ROC")
@@ -311,9 +310,10 @@ def _plot_gs_heatmap(search, output_path):
     plt.close(fig)
 
 
-def _plot_feature_importance(clf, feature_names, n_top, output_path):
+def _plot_feature_importance(clf, scaler, feature_names, n_top, output_path):
     """Horizontal bar chart of top features by absolute logistic-regression coefficient."""
-    coef = clf.named_steps["clf"].coef_[0]
+    # clf is a bare LogisticRegression; coef_ is already in the scaled feature space
+    coef = clf.coef_[0]
     top_idx = np.argsort(np.abs(coef))[::-1][:n_top]
     # Reverse so largest magnitude appears at the top of the horizontal bar chart
     top_names = [feature_names[i] for i in top_idx][::-1]
@@ -359,10 +359,23 @@ def main(cfg: LinearProbeBenchmarkConfig):
     df_filtered = df_filtered.assign(y=(df_filtered.annotation == cfg.positive_annotation_label).astype(int))
     feature_cols = [c for c in df_filtered.columns if c.startswith("feature_")]
 
+    # Pre-cast feature matrix to float32 once — halves memory bandwidth for all
+    # subsequent matrix operations (StandardScaler, LogisticRegression).
+    feature_arr_f32 = df_filtered[feature_cols].values.astype(np.float32)
+    df_filtered = df_filtered.drop(columns=feature_cols)  # free float64 memory
+    df_filtered = df_filtered.copy()  # defragment after drop
+
+    # Auto-select solver: lbfgs converges in ~100 L-BFGS steps for L2; saga is
+    # needed only for L1 / elasticnet.  lbfgs is 3-10× faster on dense data.
+    _needs_saga = any(p in ("l1", "elasticnet") for p in cfg.penalties)
+    _solver = "saga" if _needs_saga else "lbfgs"
+    _max_iter = cfg.max_iter if _needs_saga else min(cfg.max_iter, 1000)
+    logger.info("solver=%s  max_iter=%d", _solver, _max_iter)
+
     seeds = [cfg.random_state + i for i in range(cfg.n_seeds)]
     all_val_metrics: list = []
     all_test_metrics: list = []
-    primary_search = primary_best = primary_val_df = primary_test_df = None
+    primary_search = primary_best = primary_scaler = primary_val_df = primary_test_df = None
 
     for seed in seeds:
         logger.info(f"── seed={seed} " + "─" * 40)
@@ -371,18 +384,21 @@ def main(cfg: LinearProbeBenchmarkConfig):
         )
         _log_split_stats(train_df, val_df, test_df)
 
-        X_train = train_df[feature_cols].values
+        train_idx = train_df.index
+        val_idx   = val_df.index
+        test_idx  = test_df.index
+
+        # Fit scaler once on train; apply to val/test — avoids refitting inside
+        # every GridSearchCV fold (would be 25× per seed otherwise).
+        scaler = StandardScaler()
+        X_train = scaler.fit_transform(feature_arr_f32[train_idx])
+        X_val   = scaler.transform(feature_arr_f32[val_idx])
+        X_test  = scaler.transform(feature_arr_f32[test_idx])
         y_train = train_df["y"].values
 
-        pipeline = Pipeline(
-            [
-                ("scaler", StandardScaler()),
-                ("clf", LogisticRegression(solver="saga", max_iter=cfg.max_iter)),
-            ]
-        )
         search = GridSearchCV(
-            pipeline,
-            {"clf__C": list(cfg.C_values), "clf__penalty": list(cfg.penalties)},
+            LogisticRegression(solver=_solver, max_iter=_max_iter),
+            {"C": list(cfg.C_values), "penalty": list(cfg.penalties)},
             cv=cfg.cv,
             scoring="roc_auc",
             n_jobs=-1,
@@ -394,9 +410,9 @@ def main(cfg: LinearProbeBenchmarkConfig):
 
         # Compute predictions once per split; all helpers reuse these arrays.
         y_val = val_df["y"].values
-        prob_val = best.predict_proba(val_df[feature_cols].values)[:, 1]
+        prob_val = best.predict_proba(X_val)[:, 1]
         y_test = test_df["y"].values
-        prob_test = best.predict_proba(test_df[feature_cols].values)[:, 1]
+        prob_test = best.predict_proba(X_test)[:, 1]
 
         val_m = _compute_metrics(val_df, prob_val, "val")
         test_m = _compute_metrics(test_df, prob_test, "test")
@@ -404,7 +420,7 @@ def main(cfg: LinearProbeBenchmarkConfig):
         all_test_metrics.append(test_m)
 
         if seed == cfg.random_state:
-            primary_search, primary_best = search, best
+            primary_search, primary_best, primary_scaler = search, best, scaler
             primary_val_df, primary_test_df = val_df, test_df
             primary_val_y, primary_val_prob = y_val, prob_val
             primary_test_y, primary_test_prob = y_test, prob_test
@@ -446,7 +462,7 @@ def main(cfg: LinearProbeBenchmarkConfig):
     _plot_pr_curves(primary_val_y, primary_val_prob, primary_test_y, primary_test_prob, cfg.output_pr_png)
     _plot_gs_heatmap(primary_search, cfg.output_gs_heatmap_png)
     _plot_feature_importance(
-        primary_best, feature_cols, cfg.n_top_features, cfg.output_feature_importance_png
+        primary_best, primary_scaler, feature_cols, cfg.n_top_features, cfg.output_feature_importance_png
     )
     _plot_calibration(primary_val_y, primary_val_prob, primary_test_y, primary_test_prob, cfg.output_calibration_png)
 
