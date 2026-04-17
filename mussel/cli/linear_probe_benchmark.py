@@ -1,6 +1,7 @@
+import json
 import logging
 from dataclasses import dataclass, field
-from typing import List, Optional
+from typing import List
 
 import geopandas as gpd
 import hydra
@@ -9,10 +10,13 @@ import numpy as np
 import pandas as pd
 from hydra.conf import HelpConf, HydraConf
 from hydra.core.config_store import ConfigStore
-from omegaconf import MISSING, OmegaConf
+from omegaconf import MISSING
+from sklearn.calibration import CalibrationDisplay
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import (
     ConfusionMatrixDisplay,
+    PrecisionRecallDisplay,
+    RocCurveDisplay,
     average_precision_score,
     classification_report,
     f1_score,
@@ -28,25 +32,42 @@ logger = logging.getLogger(__name__)
 @dataclass
 class LinearProbeBenchmarkConfig:
     """
-    output_csv (str): Path to save the validation classification report in CSV format.
-    output_png (str): Path to save the validation confusion matrix as a PNG image.
-    output_test_csv (str): Path to save the test classification report in CSV format.
-    output_test_png (str): Path to save the test confusion matrix as a PNG image.
-    features_annotation_parquet_path (str): Path to the parquet file containing features and annotations.
-    annotation_percent_filter_threshold (float): Threshold for filtering annotations based on overlap area.
-    test_size (float): Proportion of the dataset to include in the test split.
-    val_size (float): Proportion of the training dataset to include in the validation split.
-    random_state (int): Random seed for reproducibility.
-    cv (int): Number of cross-validation folds for GridSearchCV.
-    C_values (List[float]): C values to search over in the logistic regression grid search.
-    penalties (List[str]): Regularization penalties to search over ('l1', 'l2', 'elasticnet', 'none').
-    max_iter (int): Maximum number of iterations for the logistic regression solver.
+    output_csv (str): Validation classification report (CSV).
+    output_png (str): Validation confusion matrix (PNG).
+    output_test_csv (str): Test classification report (CSV).
+    output_test_png (str): Test confusion matrix (PNG).
+    output_roc_png (str): ROC curves for val and test splits (PNG).
+    output_pr_png (str): Precision-recall curves for val and test splits (PNG).
+    output_gs_heatmap_png (str): Grid search CV AUC heatmap (PNG).
+    output_feature_importance_png (str): Top features by |coefficient| (PNG).
+    output_calibration_png (str): Calibration curves for val and test splits (PNG).
+    output_cv_results_csv (str): Full GridSearchCV cv_results_ table (CSV).
+    output_summary_json (str): All scalar metrics, mean +/- std across seeds (JSON).
+    features_annotation_parquet_path (str): GeoParquet with tile features and annotations.
+    annotation_percent_filter_threshold (float): Min overlap fraction to include a tile.
+    test_size (float): Fraction of slides held out as test set.
+    val_size (float): Fraction of all slides held out as validation set.
+    random_state (int): Primary seed; seeds random_state ... random_state+n_seeds-1 are used.
+    cv (int): Cross-validation folds for GridSearchCV.
+    C_values (List[float]): Regularisation strengths to search.
+    penalties (List[str]): Penalty types to search ('l1', 'l2', 'elasticnet', 'none').
+    max_iter (int): Maximum solver iterations.
+    n_top_features (int): Number of features shown in the importance plot.
+    n_seeds (int): Number of random seeds; mean +/- std reported across seeds.
+    n_bootstrap (int): Bootstrap resamples for 95% CI on test AUC-ROC (primary seed).
     """
 
     output_csv: str = "classification_report.csv"
     output_png: str = "confusion_matrix.png"
     output_test_csv: str = "classification_report_test.csv"
     output_test_png: str = "confusion_matrix_test.png"
+    output_roc_png: str = "roc_curve.png"
+    output_pr_png: str = "pr_curve.png"
+    output_gs_heatmap_png: str = "grid_search_heatmap.png"
+    output_feature_importance_png: str = "feature_importance.png"
+    output_calibration_png: str = "calibration_curve.png"
+    output_cv_results_csv: str = "cv_results.csv"
+    output_summary_json: str = "results.json"
     features_annotation_parquet_path: str = MISSING
     annotation_percent_filter_threshold: float = 0.50
     test_size: float = 0.2
@@ -56,6 +77,9 @@ class LinearProbeBenchmarkConfig:
     C_values: List[float] = field(default_factory=lambda: [0.001, 0.01, 0.1, 1.0, 10.0])
     penalties: List[str] = field(default_factory=lambda: ["l2"])
     max_iter: int = 5000
+    n_top_features: int = 20
+    n_seeds: int = 5
+    n_bootstrap: int = 1000
 
 
 desc_doc = """== ${hydra.help.app_name} ==
@@ -77,89 +101,351 @@ cs.store(
 cs.store(name="linear_probe_benchmark_config", node=LinearProbeBenchmarkConfig)
 
 
-def _eval_split(clf, X, y, output_csv, output_png, split_name):
-    """Evaluate a fitted classifier on a data split, save report and confusion matrix."""
+# ── Data helpers ──────────────────────────────────────────────────────────────
+
+
+def _split_by_slide(df, test_size, val_size, random_state):
+    """Stratified train / val / test split at slide level."""
+    slide_labels = df.groupby("slide_id")["y"].max().reset_index()
+    slide_ids = slide_labels["slide_id"].values
+    strat = slide_labels["y"].values
+
+    train_ids, test_ids, train_strat, _ = train_test_split(
+        slide_ids, strat, test_size=test_size, random_state=random_state, stratify=strat
+    )
+    train_ids, val_ids = train_test_split(
+        train_ids,
+        test_size=val_size / (1 - test_size),
+        random_state=random_state,
+        stratify=train_strat,
+    )
+    return (
+        df[df["slide_id"].isin(train_ids)],
+        df[df["slide_id"].isin(val_ids)],
+        df[df["slide_id"].isin(test_ids)],
+    )
+
+
+def _log_split_stats(train_df, val_df, test_df):
+    for name, d in [("train", train_df), ("val", val_df), ("test", test_df)]:
+        logger.info(
+            f"  {name:5s}: {len(d):6d} tiles  {d['slide_id'].nunique():3d} slides  "
+            f"pos_rate={d['y'].mean():.3f}"
+        )
+
+
+# ── Metrics helpers ───────────────────────────────────────────────────────────
+
+
+def _compute_metrics(clf, df, split_name):
+    """Compute tile-level and slide-level metrics; return as a flat dict."""
+    X = df.filter(regex="feature_").values
+    y = df["y"].values
     y_pred = clf.predict(X)
     y_prob = clf.predict_proba(X)[:, 1]
 
-    f1 = f1_score(y, y_pred, average="weighted")
-    auc = roc_auc_score(y, y_prob)
-    avg_prec = average_precision_score(y, y_prob)
+    metrics = {
+        "tile_f1": float(f1_score(y, y_pred, average="weighted")),
+        "tile_auc_roc": float(roc_auc_score(y, y_prob)),
+        "tile_average_precision": float(average_precision_score(y, y_prob)),
+    }
+    logger.info(
+        f"[{split_name} tiles]  F1={metrics['tile_f1']:.4f}  "
+        f"AUC={metrics['tile_auc_roc']:.4f}  AP={metrics['tile_average_precision']:.4f}"
+    )
+
+    # Slide-level: aggregate tile probabilities -> mean per slide
+    slide_df = (
+        df.assign(prob=y_prob)
+        .groupby("slide_id")
+        .agg(y=("y", "max"), mean_prob=("prob", "mean"))
+        .reset_index()
+    )
+    if slide_df["y"].nunique() >= 2:
+        y_s = slide_df["y"].values
+        p_s = slide_df["mean_prob"].values
+        metrics.update(
+            {
+                "slide_f1": float(
+                    f1_score(y_s, (p_s >= 0.5).astype(int), average="weighted")
+                ),
+                "slide_auc_roc": float(roc_auc_score(y_s, p_s)),
+                "slide_average_precision": float(average_precision_score(y_s, p_s)),
+            }
+        )
+        logger.info(
+            f"[{split_name} slides] n={len(slide_df)}  "
+            f"F1={metrics['slide_f1']:.4f}  AUC={metrics['slide_auc_roc']:.4f}  "
+            f"AP={metrics['slide_average_precision']:.4f}"
+        )
+    else:
+        logger.warning(
+            f"[{split_name} slide-level] only one class present — slide metrics skipped"
+        )
+
+    return metrics
+
+
+def _save_confusion_matrix(clf, df, output_csv, output_png, split_name, metrics):
+    """Save classification report CSV and confusion matrix PNG."""
+    X = df.filter(regex="feature_").values
+    y = df["y"].values
+    y_pred = clf.predict(X)
 
     report = pd.DataFrame(classification_report(y, y_pred, output_dict=True))
     report.loc["auc_roc"] = np.nan
     report.loc["average_precision"] = np.nan
-    report.at["auc_roc", "weighted avg"] = auc
-    report.at["average_precision", "weighted avg"] = avg_prec
+    report.at["auc_roc", "weighted avg"] = metrics["tile_auc_roc"]
+    report.at["average_precision", "weighted avg"] = metrics["tile_average_precision"]
     report.to_csv(output_csv)
 
     fig, ax = plt.subplots()
     ConfusionMatrixDisplay.from_predictions(y, y_pred, ax=ax)
-    ax.set_title(f"{split_name} — F1={f1:.3f}  AUC={auc:.3f}  AP={avg_prec:.3f}")
-    fig.savefig(output_png)
+    ax.set_title(
+        f"{split_name} — F1={metrics['tile_f1']:.3f}  "
+        f"AUC={metrics['tile_auc_roc']:.3f}  AP={metrics['tile_average_precision']:.3f}"
+    )
+    fig.savefig(output_png, dpi=150, bbox_inches="tight")
     plt.close(fig)
 
-    logger.info(
-        f"[{split_name}] F1={f1:.4f}  AUC-ROC={auc:.4f}  AvgPrec={avg_prec:.4f}"
-    )
-    return {"f1": f1, "auc_roc": auc, "average_precision": avg_prec}
+
+def _bootstrap_ci_auc(clf, X, y, n_bootstrap, random_state):
+    """95% bootstrap confidence interval for AUC-ROC on (X, y)."""
+    rng = np.random.RandomState(random_state)
+    scores = []
+    for _ in range(n_bootstrap):
+        idx = rng.randint(0, len(y), len(y))
+        if len(np.unique(y[idx])) < 2:
+            continue
+        scores.append(roc_auc_score(y[idx], clf.predict_proba(X[idx])[:, 1]))
+    if not scores:
+        return float("nan"), float("nan")
+    return float(np.percentile(scores, 2.5)), float(np.percentile(scores, 97.5))
+
+
+# ── Plot helpers ───────────b��──────────────────────────────────────────────────
+
+
+def _plot_roc_curves(clf, val_df, test_df, output_path):
+    """ROC curves for val and test on the same axes."""
+    fig, ax = plt.subplots(figsize=(6, 5))
+    for name, df in [("val", val_df), ("test", test_df)]:
+        RocCurveDisplay.from_estimator(
+            clf, df.filter(regex="feature_").values, df["y"].values, ax=ax, name=name
+        )
+    ax.set_title("ROC Curve")
+    fig.savefig(output_path, dpi=150, bbox_inches="tight")
+    plt.close(fig)
+
+
+def _plot_pr_curves(clf, val_df, test_df, output_path):
+    """Precision-recall curves for val and test on the same axes."""
+    fig, ax = plt.subplots(figsize=(6, 5))
+    for name, df in [("val", val_df), ("test", test_df)]:
+        PrecisionRecallDisplay.from_estimator(
+            clf, df.filter(regex="feature_").values, df["y"].values, ax=ax, name=name
+        )
+    ax.set_title("Precision-Recall Curve")
+    fig.savefig(output_path, dpi=150, bbox_inches="tight")
+    plt.close(fig)
+
+
+def _plot_gs_heatmap(search, output_path):
+    """Heatmap of mean CV AUC by C x penalty; falls back to a line plot for a single penalty."""
+    results = pd.DataFrame(search.cv_results_)
+    results["param_clf__C"] = results["param_clf__C"].astype(float)
+    results["param_clf__penalty"] = results["param_clf__penalty"].astype(str)
+    penalties = results["param_clf__penalty"].unique()
+
+    if len(penalties) > 1:
+        pivot = results.pivot_table(
+            index="param_clf__penalty",
+            columns="param_clf__C",
+            values="mean_test_score",
+        )
+        fig, ax = plt.subplots(
+            figsize=(max(6, len(pivot.columns) * 1.2), max(3, len(pivot) * 1.2))
+        )
+        im = ax.imshow(pivot.values, aspect="auto", cmap="viridis")
+        ax.set_xticks(range(len(pivot.columns)))
+        ax.set_xticklabels([f"{c:.3g}" for c in pivot.columns], rotation=45)
+        ax.set_yticks(range(len(pivot.index)))
+        ax.set_yticklabels(pivot.index)
+        ax.set_xlabel("C")
+        ax.set_ylabel("Penalty")
+        ax.set_title("Grid Search — Mean CV AUC-ROC")
+        plt.colorbar(im, ax=ax, label="Mean CV AUC-ROC")
+        for i in range(len(pivot.index)):
+            for j in range(len(pivot.columns)):
+                ax.text(
+                    j,
+                    i,
+                    f"{pivot.values[i, j]:.3f}",
+                    ha="center",
+                    va="center",
+                    color="white",
+                    fontsize=8,
+                )
+    else:
+        c_vals = sorted(results["param_clf__C"].unique())
+        scores = [
+            results.loc[results["param_clf__C"] == c, "mean_test_score"].values[0]
+            for c in c_vals
+        ]
+        fig, ax = plt.subplots(figsize=(6, 4))
+        ax.semilogx(c_vals, scores, marker="o")
+        ax.axvline(
+            search.best_params_["clf__C"],
+            color="r",
+            linestyle="--",
+            label=f"best C={search.best_params_['clf__C']:.3g}",
+        )
+        ax.set_xlabel("C")
+        ax.set_ylabel("Mean CV AUC-ROC")
+        ax.set_title(f"Grid Search — Penalty={penalties[0]}")
+        ax.legend()
+
+    fig.savefig(output_path, dpi=150, bbox_inches="tight")
+    plt.close(fig)
+
+
+def _plot_feature_importance(clf, feature_names, n_top, output_path):
+    """Horizontal bar chart of top features by absolute logistic-regression coefficient."""
+    coef = clf.named_steps["clf"].coef_[0]
+    top_idx = np.argsort(np.abs(coef))[::-1][:n_top]
+    # Reverse so largest magnitude appears at the top of the horizontal bar chart
+    top_names = [feature_names[i] for i in top_idx][::-1]
+    top_coef = coef[top_idx][::-1]
+
+    fig, ax = plt.subplots(figsize=(8, max(4, n_top * 0.35)))
+    colors = ["tab:red" if c > 0 else "tab:blue" for c in top_coef]
+    ax.barh(range(len(top_names)), top_coef, color=colors)
+    ax.set_yticks(range(len(top_names)))
+    ax.set_yticklabels(top_names, fontsize=8)
+    ax.axvline(0, color="black", linewidth=0.8)
+    ax.set_xlabel("Coefficient (scaled feature space)")
+    ax.set_title(f"Top {n_top} Feature Importances by |Coefficient|")
+    fig.savefig(output_path, dpi=150, bbox_inches="tight")
+    plt.close(fig)
+
+
+def _plot_calibration(clf, val_df, test_df, output_path):
+    """Calibration curves for val and test on the same axes."""
+    fig, ax = plt.subplots(figsize=(6, 5))
+    for name, df in [("val", val_df), ("test", test_df)]:
+        CalibrationDisplay.from_estimator(
+            clf,
+            df.filter(regex="feature_").values,
+            df["y"].values,
+            ax=ax,
+            name=name,
+            n_bins=10,
+        )
+    ax.set_title("Calibration Curve")
+    fig.savefig(output_path, dpi=150, bbox_inches="tight")
+    plt.close(fig)
+
+
+# ── Main ──────────────────────────────────────────────────────────────────────
 
 
 @hydra.main(
     version_base=None, config_path=".", config_name="linear_probe_benchmark_config"
 )
 def main(cfg: LinearProbeBenchmarkConfig):
-    """Benchmark a linear probe classifier on extracted features."""
+    """Benchmark a linear probe classifier on extracted WSI features."""
     df = gpd.read_parquet(cfg.features_annotation_parquet_path)
-
     df_filtered = df.query(
         f"overlap_area > {cfg.annotation_percent_filter_threshold} * tile_area"
     )
     df_filtered = df_filtered.assign(y=(df_filtered.annotation == 2).astype(int))
+    feature_cols = [c for c in df_filtered.columns if c.startswith("feature_")]
 
-    # One label per slide (1 if the slide has any positive tile, else 0) for stratification
-    slide_labels = (
-        df_filtered.groupby("slide_id")["y"].max().reset_index()
-    )
-    slide_ids = slide_labels["slide_id"].values
-    strat = slide_labels["y"].values
+    seeds = [cfg.random_state + i for i in range(cfg.n_seeds)]
+    all_val_metrics: list = []
+    all_test_metrics: list = []
+    primary_search = primary_best = primary_val_df = primary_test_df = None
 
-    train_ids, test_ids, train_strat, _ = train_test_split(
-        slide_ids, strat, test_size=cfg.test_size, random_state=cfg.random_state, stratify=strat
-    )
-    train_ids, val_ids = train_test_split(
-        train_ids,
-        test_size=cfg.val_size / (1 - cfg.test_size),
-        random_state=cfg.random_state,
-        stratify=train_strat,
-    )
+    for seed in seeds:
+        logger.info(f"── seed={seed} " + "─" * 40)
+        train_df, val_df, test_df = _split_by_slide(
+            df_filtered, cfg.test_size, cfg.val_size, seed
+        )
+        _log_split_stats(train_df, val_df, test_df)
 
-    train_df = df_filtered[df_filtered["slide_id"].isin(train_ids)]
-    val_df = df_filtered[df_filtered["slide_id"].isin(val_ids)]
-    test_df = df_filtered[df_filtered["slide_id"].isin(test_ids)]
+        X_train = train_df.filter(regex="feature_").values
+        y_train = train_df["y"].values
 
-    X_train = train_df.filter(regex="feature_").values
-    y_train = train_df["y"].values
-    X_val = val_df.filter(regex="feature_").values
-    y_val = val_df["y"].values
-    X_test = test_df.filter(regex="feature_").values
-    y_test = test_df["y"].values
+        pipeline = Pipeline(
+            [
+                ("scaler", StandardScaler()),
+                ("clf", LogisticRegression(solver="saga", max_iter=cfg.max_iter)),
+            ]
+        )
+        search = GridSearchCV(
+            pipeline,
+            {"clf__C": list(cfg.C_values), "clf__penalty": list(cfg.penalties)},
+            cv=cfg.cv,
+            scoring="roc_auc",
+            n_jobs=-1,
+            return_train_score=True,
+        )
+        search.fit(X_train, y_train)
+        best = search.best_estimator_
+        logger.info(f"  best_params={search.best_params_}  CV AUC={search.best_score_:.4f}")
 
-    pipeline = Pipeline([
-        ("scaler", StandardScaler()),
-        ("clf", LogisticRegression(solver="saga", max_iter=cfg.max_iter)),
-    ])
-    param_grid = {
-        "clf__C": list(cfg.C_values),
-        "clf__penalty": list(cfg.penalties),
+        val_m = _compute_metrics(best, val_df, "val")
+        test_m = _compute_metrics(best, test_df, "test")
+        all_val_metrics.append(val_m)
+        all_test_metrics.append(test_m)
+
+        if seed == cfg.random_state:
+            primary_search, primary_best = search, best
+            primary_val_df, primary_test_df = val_df, test_df
+            _save_confusion_matrix(best, val_df, cfg.output_csv, cfg.output_png, "val", val_m)
+            _save_confusion_matrix(
+                best, test_df, cfg.output_test_csv, cfg.output_test_png, "test", test_m
+            )
+
+    # ── Multi-seed summary ────────────────────────────────────────────────────
+    all_keys = sorted({k for m in all_val_metrics + all_test_metrics for k in m})
+    summary: dict = {
+        "n_seeds": len(seeds),
+        "seeds": seeds,
+        "best_params": primary_search.best_params_,
+        "best_cv_auc": float(primary_search.best_score_),
     }
-    search = GridSearchCV(
-        pipeline, param_grid, cv=cfg.cv, scoring="roc_auc", n_jobs=-1
+    for split_name, records in [("val", all_val_metrics), ("test", all_test_metrics)]:
+        summary[split_name] = {}
+        for key in all_keys:
+            vals = [r[key] for r in records if key in r]
+            if not vals:
+                continue
+            mean, std = float(np.mean(vals)), float(np.std(vals))
+            summary[split_name][key] = {"mean": mean, "std": std}
+            logger.info(f"[{split_name}] {key}: {mean:.4f} +/- {std:.4f}")
+
+    # ── Bootstrap CI on test AUC (primary seed) ───────────────────────────────
+    X_test_p = primary_test_df.filter(regex="feature_").values
+    y_test_p = primary_test_df["y"].values
+    ci_lo, ci_hi = _bootstrap_ci_auc(
+        primary_best, X_test_p, y_test_p, cfg.n_bootstrap, cfg.random_state
     )
-    search.fit(X_train, y_train)
-    best = search.best_estimator_
+    summary["test"]["tile_auc_roc"]["bootstrap_ci_95"] = [ci_lo, ci_hi]
+    logger.info(f"[test] tile_auc_roc bootstrap 95% CI: [{ci_lo:.4f}, {ci_hi:.4f}]")
 
-    logger.info(f"Best params: {search.best_params_}  CV AUC={search.best_score_:.4f}")
+    # ── Save tabular outputs ──────────────────────────────────────────────────
+    pd.DataFrame(primary_search.cv_results_).to_csv(cfg.output_cv_results_csv, index=False)
+    with open(cfg.output_summary_json, "w") as f:
+        json.dump(summary, f, indent=2)
 
-    _eval_split(best, X_val, y_val, cfg.output_csv, cfg.output_png, "val")
-    _eval_split(best, X_test, y_test, cfg.output_test_csv, cfg.output_test_png, "test")
+    # ── Plots (primary seed) ──────────────────────────────────────────────────
+    _plot_roc_curves(primary_best, primary_val_df, primary_test_df, cfg.output_roc_png)
+    _plot_pr_curves(primary_best, primary_val_df, primary_test_df, cfg.output_pr_png)
+    _plot_gs_heatmap(primary_search, cfg.output_gs_heatmap_png)
+    _plot_feature_importance(
+        primary_best, feature_cols, cfg.n_top_features, cfg.output_feature_importance_png
+    )
+    _plot_calibration(primary_best, primary_val_df, primary_test_df, cfg.output_calibration_png)
+
+    logger.info("Done.")
