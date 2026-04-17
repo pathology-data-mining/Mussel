@@ -390,6 +390,7 @@ def main(cfg: LinearProbeBenchmarkConfig):
     all_val_metrics: list = []
     all_test_metrics: list = []
     primary_search = primary_best = primary_scaler = primary_val_df = primary_test_df = None
+    best_params = None  # set after primary seed; reused for remaining seeds
 
     for seed in seeds:
         logger.info(f"── seed={seed} " + "─" * 40)
@@ -410,17 +411,26 @@ def main(cfg: LinearProbeBenchmarkConfig):
         X_test  = scaler.transform(feature_arr_f32[test_idx])
         y_train = train_df["y"].values
 
-        search = GridSearchCV(
-            LogisticRegression(solver=_solver, max_iter=_max_iter),
-            {"C": list(cfg.C_values), "penalty": list(cfg.penalties)},
-            cv=cfg.cv,
-            scoring="roc_auc",
-            n_jobs=-1,
-            return_train_score=True,
-        )
-        search.fit(X_train, y_train)
-        best = search.best_estimator_
-        logger.info(f"  best_params={search.best_params_}  CV AUC={search.best_score_:.4f}")
+        if best_params is None:
+            # Primary seed: full grid search to select hyperparameters.
+            search = GridSearchCV(
+                LogisticRegression(solver=_solver, max_iter=_max_iter),
+                {"C": list(cfg.C_values), "penalty": list(cfg.penalties)},
+                cv=cfg.cv,
+                scoring="roc_auc",
+                n_jobs=-1,
+                return_train_score=True,
+            )
+            search.fit(X_train, y_train)
+            best_params = search.best_params_
+            best = search.best_estimator_
+            logger.info(f"  best_params={best_params}  CV AUC={search.best_score_:.4f}")
+        else:
+            # Subsequent seeds: reuse best_params, single refit (no grid search).
+            best = LogisticRegression(solver=_solver, max_iter=_max_iter, **best_params)
+            best.fit(X_train, y_train)
+            logger.info(f"  reusing best_params={best_params} (no grid search)")
+            search = None
 
         # Compute predictions once per split; all helpers reuse these arrays.
         y_val = val_df["y"].values
@@ -446,7 +456,7 @@ def main(cfg: LinearProbeBenchmarkConfig):
     summary: dict = {
         "n_seeds": len(seeds),
         "seeds": seeds,
-        "best_params": primary_search.best_params_,
+        "best_params": best_params,
         "best_cv_auc": float(primary_search.best_score_),
     }
     for split_name, records in [("val", all_val_metrics), ("test", all_test_metrics)]:
