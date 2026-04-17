@@ -15,7 +15,8 @@ from omegaconf import MISSING, OmegaConf
 
 logger = logging.getLogger(__name__)
 from PIL import Image
-from shapely.geometry import MultiPolygon, Polygon
+from shapely.geometry import MultiPolygon
+from shapely import box as shapely_box
 
 from mussel.utils.segment import contours_to_polygon
 
@@ -68,18 +69,9 @@ def main(cfg: MergeAnnotationFeaturesConfig):
         tiles_h5 = h5py.File(f, "r")
         tile_size = tiles_h5["coords"].attrs.get("patch_size")
 
-        tiles_df = pd.DataFrame(tiles_h5["coords"], columns=["i", "j"])
-        tiles = [
-            Polygon(
-                [
-                    [row.i, row.j],
-                    [row.i, row.j + tile_size],
-                    [row.i + tile_size, row.j + tile_size],
-                    [row.i + tile_size, row.j],
-                ]
-            )
-            for row in tiles_df.itertuples(index=False)
-        ]
+        coords = np.array(tiles_h5["coords"])  # shape (N, 2): [i, j]
+        i_arr, j_arr = coords[:, 0], coords[:, 1]
+        tiles = shapely_box(i_arr, j_arr, i_arr + tile_size, j_arr + tile_size)
         tiles_gdf = gpd.GeoDataFrame(
             pd.DataFrame(tiles_h5["features"]).add_prefix("feature_", axis=1),
             geometry=tiles,

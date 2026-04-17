@@ -3,7 +3,6 @@ import logging
 from dataclasses import dataclass, field
 from typing import List
 
-import geopandas as gpd
 import hydra
 import matplotlib.pyplot as plt
 import numpy as np
@@ -139,12 +138,10 @@ def _log_split_stats(train_df, val_df, test_df):
 # ── Metrics helpers ───────────────────────────────────────────────────────────
 
 
-def _compute_metrics(clf, df, split_name):
-    """Compute tile-level and slide-level metrics; return as a flat dict."""
-    X = df.filter(regex="feature_").values
+def _compute_metrics(df, y_prob, split_name):
+    """Compute tile-level and slide-level metrics from pre-computed probabilities."""
     y = df["y"].values
-    y_pred = clf.predict(X)
-    y_prob = clf.predict_proba(X)[:, 1]
+    y_pred = (y_prob >= 0.5).astype(int)
 
     metrics = {
         "tile_f1": float(f1_score(y, y_pred, average="weighted")),
@@ -188,11 +185,7 @@ def _compute_metrics(clf, df, split_name):
     return metrics
 
 
-def _save_confusion_matrix(clf, df, output_csv, output_png, split_name, metrics):
-    """Save classification report CSV and confusion matrix PNG."""
-    X = df.filter(regex="feature_").values
-    y = df["y"].values
-    y_pred = clf.predict(X)
+def _save_confusion_matrix(y, y_pred, y_prob, output_csv, output_png, split_name, metrics):
 
     report = pd.DataFrame(classification_report(y, y_pred, output_dict=True))
     report.loc["auc_roc"] = np.nan
@@ -211,42 +204,39 @@ def _save_confusion_matrix(clf, df, output_csv, output_png, split_name, metrics)
     plt.close(fig)
 
 
-def _bootstrap_ci_auc(clf, X, y, n_bootstrap, random_state):
-    """95% bootstrap confidence interval for AUC-ROC on (X, y)."""
+def _bootstrap_ci_auc(y_prob, y, n_bootstrap, random_state):
+    """95% bootstrap CI for AUC-ROC; resamples pre-computed probabilities."""
     rng = np.random.RandomState(random_state)
     scores = []
     for _ in range(n_bootstrap):
         idx = rng.randint(0, len(y), len(y))
         if len(np.unique(y[idx])) < 2:
             continue
-        scores.append(roc_auc_score(y[idx], clf.predict_proba(X[idx])[:, 1]))
+        scores.append(roc_auc_score(y[idx], y_prob[idx]))
     if not scores:
         return float("nan"), float("nan")
     return float(np.percentile(scores, 2.5)), float(np.percentile(scores, 97.5))
 
 
-# ── Plot helpers ───────────b��──────────────────────────────────────────────────
+# -- Plot helpers -----------------------------------------------------------
 
 
-def _plot_roc_curves(clf, val_df, test_df, output_path):
+
+def _plot_roc_curves(val_y, val_prob, test_y, test_prob, output_path):
     """ROC curves for val and test on the same axes."""
     fig, ax = plt.subplots(figsize=(6, 5))
-    for name, df in [("val", val_df), ("test", test_df)]:
-        RocCurveDisplay.from_estimator(
-            clf, df.filter(regex="feature_").values, df["y"].values, ax=ax, name=name
-        )
+    for name, y, prob in [("val", val_y, val_prob), ("test", test_y, test_prob)]:
+        RocCurveDisplay.from_predictions(y, prob, ax=ax, name=name)
     ax.set_title("ROC Curve")
     fig.savefig(output_path, dpi=150, bbox_inches="tight")
     plt.close(fig)
 
 
-def _plot_pr_curves(clf, val_df, test_df, output_path):
+def _plot_pr_curves(val_y, val_prob, test_y, test_prob, output_path):
     """Precision-recall curves for val and test on the same axes."""
     fig, ax = plt.subplots(figsize=(6, 5))
-    for name, df in [("val", val_df), ("test", test_df)]:
-        PrecisionRecallDisplay.from_estimator(
-            clf, df.filter(regex="feature_").values, df["y"].values, ax=ax, name=name
-        )
+    for name, y, prob in [("val", val_y, val_prob), ("test", test_y, test_prob)]:
+        PrecisionRecallDisplay.from_predictions(y, prob, ax=ax, name=name)
     ax.set_title("Precision-Recall Curve")
     fig.savefig(output_path, dpi=150, bbox_inches="tight")
     plt.close(fig)
@@ -331,18 +321,11 @@ def _plot_feature_importance(clf, feature_names, n_top, output_path):
     plt.close(fig)
 
 
-def _plot_calibration(clf, val_df, test_df, output_path):
+def _plot_calibration(val_y, val_prob, test_y, test_prob, output_path):
     """Calibration curves for val and test on the same axes."""
     fig, ax = plt.subplots(figsize=(6, 5))
-    for name, df in [("val", val_df), ("test", test_df)]:
-        CalibrationDisplay.from_estimator(
-            clf,
-            df.filter(regex="feature_").values,
-            df["y"].values,
-            ax=ax,
-            name=name,
-            n_bins=10,
-        )
+    for name, y, prob in [("val", val_y, val_prob), ("test", test_y, test_prob)]:
+        CalibrationDisplay.from_predictions(y, prob, ax=ax, name=name, n_bins=10)
     ax.set_title("Calibration Curve")
     fig.savefig(output_path, dpi=150, bbox_inches="tight")
     plt.close(fig)
@@ -356,7 +339,10 @@ def _plot_calibration(clf, val_df, test_df, output_path):
 )
 def main(cfg: LinearProbeBenchmarkConfig):
     """Benchmark a linear probe classifier on extracted WSI features."""
-    df = gpd.read_parquet(cfg.features_annotation_parquet_path)
+    import pyarrow.parquet as pq
+    _schema_names = pq.read_schema(cfg.features_annotation_parquet_path).names
+    _cols = [c for c in _schema_names if c != "geometry"]
+    df = pd.read_parquet(cfg.features_annotation_parquet_path, columns=_cols)
     df_filtered = df.query(
         f"overlap_area > {cfg.annotation_percent_filter_threshold} * tile_area"
     )
@@ -375,7 +361,7 @@ def main(cfg: LinearProbeBenchmarkConfig):
         )
         _log_split_stats(train_df, val_df, test_df)
 
-        X_train = train_df.filter(regex="feature_").values
+        X_train = train_df[feature_cols].values
         y_train = train_df["y"].values
 
         pipeline = Pipeline(
@@ -396,18 +382,24 @@ def main(cfg: LinearProbeBenchmarkConfig):
         best = search.best_estimator_
         logger.info(f"  best_params={search.best_params_}  CV AUC={search.best_score_:.4f}")
 
-        val_m = _compute_metrics(best, val_df, "val")
-        test_m = _compute_metrics(best, test_df, "test")
+        # Compute predictions once per split; all helpers reuse these arrays.
+        y_val = val_df["y"].values
+        prob_val = best.predict_proba(val_df[feature_cols].values)[:, 1]
+        y_test = test_df["y"].values
+        prob_test = best.predict_proba(test_df[feature_cols].values)[:, 1]
+
+        val_m = _compute_metrics(val_df, prob_val, "val")
+        test_m = _compute_metrics(test_df, prob_test, "test")
         all_val_metrics.append(val_m)
         all_test_metrics.append(test_m)
 
         if seed == cfg.random_state:
             primary_search, primary_best = search, best
             primary_val_df, primary_test_df = val_df, test_df
-            _save_confusion_matrix(best, val_df, cfg.output_csv, cfg.output_png, "val", val_m)
-            _save_confusion_matrix(
-                best, test_df, cfg.output_test_csv, cfg.output_test_png, "test", test_m
-            )
+            primary_val_y, primary_val_prob = y_val, prob_val
+            primary_test_y, primary_test_prob = y_test, prob_test
+            _save_confusion_matrix(y_val, (prob_val >= 0.5).astype(int), prob_val, cfg.output_csv, cfg.output_png, "val", val_m)
+            _save_confusion_matrix(y_test, (prob_test >= 0.5).astype(int), prob_test, cfg.output_test_csv, cfg.output_test_png, "test", test_m)
 
     # ── Multi-seed summary ────────────────────────────────────────────────────
     all_keys = sorted({k for m in all_val_metrics + all_test_metrics for k in m})
@@ -428,10 +420,8 @@ def main(cfg: LinearProbeBenchmarkConfig):
             logger.info(f"[{split_name}] {key}: {mean:.4f} +/- {std:.4f}")
 
     # ── Bootstrap CI on test AUC (primary seed) ───────────────────────────────
-    X_test_p = primary_test_df.filter(regex="feature_").values
-    y_test_p = primary_test_df["y"].values
     ci_lo, ci_hi = _bootstrap_ci_auc(
-        primary_best, X_test_p, y_test_p, cfg.n_bootstrap, cfg.random_state
+        primary_test_prob, primary_test_y, cfg.n_bootstrap, cfg.random_state
     )
     summary["test"]["tile_auc_roc"]["bootstrap_ci_95"] = [ci_lo, ci_hi]
     logger.info(f"[test] tile_auc_roc bootstrap 95% CI: [{ci_lo:.4f}, {ci_hi:.4f}]")
@@ -442,12 +432,12 @@ def main(cfg: LinearProbeBenchmarkConfig):
         json.dump(summary, f, indent=2)
 
     # ── Plots (primary seed) ──────────────────────────────────────────────────
-    _plot_roc_curves(primary_best, primary_val_df, primary_test_df, cfg.output_roc_png)
-    _plot_pr_curves(primary_best, primary_val_df, primary_test_df, cfg.output_pr_png)
+    _plot_roc_curves(primary_val_y, primary_val_prob, primary_test_y, primary_test_prob, cfg.output_roc_png)
+    _plot_pr_curves(primary_val_y, primary_val_prob, primary_test_y, primary_test_prob, cfg.output_pr_png)
     _plot_gs_heatmap(primary_search, cfg.output_gs_heatmap_png)
     _plot_feature_importance(
         primary_best, feature_cols, cfg.n_top_features, cfg.output_feature_importance_png
     )
-    _plot_calibration(primary_best, primary_val_df, primary_test_df, cfg.output_calibration_png)
+    _plot_calibration(primary_val_y, primary_val_prob, primary_test_y, primary_test_prob, cfg.output_calibration_png)
 
     logger.info("Done.")
