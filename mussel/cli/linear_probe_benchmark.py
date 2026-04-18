@@ -117,7 +117,9 @@ def _split_by_slide(df, test_size, val_size, random_state):
     artefacts (staining, scanner, tissue prep).  Tile-level labels are not
     used for stratification — the split is purely random over slides.
     """
-    slide_ids = df["slide_id"].unique()
+    # Sort before permuting so the split is reproducible regardless of the order
+    # slides appear in the DataFrame (which depends on parquet write/read order).
+    slide_ids = np.sort(df["slide_id"].unique())
     rng = np.random.RandomState(random_state)
     slide_ids = rng.permutation(slide_ids)
 
@@ -169,11 +171,24 @@ def _compute_metrics(df, y_prob, split_name, classes=None):
 
     if is_multiclass:
         y_pred = classes[np.argmax(y_prob, axis=1)]
+
+        # Compute OvR AUC manually (one binary AUC per class vs rest, then macro-average).
+        # This avoids sklearn's "probabilities must sum to 1" requirement when a rare class
+        # is absent from a split and its column is dropped.
+        unique_y = np.unique(y)
+        aucs = []
+        for i, cls in enumerate(classes):
+            if cls not in unique_y:
+                logger.warning(
+                    "[%s] class %s absent from split — excluded from OvR AUC", split_name, cls
+                )
+                continue
+            aucs.append(roc_auc_score((y == cls).astype(int), y_prob[:, i]))
+        tile_auc = float(np.mean(aucs)) if aucs else float("nan")
+
         metrics = {
             "tile_f1": float(f1_score(y, y_pred, average="macro", zero_division=0)),
-            "tile_auc_roc": float(
-                roc_auc_score(y, y_prob, multi_class="ovr", average="macro")
-            ),
+            "tile_auc_roc": tile_auc,
         }
         logger.info(
             f"[{split_name} tiles]  F1={metrics['tile_f1']:.4f}  "
@@ -262,9 +277,14 @@ def _bootstrap_ci_auc(y_prob, y, n_bootstrap, random_state, classes=None):
         if len(np.unique(y[idx])) < (n_classes if is_multiclass else 2):
             continue
         if is_multiclass:
-            scores.append(
-                roc_auc_score(y[idx], y_prob[idx], multi_class="ovr", average="macro")
-            )
+            unique_idx = np.unique(y[idx])
+            aucs_b = []
+            for i, cls in enumerate(classes):
+                if cls not in unique_idx:
+                    continue
+                aucs_b.append(roc_auc_score((y[idx] == cls).astype(int), y_prob[idx][:, i]))
+            if len(aucs_b) >= 2:
+                scores.append(float(np.mean(aucs_b)))
         else:
             scores.append(roc_auc_score(y[idx], y_prob[idx]))
     if not scores:
