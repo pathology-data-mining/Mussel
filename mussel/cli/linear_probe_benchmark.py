@@ -433,7 +433,13 @@ def _plot_feature_importance(clf, scaler, feature_names, n_top, output_path):
 def _plot_calibration(val_y, val_prob, test_y, test_prob, output_path):
     """Calibration curves for val and test on the same axes (binary only)."""
     if np.asarray(val_prob).ndim == 2:
-        logger.info("Calibration curve skipped for multiclass mode.")
+        logger.info("Calibration curve skipped for multiclass mode — writing placeholder.")
+        fig, ax = plt.subplots(figsize=(6, 5))
+        ax.text(0.5, 0.5, "Calibration curve\nnot available for multiclass",
+                ha="center", va="center", transform=ax.transAxes, fontsize=12)
+        ax.axis("off")
+        fig.savefig(output_path, dpi=150, bbox_inches="tight")
+        plt.close(fig)
         return
     fig, ax = plt.subplots(figsize=(6, 5))
     for name, y, prob in [("val", val_y, val_prob), ("test", test_y, test_prob)]:
