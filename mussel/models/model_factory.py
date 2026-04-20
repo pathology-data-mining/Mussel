@@ -30,7 +30,7 @@ class ModelType(Enum):
     GOOGLEPATH = 7, "googlepath", "google/path-foundation"
     CONCH1_5 = 8, "conch1_5", "MahmoodLab/TITAN"
     VIRCHOW2 = 9, "virchow2", "hf-hub:paige-ai/Virchow2"
-    UNI2 = 10, "uni2h", "hf-hub:MahmoodLab/UNI2-h"
+    UNI2H = 10, "uni2h", "hf-hub:MahmoodLab/UNI2-h"
     UNI = 11, "uni", "hf-hub:MahmoodLab/UNI"
     GIGAPATH_SLIDE = 12, "gigapath_slide", "hf-hub:prov-gigapath/prov-gigapath"
     TITAN_SLIDE = 13, "titan_slide", "MahmoodLab/TITAN"
@@ -103,7 +103,7 @@ MODEL_PATCH_SIZES = {
     ModelType.GOOGLEPATH: 224,  # Google Path Foundation
     ModelType.CONCH1_5: 512,
     ModelType.UNI: 256,
-    ModelType.UNI2: 256,
+    ModelType.UNI2H: 256,
     # Slide encoders inherit from their patch encoders
     ModelType.GIGAPATH_SLIDE: 256,
     ModelType.TITAN_SLIDE: 512,
