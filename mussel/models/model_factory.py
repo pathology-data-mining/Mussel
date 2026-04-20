@@ -36,8 +36,8 @@ class ModelType(Enum):
     TITAN_SLIDE = 13, "titan_slide", "MahmoodLab/TITAN"
     PHIKON = 14, "phikon", "hf-hub:owkin/phikon"
     PHIKON_V2 = 15, "phikon_v2", "hf-hub:owkin/phikon-v2"
-    H_OPTIMUS_1 = 16, "hoptimus1", "hf-hub:bioptimus/H-optimus-1"
-    H0_MINI = 17, "h0mini", "hf-hub:bioptimus/H0-mini"
+    HOPTIMUS1 = 16, "hoptimus1", "hf-hub:bioptimus/H-optimus-1"
+    H0MINI = 17, "h0mini", "hf-hub:bioptimus/H0-mini"
     MIDNIGHT12K = 18, "midnight12k", "hf-hub:kaiko-ai/midnight"
     GPFM = 19, "gpfm", "hf-hub:majiabo/GPFM"
     HIBOU_L = 20, "hibou_l", "histai/hibou-L"
@@ -113,8 +113,8 @@ MODEL_PATCH_SIZES = {
     ModelType.MADELEINE_SLIDE: 512,
     ModelType.PHIKON: 224,
     ModelType.PHIKON_V2: 224,
-    ModelType.H_OPTIMUS_1: 224,
-    ModelType.H0_MINI: 224,
+    ModelType.HOPTIMUS1: 224,
+    ModelType.H0MINI: 224,
     ModelType.MIDNIGHT12K: 224,
     ModelType.GPFM: 224,
     ModelType.HIBOU_L: 224,
