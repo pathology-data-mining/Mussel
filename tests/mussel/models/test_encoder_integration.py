@@ -60,11 +60,11 @@ _PATCH_ENCODER_DIM: dict[ModelType, int] = {
     ModelType.GOOGLEPATH: 384,  # ViT-S/16 (embed_dim=384)
     ModelType.CONCH1_5: 768,
     ModelType.UNI: 1024,
-    ModelType.UNI2: 1536,
+    ModelType.UNI2H: 1536,
     ModelType.PHIKON: 768,
     ModelType.PHIKON_V2: 1024,  # DINOv2 ViT-L/14
-    ModelType.H_OPTIMUS_1: 1536,
-    ModelType.H0_MINI: 768,
+    ModelType.HOPTIMUS1: 1536,
+    ModelType.H0MINI: 768,
     ModelType.MIDNIGHT12K: 1536,  # DINOv2 ViT-g/14
     ModelType.GPFM: 1024,  # ViT-L/14 (embed_dim=1024, num_classes=0)
     ModelType.HIBOU_L: 1024,
