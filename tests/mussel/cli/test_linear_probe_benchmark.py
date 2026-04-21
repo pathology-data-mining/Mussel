@@ -4,7 +4,6 @@ import os
 import geopandas as gpd
 import numpy as np
 import pandas as pd
-import pytest
 from omegaconf import OmegaConf
 from shapely.geometry import box
 
@@ -229,8 +228,9 @@ def test_compute_metrics_returns_expected_keys():
     y = df["y"].values
     pipe = Pipeline([("scaler", StandardScaler()), ("clf", LogisticRegression())])
     pipe.fit(X, y)
+    y_prob = pipe.predict_proba(X)[:, 1]
 
-    metrics = _compute_metrics(pipe, df, "test")
+    metrics = _compute_metrics(df, y_prob, "test")
 
     for key in ("tile_f1", "tile_auc_roc", "tile_average_precision"):
         assert key in metrics, f"{key} missing"
@@ -270,8 +270,9 @@ def test_bootstrap_ci_auc_bounds():
 
     pipe = Pipeline([("scaler", StandardScaler()), ("clf", LogisticRegression())])
     pipe.fit(X, y)
+    y_prob = pipe.predict_proba(X)[:, 1]
 
-    lo, hi = _bootstrap_ci_auc(pipe, X, y, n_bootstrap=100, random_state=0)
+    lo, hi = _bootstrap_ci_auc(y_prob, y, n_bootstrap=100, random_state=0)
     assert 0.0 <= lo <= hi <= 1.0
 
 

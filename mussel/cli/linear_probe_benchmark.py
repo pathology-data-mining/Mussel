@@ -22,7 +22,8 @@ from sklearn.metrics import (
     f1_score,
     roc_auc_score,
 )
-from sklearn.model_selection import GridSearchCV
+from sklearn.model_selection import GridSearchCV, StratifiedGroupKFold
+from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler
 
 logger = logging.getLogger(__name__)
@@ -345,14 +346,14 @@ def _plot_pr_curves(val_y, val_prob, test_y, test_prob, output_path, classes=Non
 def _plot_gs_heatmap(search, output_path):
     """Heatmap of mean CV AUC by C x penalty; falls back to a line plot for a single penalty."""
     results = pd.DataFrame(search.cv_results_)
-    results["param_C"] = results["param_C"].astype(float)
-    results["param_penalty"] = results["param_penalty"].astype(str)
-    penalties = results["param_penalty"].unique()
+    results["param_clf__C"] = results["param_clf__C"].astype(float)
+    results["param_clf__penalty"] = results["param_clf__penalty"].astype(str)
+    penalties = results["param_clf__penalty"].unique()
 
     if len(penalties) > 1:
         pivot = results.pivot_table(
-            index="param_penalty",
-            columns="param_C",
+            index="param_clf__penalty",
+            columns="param_clf__C",
             values="mean_test_score",
         )
         fig, ax = plt.subplots(
@@ -379,18 +380,18 @@ def _plot_gs_heatmap(search, output_path):
                     fontsize=8,
                 )
     else:
-        c_vals = sorted(results["param_C"].unique())
+        c_vals = sorted(results["param_clf__C"].unique())
         scores = [
-            results.loc[results["param_C"] == c, "mean_test_score"].values[0]
+            results.loc[results["param_clf__C"] == c, "mean_test_score"].values[0]
             for c in c_vals
         ]
         fig, ax = plt.subplots(figsize=(6, 4))
         ax.semilogx(c_vals, scores, marker="o")
         ax.axvline(
-            search.best_params_["C"],
+            search.best_params_["clf__C"],
             color="r",
             linestyle="--",
-            label=f"best C={search.best_params_['C']:.3g}",
+            label=f"best C={search.best_params_['clf__C']:.3g}",
         )
         ax.set_xlabel("C")
         ax.set_ylabel("Mean CV AUC-ROC")
@@ -401,12 +402,13 @@ def _plot_gs_heatmap(search, output_path):
     plt.close(fig)
 
 
-def _plot_feature_importance(clf, scaler, feature_names, n_top, output_path):
+def _plot_feature_importance(pipeline, feature_names, n_top, output_path):
     """Horizontal bar chart of top features by absolute logistic-regression coefficient.
 
     For multiclass (coef_ shape (n_classes, n_features)), the L2 norm across classes
     is used so a single importance score summarises all classes.
     """
+    clf = pipeline.named_steps["clf"]
     if clf.coef_.shape[0] == 1:
         coef = clf.coef_[0]
         title = f"Top {n_top} Feature Importances by |Coefficient|"
@@ -500,8 +502,14 @@ def main(cfg: LinearProbeBenchmarkConfig):
     df_filtered = df_filtered.copy()  # defragment after drop
 
     # Auto-select solver: lbfgs converges in ~100 L-BFGS steps for L2; saga is
-    # needed only for L1 / elasticnet.  lbfgs is 3-10× faster on dense data.
-    _needs_saga = any(p in ("l1", "elasticnet") for p in cfg.penalties)
+    # needed only for L1.  lbfgs is 3-10× faster on dense data.
+    if "elasticnet" in list(cfg.penalties):
+        raise ValueError(
+            "penalty='elasticnet' requires l1_ratio, which this benchmark does not "
+            "configure in the GridSearchCV param grid. Remove 'elasticnet' from "
+            "cfg.penalties or add l1_ratio support."
+        )
+    _needs_saga = any(p in ("l1",) for p in cfg.penalties)
     _solver = "saga" if _needs_saga else "lbfgs"
     _max_iter = cfg.max_iter if _needs_saga else min(cfg.max_iter, 1000)
     logger.info("solver=%s  max_iter=%d", _solver, _max_iter)
@@ -512,7 +520,7 @@ def main(cfg: LinearProbeBenchmarkConfig):
     seeds = [cfg.random_state + i for i in range(cfg.n_seeds)]
     all_val_metrics: list = []
     all_test_metrics: list = []
-    primary_search = primary_best = primary_scaler = primary_val_df = primary_test_df = None
+    primary_search = primary_best = primary_val_df = primary_test_df = None
     best_params = None  # set after primary seed; reused for remaining seeds
 
     for seed in seeds:
@@ -526,32 +534,38 @@ def main(cfg: LinearProbeBenchmarkConfig):
         val_idx   = val_df.index
         test_idx  = test_df.index
 
-        # Fit scaler once on train; apply to val/test — avoids refitting inside
-        # every GridSearchCV fold (would be 25× per seed otherwise).
-        scaler = StandardScaler()
-        X_train = scaler.fit_transform(feature_arr_f32[train_idx])
-        X_val   = scaler.transform(feature_arr_f32[val_idx])
-        X_test  = scaler.transform(feature_arr_f32[test_idx])
+        X_train_raw = feature_arr_f32[train_idx]
+        X_val_raw   = feature_arr_f32[val_idx]
+        X_test_raw  = feature_arr_f32[test_idx]
         y_train = train_df["y"].values
 
         if best_params is None:
-            # Primary seed: full grid search to select hyperparameters.
+            # Primary seed: full grid search with slide-level group constraints to
+            # prevent tiles from the same slide appearing in both train and validation
+            # folds of the inner CV loop.
             search = GridSearchCV(
-                LogisticRegression(solver=_solver, max_iter=_max_iter),
-                {"C": list(cfg.C_values), "penalty": list(cfg.penalties)},
-                cv=cfg.cv,
+                Pipeline([
+                    ("scaler", StandardScaler()),
+                    ("clf", LogisticRegression(solver=_solver, max_iter=_max_iter)),
+                ]),
+                {"clf__C": list(cfg.C_values), "clf__penalty": list(cfg.penalties)},
+                cv=StratifiedGroupKFold(n_splits=cfg.cv),
                 scoring=_scoring,
                 n_jobs=-1,
                 return_train_score=True,
             )
-            search.fit(X_train, y_train)
+            search.fit(X_train_raw, y_train, groups=train_df["slide_id"].values)
             best_params = search.best_params_
             best = search.best_estimator_
             logger.info(f"  best_params={best_params}  CV AUC={search.best_score_:.4f}")
         else:
             # Subsequent seeds: reuse best_params, single refit (no grid search).
-            best = LogisticRegression(solver=_solver, max_iter=_max_iter, **best_params)
-            best.fit(X_train, y_train)
+            best = Pipeline([
+                ("scaler", StandardScaler()),
+                ("clf", LogisticRegression(solver=_solver, max_iter=_max_iter)),
+            ])
+            best.set_params(**best_params)
+            best.fit(X_train_raw, y_train)
             logger.info(f"  reusing best_params={best_params} (no grid search)")
             search = None
 
@@ -559,13 +573,13 @@ def main(cfg: LinearProbeBenchmarkConfig):
         # Multiclass: full probability matrix (n × n_classes); binary: 1-D vector.
         y_val = val_df["y"].values
         y_test = test_df["y"].values
-        _classes = best.classes_ if cfg.multiclass else None
+        _classes = best.named_steps["clf"].classes_ if cfg.multiclass else None
         if cfg.multiclass:
-            prob_val  = best.predict_proba(X_val)
-            prob_test = best.predict_proba(X_test)
+            prob_val  = best.predict_proba(X_val_raw)
+            prob_test = best.predict_proba(X_test_raw)
         else:
-            prob_val  = best.predict_proba(X_val)[:, 1]
-            prob_test = best.predict_proba(X_test)[:, 1]
+            prob_val  = best.predict_proba(X_val_raw)[:, 1]
+            prob_test = best.predict_proba(X_test_raw)[:, 1]
 
         val_m  = _compute_metrics(val_df,  prob_val,  "val",  classes=_classes)
         test_m = _compute_metrics(test_df, prob_test, "test", classes=_classes)
@@ -573,7 +587,7 @@ def main(cfg: LinearProbeBenchmarkConfig):
         all_test_metrics.append(test_m)
 
         if seed == cfg.random_state:
-            primary_search, primary_best, primary_scaler = search, best, scaler
+            primary_search, primary_best = search, best
             primary_val_df, primary_test_df = val_df, test_df
             primary_val_y, primary_val_prob = y_val, prob_val
             primary_test_y, primary_test_prob = y_test, prob_test
@@ -605,7 +619,7 @@ def main(cfg: LinearProbeBenchmarkConfig):
             logger.info(f"[{split_name}] {key}: {mean:.4f} +/- {std:.4f}")
 
     # ── Bootstrap CI on test AUC (primary seed) ───────────────────────────────
-    _primary_classes = primary_best.classes_ if cfg.multiclass else None
+    _primary_classes = primary_best.named_steps["clf"].classes_ if cfg.multiclass else None
     ci_lo, ci_hi = _bootstrap_ci_auc(
         primary_test_prob, primary_test_y, cfg.n_bootstrap, cfg.random_state,
         classes=_primary_classes,
@@ -623,7 +637,7 @@ def main(cfg: LinearProbeBenchmarkConfig):
     _plot_pr_curves(primary_val_y, primary_val_prob, primary_test_y, primary_test_prob, cfg.output_pr_png, classes=_primary_classes)
     _plot_gs_heatmap(primary_search, cfg.output_gs_heatmap_png)
     _plot_feature_importance(
-        primary_best, primary_scaler, feature_cols, cfg.n_top_features, cfg.output_feature_importance_png
+        primary_best, feature_cols, cfg.n_top_features, cfg.output_feature_importance_png
     )
     _plot_calibration(primary_val_y, primary_val_prob, primary_test_y, primary_test_prob, cfg.output_calibration_png)
 
