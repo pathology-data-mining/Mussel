@@ -9,9 +9,9 @@ Covers the class_mapping branch which was previously buggy:
 import tempfile
 from pathlib import Path
 
-import geopandas as gpd
 import h5py
 import numpy as np
+import pandas as pd
 import pytest
 import yaml
 from PIL import Image
@@ -79,7 +79,7 @@ def test_no_class_mapping_keeps_nonzero_annotations(tmp_path):
     )
     main(cfg)
 
-    gdf = gpd.read_parquet(out_parquet)
+    gdf = pd.read_parquet(out_parquet)
     assert len(gdf) > 0, "Expected annotated tiles in output"
     assert set(gdf["annotation"].unique()) <= {1, 2}
 
@@ -121,7 +121,7 @@ def test_class_mapping_preserves_both_mapped_classes(tmp_path):
     )
     main(cfg)
 
-    gdf = gpd.read_parquet(out_parquet)
+    gdf = pd.read_parquet(out_parquet)
     assert len(gdf) > 0, "Expected tiles in output"
     annotation_values = set(gdf["annotation"].unique())
     assert 0 in annotation_values, "Non-tumor tiles (annotation=0) must be present"
@@ -153,7 +153,7 @@ def test_class_mapping_annotation_values_are_mapped(tmp_path):
     )
     main(cfg)
 
-    gdf = gpd.read_parquet(out_parquet)
+    gdf = pd.read_parquet(out_parquet)
     raw_ids = {2, 5}
     for raw_id in raw_ids:
         assert raw_id not in gdf["annotation"].unique(), (
@@ -185,5 +185,5 @@ def test_unannotated_background_excluded(tmp_path):
     main(cfg)
 
     if Path(out_parquet).exists():
-        gdf = gpd.read_parquet(out_parquet)
+        gdf = pd.read_parquet(out_parquet)
         assert 0 not in gdf["annotation"].unique(), "Background (annotation=0) should be excluded"
