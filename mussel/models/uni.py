@@ -1,4 +1,4 @@
-"""UNI and UNI2 models from MahmoodLab."""
+"""UNI and UNI2-h models from MahmoodLab."""
 
 import logging
 from typing import Callable, List
@@ -49,7 +49,7 @@ class UniModel(TorchModel):
         return _timm_preprocessing(self.obj)
 
 
-@register_model(ModelType.UNI2)
+@register_model(ModelType.UNI2H)
 class Uni2Model(TorchModel):
     def __init__(
         self,
@@ -65,7 +65,7 @@ class Uni2Model(TorchModel):
             gpu_device_id: GPU device ID or list of IDs for multi-GPU (default: None).
         """
         if model_path is None:
-            model_path = ModelType.UNI2.path
+            model_path = ModelType.UNI2H.path
         model_obj = None
         if model_path.startswith("hf-hub:"):
             # UNI2 requires specific architecture parameters

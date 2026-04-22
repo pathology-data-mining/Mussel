@@ -58,7 +58,7 @@ class OptimusModel(TorchModel):
         return _bioptimus_preprocessing()
 
 
-@register_model(ModelType.H_OPTIMUS_1)
+@register_model(ModelType.HOPTIMUS1)
 class HOptimus1Model(TorchModel):
     def __init__(
         self,
@@ -74,7 +74,7 @@ class HOptimus1Model(TorchModel):
             gpu_device_id: GPU device ID or list of IDs for multi-GPU (default: None).
         """
         if model_path is None:
-            model_path = ModelType.H_OPTIMUS_1.path
+            model_path = ModelType.HOPTIMUS1.path
         model_obj = None
         if model_path.startswith("hf-hub:"):
             model_obj = timm.create_model(
@@ -86,7 +86,7 @@ class HOptimus1Model(TorchModel):
         return _bioptimus_preprocessing()
 
 
-@register_model(ModelType.H0_MINI)
+@register_model(ModelType.H0MINI)
 class H0MiniModel(TorchModel):
     def __init__(
         self,
@@ -102,7 +102,7 @@ class H0MiniModel(TorchModel):
             gpu_device_id: GPU device ID or list of IDs for multi-GPU (default: None).
         """
         if model_path is None:
-            model_path = ModelType.H0_MINI.path
+            model_path = ModelType.H0MINI.path
         model_obj = None
         if model_path.startswith("hf-hub:"):
             model_obj = timm.create_model(

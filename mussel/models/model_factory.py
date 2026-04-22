@@ -30,14 +30,14 @@ class ModelType(Enum):
     GOOGLEPATH = 7, "googlepath", "google/path-foundation"
     CONCH1_5 = 8, "conch1_5", "MahmoodLab/TITAN"
     VIRCHOW2 = 9, "virchow2", "hf-hub:paige-ai/Virchow2"
-    UNI2 = 10, "uni2h", "hf-hub:MahmoodLab/UNI2-h"
+    UNI2H = 10, "uni2h", "hf-hub:MahmoodLab/UNI2-h"
     UNI = 11, "uni", "hf-hub:MahmoodLab/UNI"
     GIGAPATH_SLIDE = 12, "gigapath_slide", "hf-hub:prov-gigapath/prov-gigapath"
     TITAN_SLIDE = 13, "titan_slide", "MahmoodLab/TITAN"
     PHIKON = 14, "phikon", "hf-hub:owkin/phikon"
     PHIKON_V2 = 15, "phikon_v2", "hf-hub:owkin/phikon-v2"
-    H_OPTIMUS_1 = 16, "hoptimus1", "hf-hub:bioptimus/H-optimus-1"
-    H0_MINI = 17, "h0mini", "hf-hub:bioptimus/H0-mini"
+    HOPTIMUS1 = 16, "hoptimus1", "hf-hub:bioptimus/H-optimus-1"
+    H0MINI = 17, "h0mini", "hf-hub:bioptimus/H0-mini"
     MIDNIGHT12K = 18, "midnight12k", "hf-hub:kaiko-ai/midnight"
     GPFM = 19, "gpfm", "hf-hub:majiabo/GPFM"
     HIBOU_L = 20, "hibou_l", "histai/hibou-L"
@@ -103,7 +103,7 @@ MODEL_PATCH_SIZES = {
     ModelType.GOOGLEPATH: 224,  # Google Path Foundation
     ModelType.CONCH1_5: 512,
     ModelType.UNI: 256,
-    ModelType.UNI2: 256,
+    ModelType.UNI2H: 256,
     # Slide encoders inherit from their patch encoders
     ModelType.GIGAPATH_SLIDE: 256,
     ModelType.TITAN_SLIDE: 512,
@@ -113,8 +113,8 @@ MODEL_PATCH_SIZES = {
     ModelType.MADELEINE_SLIDE: 512,
     ModelType.PHIKON: 224,
     ModelType.PHIKON_V2: 224,
-    ModelType.H_OPTIMUS_1: 224,
-    ModelType.H0_MINI: 224,
+    ModelType.HOPTIMUS1: 224,
+    ModelType.H0MINI: 224,
     ModelType.MIDNIGHT12K: 224,
     ModelType.GPFM: 224,
     ModelType.HIBOU_L: 224,

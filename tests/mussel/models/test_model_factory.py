@@ -23,7 +23,7 @@ def test_get_default_patch_size():
     assert get_default_patch_size(ModelType.GIGAPATH) == 256
     assert get_default_patch_size(ModelType.GIGAPATH_SLIDE) == 256
     assert get_default_patch_size(ModelType.UNI) == 256
-    assert get_default_patch_size(ModelType.UNI2) == 256
+    assert get_default_patch_size(ModelType.UNI2H) == 256
 
     assert get_default_patch_size(ModelType.CTRANSPATH) == 224
     assert get_default_patch_size(ModelType.VIRCHOW) == 224
@@ -39,8 +39,8 @@ def test_get_default_patch_size():
     for mt in (
         ModelType.PHIKON,
         ModelType.PHIKON_V2,
-        ModelType.H_OPTIMUS_1,
-        ModelType.H0_MINI,
+        ModelType.HOPTIMUS1,
+        ModelType.H0MINI,
         ModelType.MIDNIGHT12K,
         ModelType.GPFM,
         ModelType.HIBOU_L,
