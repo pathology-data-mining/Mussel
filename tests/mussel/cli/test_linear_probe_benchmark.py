@@ -1,5 +1,7 @@
 import json
+import math
 import os
+from unittest.mock import patch
 
 import geopandas as gpd
 import numpy as np
@@ -307,3 +309,276 @@ def test_positive_annotation_label_one(tmp_path):
 
     # Both classes should be present, so AUC is meaningful (> 0)
     assert summary["test"]["tile_auc_roc"]["mean"] > 0.0
+
+
+# ---------------------------------------------------------------------------
+# Helpers — multiclass
+# ---------------------------------------------------------------------------
+
+
+def _make_multiclass_parquet(
+    tmp_path,
+    n_classes=3,
+    n_slides_per_class=12,
+    tiles_per_slide=10,
+    n_features=8,
+    seed=0,
+    with_background=False,
+):
+    """Create a GeoParquet with *n_classes* non-zero annotation values.
+
+    Each class gets its own dedicated slides.  If *with_background* is True,
+    an extra slide whose tiles all carry annotation=0 is appended so that
+    background-exclusion tests can verify that those rows are dropped.
+    """
+    rng = np.random.default_rng(seed)
+    rows = []
+    for cls in range(1, n_classes + 1):
+        for slide_idx in range(n_slides_per_class):
+            slide_id = f"slide_c{cls}_{slide_idx:03d}"
+            for tile_idx in range(tiles_per_slide):
+                row = {
+                    "slide_id": slide_id,
+                    "annotation": cls,
+                    "overlap_area": 0.8,
+                    "tile_area": 1.0,
+                    "geometry": box(tile_idx * 256, 0, (tile_idx + 1) * 256, 256),
+                }
+                for i, v in enumerate(rng.standard_normal(n_features)):
+                    row[f"feature_{i}"] = v
+                rows.append(row)
+    if with_background:
+        for tile_idx in range(tiles_per_slide):
+            row = {
+                "slide_id": "slide_background_000",
+                "annotation": 0,
+                "overlap_area": 0.8,
+                "tile_area": 1.0,
+                "geometry": box(tile_idx * 256, 0, (tile_idx + 1) * 256, 256),
+            }
+            for i, v in enumerate(rng.standard_normal(n_features)):
+                row[f"feature_{i}"] = v
+            rows.append(row)
+    gdf = gpd.GeoDataFrame(rows, geometry="geometry")
+    path = str(tmp_path / "multiclass_features.parquet")
+    gdf.to_parquet(path)
+    return path
+
+
+def _cfg_multiclass(tmp_path, parquet_path, **overrides):
+    """Return a config with multiclass=True."""
+    return _cfg(tmp_path, parquet_path, multiclass=True, **overrides)
+
+
+# ---------------------------------------------------------------------------
+# Tests — multiclass integration
+# ---------------------------------------------------------------------------
+
+
+def test_main_multiclass_runs_and_outputs_files(tmp_path):
+    """main() with multiclass=True produces all expected output files."""
+    parquet_path = _make_multiclass_parquet(tmp_path)
+    cfg = _cfg_multiclass(tmp_path, parquet_path)
+    main(cfg)
+
+    expected = [
+        cfg.output_csv,
+        cfg.output_png,
+        cfg.output_test_csv,
+        cfg.output_test_png,
+        cfg.output_roc_png,
+        cfg.output_pr_png,
+        cfg.output_gs_heatmap_png,
+        cfg.output_feature_importance_png,
+        cfg.output_calibration_png,
+        cfg.output_cv_results_csv,
+        cfg.output_summary_json,
+    ]
+    for path in expected:
+        assert os.path.exists(path), f"expected output not written: {path}"
+
+
+def test_main_multiclass_summary_json_structure(tmp_path):
+    """multiclass summary JSON has tile metrics but omits binary-only keys."""
+    parquet_path = _make_multiclass_parquet(tmp_path)
+    cfg = _cfg_multiclass(tmp_path, parquet_path)
+    main(cfg)
+
+    with open(cfg.output_summary_json) as f:
+        summary = json.load(f)
+
+    for split in ("val", "test"):
+        assert split in summary
+        assert "tile_f1" in summary[split]
+        assert "tile_auc_roc" in summary[split]
+        # binary-only metrics must be absent in multiclass mode
+        assert "tile_average_precision" not in summary[split], (
+            f"tile_average_precision should not appear in multiclass {split}"
+        )
+        assert "slide_auc_roc" not in summary[split], (
+            f"slide_auc_roc should not appear in multiclass {split}"
+        )
+
+    # Bootstrap CI must be present on the test split
+    ci = summary["test"]["tile_auc_roc"].get("bootstrap_ci_95")
+    assert ci is not None, "bootstrap_ci_95 missing from multiclass test AUC"
+    lo, hi = ci
+    # lo/hi serialise as null when bootstrap found no valid samples; otherwise check bounds
+    if lo is not None and hi is not None:
+        assert 0.0 <= lo <= hi <= 1.0
+
+
+def test_main_multiclass_report_csv_omits_average_precision(tmp_path):
+    """multiclass confusion-matrix CSV includes auc_roc but not average_precision."""
+    parquet_path = _make_multiclass_parquet(tmp_path)
+    cfg = _cfg_multiclass(tmp_path, parquet_path)
+    main(cfg)
+
+    for path in (cfg.output_csv, cfg.output_test_csv):
+        report = pd.read_csv(path, index_col=0)
+        assert "auc_roc" in report.index, f"auc_roc missing in {path}"
+        assert "average_precision" not in report.index, (
+            f"average_precision should not appear in multiclass report {path}"
+        )
+
+
+def test_main_multiclass_excludes_background_tiles(tmp_path):
+    """Background tiles (annotation == 0) are excluded from the training matrix."""
+    from sklearn.model_selection import GridSearchCV
+
+    parquet_path = _make_multiclass_parquet(tmp_path, with_background=True)
+    cfg = _cfg_multiclass(tmp_path, parquet_path)
+
+    captured = {}
+    original_fit = GridSearchCV.fit
+
+    def capturing_fit(self, X, y, **kwargs):
+        if "y_train" not in captured:
+            captured["y_train"] = y.copy()
+        return original_fit(self, X, y, **kwargs)
+
+    with patch.object(GridSearchCV, "fit", capturing_fit):
+        main(cfg)
+
+    assert "y_train" in captured, "GridSearchCV.fit was never called"
+    assert 0 not in np.unique(captured["y_train"]), (
+        "background class 0 must be excluded from the training set"
+    )
+
+
+def test_main_multiclass_multi_seed(tmp_path):
+    """multiclass mode with n_seeds=2 aggregates metrics across seeds correctly."""
+    parquet_path = _make_multiclass_parquet(tmp_path)
+    cfg = _cfg_multiclass(tmp_path, parquet_path, n_seeds=2)
+    main(cfg)
+
+    with open(cfg.output_summary_json) as f:
+        summary = json.load(f)
+
+    assert summary["n_seeds"] == 2
+    for split in ("val", "test"):
+        assert summary[split]["tile_auc_roc"]["std"] >= 0.0
+
+
+# ---------------------------------------------------------------------------
+# Tests — multiclass unit helpers
+# ---------------------------------------------------------------------------
+
+
+def test_compute_metrics_multiclass_returns_expected_keys():
+    """_compute_metrics with 2-D y_prob returns tile keys only; no slide/AP keys."""
+    rng = np.random.default_rng(5)
+    n = 90
+    y = np.concatenate(
+        [np.ones(30, dtype=int), np.full(30, 2, dtype=int), np.full(30, 3, dtype=int)]
+    )
+    classes = np.array([1, 2, 3])
+
+    # Build an informative probability matrix: each class gets a boost on its column.
+    y_prob = rng.dirichlet([1.0, 1.0, 1.0], size=n)
+    for i, c in enumerate(classes):
+        y_prob[y == c, i] += 1.0
+    y_prob /= y_prob.sum(axis=1, keepdims=True)
+
+    df = pd.DataFrame({"slide_id": [f"s{i}" for i in range(n)], "y": y})
+    metrics = _compute_metrics(df, y_prob, "test", classes=classes)
+
+    assert "tile_f1" in metrics
+    assert "tile_auc_roc" in metrics
+    assert 0.0 <= metrics["tile_f1"] <= 1.0
+    assert 0.0 <= metrics["tile_auc_roc"] <= 1.0
+    # binary-only metrics must not appear in multiclass output
+    assert "tile_average_precision" not in metrics
+    assert "slide_f1" not in metrics
+    assert "slide_auc_roc" not in metrics
+    assert "slide_average_precision" not in metrics
+
+
+def test_compute_metrics_multiclass_absent_class():
+    """_compute_metrics handles a split where one class is entirely absent."""
+    from sklearn.metrics import roc_auc_score as _roc_auc
+
+    rng = np.random.default_rng(6)
+    n = 60
+    # y has only classes 1 and 2; class 3 is absent from this split
+    y = np.concatenate([np.ones(30, dtype=int), np.full(30, 2, dtype=int)])
+    classes = np.array([1, 2, 3])
+
+    # 3-column probability matrix as would come from a model trained on all 3 classes
+    y_prob = rng.dirichlet([1.0, 1.0, 0.1], size=n)
+
+    df = pd.DataFrame({"slide_id": [f"s{i}" for i in range(n)], "y": y})
+    metrics = _compute_metrics(df, y_prob, "test", classes=classes)
+
+    assert "tile_f1" in metrics
+    assert "tile_auc_roc" in metrics
+    assert not math.isnan(metrics["tile_auc_roc"])
+
+    # AUC must be the macro mean of OvR AUCs for the *present* classes only (1 and 2).
+    expected_auc = float(
+        np.mean(
+            [
+                _roc_auc((y == 1).astype(int), y_prob[:, 0]),
+                _roc_auc((y == 2).astype(int), y_prob[:, 1]),
+            ]
+        )
+    )
+    assert abs(metrics["tile_auc_roc"] - expected_auc) < 1e-6
+
+
+def test_bootstrap_ci_auc_multiclass():
+    """_bootstrap_ci_auc with 3-class 2-D probabilities returns valid bounds."""
+    rng = np.random.default_rng(7)
+    n = 90
+    y = np.concatenate(
+        [np.ones(30, dtype=int), np.full(30, 2, dtype=int), np.full(30, 3, dtype=int)]
+    )
+    classes = np.array([1, 2, 3])
+
+    # Informative probability matrix
+    y_prob = rng.dirichlet([1.0, 1.0, 1.0], size=n)
+    for i, c in enumerate(classes):
+        y_prob[y == c, i] += 1.0
+    y_prob /= y_prob.sum(axis=1, keepdims=True)
+
+    lo, hi = _bootstrap_ci_auc(y_prob, y, n_bootstrap=100, random_state=0, classes=classes)
+    assert 0.0 <= lo <= hi <= 1.0
+
+
+def test_bootstrap_ci_auc_multiclass_absent_class():
+    """When a class is entirely absent from y, bootstrap CI returns (nan, nan).
+
+    The current implementation requires all *n_classes* classes to appear in every
+    bootstrap sample.  When fewer than n_classes unique labels exist in y, every
+    bootstrap draw fails the uniqueness check, scores is empty, and (nan, nan) is
+    returned.  This test documents that known behaviour.
+    """
+    rng = np.random.default_rng(8)
+    n = 60
+    # y has only classes 1 and 2; class 3 is absent
+    y = np.concatenate([np.ones(30, dtype=int), np.full(30, 2, dtype=int)])
+    classes = np.array([1, 2, 3])
+    y_prob = rng.dirichlet([1.0, 1.0, 0.1], size=n)
+
+    lo, hi = _bootstrap_ci_auc(y_prob, y, n_bootstrap=100, random_state=0, classes=classes)
+    assert math.isnan(lo) and math.isnan(hi)
