@@ -23,35 +23,52 @@ from mussel.utils.segment import (draw_slide_mask, save_patches_png,
 @dataclass
 class SegConfig:
     """
-    patch_size (int): Patch size at specified mpp (microns per pixel).
-    step_size (int): Optional step size. Defaults to the patch size. Overridden by overlap if set.
-    overlap (int): Patch overlap in absolute pixels (0 = no overlap). step_size = patch_size - overlap.
-    mpp (float): Desired microns per pixel
-    seg_level (int): Tessellation pyramid level. If negative, use best level for factor=64 downsample.
-    segment_threshold (int): Pixel threshold value . If pixel value smaller than or equal to threshold, it is set to 0, otherwise it is set to the maximum value (segment_max_value).
-    segment_max_value (int): Maximum pixel value.
-    median_blur_ksize (int): Aperture linear size. it must be odd and greater than 1. image is blurred with median filter.
-    morphology_ex_kernel (int): Kernel for morphological closing applied to the tissue mask
+    patch_size (int): Tile size in pixels at the resolution set by ``mpp``.
+    step_size (int): Step size in pixels between tile origins. Defaults to ``patch_size`` (no overlap).
+        Overridden by ``overlap`` if set.
+    overlap (int): Tile overlap in absolute pixels (0 = no overlap).
+        Sets ``step_size = patch_size - overlap``.
+    mpp (float): Target resolution for tile extraction in microns per pixel (µm/px).
+        0.5 ≈ 20× magnification; 0.25 ≈ 40×.
+    seg_level (int): Slide pyramid level used for tissue segmentation. If negative, the level
+        closest to a 64× downsample is chosen automatically.
+    segment_threshold (int): HSV-value threshold for the ``"classic"`` and ``"otsu"`` backends.
+        Pixels with value ≤ threshold are set to 0 (background); all others are set to
+        ``segment_max_value`` (foreground). Ignored by the ``"neural"`` backend.
+    segment_max_value (int): Foreground pixel value assigned in the binary tissue mask (default 255).
+        Ignored by the ``"neural"`` backend.
+    median_blur_ksize (int): Kernel size for the median blur applied to the tissue mask before
+        thresholding. Must be an odd integer greater than 1. Larger values smooth small noise.
+        Ignored by the ``"neural"`` backend.
+    morphology_ex_kernel (int): Kernel size for morphological closing applied to the tissue mask
         (0 to disable). Applied regardless of ``seg_model``.
-    ref_patch_size (int): Reference patch size to use for tissue area and hole area thresholding.
+    ref_patch_size (int): Reference patch size (in pixels) used to scale the ``tissue_area_threshold``
+        and ``hole_area_threshold`` values.
     use_otsu (bool): **Deprecated** — use ``seg_model="otsu"`` instead.
-    tissue_area_threshold (int): Tissue area threshold. Foreground contour area needs to exceed this threshold (scaled by reference patch size) to be included as foreground.
-    hole_area_threshold (int): Hole area threshold. Hole contour area needs to exceed this threshold (scaled by reference patch size) to be included as a hole.
-    max_num_holes (int): Maximum number of holes.
-    keep_ids (List[int]): List of contour IDs to keep.
-    exclude_ids (List[int]): List of contour IDs to exclude.
-    min_tissue_proportion (float): Minimum fraction of patch area that must be tissue (0.0–1.0). Patches below this are discarded.
-    remove_artifacts (bool): If True, apply artifact removal before patching (requires artifact_remover_fn).
-    remove_penmarks (bool): If True, apply pen mark removal before patching (requires artifact_remover_fn).
-    seg_model (str): Segmentation backend: ``"classic"`` (default, HSV + fixed threshold),
-        ``"otsu"`` (HSV + Otsu's automatic threshold), or ``"neural"`` (DeepLabV3,
-        requires torch). ``segment_threshold`` and ``median_blur_ksize`` are ignored
-        for ``"neural"``; ``morphology_ex_kernel`` applies to all three modes.
+    tissue_area_threshold (int): Minimum foreground contour area (in units of ``ref_patch_size²``)
+        required for a region to be included as tissue.
+    hole_area_threshold (int): Minimum hole contour area (in units of ``ref_patch_size²``)
+        required for a hole to be excluded from the tissue mask.
+    max_num_holes (int): Maximum number of holes retained per tissue contour.
+    keep_ids (List[int]): Contour IDs to keep; all others are discarded. Empty list keeps all.
+    exclude_ids (List[int]): Contour IDs to discard. Empty list excludes none.
+    min_tissue_proportion (float): Minimum fraction of tile area that must be tissue (0.0–1.0).
+        Tiles below this threshold are discarded.
+    remove_artifacts (bool): If True, apply artifact removal to the tissue mask before patching
+        (requires ``artifact_remover_fn`` to be provided).
+    remove_penmarks (bool): If True, apply pen-mark removal to the tissue mask before patching
+        (requires ``artifact_remover_fn`` to be provided).
+    seg_model (str): Segmentation backend:
+        ``"classic"`` (default) — HSV color space + fixed intensity threshold;
+        ``"otsu"`` — HSV color space + Otsu's automatic threshold;
+        ``"neural"`` — DeepLabV3 deep-learning model (requires torch; weights downloaded
+        automatically from HuggingFace on first use).
+        ``segment_threshold`` and ``median_blur_ksize`` are ignored for ``"neural"``;
+        ``morphology_ex_kernel`` applies to all three backends.
     slide_mpp_override (float): If set, use this value (µm/px) as the slide's native MPP instead of
-        reading it from slide metadata. Use this when the slide lacks MPP tags and the
-        metadata-based fallback produces incorrect results.
+        reading it from slide metadata. Useful when MPP tags are missing or incorrect.
     artifact_remover_fn: Optional callable ``(img, mask, mpp) -> mask`` where ``img`` is the RGB
-        thumbnail, ``mask`` is the binary tissue mask, and ``mpp`` is the thumbnail's microns-per-pixel.
+        thumbnail, ``mask`` is the binary tissue mask, and ``mpp`` is the thumbnail's µm/px.
         Returns a corrected binary mask. Use :class:`~mussel.utils.artifact_removal.GrandQCArtifactRemover`
         for a ready-made GrandQC-based implementation.
     """
@@ -96,6 +113,17 @@ class SegConfig:
 
 @dataclass
 class BiopsySegConfig(SegConfig):
+    """Preset tuned for needle-core and punch biopsies.
+
+    Biopsies are small, elongated tissue fragments that occupy a narrow strip of the slide.
+    This preset uses a lower tissue-area threshold (1) and fewer holes (2) so that small,
+    disconnected tissue cores are retained rather than filtered out.
+
+    When used with ``seg_model="neural"``, ``segment_threshold`` and ``median_blur_ksize``
+    are ignored (a warning is emitted); ``morphology_ex_kernel``, ``tissue_area_threshold``,
+    ``hole_area_threshold``, and ``max_num_holes`` still take effect.
+    """
+
     segment_threshold: int = 15
     median_blur_ksize: int = 11
     morphology_ex_kernel: int = 2
@@ -106,6 +134,18 @@ class BiopsySegConfig(SegConfig):
 
 @dataclass
 class ResectionSegConfig(SegConfig):
+    """Preset tuned for surgical resection specimens.
+
+    Resections are large tissue sections that typically contain substantial background and
+    cavities (e.g. necrosis, fat). This preset uses stronger morphological closing (kernel 4)
+    to bridge gaps, while keeping the default area thresholds to discard small debris.
+
+    When used with ``seg_model="neural"``, ``segment_threshold`` and ``median_blur_ksize``
+    are ignored (a warning is emitted). Only ``morphology_ex_kernel=4`` differs from the
+    ``default`` preset in that case, so consider using ``default seg_config.seg_model=neural``
+    instead to avoid the warning.
+    """
+
     segment_threshold: int = 15
     median_blur_ksize: int = 11
     morphology_ex_kernel: int = 4
@@ -116,6 +156,17 @@ class ResectionSegConfig(SegConfig):
 
 @dataclass
 class TcgaSegConfig(SegConfig):
+    """Preset tuned for TCGA (The Cancer Genome Atlas) whole-slide images.
+
+    TCGA slides often have lightly stained or faded tissue. This preset uses a lower
+    ``segment_threshold`` (8) so that pale tissue regions are not discarded as background,
+    with stronger morphological closing (kernel 4) to unify fragmented foreground regions.
+
+    When used with ``seg_model="neural"``, ``segment_threshold`` is ignored (its non-default
+    value triggers a warning); ``morphology_ex_kernel=4``, ``tissue_area_threshold=16``, and
+    ``hole_area_threshold=4`` still take effect and remain beneficial.
+    """
+
     segment_threshold: int = 8
     median_blur_ksize: int = 7
     morphology_ex_kernel: int = 4
@@ -127,10 +178,15 @@ class TcgaSegConfig(SegConfig):
 @dataclass
 class VisConfig:
     """
-    vis_level (int): pyramid level to visualize. If negative, use best level for factor=64 downsample.
-    outline (str): color of the outline of the tissue mask.
-    fill (tuple): RGBA color of the filled tissue mask.
-    custom_downsample (Optional[int]): custom downsample factor for visualization. If None, use the default downsample factor.
+    Controls the appearance of tissue-mask and grid-mask overlay images.
+
+    vis_level (int): Slide pyramid level to use as the visualization base image.
+        If negative, the level closest to a 64× downsample is chosen automatically.
+    outline (str): PIL color string for the tissue contour outline (e.g. ``"black"``, ``"red"``).
+    fill (tuple): RGBA color (0–255 each) for the filled tissue region (e.g. ``(255, 0, 0, 80)``
+        for semi-transparent red).
+    custom_downsample (Optional[int]): Additional integer downsample applied on top of the
+        pyramid level. If None, no extra downsampling is applied.
     """
 
     vis_level: int = -1
@@ -142,9 +198,14 @@ class VisConfig:
 @dataclass
 class PngConfig:
     """
-    filter_black_white (bool): If True, filter out black and white patches.
-    white_threshold (int): Threshold for white patches.
-    black_threshold (int): Threshold for black patches.
+    Controls filtering applied when saving tiles as PNG files (``output_png_dir``).
+
+    filter_black_white (bool): If True, discard tiles that appear predominantly black or white
+        before saving.
+    white_threshold (int): Maximum mean HSV saturation (0–255) for a tile to be considered white.
+        Tiles with mean saturation below this value are discarded as background.
+    black_threshold (int): Maximum mean RGB value (0–255) for a tile to be considered black.
+        Tiles where all three RGB channels average below this value are discarded.
     """
 
     filter_black_white: bool = True
@@ -158,18 +219,22 @@ defaults = ["_self_", {"seg_config": "default"}]
 @dataclass
 class TessellateConfig:
     """
-    slide_path (str): Path to the whole-slide image.
-    slide_id (Optional[str]): Optional slide ID. If None, the slide filename without extension is used.
-    output_h5_path (str): Path to save the HDF5 file with tile coordinates.
-    output_png_dir (Optional[str]): Directory to save patches as PNG files.
-    output_mask_path (Optional[str]): Path to save the mask image.
-    output_grid_mask_path (Optional[str]): Path to save the grid mask image.
-    output_thumbnail_path (Optional[str]): Path to save the thumbnail image.
-    thumbnail_size (tuple): Size of the thumbnail image.
-    seg_config (SegConfig): Configuration for segmentation parameters.
-    vis_config (VisConfig): Configuration for visualization parameters.
-    png_config (PngConfig): Configuration for PNG saving parameters.
-    num_workers (int): Number of workers for saving patches.
+    slide_path (str): Path to the whole-slide image (SVS, TIFF, NDPI, etc.).
+    slide_id (Optional[str]): Identifier written into the HDF5 output. Defaults to the slide
+        filename without extension.
+    output_h5_path (str): Path for the HDF5 output file containing tile coordinates and metadata.
+    output_png_dir (Optional[str]): Directory to save each tile as an individual PNG file.
+        Filtered by ``png_config`` settings when set.
+    output_mask_path (Optional[str]): Path to save a PNG overlay showing the segmented tissue
+        polygons on a slide thumbnail.
+    output_grid_mask_path (Optional[str]): Path to save a PNG overlay showing the selected tile
+        grid on a slide thumbnail.
+    output_thumbnail_path (Optional[str]): Path to save a plain slide thumbnail (no overlay).
+    thumbnail_size (tuple): Width × height in pixels for the saved thumbnail (default 1024×1024).
+    seg_config (SegConfig): Segmentation and tiling parameters (see below).
+    vis_config (VisConfig): Visualization appearance parameters for mask overlays (see below).
+    png_config (PngConfig): Filtering parameters applied when saving PNG tiles (see below).
+    num_workers (int): Number of parallel workers used when saving PNG tiles.
     """
 
     defaults: List[Any] = field(default_factory=lambda: defaults)
@@ -189,8 +254,20 @@ class TessellateConfig:
 
 desc_doc = """== ${hydra.help.app_name} ==
 
-tessellate tiles a whole-slide image.  The tile coordinates are written to an HDF5 (.h5)
-file for use in downstream processing, such as feature extraction.
+tessellate tiles a whole-slide image and detects foreground tissue.  Tile coordinates and
+slide metadata are written to an HDF5 (.h5) file for use in downstream steps such as
+extract_features and tessellate_extract_features.
+
+Key options (use Hydra override syntax, e.g. seg_config.mpp=0.25):
+  slide_path          Path to the slide file (required)
+  output_h5_path      Path for the output HDF5 file (required)
+  seg_config          Preset segmentation profile: default | biopsy | resection | tcga
+  seg_config.mpp      Target resolution in µm/px (default 0.5 ≈ 20×; 0.25 ≈ 40×)
+  seg_config.patch_size  Tile size in pixels at the target MPP (default 256)
+  seg_config.seg_model   Segmentation backend: classic | otsu | neural
+
+Example:
+  tessellate slide_path=slide.svs output_h5_path=out.h5 seg_config=biopsy
 """
 
 parameter_doc = f"""

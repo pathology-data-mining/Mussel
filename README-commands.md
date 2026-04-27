@@ -94,6 +94,23 @@ tessellate_extract_features slide_path=slide.svs seg_config.slide_mpp_override=0
 export_tiles slide_path=slide.svs slide_mpp_override=0.5 ...
 ```
 
+#### Segmentation presets
+
+Pass `seg_config=<preset>` to select a built-in segmentation profile tuned for a specific
+specimen type. Individual parameters can still be overridden after the preset:
+
+```bash
+tessellate slide_path=slide.svs output_h5_path=out.h5 seg_config=biopsy
+tessellate slide_path=slide.svs output_h5_path=out.h5 seg_config=tcga seg_config.mpp=0.25
+```
+
+| Preset | Best for | Key differences from `default` | With `seg_model=neural` |
+|---|---|---|---|
+| `default` | General use | Baseline values (see table below). | Fully compatible; no warnings. |
+| `biopsy` | Needle-core / punch biopsies | Lower area thresholds (`tissue_area_threshold=1`, `hole_area_threshold=1`) to keep small tissue cores; fewer holes (`max_num_holes=2`). | Area thresholds and `max_num_holes` still apply; `segment_threshold`/`median_blur_ksize` are ignored with a warning. |
+| `resection` | Surgical resection specimens | Stronger morphological closing (`morphology_ex_kernel=4`) to bridge gaps in large sections; same area thresholds as `default`. | Only `morphology_ex_kernel=4` has effect; `segment_threshold`/`median_blur_ksize` are ignored with a warning. Consider `default seg_config.seg_model=neural seg_config.morphology_ex_kernel=4` to avoid the warning. |
+| `tcga` | TCGA whole-slide images | Lower `segment_threshold=8` to capture pale/faded tissue; stronger closing (`morphology_ex_kernel=4`); reduced area thresholds. | `segment_threshold` is ignored with a warning (`median_blur_ksize=7` matches the default so no second warning); `morphology_ex_kernel=4` and area thresholds still apply. |
+
 #### Segmentation and patching options
 
 | Parameter | Default | Description |
