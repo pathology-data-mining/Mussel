@@ -45,10 +45,13 @@ class SegConfig:
     ref_patch_size (int): Reference patch size (in pixels) used to scale the ``tissue_area_threshold``
         and ``hole_area_threshold`` values.
     use_otsu (bool): **Deprecated** — use ``seg_model="otsu"`` instead.
-    tissue_area_threshold (int): Minimum foreground contour area (in units of ``ref_patch_size²``)
-        required for a region to be included as tissue.
-    hole_area_threshold (int): Minimum hole contour area (in units of ``ref_patch_size²``)
-        required for a hole to be excluded from the tissue mask.
+    tissue_area_threshold (int): Minimum size of a tissue contour, expressed as the number of
+        tiles (at the configured ``patch_size`` and ``mpp``) the region must span. Contours
+        smaller than this are discarded as debris. Default 100 (≈ a ~3.2 mm² region at
+        256 px / 0.5 µm/px). Set to 1 to keep all contours (useful for biopsies).
+    hole_area_threshold (int): Minimum size of a hole inside a tissue contour, expressed as the
+        number of tiles it spans. Holes smaller than this are filled in (treated as tissue).
+        Default 16.
     max_num_holes (int): Maximum number of holes retained per tissue contour.
     keep_ids (List[int]): Contour IDs to keep; all others are discarded. Empty list keeps all.
     exclude_ids (List[int]): Contour IDs to discard. Empty list excludes none.

@@ -118,7 +118,9 @@ tessellate slide_path=slide.svs output_h5_path=out.h5 seg_config=tcga seg_config
 | `seg_config.mpp` | `0.5` | Target resolution for tile extraction (µm/px). |
 | `seg_config.patch_size` | `256` | Tile size in pixels at the target MPP. |
 | `seg_config.overlap` | `0` | Patch overlap in absolute pixels. Sets `step_size = patch_size - overlap`. |
-| `seg_config.min_tissue_proportion` | `0.0` | Discard patches where the tissue fraction is below this value (0.0–1.0). |
+| `seg_config.min_tissue_proportion` | `0.0` | Per-tile filter: discard tiles where the fraction of tissue pixels is below this value (0.0–1.0). Applied after tiling; `0.1` discards mostly-background edge tiles. |
+| `seg_config.tissue_area_threshold` | `100` | Pre-tile filter: minimum size of a tissue **region** (contour), in number of tiles. Regions smaller than this are discarded as debris before tiling begins. Default 100 ≈ a ~3.2 mm² blob at 256 px / 0.5 µm/px. Set to `1` to keep all regions (recommended for biopsies). |
+| `seg_config.hole_area_threshold` | `16` | Minimum size of a hole inside a tissue region, in number of tiles. Holes smaller than this are filled (treated as tissue). |
 | `seg_config.remove_artifacts` | `false` | Enable artifact removal (requires `artifact_remover_fn` hook). |
 | `seg_config.remove_penmarks` | `false` | Enable pen-mark removal (requires `artifact_remover_fn` hook). |
 | `seg_config.seg_model` | `"classic"` | Segmentation backend: `"classic"` (HSV + fixed threshold), `"otsu"` (HSV + Otsu automatic threshold), or `"neural"` (deep learning; see below). Note: the old `seg_config.use_otsu=true` flag is deprecated — use `seg_model=otsu` instead. |
