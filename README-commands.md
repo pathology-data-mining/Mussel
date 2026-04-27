@@ -94,6 +94,23 @@ tessellate_extract_features slide_path=slide.svs seg_config.slide_mpp_override=0
 export_tiles slide_path=slide.svs slide_mpp_override=0.5 ...
 ```
 
+#### Segmentation presets
+
+Pass `seg_config=<preset>` to select a built-in segmentation profile tuned for a specific
+specimen type. Individual parameters can still be overridden after the preset:
+
+```bash
+tessellate slide_path=slide.svs output_h5_path=out.h5 seg_config=biopsy
+tessellate slide_path=slide.svs output_h5_path=out.h5 seg_config=tcga seg_config.mpp=0.25
+```
+
+| Preset | Best for | Key differences from `default` | With `seg_model=neural` |
+|---|---|---|---|
+| `default` | General use | Baseline values (see table below). | Fully compatible; no warnings. |
+| `biopsy` | Needle-core / punch biopsies | Lower area thresholds (`tissue_area_threshold=1`, `hole_area_threshold=1`) to keep small tissue cores; fewer holes (`max_num_holes=2`). | Area thresholds and `max_num_holes` still apply; `segment_threshold`/`median_blur_ksize` are ignored with a warning. |
+| `resection` | Surgical resection specimens | Stronger morphological closing (`morphology_ex_kernel=4`) to bridge gaps in large sections; same area thresholds as `default`. | Only `morphology_ex_kernel=4` has effect; `segment_threshold`/`median_blur_ksize` are ignored with a warning. Consider `default seg_config.seg_model=neural seg_config.morphology_ex_kernel=4` to avoid the warning. |
+| `tcga` | TCGA whole-slide images | Lower `segment_threshold=8` to capture pale/faded tissue; stronger closing (`morphology_ex_kernel=4`); reduced area thresholds. | `segment_threshold` is ignored with a warning (`median_blur_ksize=7` matches the default so no second warning); `morphology_ex_kernel=4` and area thresholds still apply. |
+
 #### Segmentation and patching options
 
 | Parameter | Default | Description |
@@ -101,7 +118,9 @@ export_tiles slide_path=slide.svs slide_mpp_override=0.5 ...
 | `seg_config.mpp` | `0.5` | Target resolution for tile extraction (µm/px). |
 | `seg_config.patch_size` | `256` | Tile size in pixels at the target MPP. |
 | `seg_config.overlap` | `0` | Patch overlap in absolute pixels. Sets `step_size = patch_size - overlap`. |
-| `seg_config.min_tissue_proportion` | `0.0` | Discard patches where the tissue fraction is below this value (0.0–1.0). |
+| `seg_config.min_tissue_proportion` | `0.0` | Per-tile filter: discard tiles where the fraction of tissue pixels is below this value (0.0–1.0). Applied after tiling; `0.1` discards mostly-background edge tiles. |
+| `seg_config.tissue_area_threshold` | `100` | Pre-tile filter: minimum size of a tissue **region** (contour), in number of tiles. Regions smaller than this are discarded as debris before tiling begins. Default 100 ≈ a ~3.2 mm² blob at 256 px / 0.5 µm/px. Set to `1` to keep all regions (recommended for biopsies). |
+| `seg_config.hole_area_threshold` | `16` | Minimum size of a hole inside a tissue region, in number of tiles. Holes smaller than this are filled (treated as tissue). |
 | `seg_config.remove_artifacts` | `false` | Enable artifact removal (requires `artifact_remover_fn` hook). |
 | `seg_config.remove_penmarks` | `false` | Enable pen-mark removal (requires `artifact_remover_fn` hook). |
 | `seg_config.seg_model` | `"classic"` | Segmentation backend: `"classic"` (HSV + fixed threshold), `"otsu"` (HSV + Otsu automatic threshold), or `"neural"` (deep learning; see below). Note: the old `seg_config.use_otsu=true` flag is deprecated — use `seg_model=otsu` instead. |
