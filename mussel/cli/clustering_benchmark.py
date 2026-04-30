@@ -45,8 +45,8 @@ class ClusteringBenchmarkConfig:
     dbscan_min_samples (int): DBSCAN minimum samples per core point (default 5).
     umap_n_neighbors (int): UMAP n_neighbors (default 15).
     umap_min_dist (float): UMAP min_dist (default 0.1).
-    umap_n_components (int): UMAP output dimensionality — must be 2 for plotting
-        (default 2).
+    umap_n_components (int): UMAP output dimensionality — 2 for 2-D plots or 3 for
+        3-D scatter plots (default 2).
     umap_subsample (int): Maximum number of tiles used for UMAP projection (random
         subsample for speed; default 10000). Use 0 to disable subsampling.
     random_state (int): Random seed (default 42).
@@ -252,31 +252,33 @@ def _plot_umap(
     """UMAP scatter-plot grid.
 
     Rows = algorithms, columns = [cluster coloring, annotation coloring].
+    Supports both 2-D (embedding with 2 columns) and 3-D (3 columns).
     """
     n_algos = len(algo_names)
-    fig, axes = plt.subplots(n_algos, 2, figsize=(10, 4 * n_algos), squeeze=False)
+    n_components = embedding.shape[1]
+    is_3d = n_components == 3
+
+    fig = plt.figure(figsize=(10, 4 * n_algos))
 
     for row, algo in enumerate(algo_names):
         cluster_labels = labels_by_algo[algo][subsample_idx]
         annot_labels = true_labels[subsample_idx]
 
+        proj = "3d" if is_3d else None
+        ax_cl = fig.add_subplot(n_algos, 2, row * 2 + 1, projection=proj)
+        ax_an = fig.add_subplot(n_algos, 2, row * 2 + 2, projection=proj)
+
+        coords = tuple(embedding[:, i] for i in range(n_components))
+
         # Left: cluster coloring
-        ax_cl = axes[row][0]
-        scatter = ax_cl.scatter(
-            embedding[:, 0], embedding[:, 1],
-            c=cluster_labels, cmap="tab20", s=2, alpha=0.5, rasterized=True,
-        )
+        scatter = ax_cl.scatter(*coords, c=cluster_labels, cmap="tab20", s=2, alpha=0.5, rasterized=True)
         plt.colorbar(scatter, ax=ax_cl, label="Cluster")
         ax_cl.set_title(f"{algo} — clusters")
         ax_cl.set_xlabel("UMAP-1")
         ax_cl.set_ylabel("UMAP-2")
 
         # Right: annotation coloring
-        ax_an = axes[row][1]
-        scatter2 = ax_an.scatter(
-            embedding[:, 0], embedding[:, 1],
-            c=annot_labels, cmap="tab10", s=2, alpha=0.5, rasterized=True,
-        )
+        scatter2 = ax_an.scatter(*coords, c=annot_labels, cmap="tab10", s=2, alpha=0.5, rasterized=True)
         plt.colorbar(scatter2, ax=ax_an, label="Annotation")
         ax_an.set_title(f"{algo} — annotation")
         ax_an.set_xlabel("UMAP-1")
@@ -337,9 +339,9 @@ def main(cfg: ClusteringBenchmarkConfig):
         raise ValueError(
             "No feature columns (starting with 'feature_') found in the parquet file."
         )
-    if cfg.umap_n_components != 2:
+    if cfg.umap_n_components not in (2, 3):
         raise ValueError(
-            f"umap_n_components must be 2 for scatter plotting, got {cfg.umap_n_components}."
+            f"umap_n_components must be 2 or 3, got {cfg.umap_n_components}."
         )
     logger.info(
         "%d tiles  %d slides  %d features",
@@ -398,32 +400,35 @@ def main(cfg: ClusteringBenchmarkConfig):
 
     try:
         import umap as umap_module
+    except ImportError as exc:
+        raise ImportError(
+            "umap-learn is required for UMAP visualisation. "
+            "Install it with: pip install umap-learn"
+        ) from exc
 
-        n = len(X_scaled)
-        if cfg.umap_subsample > 0 and n > cfg.umap_subsample:
-            rng = np.random.RandomState(cfg.random_state)
-            subsample_idx = rng.choice(n, cfg.umap_subsample, replace=False)
-        else:
-            subsample_idx = np.arange(n)
+    n = len(X_scaled)
+    if cfg.umap_subsample > 0 and n > cfg.umap_subsample:
+        rng = np.random.RandomState(cfg.random_state)
+        subsample_idx = rng.choice(n, cfg.umap_subsample, replace=False)
+    else:
+        subsample_idx = np.arange(n)
 
-        X_sub = X_scaled[subsample_idx]
-        reducer = umap_module.UMAP(
-            n_neighbors=cfg.umap_n_neighbors,
-            min_dist=cfg.umap_min_dist,
-            n_components=cfg.umap_n_components,
-            random_state=cfg.random_state,
-        )
-        embedding = reducer.fit_transform(X_sub)
+    X_sub = X_scaled[subsample_idx]
+    reducer = umap_module.UMAP(
+        n_neighbors=cfg.umap_n_neighbors,
+        min_dist=cfg.umap_min_dist,
+        n_components=cfg.umap_n_components,
+        random_state=cfg.random_state,
+    )
+    embedding = reducer.fit_transform(X_sub)
 
-        _plot_umap(
-            embedding,
-            subsample_idx,
-            labels_by_algo,
-            y_true,
-            cfg.output_umap_png,
-            list(labels_by_algo.keys()),
-        )
-    except ImportError:
-        logger.warning("umap-learn is not installed — skipping UMAP plot.")
+    _plot_umap(
+        embedding,
+        subsample_idx,
+        labels_by_algo,
+        y_true,
+        cfg.output_umap_png,
+        list(labels_by_algo.keys()),
+    )
 
     logger.info("Done.")

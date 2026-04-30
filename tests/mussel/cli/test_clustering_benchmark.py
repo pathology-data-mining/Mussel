@@ -243,12 +243,12 @@ def test_sanitize_nan_inf():
 
 
 def test_main_raises_on_invalid_umap_components(tmp_path):
-    """main() raises ValueError when umap_n_components != 2."""
+    """main() raises ValueError when umap_n_components is not 2 or 3."""
     parquet_path = _make_parquet(tmp_path)
-    cfg = _cfg(tmp_path, parquet_path, umap_n_components=3)
+    cfg = _cfg(tmp_path, parquet_path, umap_n_components=4)
     import mussel.cli.clustering_benchmark as cb
 
-    with pytest.raises(ValueError, match="umap_n_components must be 2"):
+    with pytest.raises(ValueError, match="umap_n_components must be 2 or 3"):
         cb.main.__wrapped__(cfg)
 
 
