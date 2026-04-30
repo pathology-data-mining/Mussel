@@ -1,12 +1,20 @@
 """Tests for get_features pre-loaded model parameters."""
 
+import os
+import tempfile
 from unittest.mock import MagicMock, patch
 
 import numpy as np
 import pytest
 
+from mussel.cli.extract_features import ExtractFeaturesConfig
 from mussel.models import ModelType
-from mussel.utils.feature_extract import get_features
+from mussel.utils.feature_extract import (
+    H5DatasetProcessor,
+    TileCoordProcessor,
+    _parse_feature_dtype,
+    get_features,
+)
 
 
 def _make_mock_model(feature_dim=384):
@@ -174,27 +182,13 @@ def test_compatibility_validated_with_preloaded_patch_model():
 
 # -- embedding precision tests -----------------------------------------------
 
-import tempfile
-import os
-
-import pytest
-import numpy as np
-
-from mussel.utils.feature_extract import (
-    _parse_feature_dtype,
-    H5DatasetProcessor,
-    TileCoordProcessor,
-    process_dataset,
-)
-from mussel.cli.extract_features import ExtractFeaturesConfig
-
 
 def test_parse_feature_dtype_float32_returns_none():
     assert _parse_feature_dtype("float32") is None
 
 
 def test_parse_feature_dtype_float16():
-    assert _parse_feature_dtype("float16") == np.float16
+    assert _parse_feature_dtype("float16") == np.dtype(np.float16)
 
 
 def test_parse_feature_dtype_invalid_raises():
@@ -205,7 +199,6 @@ def test_parse_feature_dtype_invalid_raises():
 def _make_h5_processor_inputs(feature_dim=4, n_patches=8, batch_size=4):
     """Return (mock_dataset, mock_loader, mock_model_fun) for H5DatasetProcessor tests."""
     import torch
-    from unittest.mock import MagicMock
 
     batches = []
     n_batches = n_patches // batch_size
@@ -215,7 +208,6 @@ def _make_h5_processor_inputs(feature_dim=4, n_patches=8, batch_size=4):
         batches.append((features_tensor, coords_np))
 
     mock_dataset = MagicMock()
-    mock_dataset.__class__.__name__ = "WholeSlideImageH5Dataset"
     mock_loader = batches
 
     def mock_model_fun(batch):

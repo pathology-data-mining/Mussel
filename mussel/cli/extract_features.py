@@ -83,6 +83,11 @@ class ExtractFeaturesConfig:
         gpu_device_id (Optional[int]): Specific GPU device ID to use, if applicable.
         gpu_device_ids (Optional[List[int]]): List of GPU device IDs to use, if applicable.
         num_workers (int): Number of worker threads for data loading.
+        embedding_precision (str): Numeric precision for saved patch embeddings.
+            "float32" (default) keeps full model precision; "float16" halves
+            storage size at the cost of reduced precision. Note: when using
+            aggregation_method="model", float16 features are fed to the slide
+            encoder, which may affect aggregation quality.
     """
 
     # Single mode parameters
@@ -117,9 +122,6 @@ class ExtractFeaturesConfig:
     num_workers: int = 16
     is_test_run: bool = False
     embedding_precision: str = "float32"
-    """Numeric precision for saved patch embeddings. "float32" (default) keeps full precision;
-    "float16" halves storage size. Note: "float16" with aggregation_method="model" feeds
-    reduced-precision features to the slide encoder, which may affect quality."""
 
 
 desc_doc = """== ${hydra.help.app_name} ==

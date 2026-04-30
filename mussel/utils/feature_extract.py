@@ -37,7 +37,7 @@ def _parse_feature_dtype(embedding_precision: str) -> Optional[np.dtype]:
         embedding_precision: One of "float32" or "float16".
 
     Returns:
-        None if float32 (no cast needed), np.float16 if float16.
+        None if float32 (no cast needed), np.dtype("float16") if float16.
 
     Raises:
         ValueError: If the precision string is not recognized.
@@ -45,7 +45,7 @@ def _parse_feature_dtype(embedding_precision: str) -> Optional[np.dtype]:
     if embedding_precision == "float32":
         return None
     if embedding_precision == "float16":
-        return np.float16
+        return np.dtype(np.float16)
     raise ValueError(
         f"Unsupported embedding_precision={embedding_precision!r}. "
         f"Valid options: {_VALID_PRECISIONS}"
@@ -1776,6 +1776,9 @@ def save_features(
             Note: when aggregation_method="model", reduced precision affects the patch
             features fed into the slide encoder, which may impact inference quality.
     """
+    # Validate embedding_precision up-front so any ValueError surfaces before other logic.
+    _parse_feature_dtype(embedding_precision)
+
     # Auto-set aggregation_method to "model" if slide_model_type is specified
     if slide_model_type is not None and aggregation_method == "identity":
         logger.info(
