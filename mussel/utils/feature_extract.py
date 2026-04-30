@@ -36,10 +36,15 @@ def _numpy_to_torch(arr: np.ndarray, dtype: Optional[np.dtype] = None) -> torch.
 
     Handles ml_dtypes.bfloat16 arrays (which torch.from_numpy cannot convert
     directly) by reinterpreting the raw uint16 bytes as torch.bfloat16.
-    When reading bfloat16 back from HDF5, h5py returns a |V2 (2-byte void) array;
-    pass ``dtype=np.dtype(ml_dtypes.bfloat16)`` to reinterpret it correctly.
+
+    h5py stores bfloat16 as |V2 (2-byte opaque void). This is detected automatically
+    so no dtype hint is needed; passing ``dtype=np.dtype(ml_dtypes.bfloat16)`` is
+    accepted for backward compatibility but redundant.
     """
-    if dtype is not None and dtype == np.dtype(ml_dtypes.bfloat16) and arr.dtype.kind == "V":
+    # Auto-detect |V2 (HDF5 bfloat16 representation) without requiring a dtype hint.
+    if arr.dtype.kind == "V" and arr.dtype.itemsize == 2:
+        arr = arr.view(ml_dtypes.bfloat16)
+    elif dtype is not None and dtype == np.dtype(ml_dtypes.bfloat16) and arr.dtype.kind == "V":
         arr = arr.view(ml_dtypes.bfloat16)
     if arr.dtype == np.dtype(ml_dtypes.bfloat16):
         return torch.from_numpy(arr.view(np.uint16)).view(torch.bfloat16)
@@ -773,20 +778,24 @@ def _apply_slide_aggregation(
     Returns:
         Numpy array of aggregated features.
     """
+    # Normalize |V2 (HDF5 bfloat16 representation) so all downstream ops see a proper dtype.
+    if features.dtype.kind == "V" and features.dtype.itemsize == 2:
+        features = features.view(ml_dtypes.bfloat16)
+
     if aggregation_method == "identity":
         # No aggregation - keep all patch features
         logger.info("Using identity aggregation (no aggregation)")
         return features
     elif aggregation_method == "mean":
-        # Mean pooling across patches
-        aggregated_features = np.mean(features, axis=0, keepdims=True)
+        # Mean pooling across patches; upcast to float32 so numpy ufuncs work reliably.
+        aggregated_features = np.mean(features.astype(np.float32), axis=0, keepdims=True)
         logger.info(
             f"Applied mean pooling: {features.shape} -> {aggregated_features.shape}"
         )
         return aggregated_features
     elif aggregation_method == "max":
-        # Max pooling across patches
-        aggregated_features = np.max(features, axis=0, keepdims=True)
+        # Max pooling across patches; upcast to float32 so numpy ufuncs work reliably.
+        aggregated_features = np.max(features.astype(np.float32), axis=0, keepdims=True)
         logger.info(
             f"Applied max pooling: {features.shape} -> {aggregated_features.shape}"
         )
@@ -814,8 +823,8 @@ def _apply_slide_aggregation(
             slide_model = model_factory.get_model(slide_model_path, use_gpu, gpu_device_id)
             model_fun = slide_model.get_model_fun()
 
-        # Convert features to tensor and apply model
-        features_tensor = torch.from_numpy(features).unsqueeze(0)  # Add batch dimension
+        # Convert features to tensor (handles bfloat16/V2 correctly) and apply model
+        features_tensor = _numpy_to_torch(features).unsqueeze(0)  # Add batch dimension
 
         # Some slide encoders require coordinates and/or patch size
         # GIGAPATH_SLIDE: requires (features, coords)
@@ -1526,7 +1535,7 @@ def aggregate_slide_features_batch(
                                 f"patch_size not provided, using default: {patch_size}"
                             )
 
-                        features_tensor = torch.from_numpy(features).unsqueeze(0)
+                        features_tensor = _numpy_to_torch(features).unsqueeze(0)
                         coords_tensor = torch.from_numpy(coords).long().unsqueeze(0)
                         agg_features = (
                             model_fun(features_tensor, coords_tensor, patch_size)
@@ -1555,7 +1564,7 @@ def aggregate_slide_features_batch(
                         if coords is None:
                             raise ValueError("GIGAPATH_SLIDE requires coordinates")
 
-                        features_tensor = torch.from_numpy(features).unsqueeze(
+                        features_tensor = _numpy_to_torch(features).unsqueeze(
                             0
                         )  # (1, N, D)
                         coords_tensor = torch.from_numpy(coords).unsqueeze(
@@ -1578,7 +1587,7 @@ def aggregate_slide_features_batch(
                 # Stack features from all slides in batch and process together
                 try:
                     features_list = [
-                        torch.from_numpy(f).unsqueeze(0) for f in batch_features
+                        _numpy_to_torch(f).unsqueeze(0) for f in batch_features
                     ]
                     features_batch = torch.cat(features_list, dim=0)
 
