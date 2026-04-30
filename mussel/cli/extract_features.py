@@ -85,9 +85,10 @@ class ExtractFeaturesConfig:
         num_workers (int): Number of worker threads for data loading.
         embedding_precision (str): Numeric precision for saved patch embeddings.
             "float32" (default) keeps full model precision; "float16" halves
-            storage size at the cost of reduced precision. Note: when using
-            aggregation_method="model", float16 features are fed to the slide
-            encoder, which may affect aggregation quality.
+            storage size; "bfloat16" uses the brain-float format (same exponent
+            range as float32, less mantissa precision than float16). Note: when
+            using aggregation_method="model", reduced-precision features are fed
+            to the slide encoder, which may affect aggregation quality.
     """
 
     # Single mode parameters

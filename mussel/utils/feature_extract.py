@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any, Callable, List, Optional, Union
 
 import h5py
+import ml_dtypes
 import numpy as np
 import torch
 from torch.utils.data import DataLoader
@@ -27,17 +28,17 @@ from .timer import timed
 
 logger = logging.getLogger(__name__)
 
-_VALID_PRECISIONS = ("float32", "float16")
+_VALID_PRECISIONS = ("float32", "float16", "bfloat16")
 
 
 def _parse_feature_dtype(embedding_precision: str) -> Optional[np.dtype]:
     """Parse embedding precision string into a numpy dtype, or None for float32 (no-op).
 
     Args:
-        embedding_precision: One of "float32" or "float16".
+        embedding_precision: One of "float32", "float16", or "bfloat16".
 
     Returns:
-        None if float32 (no cast needed), np.dtype("float16") if float16.
+        None if float32 (no cast needed), otherwise the corresponding np.dtype.
 
     Raises:
         ValueError: If the precision string is not recognized.
@@ -46,6 +47,8 @@ def _parse_feature_dtype(embedding_precision: str) -> Optional[np.dtype]:
         return None
     if embedding_precision == "float16":
         return np.dtype(np.float16)
+    if embedding_precision == "bfloat16":
+        return np.dtype(ml_dtypes.bfloat16)
     raise ValueError(
         f"Unsupported embedding_precision={embedding_precision!r}. "
         f"Valid options: {_VALID_PRECISIONS}"
@@ -1066,7 +1069,7 @@ def extract_patch_features(
         is_test_run: If True, only process first 3 batches (default: False).
         embedding_precision: Numeric precision for saved patch embeddings.
             "float32" (default) preserves full model precision; "float16" halves
-            storage size at the cost of reduced precision.
+            storage size; "bfloat16" uses brain-float format.
 
     Returns:
         Path to the output HDF5 file containing patch-level features.
@@ -1196,7 +1199,7 @@ def extract_patch_features_batch(
         is_test_run: If True, only process first 3 batches per slide (default: False).
         embedding_precision: Numeric precision for saved patch embeddings.
             "float32" (default) preserves full model precision; "float16" halves
-            storage size at the cost of reduced precision.
+            storage size; "bfloat16" uses brain-float format.
 
     Returns:
         List of paths to output HDF5 files containing patch-level features.
@@ -1772,7 +1775,7 @@ def save_features(
         slide_model_path: Optional path to slide encoder model weights.
         embedding_precision: Numeric precision for saved patch embeddings.
             "float32" (default) preserves full model precision; "float16" halves
-            storage size at the cost of reduced precision.
+            storage size; "bfloat16" uses brain-float format.
             Note: when aggregation_method="model", reduced precision affects the patch
             features fed into the slide encoder, which may impact inference quality.
     """

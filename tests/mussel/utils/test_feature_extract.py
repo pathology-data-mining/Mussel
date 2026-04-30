@@ -4,6 +4,7 @@ import os
 import tempfile
 from unittest.mock import MagicMock, patch
 
+import ml_dtypes
 import numpy as np
 import pytest
 
@@ -191,9 +192,13 @@ def test_parse_feature_dtype_float16():
     assert _parse_feature_dtype("float16") == np.dtype(np.float16)
 
 
+def test_parse_feature_dtype_bfloat16():
+    assert _parse_feature_dtype("bfloat16") == np.dtype(ml_dtypes.bfloat16)
+
+
 def test_parse_feature_dtype_invalid_raises():
     with pytest.raises(ValueError, match="Unsupported embedding_precision"):
-        _parse_feature_dtype("bfloat16")
+        _parse_feature_dtype("float8")
 
 
 def _make_h5_processor_inputs(feature_dim=4, n_patches=8, batch_size=4):
@@ -263,7 +268,6 @@ def test_h5_dataset_processor_default_float32():
 def test_tile_coord_processor_float16():
     """TileCoordProcessor with feature_dtype=np.float16 casts output after concat."""
     import torch
-    from unittest.mock import MagicMock
 
     batches = [(torch.zeros(4, 4), torch.zeros(4, dtype=torch.long))] * 2
     mock_dataset = MagicMock()
@@ -280,6 +284,53 @@ def test_tile_coord_processor_float16():
         feature_dtype=np.float16,
     )
     assert result.features.dtype == np.float16
+
+
+def test_h5_dataset_processor_saves_bfloat16():
+    """H5DatasetProcessor with bfloat16 keeps in-memory dtype; HDF5 stores as 2-byte void."""
+    import h5py
+
+    bfloat16 = np.dtype(ml_dtypes.bfloat16)
+    mock_dataset, mock_loader, mock_model_fun = _make_h5_processor_inputs()
+    processor = H5DatasetProcessor()
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        out_path = os.path.join(tmpdir, "feats.h5")
+        result = processor.process(
+            dataset=mock_dataset,
+            loader=mock_loader,
+            model_fun=mock_model_fun,
+            output_h5_path=out_path,
+            is_test_run=False,
+            feature_dtype=bfloat16,
+        )
+        # In-memory result preserves bfloat16 dtype.
+        assert result.features.dtype == bfloat16
+        # h5py stores bfloat16 as a 2-byte opaque type (|V2); verify storage size.
+        with h5py.File(out_path, "r") as f:
+            assert f["features"].dtype.itemsize == 2
+
+
+def test_tile_coord_processor_bfloat16():
+    """TileCoordProcessor with feature_dtype=ml_dtypes.bfloat16 casts output after concat."""
+    import torch
+
+    bfloat16 = np.dtype(ml_dtypes.bfloat16)
+    batches = [(torch.zeros(4, 4), torch.zeros(4, dtype=torch.long))] * 2
+    mock_dataset = MagicMock()
+    mock_loader = batches
+
+    def mock_model_fun(batch):
+        return torch.zeros(len(batch), 4)
+
+    processor = TileCoordProcessor()
+    result = processor.process(
+        dataset=mock_dataset,
+        loader=mock_loader,
+        model_fun=mock_model_fun,
+        feature_dtype=bfloat16,
+    )
+    assert result.features.dtype == bfloat16
 
 
 def test_extract_features_config_has_embedding_precision_field():
