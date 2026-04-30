@@ -27,6 +27,30 @@ from .timer import timed
 
 logger = logging.getLogger(__name__)
 
+_VALID_PRECISIONS = ("float32", "float16")
+
+
+def _parse_feature_dtype(embedding_precision: str) -> Optional[np.dtype]:
+    """Parse embedding precision string into a numpy dtype, or None for float32 (no-op).
+
+    Args:
+        embedding_precision: One of "float32" or "float16".
+
+    Returns:
+        None if float32 (no cast needed), np.float16 if float16.
+
+    Raises:
+        ValueError: If the precision string is not recognized.
+    """
+    if embedding_precision == "float32":
+        return None
+    if embedding_precision == "float16":
+        return np.float16
+    raise ValueError(
+        f"Unsupported embedding_precision={embedding_precision!r}. "
+        f"Valid options: {_VALID_PRECISIONS}"
+    )
+
 
 def _make_dataloader(
     dataset,
@@ -100,6 +124,7 @@ class DatasetProcessor(ABC):
         output_h5_path: Optional[str] = None,
         patch_h5_path: Optional[str] = None,
         is_test_run: bool = False,
+        feature_dtype: Optional[np.dtype] = None,
     ) -> FeatureExtractionResult:
         """Process a dataset and extract features.
 
@@ -110,6 +135,8 @@ class DatasetProcessor(ABC):
             output_h5_path: Optional path to save features to HDF5.
             patch_h5_path: Optional path to source H5 for copying attributes.
             is_test_run: If True, only process first 3 batches.
+            feature_dtype: Optional numpy dtype to cast features to (e.g. np.float16).
+                None means no cast (float32 default from models).
 
         Returns:
             FeatureExtractionResult containing features and metadata.
@@ -132,6 +159,7 @@ class TileCoordProcessor(DatasetProcessor):
         output_h5_path: Optional[str] = None,
         patch_h5_path: Optional[str] = None,
         is_test_run: bool = False,
+        feature_dtype: Optional[np.dtype] = None,
     ) -> FeatureExtractionResult:
         """Process WholeSlideImageTileCoordDataset to extract features.
 
@@ -142,6 +170,7 @@ class TileCoordProcessor(DatasetProcessor):
             output_h5_path: Unused (features returned in memory).
             patch_h5_path: Unused.
             is_test_run: If True, only process first 3 batches.
+            feature_dtype: Optional numpy dtype to cast features to. None means no cast.
 
         Returns:
             FeatureExtractionResult with features and labels arrays.
@@ -162,6 +191,9 @@ class TileCoordProcessor(DatasetProcessor):
         features = np.concatenate(all_features, axis=0)
         labels = np.concatenate(all_labels, axis=0)
 
+        if feature_dtype is not None:
+            features = features.astype(feature_dtype)
+
         return FeatureExtractionResult(features=features, labels=labels)
 
 
@@ -180,6 +212,7 @@ class H5DatasetProcessor(DatasetProcessor):
         output_h5_path: Optional[str] = None,
         patch_h5_path: Optional[str] = None,
         is_test_run: bool = False,
+        feature_dtype: Optional[np.dtype] = None,
     ) -> FeatureExtractionResult:
         """Process WholeSlideImageH5Dataset to extract features and save to HDF5.
 
@@ -190,6 +223,9 @@ class H5DatasetProcessor(DatasetProcessor):
             output_h5_path: Path to save extracted features (required).
             patch_h5_path: Path to source H5 for copying attributes.
             is_test_run: If True, only process first 3 batches.
+            feature_dtype: Optional numpy dtype to cast features to before saving.
+                Cast is applied per-batch so the HDF5 dataset dtype is fixed from the
+                first write. None means no cast (float32 default from models).
 
         Returns:
             FeatureExtractionResult with features, coords, and output path.
@@ -218,6 +254,8 @@ class H5DatasetProcessor(DatasetProcessor):
                 continue
 
             features = model_fun(batch).numpy()
+            if feature_dtype is not None:
+                features = features.astype(feature_dtype)
             all_features.append(features)
             all_coords.append(coords)
 
@@ -226,8 +264,9 @@ class H5DatasetProcessor(DatasetProcessor):
             mode = "a"
 
         # Concatenate all results
+        empty_dtype = feature_dtype if feature_dtype is not None else np.float32
         features = (
-            np.concatenate(all_features, axis=0) if all_features else np.array([])
+            np.concatenate(all_features, axis=0) if all_features else np.array([], dtype=empty_dtype)
         )
         coords = np.concatenate(all_coords, axis=0) if all_coords else np.array([])
 
@@ -253,6 +292,7 @@ class ImageFolderProcessor(DatasetProcessor):
         output_h5_path: Optional[str] = None,
         patch_h5_path: Optional[str] = None,
         is_test_run: bool = False,
+        feature_dtype: Optional[np.dtype] = None,
     ) -> FeatureExtractionResult:
         """Process ImageFolder or FlatImageDataset to extract features.
 
@@ -263,6 +303,9 @@ class ImageFolderProcessor(DatasetProcessor):
             output_h5_path: Path to save extracted features (required).
             patch_h5_path: Unused.
             is_test_run: If True, only process first 3 batches.
+            feature_dtype: Optional numpy dtype to cast features to before saving.
+                Cast is applied per-batch so the HDF5 dataset dtype is fixed from the
+                first write. None means no cast (float32 default from models).
 
         Returns:
             FeatureExtractionResult with features, labels, and output path.
@@ -306,6 +349,8 @@ class ImageFolderProcessor(DatasetProcessor):
 
             labels_np = labels.numpy()
             features = model_fun(batch).numpy()
+            if feature_dtype is not None:
+                features = features.astype(feature_dtype)
 
             all_features.append(features)
             all_labels.append(labels_np)
@@ -314,8 +359,9 @@ class ImageFolderProcessor(DatasetProcessor):
             save_hdf5(output_h5_path, asset_dict, attr_h5_path=None, mode="a")
 
         # Concatenate all results
+        empty_dtype = feature_dtype if feature_dtype is not None else np.float32
         features = (
-            np.concatenate(all_features, axis=0) if all_features else np.array([])
+            np.concatenate(all_features, axis=0) if all_features else np.array([], dtype=empty_dtype)
         )
         labels = np.concatenate(all_labels, axis=0) if all_labels else np.array([])
 
@@ -382,6 +428,7 @@ def process_dataset(
     output_h5_path: Optional[str] = None,
     patch_h5_path: Optional[str] = None,
     is_test_run: bool = False,
+    feature_dtype: Optional[np.dtype] = None,
 ) -> FeatureExtractionResult:
     """Process a dataset to extract features.
 
@@ -402,6 +449,8 @@ def process_dataset(
         patch_h5_path: Optional path to source H5 for copying attributes.
             Used by H5DatasetProcessor.
         is_test_run: If True, only process first 3 batches (default: False).
+        feature_dtype: Optional numpy dtype to cast features to (e.g. np.float16).
+            None means no cast (float32 default from models).
 
     Returns:
         FeatureExtractionResult containing:
@@ -422,6 +471,7 @@ def process_dataset(
         output_h5_path=output_h5_path,
         patch_h5_path=patch_h5_path,
         is_test_run=is_test_run,
+        feature_dtype=feature_dtype,
     )
 
 
@@ -991,6 +1041,7 @@ def extract_patch_features(
     num_workers: int = 16,
     pin_memory: bool = True,
     is_test_run: bool = False,
+    embedding_precision: str = "float32",
 ) -> str:
     """Extract patch-level features from whole slide image (Step 1: Patch Encoding).
 
@@ -1013,6 +1064,9 @@ def extract_patch_features(
         num_workers: Number of worker processes for data loading (default: 16).
         pin_memory: Whether to pin memory for data loading (default: True).
         is_test_run: If True, only process first 3 batches (default: False).
+        embedding_precision: Numeric precision for saved patch embeddings.
+            "float32" (default) preserves full model precision; "float16" halves
+            storage size at the cost of reduced precision.
 
     Returns:
         Path to the output HDF5 file containing patch-level features.
@@ -1023,6 +1077,8 @@ def extract_patch_features(
     logger.info("Step 1: Extracting patch-level features")
     logger.info("loading model checkpoint")
     logger.info(f"Using batch_size={batch_size} for model {model_type}")
+
+    feature_dtype = _parse_feature_dtype(embedding_precision)
 
     model_factory = get_model_factory(model_type)
     if model_factory is None:
@@ -1092,6 +1148,7 @@ def extract_patch_features(
         patch_h5_path=patch_h5_path,
         output_h5_path=output_h5_path,
         is_test_run=is_test_run,
+        feature_dtype=feature_dtype,
     )
 
     logger.info(f"Patch-level features saved to {output_h5_path}")
@@ -1112,6 +1169,7 @@ def extract_patch_features_batch(
     num_workers=16,
     pin_memory=True,
     is_test_run=False,
+    embedding_precision="float32",
 ):
     """Extract patch-level features from multiple slides in batch mode.
 
@@ -1136,6 +1194,9 @@ def extract_patch_features_batch(
         num_workers: Number of worker processes for data loading (default: 16).
         pin_memory: Whether to pin memory for data loading (default: True).
         is_test_run: If True, only process first 3 batches per slide (default: False).
+        embedding_precision: Numeric precision for saved patch embeddings.
+            "float32" (default) preserves full model precision; "float16" halves
+            storage size at the cost of reduced precision.
 
     Returns:
         List of paths to output HDF5 files containing patch-level features.
@@ -1157,6 +1218,8 @@ def extract_patch_features_batch(
 
     if gpu_device_ids:
         gpu_device_id = gpu_device_ids
+
+    feature_dtype = _parse_feature_dtype(embedding_precision)
 
     # Resolve model_path from model_dir if provided
     if model_path is None and model_dir is not None:
@@ -1209,6 +1272,7 @@ def extract_patch_features_batch(
             patch_h5_path=patch_h5_path,
             output_h5_path=output_h5_path,
             is_test_run=is_test_run,
+            feature_dtype=feature_dtype,
         )
 
         logger.info(f"Patch-level features saved to {output_h5_path}")
@@ -1673,6 +1737,7 @@ def save_features(
     aggregation_method: str = "identity",
     slide_model_type: Optional[ModelType] = None,
     slide_model_path: Optional[str] = None,
+    embedding_precision: str = "float32",
 ) -> tuple[str, Optional[str]]:
     """Extract features from whole slide image and save to HDF5 and PyTorch formats.
 
@@ -1705,6 +1770,11 @@ def save_features(
             The required patch encoder will be automatically inferred and used. For example,
             specifying GIGAPATH_SLIDE will automatically use GIGAPATH as the patch encoder.
         slide_model_path: Optional path to slide encoder model weights.
+        embedding_precision: Numeric precision for saved patch embeddings.
+            "float32" (default) preserves full model precision; "float16" halves
+            storage size at the cost of reduced precision.
+            Note: when aggregation_method="model", reduced precision affects the patch
+            features fed into the slide encoder, which may impact inference quality.
     """
     # Auto-set aggregation_method to "model" if slide_model_type is specified
     if slide_model_type is not None and aggregation_method == "identity":
@@ -1720,6 +1790,13 @@ def save_features(
     if use_two_step:
         # Two-step process: patch encoding -> slide aggregation
         logger.info("Using two-step feature extraction process")
+
+        if aggregation_method == "model" and embedding_precision != "float32":
+            logger.warning(
+                f"embedding_precision={embedding_precision!r} with aggregation_method='model': "
+                "reduced-precision patch features will be fed to the slide encoder, "
+                "which may impact inference quality."
+            )
 
         # Auto-infer patch encoder from slide encoder if using model-based aggregation
         if aggregation_method == "model" and slide_model_type is not None:
@@ -1753,6 +1830,7 @@ def save_features(
             num_workers=num_workers,
             pin_memory=pin_memory,
             is_test_run=is_test_run,
+            embedding_precision=embedding_precision,
         )
 
         # Step 2: Aggregate to slide level
@@ -1773,6 +1851,8 @@ def save_features(
             gpu_device_id = gpu_device_ids
 
         logger.info("loading model checkpoint")
+
+        feature_dtype = _parse_feature_dtype(embedding_precision)
 
         model_factory = get_model_factory(model_type)
         if model_factory is None:
@@ -1842,6 +1922,7 @@ def save_features(
             patch_h5_path=patch_h5_path,
             output_h5_path=output_h5_path,
             is_test_run=is_test_run,
+            feature_dtype=feature_dtype,
         )
 
         if output_pt_path is not None:

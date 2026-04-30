@@ -170,3 +170,128 @@ def test_compatibility_validated_with_preloaded_patch_model():
         )
 
     mock_validate.assert_called_once_with(ModelType.GIGAPATH, ModelType.GIGAPATH_SLIDE)
+
+
+# -- embedding precision tests -----------------------------------------------
+
+import tempfile
+import os
+
+import pytest
+import numpy as np
+
+from mussel.utils.feature_extract import (
+    _parse_feature_dtype,
+    H5DatasetProcessor,
+    TileCoordProcessor,
+    process_dataset,
+)
+from mussel.cli.extract_features import ExtractFeaturesConfig
+
+
+def test_parse_feature_dtype_float32_returns_none():
+    assert _parse_feature_dtype("float32") is None
+
+
+def test_parse_feature_dtype_float16():
+    assert _parse_feature_dtype("float16") == np.float16
+
+
+def test_parse_feature_dtype_invalid_raises():
+    with pytest.raises(ValueError, match="Unsupported embedding_precision"):
+        _parse_feature_dtype("bfloat16")
+
+
+def _make_h5_processor_inputs(feature_dim=4, n_patches=8, batch_size=4):
+    """Return (mock_dataset, mock_loader, mock_model_fun) for H5DatasetProcessor tests."""
+    import torch
+    from unittest.mock import MagicMock
+
+    batches = []
+    n_batches = n_patches // batch_size
+    for _ in range(n_batches):
+        features_tensor = torch.zeros(batch_size, feature_dim)
+        coords_np = np.zeros((batch_size, 2), dtype=np.int32)
+        batches.append((features_tensor, coords_np))
+
+    mock_dataset = MagicMock()
+    mock_dataset.__class__.__name__ = "WholeSlideImageH5Dataset"
+    mock_loader = batches
+
+    def mock_model_fun(batch):
+        return torch.zeros(len(batch), feature_dim)
+
+    return mock_dataset, mock_loader, mock_model_fun
+
+
+def test_h5_dataset_processor_saves_float16():
+    """H5DatasetProcessor with feature_dtype=np.float16 writes float16 to HDF5."""
+    import h5py
+
+    mock_dataset, mock_loader, mock_model_fun = _make_h5_processor_inputs()
+    processor = H5DatasetProcessor()
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        out_path = os.path.join(tmpdir, "feats.h5")
+        result = processor.process(
+            dataset=mock_dataset,
+            loader=mock_loader,
+            model_fun=mock_model_fun,
+            output_h5_path=out_path,
+            is_test_run=False,
+            feature_dtype=np.float16,
+        )
+        assert result.features.dtype == np.float16
+        with h5py.File(out_path, "r") as f:
+            assert f["features"].dtype == np.float16
+
+
+def test_h5_dataset_processor_default_float32():
+    """H5DatasetProcessor with feature_dtype=None keeps float32."""
+    import h5py
+
+    mock_dataset, mock_loader, mock_model_fun = _make_h5_processor_inputs()
+    processor = H5DatasetProcessor()
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        out_path = os.path.join(tmpdir, "feats.h5")
+        result = processor.process(
+            dataset=mock_dataset,
+            loader=mock_loader,
+            model_fun=mock_model_fun,
+            output_h5_path=out_path,
+            is_test_run=False,
+            feature_dtype=None,
+        )
+        assert result.features.dtype == np.float32
+        with h5py.File(out_path, "r") as f:
+            assert f["features"].dtype == np.float32
+
+
+def test_tile_coord_processor_float16():
+    """TileCoordProcessor with feature_dtype=np.float16 casts output after concat."""
+    import torch
+    from unittest.mock import MagicMock
+
+    batches = [(torch.zeros(4, 4), torch.zeros(4, dtype=torch.long))] * 2
+    mock_dataset = MagicMock()
+    mock_loader = batches
+
+    def mock_model_fun(batch):
+        return torch.zeros(len(batch), 4)
+
+    processor = TileCoordProcessor()
+    result = processor.process(
+        dataset=mock_dataset,
+        loader=mock_loader,
+        model_fun=mock_model_fun,
+        feature_dtype=np.float16,
+    )
+    assert result.features.dtype == np.float16
+
+
+def test_extract_features_config_has_embedding_precision_field():
+    """ExtractFeaturesConfig must include embedding_precision defaulting to float32."""
+    cfg = ExtractFeaturesConfig()
+    assert hasattr(cfg, "embedding_precision")
+    assert cfg.embedding_precision == "float32"

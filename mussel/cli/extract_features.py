@@ -116,6 +116,10 @@ class ExtractFeaturesConfig:
     gpu_device_ids: Optional[List[int]] = None
     num_workers: int = 16
     is_test_run: bool = False
+    embedding_precision: str = "float32"
+    """Numeric precision for saved patch embeddings. "float32" (default) keeps full precision;
+    "float16" halves storage size. Note: "float16" with aggregation_method="model" feeds
+    reduced-precision features to the slide encoder, which may affect quality."""
 
 
 desc_doc = """== ${hydra.help.app_name} ==
@@ -215,6 +219,7 @@ def _main_single(cfg: ExtractFeaturesConfig):
         aggregation_method=cfg.aggregation_method,
         slide_model_type=cfg.slide_model_type,
         slide_model_path=cfg.slide_model_path,
+        embedding_precision=cfg.embedding_precision,
     )
 
 
@@ -279,6 +284,7 @@ def _main_batch(cfg: ExtractFeaturesConfig):
             num_workers=cfg.num_workers,
             pin_memory=True,
             is_test_run=cfg.is_test_run,
+            embedding_precision=cfg.embedding_precision,
         )
 
         # Aggregate to slide level using batch processing
@@ -314,6 +320,7 @@ def _main_batch(cfg: ExtractFeaturesConfig):
             num_workers=cfg.num_workers,
             pin_memory=True,
             is_test_run=cfg.is_test_run,
+            embedding_precision=cfg.embedding_precision,
         )
 
         # Save as PT format for consistency
