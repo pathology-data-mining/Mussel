@@ -1,7 +1,11 @@
 import os
 import ssl
 
+import h5py
+import ml_dtypes
+import numpy as np
 import pytest
+import torch
 from omegaconf import OmegaConf
 
 import mussel.cli.extract_features
@@ -220,3 +224,49 @@ def test_auto_set_aggregation_method(tmp_path, use_gpu, num_workers):
         mock_aggregate.assert_called_once()
         call_kwargs = mock_aggregate.call_args[1]
         assert call_kwargs["aggregation_method"] == "model"
+
+
+@pytest.mark.slow
+@pytest.mark.integration
+@pytest.mark.timeout(300)
+@pytest.mark.parametrize("embedding_precision", ["float16", "bfloat16"])
+def test_extract_features_embedding_precision(
+    tmp_path, test_data_path, patch_h5_path, use_gpu, num_workers, embedding_precision
+):
+    """E2E: extract_features with float16/bfloat16 writes reduced-precision outputs."""
+    slide_path = os.path.join(test_data_path, "948176.svs")
+    output_h5_path = tmp_path / f"test_{embedding_precision}.h5"
+    output_pt_path = tmp_path / f"test_{embedding_precision}.pt"
+
+    cfg = ExtractFeaturesConfig(
+        slide_path=slide_path,
+        patch_h5_path=patch_h5_path,
+        output_h5_path=str(output_h5_path),
+        output_pt_path=str(output_pt_path),
+        num_workers=num_workers,
+        model_type=ModelType.RESNET50,
+        use_gpu=use_gpu,
+        embedding_precision=embedding_precision,
+    )
+    mussel.cli.extract_features.main(OmegaConf.create(cfg))
+
+    assert output_h5_path.exists()
+    assert output_pt_path.exists()
+
+    with h5py.File(output_h5_path, "r") as f:
+        assert "features" in f
+        assert f["features"].shape[0] > 0
+        # Both float16 and bfloat16 occupy 2 bytes per element.
+        assert f["features"].dtype.itemsize == 2, (
+            f"Expected 2-byte dtype for {embedding_precision}, "
+            f"got {f['features'].dtype}"
+        )
+
+    pt_tensor = torch.load(output_pt_path, weights_only=True)
+    assert pt_tensor.shape[0] > 0
+    expected_torch_dtype = (
+        torch.float16 if embedding_precision == "float16" else torch.bfloat16
+    )
+    assert pt_tensor.dtype == expected_torch_dtype, (
+        f"Expected .pt tensor dtype {expected_torch_dtype}, got {pt_tensor.dtype}"
+    )

@@ -31,6 +31,21 @@ logger = logging.getLogger(__name__)
 _VALID_PRECISIONS = ("float32", "float16", "bfloat16")
 
 
+def _numpy_to_torch(arr: np.ndarray, dtype: Optional[np.dtype] = None) -> torch.Tensor:
+    """Convert a numpy feature array to a torch tensor.
+
+    Handles ml_dtypes.bfloat16 arrays (which torch.from_numpy cannot convert
+    directly) by reinterpreting the raw uint16 bytes as torch.bfloat16.
+    When reading bfloat16 back from HDF5, h5py returns a |V2 (2-byte void) array;
+    pass ``dtype=np.dtype(ml_dtypes.bfloat16)`` to reinterpret it correctly.
+    """
+    if dtype is not None and dtype == np.dtype(ml_dtypes.bfloat16) and arr.dtype.kind == "V":
+        arr = arr.view(ml_dtypes.bfloat16)
+    if arr.dtype == np.dtype(ml_dtypes.bfloat16):
+        return torch.from_numpy(arr.view(np.uint16)).view(torch.bfloat16)
+    return torch.from_numpy(arr)
+
+
 def _parse_feature_dtype(embedding_precision: str) -> Optional[np.dtype]:
     """Parse embedding precision string into a numpy dtype, or None for float32 (no-op).
 
@@ -1397,7 +1412,7 @@ def aggregate_slide_features_batch(
                     # Save to PyTorch if requested
                     if output_pt:
                         logger.info(f"Saving aggregated features to {output_pt}")
-                        features_tensor = torch.from_numpy(aggregated_features)
+                        features_tensor = _numpy_to_torch(aggregated_features)
                         save_torch_tensor(output_pt, features_tensor)
 
                     successful_slides.append(slide_name)
@@ -1601,7 +1616,7 @@ def aggregate_slide_features_batch(
 
                 # Save to PyTorch if requested
                 if output_pt_paths and output_pt_paths[i] is not None:
-                    features_tensor = torch.from_numpy(aggregated_features)
+                    features_tensor = _numpy_to_torch(aggregated_features)
                     save_torch_tensor(output_pt_paths[i], features_tensor)
             except Exception as e:
                 logger.error(f"Failed to save results for slide {slide_name}: {str(e)}")
@@ -1713,7 +1728,7 @@ def aggregate_slide_features(
         # Save to PyTorch if requested
         if output_pt_path is not None:
             logger.info(f"Saving aggregated features to {output_pt_path}")
-            features_tensor = torch.from_numpy(aggregated_features)
+            features_tensor = _numpy_to_torch(aggregated_features)
             save_torch_tensor(output_pt_path, features_tensor)
 
     return output_h5_path, output_pt_path
@@ -1937,7 +1952,7 @@ def save_features(
                 logger.info(f"features size: {features.shape} ")
                 # logger.info(f'coordinates size: {file["coords"].shape} ')
 
-                features = torch.from_numpy(features)
+                features = _numpy_to_torch(features, dtype=feature_dtype)
                 save_torch_tensor(output_pt_path, features)
 
 
