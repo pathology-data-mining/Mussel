@@ -228,6 +228,58 @@ def test_auto_set_aggregation_method(tmp_path, use_gpu, num_workers):
 
 @pytest.mark.slow
 @pytest.mark.integration
+@pytest.mark.timeout(600)
+@pytest.mark.parametrize("embedding_precision", ["float16", "bfloat16"])
+def test_extract_features_two_step_intermediate_stays_float32(
+    tmp_path, test_data_path, patch_h5_path, use_gpu, num_workers, embedding_precision
+):
+    """E2E: in two-step mode the intermediate tile H5 must be float32 regardless of
+    embedding_precision; only the final slide output is cast to the requested precision."""
+    slide_path = os.path.join(test_data_path, "948176.svs")
+    output_h5_path = tmp_path / f"slide_{embedding_precision}.h5"
+    output_pt_path = tmp_path / f"slide_{embedding_precision}.pt"
+    intermediate_h5_path = tmp_path / f"intermediate_{embedding_precision}.patch.h5"
+
+    cfg = ExtractFeaturesConfig(
+        slide_path=slide_path,
+        patch_h5_path=patch_h5_path,
+        output_h5_path=str(output_h5_path),
+        output_pt_path=str(output_pt_path),
+        intermediate_h5_path=str(intermediate_h5_path),
+        num_workers=num_workers,
+        model_type=ModelType.RESNET50,
+        use_gpu=use_gpu,
+        aggregation_method="mean",
+        embedding_precision=embedding_precision,
+    )
+    mussel.cli.extract_features.main(OmegaConf.create(cfg))
+
+    assert output_h5_path.exists(), "Final slide H5 must exist"
+    assert intermediate_h5_path.exists(), "Intermediate tile H5 must exist"
+
+    # Intermediate tile features must be float32 (full precision for any downstream encoder)
+    with h5py.File(intermediate_h5_path, "r") as f:
+        assert f["features"].dtype == np.float32, (
+            f"Intermediate tile features must be float32, got {f['features'].dtype}"
+        )
+
+    # Final slide output must be at the requested reduced precision (2 bytes)
+    with h5py.File(output_h5_path, "r") as f:
+        assert f["features"].dtype.itemsize == 2, (
+            f"Final slide features should be 2-byte {embedding_precision}, "
+            f"got {f['features'].dtype}"
+        )
+
+    # PT file dtype must also match
+    pt_tensor = torch.load(output_pt_path, weights_only=True)
+    expected_torch_dtype = torch.float16 if embedding_precision == "float16" else torch.bfloat16
+    assert pt_tensor.dtype == expected_torch_dtype, (
+        f"Expected .pt dtype {expected_torch_dtype}, got {pt_tensor.dtype}"
+    )
+
+
+@pytest.mark.slow
+@pytest.mark.integration
 @pytest.mark.timeout(300)
 @pytest.mark.parametrize("embedding_precision", ["float16", "bfloat16"])
 def test_extract_features_embedding_precision(
