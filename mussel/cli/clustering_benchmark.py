@@ -400,11 +400,12 @@ def main(cfg: ClusteringBenchmarkConfig):
 
     try:
         import umap as umap_module
-    except ImportError as exc:
-        raise ImportError(
-            "umap-learn is required for UMAP visualisation. "
-            "Install it with: pip install umap-learn"
-        ) from exc
+    except ImportError:
+        logger.warning(
+            "umap-learn is not installed — skipping UMAP plot. "
+            "Install it with: uv sync --extra umap  (or: pip install umap-learn)"
+        )
+        return
 
     n = len(X_scaled)
     if cfg.umap_subsample > 0 and n > cfg.umap_subsample:
