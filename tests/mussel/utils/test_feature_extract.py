@@ -338,3 +338,146 @@ def test_extract_features_config_has_embedding_precision_field():
     cfg = ExtractFeaturesConfig()
     assert hasattr(cfg, "embedding_precision")
     assert cfg.embedding_precision == "float32"
+
+
+# -- slide pipeline precision semantics ----------------------------------------
+
+def test_aggregate_slide_features_precision():
+    """aggregate_slide_features saves output at the requested precision."""
+    import h5py
+    import tempfile
+    from mussel.utils.feature_extract import aggregate_slide_features
+
+    features = np.random.rand(10, 8).astype(np.float32)
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        patch_h5 = os.path.join(tmpdir, "patches.h5")
+        with h5py.File(patch_h5, "w") as f:
+            f.create_dataset("features", data=features)
+
+        for precision, expected_itemsize, expected_kind in [
+            ("float32", 4, "f"),
+            ("float16", 2, "f"),
+            ("bfloat16", 2, "V"),
+        ]:
+            out_h5 = os.path.join(tmpdir, f"slide_{precision}.h5")
+            aggregate_slide_features(
+                patch_features_h5_path=patch_h5,
+                output_h5_path=out_h5,
+                aggregation_method="mean",
+                embedding_precision=precision,
+            )
+            with h5py.File(out_h5, "r") as f:
+                dtype = f["features"].dtype
+                assert dtype.itemsize == expected_itemsize, (
+                    f"precision={precision}: expected itemsize {expected_itemsize}, got {dtype.itemsize}"
+                )
+                if expected_kind != "V":
+                    assert dtype.kind == expected_kind, (
+                        f"precision={precision}: expected kind {expected_kind!r}, got {dtype.kind!r}"
+                    )
+
+
+def test_save_features_two_step_keeps_intermediate_float32():
+    """In two-step (slide model) path, intermediate tile features must remain float32."""
+    import h5py
+    import tempfile
+    from mussel.utils.feature_extract import _parse_feature_dtype, save_features
+
+    features = np.random.rand(4, 8).astype(np.float32)
+    coords = np.zeros((4, 2), dtype=np.int32)
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        patch_h5 = os.path.join(tmpdir, "patches.h5")
+        with h5py.File(patch_h5, "w") as f:
+            f.create_dataset("features", data=features)
+            f.create_dataset("coords", data=coords)
+            f["features"].attrs["patch_size"] = 256
+            f["features"].attrs["patch_level"] = 0
+            f["features"].attrs["patch_size_to_resize_to_for_desired_mpp"] = 224
+
+        intermediate_calls = []
+
+        def fake_extract_patch(patch_h5_path, slide_path, output_h5_path, embedding_precision="float32", **kwargs):
+            intermediate_calls.append(embedding_precision)
+            with h5py.File(patch_h5_path, "r") as src, h5py.File(output_h5_path, "w") as dst:
+                dst.create_dataset("features", data=src["features"][:])
+                dst.create_dataset("coords", data=src["coords"][:])
+
+        def fake_aggregate(patch_features_h5_path, output_h5_path, embedding_precision="float32", **kwargs):
+            feature_dtype = _parse_feature_dtype(embedding_precision)
+            with h5py.File(patch_features_h5_path, "r") as src:
+                data = src["features"][:]
+            if feature_dtype is not None:
+                data = data.astype(feature_dtype)
+            if output_h5_path:
+                with h5py.File(output_h5_path, "w") as dst:
+                    dst.create_dataset("features", data=data)
+            return output_h5_path, None
+
+        out_h5 = os.path.join(tmpdir, "slide_out.h5")
+
+        with patch("mussel.utils.feature_extract.extract_patch_features", side_effect=fake_extract_patch), \
+             patch("mussel.utils.feature_extract.aggregate_slide_features", side_effect=fake_aggregate):
+            save_features(
+                patch_h5_path=patch_h5,
+                slide_path="dummy.svs",
+                output_h5_path=out_h5,
+                aggregation_method="model",
+                embedding_precision="float16",
+            )
+
+        assert intermediate_calls == ["float32"], (
+            f"Intermediate tile extraction must use float32, got {intermediate_calls}"
+        )
+        with h5py.File(out_h5, "r") as f:
+            assert f["features"].dtype.itemsize == 2
+            assert f["features"].dtype.kind == "f"  # float16
+
+
+def test_aggregate_slide_features_batch_precision():
+    """aggregate_slide_features_batch casts output to the requested precision."""
+    import h5py
+    import tempfile
+    from mussel.utils.feature_extract import aggregate_slide_features_batch
+
+    features = np.random.rand(6, 8).astype(np.float32)
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        patch_h5 = os.path.join(tmpdir, "patches.h5")
+        with h5py.File(patch_h5, "w") as f:
+            f.create_dataset("features", data=features)
+
+        out_h5 = os.path.join(tmpdir, "out.h5")
+
+        aggregate_slide_features_batch(
+            patch_features_h5_paths=[patch_h5],
+            output_h5_paths=[out_h5],
+            aggregation_method="mean",
+            embedding_precision="float16",
+        )
+
+        with h5py.File(out_h5, "r") as f:
+            assert f["features"].dtype.itemsize == 2
+            assert f["features"].dtype.kind == "f"
+
+
+def test_aggregate_slide_features_config_has_embedding_precision():
+    """AggregateSlideFeaturesConfig must expose embedding_precision."""
+    from mussel.cli.aggregate_slide_features import AggregateSlideFeaturesConfig
+    from omegaconf import OmegaConf
+
+    cfg = OmegaConf.structured(AggregateSlideFeaturesConfig)
+    assert hasattr(cfg, "embedding_precision")
+    assert cfg.embedding_precision == "float32"
+
+
+def test_tessellate_extract_features_config_has_embedding_precision():
+    """TessellateExtractFeaturesConfig must expose embedding_precision."""
+    from mussel.cli.tessellate_extract_features import TessellateExtractFeaturesConfig
+    from mussel.cli.tessellate import SegConfig
+    from omegaconf import OmegaConf
+
+    cfg = TessellateExtractFeaturesConfig(seg_config=SegConfig())
+    assert hasattr(cfg, "embedding_precision")
+    assert cfg.embedding_precision == "float32"

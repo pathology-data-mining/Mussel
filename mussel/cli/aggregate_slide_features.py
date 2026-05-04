@@ -28,6 +28,8 @@ class AggregateSlideFeaturesConfig:
         gpu_device_id (Optional[int]): Specific GPU device ID to use.
         gpu_device_ids (Optional[List[int]]): List of GPU device IDs for multi-GPU inference.
         ssl_verify (bool): Whether to verify SSL certificates when downloading models or accessing remote resources (default: True).
+        embedding_precision (str): Numeric precision for saved embeddings.
+            Options: "float32" (default), "float16", "bfloat16".
     """
 
     patch_features_h5_path: str = MISSING
@@ -39,6 +41,7 @@ class AggregateSlideFeaturesConfig:
     gpu_device_id: Optional[int] = None
     gpu_device_ids: Optional[List[int]] = None
     ssl_verify: bool = True  # Whether to verify SSL certificates for remote operations
+    embedding_precision: str = "float32"
 
 
 desc_doc = """== ${hydra.help.app_name} ==
@@ -127,6 +130,7 @@ def main(cfg: AggregateSlideFeaturesConfig):
         use_gpu=cfg.use_gpu,
         gpu_device_id=cfg.gpu_device_id,
         gpu_device_ids=cfg.gpu_device_ids,
+        embedding_precision=cfg.embedding_precision,
     )
 
     logger.info(f"Slide features saved to: {cfg.output_h5_path}")

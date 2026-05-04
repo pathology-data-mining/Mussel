@@ -1330,6 +1330,7 @@ def aggregate_slide_features_batch(
     gpu_device_ids=None,
     slide_batch_size=8,
     max_slide_patches=None,
+    embedding_precision="float32",
 ):
     """Aggregate patch-level features to slide-level for multiple slides (Step 2: Batch Slide Encoding).
 
@@ -1360,6 +1361,9 @@ def aggregate_slide_features_batch(
             When a slide exceeds this limit, patches are randomly subsampled before encoding.
             Useful for TITAN whose alibi attention is O(N²) and OOMs on very large slides.
             None (default) disables subsampling.
+        embedding_precision: Numeric precision for saved slide embeddings ("float32",
+            "float16", or "bfloat16"). Default "float32". Applied to the aggregated
+            output before saving; input patch features are always read as-is.
 
     Returns:
         Tuple of (output_h5_paths, output_pt_paths) if saving.
@@ -1412,10 +1416,13 @@ def aggregate_slide_features_batch(
                         patch_size=patch_size,
                     )
 
+                    feature_dtype = _parse_feature_dtype(embedding_precision)
+                    features_to_save = aggregated_features.astype(feature_dtype) if feature_dtype is not None else aggregated_features
+
                     # Save to HDF5 if requested
                     if output_h5:
                         logger.info(f"Saving aggregated features to {output_h5}")
-                        asset_dict = {"features": aggregated_features}
+                        asset_dict = {"features": features_to_save}
 
                         # Copy coordinates if they exist and we're using identity
                         if aggregation_method == "identity" and "coords" in file:
@@ -1426,7 +1433,7 @@ def aggregate_slide_features_batch(
                     # Save to PyTorch if requested
                     if output_pt:
                         logger.info(f"Saving aggregated features to {output_pt}")
-                        features_tensor = _numpy_to_torch(aggregated_features)
+                        features_tensor = _numpy_to_torch(features_to_save)
                         save_torch_tensor(output_pt, features_tensor)
 
                     successful_slides.append(slide_name)
@@ -1635,16 +1642,19 @@ def aggregate_slide_features_batch(
                 continue
 
             try:
+                feature_dtype = _parse_feature_dtype(embedding_precision)
+                features_to_save = aggregated_features.astype(feature_dtype) if feature_dtype is not None else aggregated_features
+
                 # Save to HDF5 if requested
                 if output_h5_paths and output_h5_paths[i] is not None:
-                    asset_dict = {"features": aggregated_features}
+                    asset_dict = {"features": features_to_save}
                     save_hdf5(
                         output_h5_paths[i], asset_dict, attr_h5_path=None, mode="w"
                     )
 
                 # Save to PyTorch if requested
                 if output_pt_paths and output_pt_paths[i] is not None:
-                    features_tensor = _numpy_to_torch(aggregated_features)
+                    features_tensor = _numpy_to_torch(features_to_save)
                     save_torch_tensor(output_pt_paths[i], features_tensor)
             except Exception as e:
                 logger.error(f"Failed to save results for slide {slide_name}: {str(e)}")
@@ -1689,6 +1699,7 @@ def aggregate_slide_features(
     use_gpu: bool = True,
     gpu_device_id: Optional[Union[int, List[int]]] = None,
     gpu_device_ids: Optional[List[int]] = None,
+    embedding_precision: str = "float32",
 ) -> Union[tuple[Optional[str], Optional[str]], np.ndarray]:
     """Aggregate patch-level features to slide-level (Step 2: Slide Encoding).
 
@@ -1710,6 +1721,9 @@ def aggregate_slide_features(
         use_gpu: Whether to use GPU for model-based aggregation (default: True).
         gpu_device_id: GPU device ID to use.
         gpu_device_ids: List of GPU device IDs for multi-GPU.
+        embedding_precision: Numeric precision for saved slide embeddings ("float32",
+            "float16", or "bfloat16"). Default "float32". Cast is applied to the
+            aggregated output before saving; input patch features are read as-is.
 
     Returns:
         Tuple of (output_h5_path, output_pt_path) if saving, otherwise features tensor.
@@ -1742,10 +1756,13 @@ def aggregate_slide_features(
             patch_size=patch_size,
         )
 
+        feature_dtype = _parse_feature_dtype(embedding_precision)
+        features_to_save = aggregated_features.astype(feature_dtype) if feature_dtype is not None else aggregated_features
+
         # Save to HDF5 if requested
         if output_h5_path is not None:
             logger.info(f"Saving aggregated features to {output_h5_path}")
-            asset_dict = {"features": aggregated_features}
+            asset_dict = {"features": features_to_save}
 
             # Copy coordinates if they exist and we're using identity
             if aggregation_method == "identity" and "coords" in file:
@@ -1756,7 +1773,7 @@ def aggregate_slide_features(
         # Save to PyTorch if requested
         if output_pt_path is not None:
             logger.info(f"Saving aggregated features to {output_pt_path}")
-            features_tensor = _numpy_to_torch(aggregated_features)
+            features_tensor = _numpy_to_torch(features_to_save)
             save_torch_tensor(output_pt_path, features_tensor)
 
     return output_h5_path, output_pt_path
@@ -1840,13 +1857,6 @@ def save_features(
         # Two-step process: patch encoding -> slide aggregation
         logger.info("Using two-step feature extraction process")
 
-        if aggregation_method == "model" and embedding_precision != "float32":
-            logger.warning(
-                f"embedding_precision={embedding_precision!r} with aggregation_method='model': "
-                "reduced-precision patch features will be fed to the slide encoder, "
-                "which may impact inference quality."
-            )
-
         # Auto-infer patch encoder from slide encoder if using model-based aggregation
         if aggregation_method == "model" and slide_model_type is not None:
             required_patch_encoder = get_required_patch_encoder(slide_model_type)
@@ -1863,7 +1873,7 @@ def save_features(
         if intermediate_h5_path is None:
             intermediate_h5_path = str(Path(output_h5_path).with_suffix(".patch.h5"))
 
-        # Step 1: Extract patch-level features
+        # Step 1: Extract patch-level features — always float32 (intermediate for slide encoder)
         extract_patch_features(
             patch_h5_path=patch_h5_path,
             slide_path=slide_path,
@@ -1879,10 +1889,10 @@ def save_features(
             num_workers=num_workers,
             pin_memory=pin_memory,
             is_test_run=is_test_run,
-            embedding_precision=embedding_precision,
+            embedding_precision="float32",
         )
 
-        # Step 2: Aggregate to slide level
+        # Step 2: Aggregate to slide level — apply embedding_precision to final output
         aggregate_slide_features(
             patch_features_h5_path=intermediate_h5_path,
             output_h5_path=output_h5_path,
@@ -1893,6 +1903,7 @@ def save_features(
             use_gpu=use_gpu,
             gpu_device_id=gpu_device_id,
             gpu_device_ids=gpu_device_ids,
+            embedding_precision=embedding_precision,
         )
     else:
         # Single-step process (backward compatible)

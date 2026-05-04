@@ -37,6 +37,7 @@ from mussel.utils import (aggregate_slide_features_batch,
                           resolve_aggregation_method, resolve_patch_encoder,
                           resolve_remote_paths, safe_path_join,
                           save_torch_tensor)
+from mussel.utils.feature_extract import _numpy_to_torch, _parse_feature_dtype
 from mussel.utils.file import WSI_EXTENSIONS, collect_wsi_paths
 
 # Private aliases used throughout this module
@@ -192,6 +193,7 @@ class TessellateExtractFeaturesConfig:
     aggregation_method: str = "identity"
     slide_model_type: Any = None  # Can be ModelType or List[ModelType]
     ssl_verify: bool = True  # Whether to verify SSL certificates for remote operations
+    embedding_precision: str = "float32"  # Precision for saved embeddings: "float32", "float16", or "bfloat16"
 
     def __post_init__(self):
         """Set default patch size based on model type if not explicitly set."""
@@ -894,7 +896,7 @@ def _main_batch(
                     f"{r['slide_id']}.{cfg.output_pt_suffix}",
                 )
                 with h5py.File(intermediate_h5_path, "r") as f:
-                    features = torch.from_numpy(f["features"][:])
+                    features = _numpy_to_torch(f["features"][:])
                 save_torch_tensor(pt_dest, features, ssl_verify=cfg.ssl_verify)
                 logger.debug(f"Saved PT features to {pt_dest}")
 
@@ -942,7 +944,10 @@ def _main_batch(
                 # Copy PT file
                 pt_dest = r["output_pt_path"]
                 with h5py.File(intermediate_h5_path, "r") as f:
-                    features = torch.from_numpy(f["features"][:])
+                    raw = f["features"][:]
+                feature_dtype = _parse_feature_dtype(cfg.embedding_precision)
+                features_arr = raw.astype(feature_dtype) if feature_dtype is not None else raw
+                features = _numpy_to_torch(features_arr)
                 save_torch_tensor(pt_dest, features, ssl_verify=cfg.ssl_verify)
                 logger.debug(f"Saved PT to {pt_dest}")
         elif aggregation_method == "model" and cfg.slide_model_type is None:
@@ -992,6 +997,7 @@ def _main_batch(
                     gpu_device_ids=cfg.gpu_device_ids,
                     slide_batch_size=cfg.slide_batch_size,
                     max_slide_patches=cfg.max_slide_patches,
+                    embedding_precision=cfg.embedding_precision,
                 )
             except Exception as e:
                 logger.error(f"Error during batch aggregation: {e}")
@@ -1081,7 +1087,10 @@ def _main_batch(
         # Save PT files and coords-only H5
         for i, r in enumerate(slide_results):
             with h5py.File(temp_output_h5_paths[i], "r") as f:
-                features = torch.from_numpy(f["features"][:])
+                raw = f["features"][:]
+                feature_dtype = _parse_feature_dtype(cfg.embedding_precision)
+                features_arr = raw.astype(feature_dtype) if feature_dtype is not None else raw
+                features = _numpy_to_torch(features_arr)
                 save_torch_tensor(
                     r["output_pt_path"], features, ssl_verify=cfg.ssl_verify
                 )
