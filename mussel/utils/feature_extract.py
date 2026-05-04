@@ -1329,6 +1329,7 @@ def aggregate_slide_features_batch(
     gpu_device_id=None,
     gpu_device_ids=None,
     slide_batch_size=8,
+    max_slide_patches=None,
 ):
     """Aggregate patch-level features to slide-level for multiple slides (Step 2: Batch Slide Encoding).
 
@@ -1355,6 +1356,10 @@ def aggregate_slide_features_batch(
         gpu_device_id: GPU device ID to use.
         gpu_device_ids: List of GPU device IDs for multi-GPU.
         slide_batch_size: Number of slides to process in a single batch (default: 8).
+        max_slide_patches: Maximum number of patches per slide for model-based aggregation.
+            When a slide exceeds this limit, patches are randomly subsampled before encoding.
+            Useful for TITAN whose alibi attention is O(N²) and OOMs on very large slides.
+            None (default) disables subsampling.
 
     Returns:
         Tuple of (output_h5_paths, output_pt_paths) if saving.
@@ -1534,6 +1539,20 @@ def aggregate_slide_features_batch(
                             logger.warning(
                                 f"patch_size not provided, using default: {patch_size}"
                             )
+
+                        # Subsample patches if slide exceeds max_slide_patches.
+                        # TITAN's alibi attention is O(N²) — large slides (>~8k patches)
+                        # will OOM on most GPUs without subsampling.
+                        if max_slide_patches is not None and features.shape[0] > max_slide_patches:
+                            logger.warning(
+                                f"Slide {slide_name} has {features.shape[0]} patches, "
+                                f"subsampling to {max_slide_patches} for TITAN_SLIDE "
+                                f"(O(N²) attention limit)."
+                            )
+                            rng = np.random.default_rng(seed=abs(hash(slide_name)) % 2**32)
+                            indices = np.sort(rng.choice(features.shape[0], max_slide_patches, replace=False))
+                            features = features[indices]
+                            coords = coords[indices]
 
                         features_tensor = _numpy_to_torch(features).unsqueeze(0)
                         coords_tensor = torch.from_numpy(coords).long().unsqueeze(0)

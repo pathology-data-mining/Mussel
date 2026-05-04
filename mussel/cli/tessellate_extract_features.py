@@ -152,6 +152,7 @@ class TessellateExtractFeaturesConfig:
     output_h5_suffix: str = "features.h5"
     output_pt_suffix: str = "features.pt"
     slide_batch_size: int = 8
+    max_slide_patches: Optional[int] = None  # Max patches per slide for slide-level models; large slides are subsampled
     # Common parameters
     classifier_pkl: Optional[str] = None
     classifier_threshold: float = 0.75
@@ -990,6 +991,7 @@ def _main_batch(
                     gpu_device_id=cfg.gpu_device_id,
                     gpu_device_ids=cfg.gpu_device_ids,
                     slide_batch_size=cfg.slide_batch_size,
+                    max_slide_patches=cfg.max_slide_patches,
                 )
             except Exception as e:
                 logger.error(f"Error during batch aggregation: {e}")
