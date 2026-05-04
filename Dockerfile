@@ -1,3 +1,6 @@
+# Pin uv image as a named stage to avoid fuse-overlayfs issues with inline COPY --from
+FROM ghcr.io/astral-sh/uv:latest AS uv
+
 # Stage 1: Builder
 FROM nvidia/cuda:12.1.1-cudnn8-devel-ubuntu22.04 AS builder
 
@@ -21,7 +24,7 @@ RUN update-alternatives --install /usr/bin/python3 python3 /usr/bin/python3.11 1
   && update-alternatives --install /usr/bin/python python /usr/bin/python3.11 1
 
 # Install uv
-COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
+COPY --from=uv /uv /uvx /bin/
 
 ARG BACKEND=torch-gpu
 ENV BACKEND=$BACKEND
