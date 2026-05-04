@@ -1,12 +1,21 @@
 """Tests for get_features pre-loaded model parameters."""
 
+import os
+import tempfile
 from unittest.mock import MagicMock, patch
 
+import ml_dtypes
 import numpy as np
 import pytest
 
+from mussel.cli.extract_features import ExtractFeaturesConfig
 from mussel.models import ModelType
-from mussel.utils.feature_extract import get_features
+from mussel.utils.feature_extract import (
+    H5DatasetProcessor,
+    TileCoordProcessor,
+    _parse_feature_dtype,
+    get_features,
+)
 
 
 def _make_mock_model(feature_dim=384):
@@ -170,3 +179,305 @@ def test_compatibility_validated_with_preloaded_patch_model():
         )
 
     mock_validate.assert_called_once_with(ModelType.GIGAPATH, ModelType.GIGAPATH_SLIDE)
+
+
+# -- embedding precision tests -----------------------------------------------
+
+
+def test_parse_feature_dtype_float32_returns_none():
+    assert _parse_feature_dtype("float32") is None
+
+
+def test_parse_feature_dtype_float16():
+    assert _parse_feature_dtype("float16") == np.dtype(np.float16)
+
+
+def test_parse_feature_dtype_bfloat16():
+    assert _parse_feature_dtype("bfloat16") == np.dtype(ml_dtypes.bfloat16)
+
+
+def test_parse_feature_dtype_invalid_raises():
+    with pytest.raises(ValueError, match="Unsupported embedding_precision"):
+        _parse_feature_dtype("float8")
+
+
+def _make_h5_processor_inputs(feature_dim=4, n_patches=8, batch_size=4):
+    """Return (mock_dataset, mock_loader, mock_model_fun) for H5DatasetProcessor tests."""
+    import torch
+
+    batches = []
+    n_batches = n_patches // batch_size
+    for _ in range(n_batches):
+        features_tensor = torch.zeros(batch_size, feature_dim)
+        coords_np = np.zeros((batch_size, 2), dtype=np.int32)
+        batches.append((features_tensor, coords_np))
+
+    mock_dataset = MagicMock()
+    mock_loader = batches
+
+    def mock_model_fun(batch):
+        return torch.zeros(len(batch), feature_dim)
+
+    return mock_dataset, mock_loader, mock_model_fun
+
+
+def test_h5_dataset_processor_saves_float16():
+    """H5DatasetProcessor with feature_dtype=np.float16 writes float16 to HDF5."""
+    import h5py
+
+    mock_dataset, mock_loader, mock_model_fun = _make_h5_processor_inputs()
+    processor = H5DatasetProcessor()
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        out_path = os.path.join(tmpdir, "feats.h5")
+        result = processor.process(
+            dataset=mock_dataset,
+            loader=mock_loader,
+            model_fun=mock_model_fun,
+            output_h5_path=out_path,
+            is_test_run=False,
+            feature_dtype=np.float16,
+        )
+        assert result.features.dtype == np.float16
+        with h5py.File(out_path, "r") as f:
+            assert f["features"].dtype == np.float16
+
+
+def test_h5_dataset_processor_default_float32():
+    """H5DatasetProcessor with feature_dtype=None keeps float32."""
+    import h5py
+
+    mock_dataset, mock_loader, mock_model_fun = _make_h5_processor_inputs()
+    processor = H5DatasetProcessor()
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        out_path = os.path.join(tmpdir, "feats.h5")
+        result = processor.process(
+            dataset=mock_dataset,
+            loader=mock_loader,
+            model_fun=mock_model_fun,
+            output_h5_path=out_path,
+            is_test_run=False,
+            feature_dtype=None,
+        )
+        assert result.features.dtype == np.float32
+        with h5py.File(out_path, "r") as f:
+            assert f["features"].dtype == np.float32
+
+
+def test_tile_coord_processor_float16():
+    """TileCoordProcessor with feature_dtype=np.float16 casts output after concat."""
+    import torch
+
+    batches = [(torch.zeros(4, 4), torch.zeros(4, dtype=torch.long))] * 2
+    mock_dataset = MagicMock()
+    mock_loader = batches
+
+    def mock_model_fun(batch):
+        return torch.zeros(len(batch), 4)
+
+    processor = TileCoordProcessor()
+    result = processor.process(
+        dataset=mock_dataset,
+        loader=mock_loader,
+        model_fun=mock_model_fun,
+        feature_dtype=np.float16,
+    )
+    assert result.features.dtype == np.float16
+
+
+def test_h5_dataset_processor_saves_bfloat16():
+    """H5DatasetProcessor with bfloat16 keeps in-memory dtype; HDF5 stores as 2-byte void."""
+    import h5py
+
+    bfloat16 = np.dtype(ml_dtypes.bfloat16)
+    mock_dataset, mock_loader, mock_model_fun = _make_h5_processor_inputs()
+    processor = H5DatasetProcessor()
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        out_path = os.path.join(tmpdir, "feats.h5")
+        result = processor.process(
+            dataset=mock_dataset,
+            loader=mock_loader,
+            model_fun=mock_model_fun,
+            output_h5_path=out_path,
+            is_test_run=False,
+            feature_dtype=bfloat16,
+        )
+        # In-memory result preserves bfloat16 dtype.
+        assert result.features.dtype == bfloat16
+        # h5py stores bfloat16 as a 2-byte opaque type (|V2); verify storage size.
+        with h5py.File(out_path, "r") as f:
+            assert f["features"].dtype.itemsize == 2
+
+
+def test_tile_coord_processor_bfloat16():
+    """TileCoordProcessor with feature_dtype=ml_dtypes.bfloat16 casts output after concat."""
+    import torch
+
+    bfloat16 = np.dtype(ml_dtypes.bfloat16)
+    batches = [(torch.zeros(4, 4), torch.zeros(4, dtype=torch.long))] * 2
+    mock_dataset = MagicMock()
+    mock_loader = batches
+
+    def mock_model_fun(batch):
+        return torch.zeros(len(batch), 4)
+
+    processor = TileCoordProcessor()
+    result = processor.process(
+        dataset=mock_dataset,
+        loader=mock_loader,
+        model_fun=mock_model_fun,
+        feature_dtype=bfloat16,
+    )
+    assert result.features.dtype == bfloat16
+
+
+def test_extract_features_config_has_embedding_precision_field():
+    """ExtractFeaturesConfig must include embedding_precision defaulting to float32."""
+    cfg = ExtractFeaturesConfig()
+    assert hasattr(cfg, "embedding_precision")
+    assert cfg.embedding_precision == "float32"
+
+
+# -- slide pipeline precision semantics ----------------------------------------
+
+def test_aggregate_slide_features_precision():
+    """aggregate_slide_features saves output at the requested precision."""
+    import h5py
+    import tempfile
+    from mussel.utils.feature_extract import aggregate_slide_features
+
+    features = np.random.rand(10, 8).astype(np.float32)
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        patch_h5 = os.path.join(tmpdir, "patches.h5")
+        with h5py.File(patch_h5, "w") as f:
+            f.create_dataset("features", data=features)
+
+        for precision, expected_itemsize, expected_kind in [
+            ("float32", 4, "f"),
+            ("float16", 2, "f"),
+            ("bfloat16", 2, "V"),
+        ]:
+            out_h5 = os.path.join(tmpdir, f"slide_{precision}.h5")
+            aggregate_slide_features(
+                patch_features_h5_path=patch_h5,
+                output_h5_path=out_h5,
+                aggregation_method="mean",
+                embedding_precision=precision,
+            )
+            with h5py.File(out_h5, "r") as f:
+                dtype = f["features"].dtype
+                assert dtype.itemsize == expected_itemsize, (
+                    f"precision={precision}: expected itemsize {expected_itemsize}, got {dtype.itemsize}"
+                )
+                if expected_kind != "V":
+                    assert dtype.kind == expected_kind, (
+                        f"precision={precision}: expected kind {expected_kind!r}, got {dtype.kind!r}"
+                    )
+
+
+def test_save_features_two_step_keeps_intermediate_float32():
+    """In two-step (slide model) path, intermediate tile features must remain float32."""
+    import h5py
+    import tempfile
+    from mussel.utils.feature_extract import _parse_feature_dtype, save_features
+
+    features = np.random.rand(4, 8).astype(np.float32)
+    coords = np.zeros((4, 2), dtype=np.int32)
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        patch_h5 = os.path.join(tmpdir, "patches.h5")
+        with h5py.File(patch_h5, "w") as f:
+            f.create_dataset("features", data=features)
+            f.create_dataset("coords", data=coords)
+            f["features"].attrs["patch_size"] = 256
+            f["features"].attrs["patch_level"] = 0
+            f["features"].attrs["patch_size_to_resize_to_for_desired_mpp"] = 224
+
+        intermediate_calls = []
+
+        def fake_extract_patch(patch_h5_path, slide_path, output_h5_path, embedding_precision="float32", **kwargs):
+            intermediate_calls.append(embedding_precision)
+            with h5py.File(patch_h5_path, "r") as src, h5py.File(output_h5_path, "w") as dst:
+                dst.create_dataset("features", data=src["features"][:])
+                dst.create_dataset("coords", data=src["coords"][:])
+
+        def fake_aggregate(patch_features_h5_path, output_h5_path, embedding_precision="float32", **kwargs):
+            feature_dtype = _parse_feature_dtype(embedding_precision)
+            with h5py.File(patch_features_h5_path, "r") as src:
+                data = src["features"][:]
+            if feature_dtype is not None:
+                data = data.astype(feature_dtype)
+            if output_h5_path:
+                with h5py.File(output_h5_path, "w") as dst:
+                    dst.create_dataset("features", data=data)
+            return output_h5_path, None
+
+        out_h5 = os.path.join(tmpdir, "slide_out.h5")
+
+        with patch("mussel.utils.feature_extract.extract_patch_features", side_effect=fake_extract_patch), \
+             patch("mussel.utils.feature_extract.aggregate_slide_features", side_effect=fake_aggregate):
+            save_features(
+                patch_h5_path=patch_h5,
+                slide_path="dummy.svs",
+                output_h5_path=out_h5,
+                aggregation_method="model",
+                embedding_precision="float16",
+            )
+
+        assert intermediate_calls == ["float32"], (
+            f"Intermediate tile extraction must use float32, got {intermediate_calls}"
+        )
+        with h5py.File(out_h5, "r") as f:
+            assert f["features"].dtype.itemsize == 2
+            assert f["features"].dtype.kind == "f"  # float16
+
+
+def test_aggregate_slide_features_batch_precision():
+    """aggregate_slide_features_batch casts output to the requested precision."""
+    import h5py
+    import tempfile
+    from mussel.utils.feature_extract import aggregate_slide_features_batch
+
+    features = np.random.rand(6, 8).astype(np.float32)
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        patch_h5 = os.path.join(tmpdir, "patches.h5")
+        with h5py.File(patch_h5, "w") as f:
+            f.create_dataset("features", data=features)
+
+        out_h5 = os.path.join(tmpdir, "out.h5")
+
+        aggregate_slide_features_batch(
+            patch_features_h5_paths=[patch_h5],
+            output_h5_paths=[out_h5],
+            aggregation_method="mean",
+            embedding_precision="float16",
+        )
+
+        with h5py.File(out_h5, "r") as f:
+            assert f["features"].dtype.itemsize == 2
+            assert f["features"].dtype.kind == "f"
+
+
+def test_aggregate_slide_features_config_has_embedding_precision():
+    """AggregateSlideFeaturesConfig must expose embedding_precision."""
+    from mussel.cli.aggregate_slide_features import AggregateSlideFeaturesConfig
+    from omegaconf import OmegaConf
+
+    cfg = OmegaConf.structured(AggregateSlideFeaturesConfig)
+    assert hasattr(cfg, "embedding_precision")
+    assert cfg.embedding_precision == "float32"
+
+
+def test_tessellate_extract_features_config_has_embedding_precision():
+    """TessellateExtractFeaturesConfig must expose embedding_precision."""
+    from mussel.cli.tessellate_extract_features import TessellateExtractFeaturesConfig
+    from mussel.cli.tessellate import SegConfig
+    from omegaconf import OmegaConf
+
+    cfg = TessellateExtractFeaturesConfig(seg_config=SegConfig())
+    assert hasattr(cfg, "embedding_precision")
+    assert cfg.embedding_precision == "float32"

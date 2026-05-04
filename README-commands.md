@@ -275,6 +275,37 @@ extract_features \
     output_pt_path=None
 ```
 
+#### Embedding precision
+
+By default embeddings are stored at full float32 precision. Use `embedding_precision`
+to reduce the on-disk and in-memory size of the HDF5 and `.pt` outputs:
+
+| Value | Bytes / dim | Notes |
+|---|---|---|
+| `float32` (default) | 4 | Full model precision |
+| `float16` | 2 | IEEE half-precision; cuts storage in half with slight loss of precision |
+| `bfloat16` | 2 | Brain-float: same exponent range as float32, less mantissa precision than float16; widely used in ML training |
+
+```bash
+extract_features \
+    slide_path=tests/testdata/948176.svs \
+    patch_h5_path=tests/testdata/948176.patch.h5 \
+    output_h5_path=948176_feat.h5 \
+    output_pt_path=948176_embed.pt \
+    embedding_precision=float16
+```
+
+The `embedding_precision` parameter is also supported by `tessellate_extract_features`:
+
+```bash
+tessellate_extract_features \
+    slide_path=slide.svs \
+    output_h5_path=out_feat.h5 \
+    output_pt_path=out_embed.pt \
+    model_type=VIRCHOW2 \
+    embedding_precision=bfloat16
+```
+
 ### `tessellate_extract_features`
 
 `tessellate_extract_features` runs tessellation and feature extraction in a single command.

@@ -664,10 +664,16 @@ def segment_tissue(
                 "Use overlap to derive step_size automatically, or pass step_size directly."
             )
 
-        # Get MPP with fallback handling
-        slide_mpp = get_slide_mpp(
+        # Get MPP with fallback handling.
+        # Probe without a default first to detect whether real metadata exists.
+        _mpp_probe = get_slide_mpp(
+            wsi, slide_path, default_mpp=None, slide_mpp_override=slide_mpp_override
+        )
+        slide_mpp = _mpp_probe if _mpp_probe is not None else get_slide_mpp(
             wsi, slide_path, slide_mpp_override=slide_mpp_override
         )
+        # True when no MPP metadata was found and the 0.5 µm/px default was used.
+        mpp_is_fallback = _mpp_probe is None and slide_mpp_override is None
 
         native_step_size = get_native_size(step_size, mpp, slide_mpp)
         native_patch_size = get_native_size(patch_size, mpp, slide_mpp)
@@ -852,6 +858,7 @@ def segment_tissue(
             "patch_level": 0,
             "mpp": mpp,
             "native_mpp": slide_mpp,
+            "mpp_is_fallback": mpp_is_fallback,
             "level_dim": wsi.level_dimensions[0],
             "name": slide_id,
             "overlap": overlap,

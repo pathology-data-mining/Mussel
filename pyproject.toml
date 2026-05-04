@@ -28,6 +28,7 @@ dependencies = [
   "sacremoses",
   "tqdm",
   "pyarrow>=23.0.1",
+  "ml-dtypes>=0.2",
 ]
 
 [dependency-groups]
