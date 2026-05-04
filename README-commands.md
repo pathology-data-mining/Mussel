@@ -17,6 +17,7 @@ slides, and generating feature embeddings with pathology foundation models.
 * `filter_features` - filter features using a classifier model
 * `merge_annotation_features` - merge tile features with annotations from a BMP file.
 * `linear_probe_benchmark` - benchmark a linear probe classifier on features extracted from a slide
+* `clustering_benchmark` - evaluate feature quality by clustering tile-level embeddings and comparing with annotation labels
 * `save_model` - download and save a foundation model locally
 * `convert` - convert whole-slide images to pyramidal TIFF format (single file or batch)
 
@@ -369,6 +370,62 @@ cache_tiles \
 ```
 
 *This takes about ten seconds for an example slide.*
+
+### `clustering_benchmark`
+
+`clustering_benchmark` evaluates the quality of tile-level feature embeddings by clustering
+them and comparing the resulting assignments to annotation labels.  It is designed to work
+with the GeoParquet file produced by `merge_annotation_features`.
+
+Outputs three files:
+
+| Output | Default filename | Contents |
+|---|---|---|
+| Metrics CSV | `clustering_metrics.csv` | Per-algorithm NMI, ARI, purity at tile and slide level |
+| Summary JSON | `clustering_results.json` | All scalar metrics as a nested dict |
+| UMAP PNG | `umap.png` | UMAP scatter-plot grid (cluster coloring vs annotation coloring for each algorithm) |
+
+#### Example
+
+```bash
+clustering_benchmark \
+    features_annotation_parquet_path=features_with_annotations.parquet \
+    output_metrics_csv=metrics.csv \
+    output_summary_json=results.json \
+    output_umap_png=umap.png \
+    'algorithms=["kmeans","hierarchical","dbscan"]' \
+    n_clusters=3 \
+    multiclass=true
+```
+
+#### Parameters
+
+| Parameter | Default | Description |
+|---|---|---|
+| `features_annotation_parquet_path` | required | GeoParquet from `merge_annotation_features` (must contain `slide_id`, `annotation`, `overlap_area`, `tile_area`, and `feature_*` columns). |
+| `output_metrics_csv` | `clustering_metrics.csv` | Path for per-algorithm metrics table. |
+| `output_summary_json` | `clustering_results.json` | Path for nested-dict metrics JSON. |
+| `output_umap_png` | `umap.png` | Path for UMAP scatter-plot grid. |
+| `annotation_percent_filter_threshold` | `0.50` | Minimum overlap fraction to include a tile. |
+| `positive_annotation_label` | `2` | Annotation value treated as the positive class in binary mode. |
+| `multiclass` | `false` | Use all non-zero annotation values as class labels (background tiles excluded). |
+| `algorithms` | `["kmeans","hierarchical"]` | Clustering algorithms to run. Supported: `"kmeans"`, `"hierarchical"`, `"dbscan"`. |
+| `n_clusters` | `2` | Number of clusters for kmeans and hierarchical. |
+| `dbscan_eps` | `0.5` | DBSCAN neighbourhood radius. |
+| `dbscan_min_samples` | `5` | DBSCAN minimum samples per core point. |
+| `umap_n_neighbors` | `15` | UMAP `n_neighbors`. |
+| `umap_min_dist` | `0.1` | UMAP `min_dist`. |
+| `umap_n_components` | `2` | UMAP output dimensionality: `2` for 2-D plots, `3` for 3-D scatter plots. |
+| `umap_subsample` | `10000` | Max tiles used for UMAP projection (random subsample for speed). Use `0` to disable. |
+| `random_state` | `42` | Random seed. |
+
+UMAP requires the optional `umap-learn` package:
+
+```bash
+uv sync --extra umap
+# or
+pip install umap-learn
+```
 
 ### `save_model`
 
