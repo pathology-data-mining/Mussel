@@ -1,4 +1,4 @@
-.PHONY: help install install-dev test test-fast test-slow test-all test-gpu test-fast-gpu test-slow-gpu test-parallel test-watch clean format lint type-check coverage docs build slurm-setup slurm-test-integration slurm-test-fastattn slurm-test-tensorflow slurm-generate-snapshots slurm-test-all slurm-status slurm-logs regression-patch regression-pipeline regression-all
+.PHONY: help install install-dev test test-fast test-slow test-all test-gpu test-fast-gpu test-slow-gpu test-parallel test-watch clean format lint type-check coverage docs build slurm-setup slurm-test-integration slurm-test-fastattn slurm-test-tensorflow slurm-generate-snapshots slurm-test-all slurm-status slurm-logs regression-patch regression-pipeline regression-all docker-build sif
 
 # Default target - show help
 help:
@@ -39,6 +39,8 @@ help:
 	@echo ""
 	@echo "Build & Distribution:"
 	@echo "  make build            Build distribution packages"
+	@echo "  make docker-build     Build Docker image (mussel:VERSION)"
+	@echo "  make sif              Build Apptainer SIF from Docker image (mussel.sif)"
 	@echo "  make docs             Generate documentation"
 	@echo ""
 	@echo "Git Helpers:"
@@ -193,9 +195,23 @@ clean-test:
 	@find . -type d -name '.pytest_cache' -exec rm -rf {} +
 
 # Build
+VERSION := $(shell grep '^version' pyproject.toml | head -1 | sed 's/.*"\(.*\)".*/\1/')
+DOCKER_IMAGE := mussel
+SIF_FILE := mussel.sif
+
 build:
 	@echo "Building distribution packages..."
 	@uv run python -m build
+
+docker-build:
+	@echo "Building Docker image $(DOCKER_IMAGE):$(VERSION)..."
+	docker build --build-arg BACKEND=torch-gpu -t $(DOCKER_IMAGE):$(VERSION) -t $(DOCKER_IMAGE):latest .
+	@echo "✅ Docker image built: $(DOCKER_IMAGE):$(VERSION)"
+
+sif: docker-build
+	@echo "Building Apptainer SIF from $(DOCKER_IMAGE):$(VERSION)..."
+	apptainer build --force $(SIF_FILE) docker-daemon://$(DOCKER_IMAGE):$(VERSION)
+	@echo "✅ SIF built: $(SIF_FILE)"
 
 # Documentation
 docs:
