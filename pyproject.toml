@@ -11,6 +11,7 @@ dependencies = [
   "h5py",
   "matplotlib",
   "tiffslide",
+  "numcodecs<0.16",
   "opencv-python-headless",
   "hydra-core",
   "geopandas",
