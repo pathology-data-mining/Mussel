@@ -32,7 +32,11 @@ def _make_h5(path, n_tiles=10, n_features=4, tile_size=256, feature_dtype=np.flo
             Pass np.float16 or ml_dtypes.bfloat16 to simulate reduced-precision output.
     """
     coords = np.array([[i * tile_size, 0] for i in range(n_tiles)], dtype=np.int32)
-    features = np.random.default_rng(0).standard_normal((n_tiles, n_features)).astype(feature_dtype)
+    features = (
+        np.random.default_rng(0)
+        .standard_normal((n_tiles, n_features))
+        .astype(feature_dtype)
+    )
     with h5py.File(path, "w") as f:
         ds = f.create_dataset("coords", data=coords)
         ds.attrs["patch_size"] = tile_size
@@ -161,9 +165,9 @@ def test_class_mapping_annotation_values_are_mapped(tmp_path):
     gdf = pd.read_parquet(out_parquet)
     raw_ids = {2, 5}
     for raw_id in raw_ids:
-        assert raw_id not in gdf["annotation"].unique(), (
-            f"Raw class ID {raw_id} should not appear; annotation should be mapped values"
-        )
+        assert (
+            raw_id not in gdf["annotation"].unique()
+        ), f"Raw class ID {raw_id} should not appear; annotation should be mapped values"
     assert set(gdf["annotation"].unique()) <= {0, 1}
 
 
@@ -178,7 +182,9 @@ def test_unannotated_background_excluded(tmp_path):
         tmp_path / "labels.bmp",
         width=width,
         height=tile_size,
-        annotation_map={1: (tile_size, width)},  # tile_size..width annotated; 0..tile_size = 0
+        annotation_map={
+            1: (tile_size, width)
+        },  # tile_size..width annotated; 0..tile_size = 0
     )
 
     out_parquet = str(tmp_path / "out.parquet")
@@ -191,7 +197,9 @@ def test_unannotated_background_excluded(tmp_path):
 
     if Path(out_parquet).exists():
         gdf = pd.read_parquet(out_parquet)
-        assert 0 not in gdf["annotation"].unique(), "Background (annotation=0) should be excluded"
+        assert (
+            0 not in gdf["annotation"].unique()
+        ), "Background (annotation=0) should be excluded"
 
 
 # ---------------------------------------------------------------------------
@@ -203,15 +211,28 @@ def test_float16_features_upcast_to_float32(tmp_path):
     """float16 features stored in h5 are upcast to float32 in the output parquet."""
     n_tiles, tile_size, n_features = 4, 256, 8
     # _make_h5 uses seed 0 — replicate that to compute expected round-trip values
-    orig_f32 = np.random.default_rng(0).standard_normal((n_tiles, n_features)).astype(np.float32)
+    orig_f32 = (
+        np.random.default_rng(0)
+        .standard_normal((n_tiles, n_features))
+        .astype(np.float32)
+    )
     expected = orig_f32.astype(np.float16).astype(np.float32)
 
-    _make_h5(tmp_path / "features.h5", n_tiles=n_tiles, tile_size=tile_size,
-             n_features=n_features, feature_dtype=np.float16)
+    _make_h5(
+        tmp_path / "features.h5",
+        n_tiles=n_tiles,
+        tile_size=tile_size,
+        n_features=n_features,
+        feature_dtype=np.float16,
+    )
 
     width = n_tiles * tile_size
-    _make_bmp(tmp_path / "labels.bmp", width=width, height=tile_size,
-              annotation_map={1: (0, width)})
+    _make_bmp(
+        tmp_path / "labels.bmp",
+        width=width,
+        height=tile_size,
+        annotation_map={1: (0, width)},
+    )
 
     out_parquet = str(tmp_path / "out.parquet")
     cfg = MergeAnnotationFeaturesConfig(
@@ -227,14 +248,16 @@ def test_float16_features_upcast_to_float32(tmp_path):
     feat_cols = [c for c in df.columns if c.startswith("feature_")]
     assert feat_cols, "No feature columns found in output parquet"
     for col in feat_cols:
-        assert df[col].dtype == np.float32, (
-            f"Column {col} has dtype {df[col].dtype}, expected float32"
-        )
+        assert (
+            df[col].dtype == np.float32
+        ), f"Column {col} has dtype {df[col].dtype}, expected float32"
     # Values should match the float16 round-trip
     feat_matrix = df[feat_cols].reset_index(drop=True).to_numpy()
     np.testing.assert_allclose(
-        feat_matrix, expected[: len(feat_matrix)], rtol=1e-3,
-        err_msg="Float16→float32 values differ more than expected"
+        feat_matrix,
+        expected[: len(feat_matrix)],
+        rtol=1e-3,
+        err_msg="Float16→float32 values differ more than expected",
     )
 
 
@@ -244,16 +267,29 @@ def test_bfloat16_features_upcast_to_float32(tmp_path):
 
     n_tiles, tile_size, n_features = 4, 256, 8
     # _make_h5 uses seed 0 — replicate that to get expected values
-    orig_f32 = np.random.default_rng(0).standard_normal((n_tiles, n_features)).astype(np.float32)
+    orig_f32 = (
+        np.random.default_rng(0)
+        .standard_normal((n_tiles, n_features))
+        .astype(np.float32)
+    )
     # bfloat16 has the same exponent range as float32; round-trip values should be close
     expected = orig_f32.astype(ml_dtypes.bfloat16).astype(np.float32)
 
-    _make_h5(tmp_path / "features.h5", n_tiles=n_tiles, tile_size=tile_size,
-             n_features=n_features, feature_dtype=ml_dtypes.bfloat16)
+    _make_h5(
+        tmp_path / "features.h5",
+        n_tiles=n_tiles,
+        tile_size=tile_size,
+        n_features=n_features,
+        feature_dtype=ml_dtypes.bfloat16,
+    )
 
     width = n_tiles * tile_size
-    _make_bmp(tmp_path / "labels.bmp", width=width, height=tile_size,
-              annotation_map={1: (0, width)})
+    _make_bmp(
+        tmp_path / "labels.bmp",
+        width=width,
+        height=tile_size,
+        annotation_map={1: (0, width)},
+    )
 
     out_parquet = str(tmp_path / "out.parquet")
     cfg = MergeAnnotationFeaturesConfig(
@@ -269,13 +305,15 @@ def test_bfloat16_features_upcast_to_float32(tmp_path):
     feat_cols = [c for c in df.columns if c.startswith("feature_")]
     assert feat_cols, "No feature columns found in output parquet"
     for col in feat_cols:
-        assert df[col].dtype == np.float32, (
-            f"Column {col} has dtype {df[col].dtype}, expected float32"
-        )
+        assert (
+            df[col].dtype == np.float32
+        ), f"Column {col} has dtype {df[col].dtype}, expected float32"
     # Values should match the bfloat16 round-trip (not the original float32).
     # Reset index so positional lookup against expected works correctly.
     feat_matrix = df[feat_cols].reset_index(drop=True).to_numpy()
     np.testing.assert_allclose(
-        feat_matrix, expected[: len(feat_matrix)], rtol=1e-2,
-        err_msg="Bfloat16→float32 values differ more than expected"
+        feat_matrix,
+        expected[: len(feat_matrix)],
+        rtol=1e-2,
+        err_msg="Bfloat16→float32 values differ more than expected",
     )
