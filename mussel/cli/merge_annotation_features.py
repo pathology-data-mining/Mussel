@@ -131,6 +131,13 @@ def main(cfg: MergeAnnotationFeaturesConfig):
         tile_size = int(tiles_h5["coords"].attrs.get("patch_size"))
         coords = np.array(tiles_h5["coords"])        # (N, 2): [x, y]
         features_arr = np.array(tiles_h5["features"])  # (N, D)
+        # HDF5 stores bfloat16 as |V2 opaque void (via ml_dtypes). Cast both
+        # bfloat16 and float16 to float32 so sklearn and parquet work correctly.
+        if features_arr.dtype.kind == "V" and features_arr.dtype.itemsize == 2:
+            import ml_dtypes  # noqa: PLC0415
+            features_arr = features_arr.view(ml_dtypes.bfloat16).astype(np.float32)
+        elif features_arr.dtype == np.float16:
+            features_arr = features_arr.astype(np.float32)
         logger.info("Loaded %d tiles  feature_dim=%d", len(coords), features_arr.shape[1])
 
     logger.info("Reading annotations from %s...", cfg.annotation_bmp_path)
