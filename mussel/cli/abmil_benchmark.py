@@ -459,11 +459,18 @@ def _run_one_seed(
 
 
 def _sanitize_for_json(obj):
-    """Recursively convert numpy scalars/arrays to native Python types."""
+    """Recursively convert numpy scalars/arrays to native Python types.
+
+    Replaces ``inf`` and ``nan`` float values with ``None`` so the output is
+    valid JSON (standard JSON has no representation for these values).
+    """
     if isinstance(obj, (np.integer,)):
         return int(obj)
     if isinstance(obj, (np.floating,)):
-        return float(obj)
+        v = float(obj)
+        return None if (np.isnan(v) or np.isinf(v)) else v
+    if isinstance(obj, float):
+        return None if (np.isnan(obj) or np.isinf(obj)) else obj
     if isinstance(obj, np.ndarray):
         return obj.tolist()
     if isinstance(obj, dict):
