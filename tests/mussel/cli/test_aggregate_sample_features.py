@@ -13,10 +13,10 @@ def _make_data(n_tiles, dim=4):
     return features, coords
 
 
-def _write_fake_h5(path, n_tiles, dim=4, seed=0):
+def _write_fake_h5(path, n_tiles, dim=4, seed=0, feature_dtype=np.float32):
     """Write a synthetic feature H5 with 'features' and 'coords' datasets."""
     rng = np.random.default_rng(seed)
-    features = rng.random((n_tiles, dim)).astype(np.float32)
+    features = rng.random((n_tiles, dim)).astype(feature_dtype)
     coords = rng.integers(0, 1000, (n_tiles, 2))
     with h5py.File(path, "w") as f:
         f.create_dataset("features", data=features)
@@ -120,8 +120,9 @@ def test_subsample_tiles_invalid_strategy():
 # =============================================================================
 
 
-from mussel.utils.feature_extract import \
-    aggregate_sample_features as _aggregate_sample_features
+from mussel.utils.feature_extract import (
+    aggregate_sample_features as _aggregate_sample_features,
+)
 
 
 def test_aggregate_sample_features_invalid_shapes():
@@ -216,7 +217,10 @@ def test_aggregate_sample_features_save_pt_false(tmp_path):
 def test_aggregate_sample_features_two_samples(tmp_path):
     """Three slides, two samples — two entries in result."""
     rng = np.random.default_rng(0)
-    slides = [(rng.random((10, 4)).astype(np.float32), rng.integers(0, 1000, (10, 2))) for _ in range(3)]
+    slides = [
+        (rng.random((10, 4)).astype(np.float32), rng.integers(0, 1000, (10, 2)))
+        for _ in range(3)
+    ]
     features_list = [f for f, _ in slides]
     coords_list = [c for _, c in slides]
 
@@ -315,3 +319,76 @@ def test_cli_mismatched_lengths_raises(tmp_path):
     )
     with pytest.raises((ValueError, Exception)):
         mussel.cli.aggregate_sample_features.main(OmegaConf.structured(cfg))
+
+
+# =============================================================================
+# Precision upcast tests
+# =============================================================================
+
+
+def test_float16_features_upcast_to_float32(tmp_path):
+    """float16 features stored in h5 are upcast to float32 in the output H5."""
+    n_tiles, dim = 6, 8
+    rng = np.random.default_rng(0)
+    orig_f32 = rng.random((n_tiles, dim)).astype(np.float32)
+    expected = orig_f32.astype(np.float16).astype(np.float32)
+
+    h5_path = tmp_path / "slide.h5"
+    _write_fake_h5(h5_path, n_tiles=n_tiles, dim=dim, seed=0, feature_dtype=np.float16)
+
+    cfg = AggregateSampleFeaturesConfig(
+        patch_features_h5_paths=[str(h5_path)],
+        sample_ids=["s1"],
+        output_dir=str(tmp_path / "out"),
+        save_pt=False,
+    )
+    mussel.cli.aggregate_sample_features.main(OmegaConf.structured(cfg))
+
+    with h5py.File(tmp_path / "out" / "s1.features.h5") as f:
+        out_features = f["features"][:]
+
+    assert (
+        out_features.dtype == np.float32
+    ), f"Expected float32 output, got {out_features.dtype}"
+    np.testing.assert_allclose(
+        out_features,
+        expected,
+        rtol=1e-3,
+        err_msg="Float16→float32 values differ more than expected",
+    )
+
+
+def test_bfloat16_features_upcast_to_float32(tmp_path):
+    """bfloat16 features (stored as |V2 opaque void in h5) are upcast to float32."""
+    import ml_dtypes
+
+    n_tiles, dim = 6, 8
+    rng = np.random.default_rng(0)
+    orig_f32 = rng.random((n_tiles, dim)).astype(np.float32)
+    expected = orig_f32.astype(ml_dtypes.bfloat16).astype(np.float32)
+
+    h5_path = tmp_path / "slide.h5"
+    _write_fake_h5(
+        h5_path, n_tiles=n_tiles, dim=dim, seed=0, feature_dtype=ml_dtypes.bfloat16
+    )
+
+    cfg = AggregateSampleFeaturesConfig(
+        patch_features_h5_paths=[str(h5_path)],
+        sample_ids=["s1"],
+        output_dir=str(tmp_path / "out"),
+        save_pt=False,
+    )
+    mussel.cli.aggregate_sample_features.main(OmegaConf.structured(cfg))
+
+    with h5py.File(tmp_path / "out" / "s1.features.h5") as f:
+        out_features = f["features"][:]
+
+    assert (
+        out_features.dtype == np.float32
+    ), f"Expected float32 output, got {out_features.dtype}"
+    np.testing.assert_allclose(
+        out_features,
+        expected,
+        rtol=1e-2,
+        err_msg="Bfloat16→float32 values differ more than expected",
+    )
