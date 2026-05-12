@@ -86,3 +86,163 @@ def test_seg_config_seg_model_neural():
     """SegConfig accepts seg_model='neural'."""
     cfg = SegConfig(seg_model="neural")
     assert cfg.seg_model == "neural"
+
+
+def test_artifact_remover_fn_wired_when_remove_artifacts(tmp_path):
+    """_tessellate_and_filter instantiates GrandQCArtifactRemover when remove_artifacts=True.
+
+    The remover is passed as artifact_remover_fn to segment_tissue.  Without this
+    fix the flag was silently ignored (segment_tissue warned and did nothing).
+    """
+    from unittest.mock import MagicMock, patch, call
+    from mussel.cli.tessellate_extract_features_common import _tessellate_and_filter
+    from omegaconf import OmegaConf
+
+    fake_coords = np.array([[0, 0], [512, 0]])
+    fake_polygon = MagicMock()
+    fake_grid = MagicMock()
+
+    cfg = OmegaConf.create({
+        "seg_config": {
+            "mpp": 0.5,
+            "patch_size": 512,
+            "seg_model": "classic",
+            "remove_artifacts": True,
+            "remove_penmarks": False,
+        },
+        "vis_config": {},
+        "keep_intermediate_files": False,
+        "gpu_device_id": 0,
+        "use_gpu": False,
+        "batch_size": 8,
+        "num_workers": 0,
+        "gpu_device_ids": None,
+    })
+
+    with patch(
+        "mussel.cli.tessellate_extract_features_common.segment_tissue",
+        return_value=(fake_polygon, fake_grid, fake_coords, None),
+    ) as mock_segment, patch(
+        "mussel.cli.tessellate_extract_features_common.GrandQCArtifactRemover",
+        autospec=True,
+    ) as MockRemover:
+        mock_remover_instance = MockRemover.return_value
+
+        _tessellate_and_filter(
+            slide_path="tests/testdata/948176.svs",
+            slide_id="948176",
+            cfg=cfg,
+            temp_dir=str(tmp_path),
+            base_path=tmp_path,
+            use_filtering=False,
+            prefilter_model_type=None,
+            prefilter_model_path=None,
+            skip_second_extraction=False,
+        )
+
+    # GrandQCArtifactRemover must have been instantiated with remove_penmarks_only=False
+    MockRemover.assert_called_once_with(remove_penmarks_only=False)
+
+    # segment_tissue must have received the remover instance
+    _, kwargs = mock_segment.call_args
+    assert kwargs.get("artifact_remover_fn") is mock_remover_instance, (
+        "artifact_remover_fn was not passed to segment_tissue"
+    )
+
+
+def test_artifact_remover_fn_not_instantiated_when_flags_false(tmp_path):
+    """_tessellate_and_filter does NOT instantiate GrandQCArtifactRemover by default."""
+    from unittest.mock import MagicMock, patch
+    from mussel.cli.tessellate_extract_features_common import _tessellate_and_filter
+    from omegaconf import OmegaConf
+
+    fake_coords = np.array([[0, 0], [512, 0]])
+
+    cfg = OmegaConf.create({
+        "seg_config": {
+            "mpp": 0.5,
+            "patch_size": 512,
+            "seg_model": "classic",
+            "remove_artifacts": False,
+            "remove_penmarks": False,
+        },
+        "vis_config": {},
+        "keep_intermediate_files": False,
+        "gpu_device_id": 0,
+        "use_gpu": False,
+        "batch_size": 8,
+        "num_workers": 0,
+        "gpu_device_ids": None,
+    })
+
+    with patch(
+        "mussel.cli.tessellate_extract_features_common.segment_tissue",
+        return_value=(MagicMock(), MagicMock(), fake_coords, None),
+    ) as mock_segment, patch(
+        "mussel.cli.tessellate_extract_features_common.GrandQCArtifactRemover",
+        autospec=True,
+    ) as MockRemover:
+
+        _tessellate_and_filter(
+            slide_path="tests/testdata/948176.svs",
+            slide_id="948176",
+            cfg=cfg,
+            temp_dir=str(tmp_path),
+            base_path=tmp_path,
+            use_filtering=False,
+            prefilter_model_type=None,
+            prefilter_model_path=None,
+            skip_second_extraction=False,
+        )
+
+    MockRemover.assert_not_called()
+    _, kwargs = mock_segment.call_args
+    assert kwargs.get("artifact_remover_fn") is None
+
+
+def test_artifact_remover_fn_penmarks_only(tmp_path):
+    """remove_penmarks=True with remove_artifacts=False → remove_penmarks_only=True."""
+    from unittest.mock import MagicMock, patch
+    from mussel.cli.tessellate_extract_features_common import _tessellate_and_filter
+    from omegaconf import OmegaConf
+
+    fake_coords = np.array([[0, 0], [512, 0]])
+
+    cfg = OmegaConf.create({
+        "seg_config": {
+            "mpp": 0.5,
+            "patch_size": 512,
+            "seg_model": "classic",
+            "remove_artifacts": False,
+            "remove_penmarks": True,
+        },
+        "vis_config": {},
+        "keep_intermediate_files": False,
+        "gpu_device_id": 0,
+        "use_gpu": False,
+        "batch_size": 8,
+        "num_workers": 0,
+        "gpu_device_ids": None,
+    })
+
+    with patch(
+        "mussel.cli.tessellate_extract_features_common.segment_tissue",
+        return_value=(MagicMock(), MagicMock(), fake_coords, None),
+    ), patch(
+        "mussel.cli.tessellate_extract_features_common.GrandQCArtifactRemover",
+        autospec=True,
+    ) as MockRemover:
+
+        _tessellate_and_filter(
+            slide_path="tests/testdata/948176.svs",
+            slide_id="948176",
+            cfg=cfg,
+            temp_dir=str(tmp_path),
+            base_path=tmp_path,
+            use_filtering=False,
+            prefilter_model_type=None,
+            prefilter_model_path=None,
+            skip_second_extraction=False,
+        )
+
+    MockRemover.assert_called_once_with(remove_penmarks_only=True)

@@ -15,6 +15,7 @@ logger = logging.getLogger(__name__)
 from mussel.utils import (filter_features, is_remote_path, load_classifier,
                           load_features_from_h5, safe_path_join, save_features,
                           save_hdf5, save_torch_tensor)
+from mussel.utils.artifact_removal import GrandQCArtifactRemover
 from mussel.utils.segment import (draw_slide_mask, save_patches_png,
                                   segment_tissue)
 
@@ -72,11 +73,28 @@ def _tessellate_and_filter(
             temp_dir, f"{Path(slide_path).stem}.tessellate.h5"
         )
 
+    seg_cfg = OmegaConf.to_container(cfg.seg_config)
+
+    artifact_remover_fn = None
+    if seg_cfg.get("remove_artifacts") or seg_cfg.get("remove_penmarks"):
+        artifact_remover_fn = GrandQCArtifactRemover(
+            remove_penmarks_only=(
+                bool(seg_cfg.get("remove_penmarks"))
+                and not bool(seg_cfg.get("remove_artifacts"))
+            )
+        )
+        logger.info(
+            "Artifact removal enabled: remove_artifacts=%s remove_penmarks=%s",
+            seg_cfg.get("remove_artifacts"),
+            seg_cfg.get("remove_penmarks"),
+        )
+
     if values := segment_tissue(
         slide_path=slide_path,
         slide_id=slide_id,
         output_h5_path=tessellate_h5_path,
-        **OmegaConf.to_container(cfg.seg_config),
+        artifact_remover_fn=artifact_remover_fn,
+        **seg_cfg,
     ):
         polygon, grid, coords, _ = values
     else:
