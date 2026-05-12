@@ -31,6 +31,7 @@ def _tessellate_and_filter(
     prefilter_model_path: Optional[str],
     skip_second_extraction: bool,
     output_mask_path: Optional[str] = None,
+    artifact_remover_fn: Optional[GrandQCArtifactRemover] = None,
 ) -> Optional[dict]:
     """Tessellate a slide and optionally extract/filter features for tile selection.
 
@@ -49,6 +50,11 @@ def _tessellate_and_filter(
         skip_second_extraction: Whether the pre-filter model is also the final model
             (caller can use pre-filter features directly as final output).
         output_mask_path: Optional path to save a tissue mask visualisation.
+        artifact_remover_fn: Pre-instantiated :class:`GrandQCArtifactRemover` to
+            use for artifact removal.  When provided this instance is reused across
+            slides (weights are loaded only once).  When ``None`` a new instance is
+            created from ``cfg.seg_config`` flags, which incurs a model-weight
+            download on first use for every slide.
 
     Returns:
         ``None`` on tessellation failure; otherwise a dict with:
@@ -75,19 +81,19 @@ def _tessellate_and_filter(
 
     seg_cfg = OmegaConf.to_container(cfg.seg_config)
 
-    artifact_remover_fn = None
-    if seg_cfg.get("remove_artifacts") or seg_cfg.get("remove_penmarks"):
-        artifact_remover_fn = GrandQCArtifactRemover(
-            remove_penmarks_only=(
-                bool(seg_cfg.get("remove_penmarks"))
-                and not bool(seg_cfg.get("remove_artifacts"))
+    if artifact_remover_fn is None:
+        if seg_cfg.get("remove_artifacts") or seg_cfg.get("remove_penmarks"):
+            artifact_remover_fn = GrandQCArtifactRemover(
+                remove_penmarks_only=(
+                    bool(seg_cfg.get("remove_penmarks"))
+                    and not bool(seg_cfg.get("remove_artifacts"))
+                )
             )
-        )
-        logger.info(
-            "Artifact removal enabled: remove_artifacts=%s remove_penmarks=%s",
-            seg_cfg.get("remove_artifacts"),
-            seg_cfg.get("remove_penmarks"),
-        )
+            logger.info(
+                "Artifact removal enabled: remove_artifacts=%s remove_penmarks=%s",
+                seg_cfg.get("remove_artifacts"),
+                seg_cfg.get("remove_penmarks"),
+            )
 
     if values := segment_tissue(
         slide_path=slide_path,
@@ -213,6 +219,7 @@ def process_slide_tessellation_and_filtering(
     output_mask_path: Optional[str] = None,
     two_step_mode: bool = False,
     slide_model_path: Optional[str] = None,
+    artifact_remover_fn: Optional[GrandQCArtifactRemover] = None,
 ) -> Optional[dict]:
     """Process a single slide through tessellation, optional filtering, and feature extraction.
 
@@ -233,6 +240,8 @@ def process_slide_tessellation_and_filtering(
         output_mask_path: Optional path to save mask visualization.
         two_step_mode: Whether using two-step aggregation (for batch processing).
         slide_model_path: Path to slide encoder model weights.
+        artifact_remover_fn: Pre-instantiated artifact remover to reuse across slides.
+            See :func:`_tessellate_and_filter` for details.
 
     Returns:
         ``None`` if processing failed (tessellation error); otherwise a dict with
@@ -250,6 +259,7 @@ def process_slide_tessellation_and_filtering(
         prefilter_model_path=prefilter_model_path,
         skip_second_extraction=skip_second_extraction,
         output_mask_path=output_mask_path,
+        artifact_remover_fn=artifact_remover_fn,
     )
     if result is None:
         return None
@@ -347,6 +357,7 @@ def process_slide_tessellation_only(
     prefilter_model_path: Optional[str],
     skip_second_extraction: bool,
     output_mask_path: Optional[str] = None,
+    artifact_remover_fn: Optional[GrandQCArtifactRemover] = None,
 ) -> Optional[dict]:
     """Process a slide through tessellation and optional filtering (no feature extraction).
 
@@ -363,6 +374,8 @@ def process_slide_tessellation_only(
         prefilter_model_path: Path to pre-filter model weights.
         skip_second_extraction: Whether the pre-filter model is also the final model.
         output_mask_path: Optional path to save mask visualization.
+        artifact_remover_fn: Pre-instantiated artifact remover to reuse across slides.
+            See :func:`_tessellate_and_filter` for details.
 
     Returns:
         Dict with paths and coordinates for batch feature extraction, or ``None`` on failure.
@@ -378,6 +391,7 @@ def process_slide_tessellation_only(
         prefilter_model_path=prefilter_model_path,
         skip_second_extraction=skip_second_extraction,
         output_mask_path=output_mask_path,
+        artifact_remover_fn=artifact_remover_fn,
     )
     if result is None:
         return None

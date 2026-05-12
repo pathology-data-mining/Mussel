@@ -757,7 +757,51 @@ def segment_tissue(
         if artifact_remover_fn is not None:
             if remove_artifacts or remove_penmarks:
                 img_mpp = slide_mpp * level_downsamples[seg_level][0]
-                tissue_mask = artifact_remover_fn(img, tissue_mask, img_mpp)
+                remover_img = img
+                remover_mask = tissue_mask
+                remover_mpp = img_mpp
+
+                # If the seg-level thumbnail is too coarse for the remover (e.g.
+                # GrandQC requires ≤ 8 µm/px but the lowest pyramid level is
+                # 8–16 µm/px), read a separate thumbnail at a finer pyramid level.
+                max_mpp = getattr(artifact_remover_fn, "max_input_mpp", None)
+                if max_mpp is not None and img_mpp > max_mpp:
+                    target_ds = max_mpp / slide_mpp
+                    artifact_level = wsi.get_best_level_for_downsample(target_ds)
+                    artifact_level_mpp = slide_mpp * level_downsamples[artifact_level][0]
+                    if artifact_level_mpp <= max_mpp:
+                        remover_img = np.array(
+                            wsi.read_region(
+                                (0, 0),
+                                artifact_level,
+                                wsi.level_dimensions[artifact_level],
+                            )
+                        )
+                        remover_mpp = artifact_level_mpp
+                        ah, aw = remover_img.shape[:2]
+                        remover_mask = cv2.resize(
+                            tissue_mask, (aw, ah), interpolation=cv2.INTER_NEAREST
+                        )
+                        logger.info(
+                            "Artifact removal: using level %d (%.2f µm/px) instead of "
+                            "seg level %d (%.2f µm/px)",
+                            artifact_level,
+                            remover_mpp,
+                            seg_level,
+                            img_mpp,
+                        )
+
+                result_mask = artifact_remover_fn(remover_img, remover_mask, remover_mpp)
+
+                # Resize result back to seg-level dimensions if needed.
+                if result_mask.shape != tissue_mask.shape:
+                    sh, sw = tissue_mask.shape[:2]
+                    result_mask = cv2.resize(
+                        result_mask.astype(np.uint8),
+                        (sw, sh),
+                        interpolation=cv2.INTER_NEAREST,
+                    )
+                tissue_mask = result_mask
             else:
                 logger.warning(
                     "artifact_remover_fn was provided but neither remove_artifacts nor "

@@ -37,6 +37,7 @@ from mussel.utils import (aggregate_slide_features_batch,
                           resolve_aggregation_method, resolve_patch_encoder,
                           resolve_remote_paths, safe_path_join,
                           save_torch_tensor)
+from mussel.utils.artifact_removal import GrandQCArtifactRemover
 from mussel.utils.feature_extract import _numpy_to_torch, _parse_feature_dtype
 from mussel.utils.file import WSI_EXTENSIONS, collect_wsi_paths
 
@@ -411,6 +412,35 @@ def main(
             _main_single(cfg)
 
 
+def _build_artifact_remover(
+    cfg: TessellateExtractFeaturesConfig,
+) -> Optional[GrandQCArtifactRemover]:
+    """Instantiate a :class:`GrandQCArtifactRemover` from ``cfg.seg_config``.
+
+    Returns ``None`` when artifact removal is not requested (both
+    ``remove_artifacts`` and ``remove_penmarks`` are falsy).  The returned
+    instance can be shared across multiple slides in a batch to avoid
+    reloading model weights.
+    """
+    from omegaconf import OmegaConf
+
+    seg_cfg = OmegaConf.to_container(cfg.seg_config)
+    if not (seg_cfg.get("remove_artifacts") or seg_cfg.get("remove_penmarks")):
+        return None
+    remover = GrandQCArtifactRemover(
+        remove_penmarks_only=(
+            bool(seg_cfg.get("remove_penmarks"))
+            and not bool(seg_cfg.get("remove_artifacts"))
+        )
+    )
+    logger.info(
+        "Artifact removal enabled (shared instance): remove_artifacts=%s remove_penmarks=%s",
+        seg_cfg.get("remove_artifacts"),
+        seg_cfg.get("remove_penmarks"),
+    )
+    return remover
+
+
 @resolve_remote_paths("model_dir", "classifier_pkl", auto_detect=False)
 def _main_single(cfg: TessellateExtractFeaturesConfig):
     """Process a single slide."""
@@ -542,6 +572,8 @@ def _main_single(cfg: TessellateExtractFeaturesConfig):
     )
     skip_second_extraction = use_filtering and models_are_same
 
+    artifact_remover_fn = _build_artifact_remover(cfg)
+
     # Process the slide using shared logic
     result = process_slide_tessellation_and_filtering(
         slide_path=cfg.slide_path,
@@ -560,6 +592,7 @@ def _main_single(cfg: TessellateExtractFeaturesConfig):
         output_mask_path=cfg.output_mask_path,
         two_step_mode=False,  # Single-slide mode doesn't use two-step
         slide_model_path=slide_model_path,
+        artifact_remover_fn=artifact_remover_fn,
     )
 
     if result is None:
@@ -718,6 +751,10 @@ def _main_batch(
     # Phase 1: Tessellate all slides and perform filtering if needed
     logger.info(f"\n=== Phase 1: Tessellating {len(cfg.slide_paths)} slides ===")
 
+    # Instantiate artifact remover once per batch so model weights are loaded
+    # only once rather than once per slide.
+    artifact_remover_fn = _build_artifact_remover(cfg)
+
     slide_results = []
     for i, (slide_path, slide_id) in enumerate(zip(cfg.slide_paths, slide_ids)):
         logger.info(f"\nTessellating slide {i + 1}/{len(cfg.slide_paths)}: {slide_id}")
@@ -742,6 +779,7 @@ def _main_batch(
                 prefilter_model_path=prefilter_model_path,
                 skip_second_extraction=skip_second_extraction,
                 output_mask_path=output_mask_path,
+                artifact_remover_fn=artifact_remover_fn,
             )
 
             if result is None:
