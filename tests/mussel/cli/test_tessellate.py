@@ -140,8 +140,9 @@ def test_artifact_remover_fn_wired_when_remove_artifacts(tmp_path):
             skip_second_extraction=False,
         )
 
-    # GrandQCArtifactRemover must have been instantiated with remove_penmarks_only=False
-    MockRemover.assert_called_once_with(remove_penmarks_only=False)
+    # GrandQCArtifactRemover must have been instantiated with EXCLUDE_ALL_ARTIFACTS
+    from mussel.utils.artifact_removal import EXCLUDE_ALL_ARTIFACTS
+    MockRemover.assert_called_once_with(exclude_classes=EXCLUDE_ALL_ARTIFACTS)
 
     # segment_tissue must have received the remover instance
     _, kwargs = mock_segment.call_args
@@ -245,7 +246,8 @@ def test_artifact_remover_fn_penmarks_only(tmp_path):
             skip_second_extraction=False,
         )
 
-    MockRemover.assert_called_once_with(remove_penmarks_only=True)
+    from mussel.utils.artifact_removal import EXCLUDE_PENMARKS_ONLY
+    MockRemover.assert_called_once_with(exclude_classes=EXCLUDE_PENMARKS_ONLY)
 
 
 def test_artifact_remover_fn_external_instance_reused(tmp_path):
@@ -345,3 +347,87 @@ def test_segment_tissue_artifact_mpp_escalation(tmp_path):
     # check it was called (escalation was attempted) rather than asserting the
     # exact mpp value.
     assert mock_remover.called, "artifact_remover_fn should have been called"
+
+
+def test_segment_tissue_artifact_mpp_exact_equality_escalates(tmp_path):
+    """segment_tissue escalates when seg-level MPP equals max_input_mpp (>= not just >)."""
+    from unittest.mock import MagicMock
+    import numpy as np
+    import tiffslide
+    from mussel.utils.segment import segment_tissue
+
+    slide_path = "tests/testdata/948176.svs"
+
+    # Compute the actual seg-level MPP using tiffslide (available in venv).
+    wsi = tiffslide.TiffSlide(slide_path)
+    slide_mpp = float(
+        wsi.properties.get("tiffslide.mpp-x")
+        or wsi.properties.get("openslide.mpp-x")
+        or 0.5
+    )
+    seg_level = len(wsi.level_dimensions) - 1
+    downsample = wsi.level_downsamples[seg_level]
+    exact_mpp = slide_mpp * downsample
+    wsi.close()
+
+    called_mpps = []
+    mock_remover = MagicMock()
+    mock_remover.max_input_mpp = exact_mpp  # exactly equal → should still escalate
+
+    def capture_remover(img, mask, mpp):
+        called_mpps.append(mpp)
+        return mask.copy()
+
+    mock_remover.side_effect = capture_remover
+
+    result = segment_tissue(
+        slide_path=slide_path,
+        seg_model="classic",
+        mpp=0.5,
+        patch_size=512,
+        segment_threshold=0,
+        remove_artifacts=True,
+        artifact_remover_fn=mock_remover,
+        output_h5_path=str(tmp_path / "out.h5"),
+    )
+
+    assert result is not None, "segment_tissue should succeed"
+    assert mock_remover.called, "artifact_remover_fn should have been called"
+    # After escalation, the remover is called with an MPP <= exact_mpp.
+    assert called_mpps[0] <= exact_mpp, (
+        f"Remover should be called at MPP <= {exact_mpp}, got {called_mpps[0]}"
+    )
+
+
+def test_segment_tissue_artifact_removal_empty_mask_fallback(tmp_path):
+    """When artifact removal returns an all-zero mask, segment_tissue falls back to the pre-removal mask."""
+    from unittest.mock import MagicMock
+    import numpy as np
+    from mussel.utils.segment import segment_tissue
+
+    slide_path = "tests/testdata/948176.svs"
+
+    mock_remover = MagicMock()
+    mock_remover.max_input_mpp = 1000.0  # no escalation needed
+
+    def zero_mask_remover(img, mask, mpp):
+        # Simulate over-aggressive removal: return all-zeros
+        return np.zeros_like(mask)
+
+    mock_remover.side_effect = zero_mask_remover
+
+    result = segment_tissue(
+        slide_path=slide_path,
+        seg_model="classic",
+        mpp=0.5,
+        patch_size=512,
+        segment_threshold=0,
+        remove_artifacts=True,
+        artifact_remover_fn=mock_remover,
+        output_h5_path=str(tmp_path / "out.h5"),
+    )
+
+    # Should not crash; should fall back and produce a valid result
+    assert result is not None, (
+        "segment_tissue should fall back to pre-removal mask when artifact removal empties it"
+    )

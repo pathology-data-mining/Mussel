@@ -106,6 +106,15 @@ class SegConfig:
     remove_penmarks: bool = (
         False  # If True, apply pen mark removal to the tissue mask before patching.
     )
+    artifact_exclude_classes: Optional[List[int]] = field(
+        default=None
+    )
+    # Optional list of GrandQC class indices to exclude (overrides remove_artifacts /
+    # remove_penmarks preset logic when set).  Use the CLASS_* constants from
+    # mussel.utils.artifact_removal, e.g. [4, 7] for pen marks + background only.
+    # Common presets: EXCLUDE_PENMARKS_ONLY=[4,7], EXCLUDE_FOLDS_AND_PENMARKS=[4,5,6,7],
+    # EXCLUDE_ALL_ARTIFACTS=[2,3,4,5,6,7].  When None, the preset is derived from the
+    # remove_artifacts / remove_penmarks flags.
     seg_model: str = (
         "classic"  # "classic" (HSV + fixed threshold), "otsu" (HSV + Otsu), or "neural" (DeepLabV3).
     )
@@ -301,11 +310,14 @@ def main(
     cfg: TessellateConfig,
 ):
     """Tile a whole slide image and perform tissue segmentation."""
+    seg_cfg = OmegaConf.to_container(cfg.seg_config)
+    # Strip config-only keys that are not segment_tissue() parameters.
+    seg_cfg.pop("artifact_exclude_classes", None)
     if values := segment_tissue(
         slide_path=cfg.slide_path,
         slide_id=cfg.slide_id,
         output_h5_path=cfg.output_h5_path,
-        **OmegaConf.to_container(cfg.seg_config),
+        **seg_cfg,
     ):
         polygon, grid, coords, _ = values
     else:

@@ -37,7 +37,11 @@ from mussel.utils import (aggregate_slide_features_batch,
                           resolve_aggregation_method, resolve_patch_encoder,
                           resolve_remote_paths, safe_path_join,
                           save_torch_tensor)
-from mussel.utils.artifact_removal import GrandQCArtifactRemover
+from mussel.utils.artifact_removal import (
+    EXCLUDE_ALL_ARTIFACTS,
+    EXCLUDE_PENMARKS_ONLY,
+    GrandQCArtifactRemover,
+)
 from mussel.utils.feature_extract import _numpy_to_torch, _parse_feature_dtype
 from mussel.utils.file import WSI_EXTENSIONS, collect_wsi_paths
 
@@ -417,26 +421,39 @@ def _build_artifact_remover(
 ) -> Optional[GrandQCArtifactRemover]:
     """Instantiate a :class:`GrandQCArtifactRemover` from ``cfg.seg_config``.
 
-    Returns ``None`` when artifact removal is not requested (both
-    ``remove_artifacts`` and ``remove_penmarks`` are falsy).  The returned
-    instance can be shared across multiple slides in a batch to avoid
-    reloading model weights.
+    Returns ``None`` when artifact removal is not requested.  The returned
+    instance is shared across all slides in a batch to avoid reloading weights.
+
+    Exclusion set resolution order:
+        1. ``artifact_exclude_classes`` list in seg_config — full per-run control.
+        2. Flags ``remove_artifacts`` / ``remove_penmarks``:
+              both True or ``remove_artifacts`` only → :data:`EXCLUDE_ALL_ARTIFACTS`
+              ``remove_penmarks`` only              → :data:`EXCLUDE_PENMARKS_ONLY`
     """
     from omegaconf import OmegaConf
 
     seg_cfg = OmegaConf.to_container(cfg.seg_config)
     if not (seg_cfg.get("remove_artifacts") or seg_cfg.get("remove_penmarks")):
         return None
-    remover = GrandQCArtifactRemover(
-        remove_penmarks_only=(
-            bool(seg_cfg.get("remove_penmarks"))
-            and not bool(seg_cfg.get("remove_artifacts"))
-        )
-    )
+
+    explicit = seg_cfg.get("artifact_exclude_classes")
+    if explicit:
+        exclude_classes = frozenset(int(c) for c in explicit)
+        mode = f"custom {sorted(exclude_classes)}"
+    elif bool(seg_cfg.get("remove_artifacts")):
+        exclude_classes = EXCLUDE_ALL_ARTIFACTS
+        mode = "EXCLUDE_ALL_ARTIFACTS (aggressive)"
+    else:
+        exclude_classes = EXCLUDE_PENMARKS_ONLY
+        mode = "EXCLUDE_PENMARKS_ONLY (conservative)"
+
+    remover = GrandQCArtifactRemover(exclude_classes=exclude_classes)
     logger.info(
-        "Artifact removal enabled (shared instance): remove_artifacts=%s remove_penmarks=%s",
+        "Artifact removal enabled (shared instance): remove_artifacts=%s "
+        "remove_penmarks=%s exclude_classes=%s",
         seg_cfg.get("remove_artifacts"),
         seg_cfg.get("remove_penmarks"),
+        mode,
     )
     return remover
 

@@ -15,7 +15,11 @@ logger = logging.getLogger(__name__)
 from mussel.utils import (filter_features, is_remote_path, load_classifier,
                           load_features_from_h5, safe_path_join, save_features,
                           save_hdf5, save_torch_tensor)
-from mussel.utils.artifact_removal import GrandQCArtifactRemover
+from mussel.utils.artifact_removal import (
+    EXCLUDE_ALL_ARTIFACTS,
+    EXCLUDE_PENMARKS_ONLY,
+    GrandQCArtifactRemover,
+)
 from mussel.utils.segment import (draw_slide_mask, save_patches_png,
                                   segment_tissue)
 
@@ -83,17 +87,24 @@ def _tessellate_and_filter(
 
     if artifact_remover_fn is None:
         if seg_cfg.get("remove_artifacts") or seg_cfg.get("remove_penmarks"):
-            artifact_remover_fn = GrandQCArtifactRemover(
-                remove_penmarks_only=(
-                    bool(seg_cfg.get("remove_penmarks"))
-                    and not bool(seg_cfg.get("remove_artifacts"))
-                )
-            )
+            explicit = seg_cfg.get("artifact_exclude_classes")
+            if explicit:
+                exclude_classes = frozenset(int(c) for c in explicit)
+            elif bool(seg_cfg.get("remove_artifacts")):
+                exclude_classes = EXCLUDE_ALL_ARTIFACTS
+            else:
+                exclude_classes = EXCLUDE_PENMARKS_ONLY
+            artifact_remover_fn = GrandQCArtifactRemover(exclude_classes=exclude_classes)
             logger.info(
-                "Artifact removal enabled: remove_artifacts=%s remove_penmarks=%s",
+                "Artifact removal enabled: remove_artifacts=%s remove_penmarks=%s "
+                "exclude_classes=%s",
                 seg_cfg.get("remove_artifacts"),
                 seg_cfg.get("remove_penmarks"),
+                sorted(exclude_classes),
             )
+
+    # Strip config-only keys that are not segment_tissue() parameters.
+    seg_cfg.pop("artifact_exclude_classes", None)
 
     if values := segment_tissue(
         slide_path=slide_path,

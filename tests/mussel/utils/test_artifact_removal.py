@@ -14,10 +14,15 @@ import torch
 
 
 def _make_remover(remove_penmarks_only: bool = False):
-    from mussel.utils.artifact_removal import GrandQCArtifactRemover
+    from mussel.utils.artifact_removal import (
+        EXCLUDE_ALL_ARTIFACTS,
+        EXCLUDE_PENMARKS_ONLY,
+        GrandQCArtifactRemover,
+    )
 
+    exclude_classes = EXCLUDE_PENMARKS_ONLY if remove_penmarks_only else EXCLUDE_ALL_ARTIFACTS
     return GrandQCArtifactRemover(
-        remove_penmarks_only=remove_penmarks_only,
+        exclude_classes=exclude_classes,
         device="cpu",
         batch_size=4,
     )
