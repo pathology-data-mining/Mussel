@@ -743,15 +743,38 @@ class TestTissueAreaThresholdScaling:
             assert len(coords) > 0, f"Expected patches at ds={ds}"
 
 
+def _make_mock_wsi_with_real_tissue(width=4096, height=4096):
+    """Return a mock WSI where the bottom half is pink (tissue) and top half white (bg).
+
+    HSV saturation of the pink pixels (~127) exceeds the default segment_threshold (20),
+    so segment_tissue detects real tissue in the lower half of the slide.
+    """
+    mock_wsi = MagicMock()
+    mock_wsi.level_dimensions = [(width, height), (width // 4, height // 4)]
+    mock_wsi.level_downsamples = [1.0, 4.0]
+    mock_wsi.get_best_level_for_downsample.return_value = 1
+    h, w = height // 4, width // 4
+    thumb = np.ones((h, w, 3), dtype=np.uint8) * 255  # white background
+    # Bottom half: pink — HSV saturation ≈ 127 > segment_threshold(20) → detected as tissue
+    thumb[h // 2 :, :] = [210, 100, 140]
+    mock_wsi.read_region.return_value = thumb
+    return mock_wsi
+
+
 def _make_mock_wsi_with_tissue(width=4096, height=4096):
-    """Return a mock WSI that produces a solid-white 64×64 thumbnail (all tissue)."""
+    """Return a mock WSI that produces a uniform-gray thumbnail (no real tissue).
+
+    The classic segmenter thresholds on HSV saturation; a uniform gray image
+    has S=0, so the tissue mask is all-zero.  Tests that need actual tissue
+    should use _make_mock_wsi_with_real_tissue() instead.
+    """
     import numpy as np
 
     mock_wsi = MagicMock()
     mock_wsi.level_dimensions = [(width, height), (width // 4, height // 4)]
     mock_wsi.level_downsamples = [1.0, 4.0]
     mock_wsi.get_best_level_for_downsample.return_value = 1
-    # Solid white thumbnail → tissue everywhere after Otsu threshold
+    # Solid gray thumbnail — saturation=0 → no tissue detected by classic segmenter
     thumb = np.ones((height // 4, width // 4, 3), dtype=np.uint8) * 200
     mock_wsi.read_region.return_value = thumb
     return mock_wsi
@@ -1043,6 +1066,224 @@ class TestSegmentTissueArtifactRemover:
             )
 
         assert any("artifact_remover_fn" in msg for msg in caplog.messages)
+
+    def test_tissue_survival_fallback_reverts_mask(self, caplog):
+        """When remover eliminates >=90% of tissue, pre-removal mask is kept."""
+        import logging
+
+        def wipeout_remover(img, mask, mpp):
+            return np.zeros_like(mask)
+
+        mock_wsi = _make_mock_wsi_with_real_tissue()
+
+        with caplog.at_level(logging.WARNING, logger="mussel.utils.segment"):
+            result = _run_segment_with_mocks(
+                mock_wsi,
+                patch_size=256,
+                mpp=0.5,
+                tissue_area_threshold=1,
+                remove_artifacts=True,
+                artifact_remover_fn=wipeout_remover,
+            )
+
+        # Warning must mention the fallback with correct symbols and API
+        assert any(
+            "Falling back to pre-removal mask" in msg for msg in caplog.messages
+        ), "Expected fallback warning in log"
+        assert any(
+            "artifact_exclude_classes=[4, 7]" in msg for msg in caplog.messages
+        ), "Warning should reference artifact_exclude_classes=[4, 7], not deprecated remove_penmarks_only"
+        assert any(
+            ">=90" in msg for msg in caplog.messages
+        ), "Warning should use >= symbol in threshold message"
+
+        # Fallback reverts to pre-removal mask → tissue still present → patches found
+        assert result is not None, "segment_tissue should not return None after fallback"
+        _, _, coords, _ = result
+        assert len(coords) > 0, "Pre-removal mask should yield patches after fallback"
+
+    def test_tissue_survival_normal_path_uses_result_mask(self):
+        """When remover keeps >=10% of tissue, the result mask is applied (no fallback)."""
+        call_count = []
+
+        def half_remover(img, mask, mpp):
+            call_count.append(1)
+            # Zero the top half — keeps bottom 50% of tissue, well above 10% survival
+            result = mask.copy()
+            result[: result.shape[0] // 2, :] = 0
+            return result
+
+        # Full-tissue mock — tissue in the bottom half only (the other half is bg already)
+        mock_wsi = _make_mock_wsi_with_real_tissue()
+
+        result_with_removal = _run_segment_with_mocks(
+            mock_wsi,
+            patch_size=256,
+            mpp=0.5,
+            tissue_area_threshold=1,
+            remove_artifacts=True,
+            artifact_remover_fn=half_remover,
+        )
+
+        assert len(call_count) == 1, "remover should have been called exactly once"
+        # half_remover only keeps bottom tissue → should still produce some patches
+        assert result_with_removal is not None, "Should not return None when tissue survives"
+
+    def test_tissue_survival_boundary_at_exactly_90pct_triggers_fallback(self, caplog):
+        """Removal fraction == 0.90 (exactly at threshold) should trigger fallback."""
+        import logging
+
+        def exactly_90pct_remover(img, mask, mpp):
+            # Zero out exactly 90% of the nonzero pixels using ceil so we hit exactly >=90%
+            import math
+            flat = mask.flatten()
+            nonzero_idx = np.flatnonzero(flat)
+            n_to_zero = math.ceil(len(nonzero_idx) * 0.90)
+            flat[nonzero_idx[:n_to_zero]] = 0
+            return flat.reshape(mask.shape)
+
+        mock_wsi = _make_mock_wsi_with_real_tissue()
+
+        with caplog.at_level(logging.WARNING, logger="mussel.utils.segment"):
+            _run_segment_with_mocks(
+                mock_wsi,
+                patch_size=256,
+                mpp=0.5,
+                tissue_area_threshold=1,
+                remove_artifacts=True,
+                artifact_remover_fn=exactly_90pct_remover,
+            )
+
+        assert any(
+            "Falling back to pre-removal mask" in msg for msg in caplog.messages
+        ), "Exactly 90% removal should trigger fallback (>= threshold)"
+
+    def test_tissue_survival_pre_pixels_zero_triggers_fallback(self, caplog):
+        """When pre-removal mask is all-zero, removal_fraction == 1.0 → fallback triggered."""
+        import logging
+
+        call_count = []
+
+        def pass_through_remover(img, mask, mpp):
+            call_count.append(1)
+            return mask  # returns all-zero → same as input
+
+        # All-gray uniform image → saturation channel = 0 → tissue mask is all-zero
+        # (classic segmenter thresholds on HSV saturation; gray has S=0 < threshold=20)
+        mock_wsi = _make_mock_wsi_with_tissue()  # uniform-gray → no tissue after segmentation
+
+        with caplog.at_level(logging.WARNING, logger="mussel.utils.segment"):
+            _run_segment_with_mocks(
+                mock_wsi,
+                patch_size=256,
+                mpp=0.5,
+                tissue_area_threshold=1,
+                remove_artifacts=True,
+                artifact_remover_fn=pass_through_remover,
+            )
+
+        # Remover IS called even when tissue mask is all-zero (no early-return before remover block)
+        assert len(call_count) == 1, "remover is called regardless of tissue mask content"
+        # pre_pixels=0 → removal_fraction=1.0 → fallback triggered
+        assert any(
+            "Falling back to pre-removal mask" in msg for msg in caplog.messages
+        ), "pre_pixels=0 should set removal_fraction=1.0 and trigger the fallback"
+
+    def test_mpp_escalation_uses_finer_level(self):
+        """When img_mpp >= remover.max_input_mpp, a finer pyramid level is read."""
+        import numpy as np
+
+        call_args = []
+
+        def mpp_checking_remover(img, mask, mpp):
+            call_args.append({"img_shape": img.shape, "mask_shape": mask.shape, "mpp": mpp})
+            return mask
+
+        mpp_checking_remover.max_input_mpp = 4.0  # requires <= 4 µm/px
+
+        # WSI with slide_mpp=0.5; seg_level=1 has downsample=8 → img_mpp=4.0 → triggers escalation
+        # Escalation picks level 0 (downsample=1 → mpp=0.5 <= 4.0)
+        mock_wsi = MagicMock()
+        mock_wsi.level_dimensions = [(4096, 4096), (512, 512)]
+        mock_wsi.level_downsamples = [1.0, 8.0]
+        # get_best_level_for_downsample(4.0/0.5=8) → returns level 1 (ds=8 → mpp=4.0)
+        # but 4.0 <= 4.0 so it IS fine — try with a coarser seg level
+        mock_wsi.get_best_level_for_downsample.return_value = 0  # escalate to level 0
+        fine_thumb = np.ones((4096, 4096, 3), dtype=np.uint8) * 200
+
+        def smart_read(origin, level, dims):
+            if level == 0:
+                return fine_thumb
+            coarse = np.ones((512, 512, 3), dtype=np.uint8) * 200
+            return coarse
+
+        mock_wsi.read_region.side_effect = smart_read
+
+        from mussel.utils.segment import segment_tissue
+        from unittest.mock import patch as _patch
+
+        with (
+            _patch("mussel.utils.segment.tiffslide.open_slide", return_value=mock_wsi),
+            _patch("mussel.utils.segment.get_slide_mpp", return_value=0.5),
+            _patch(
+                "mussel.utils.segment._assert_level_downsamples",
+                return_value=[(1.0, 1.0), (8.0, 8.0)],
+            ),
+        ):
+            segment_tissue(
+                "/fake/slide.svs",
+                patch_size=256,
+                mpp=0.5,
+                seg_level=1,
+                tissue_area_threshold=1,
+                remove_artifacts=True,
+                artifact_remover_fn=mpp_checking_remover,
+            )
+
+        assert len(call_args) == 1, "remover should be called once"
+        # At escalation, level 0 mpp = 0.5 * 1.0 = 0.5 < max_input_mpp=4.0
+        assert call_args[0]["mpp"] == pytest.approx(0.5), (
+            f"Expected escalated mpp=0.5, got {call_args[0]['mpp']}"
+        )
+        # The fine-level image should be larger than the 512×512 coarse seg thumbnail
+        assert call_args[0]["img_shape"][0] == 4096, (
+            "Remover should receive the finer-level thumbnail, not the coarse seg thumbnail"
+        )
+
+    def test_mpp_escalation_skipped_when_img_mpp_below_max(self):
+        """When img_mpp < max_input_mpp, the seg-level thumbnail is used directly."""
+        import numpy as np
+
+        call_args = []
+
+        def mpp_checking_remover(img, mask, mpp):
+            call_args.append({"img_shape": img.shape, "mpp": mpp})
+            return mask
+
+        mpp_checking_remover.max_input_mpp = 16.0  # very permissive — seg level is fine
+
+        # seg_level=1 with downsample=4 and slide_mpp=0.5 → img_mpp=2.0 < 16.0
+        mock_wsi = _make_mock_wsi_with_tissue()  # level_downsamples=[1.0, 4.0]
+
+        _run_segment_with_mocks(
+            mock_wsi,
+            patch_size=256,
+            mpp=0.5,
+            seg_level=1,
+            tissue_area_threshold=1,
+            remove_artifacts=True,
+            artifact_remover_fn=mpp_checking_remover,
+        )
+
+        assert len(call_args) == 1
+        # img_mpp = 0.5 * 4.0 = 2.0 (seg level, not escalated)
+        assert call_args[0]["mpp"] == pytest.approx(2.0), (
+            f"Expected seg-level mpp=2.0, got {call_args[0]['mpp']}"
+        )
+        # Thumbnail should be 1024×1024 (4096/4), the seg-level size
+        assert call_args[0]["img_shape"][0] == 1024, (
+            "Should use seg-level thumbnail when mpp is within limit"
+        )
 
 
 class TestSegmentTissueSegModel:
