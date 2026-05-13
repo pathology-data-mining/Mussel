@@ -816,10 +816,10 @@ def segment_tissue(
                 if removal_fraction >= 1.0 - _MIN_TISSUE_SURVIVAL:
                     logger.warning(
                         "Artifact removal eliminated %.0f%% of tissue for slide %s "
-                        "(threshold: revert if >%.0f%% removed). "
+                        "(threshold: revert if >=%.0f%% removed). "
                         "Falling back to pre-removal mask. "
-                        "Consider using remove_penmarks_only=True or disabling "
-                        "remove_artifacts for this slide type.",
+                        "Consider using artifact_exclude_classes=[4, 7] (pen marks only) "
+                        "or disabling remove_artifacts for this slide type.",
                         removal_fraction * 100,
                         slide_id,
                         (1.0 - _MIN_TISSUE_SURVIVAL) * 100,
