@@ -765,7 +765,7 @@ def segment_tissue(
                 # GrandQC requires ≤ 8 µm/px but the lowest pyramid level is
                 # 8–16 µm/px), read a separate thumbnail at a finer pyramid level.
                 max_mpp = getattr(artifact_remover_fn, "max_input_mpp", None)
-                if max_mpp is not None and img_mpp > max_mpp:
+                if max_mpp is not None and img_mpp >= max_mpp:
                     target_ds = max_mpp / slide_mpp
                     artifact_level = wsi.get_best_level_for_downsample(target_ds)
                     artifact_level_mpp = slide_mpp * level_downsamples[artifact_level][0]
@@ -791,6 +791,7 @@ def segment_tissue(
                             img_mpp,
                         )
 
+                pre_removal_mask = tissue_mask.copy()
                 result_mask = artifact_remover_fn(remover_img, remover_mask, remover_mpp)
 
                 # Resize result back to seg-level dimensions if needed.
@@ -801,7 +802,36 @@ def segment_tissue(
                         (sw, sh),
                         interpolation=cv2.INTER_NEAREST,
                     )
-                tissue_mask = result_mask
+
+                # Fallback: if artifact removal eliminated most or all tissue,
+                # revert to the pre-removal mask.  Over-aggressive removal can
+                # occur when the GrandQC model is out-of-distribution for a
+                # particular tissue type (e.g. necrotic CNS tumours).
+                _MIN_TISSUE_SURVIVAL = 0.10  # at least 10% of original tissue must remain
+                pre_pixels = int(np.count_nonzero(pre_removal_mask))
+                post_pixels = int(np.count_nonzero(result_mask))
+                removal_fraction = (
+                    1.0 - post_pixels / pre_pixels if pre_pixels > 0 else 1.0
+                )
+                if removal_fraction >= 1.0 - _MIN_TISSUE_SURVIVAL:
+                    logger.warning(
+                        "Artifact removal eliminated %.0f%% of tissue for slide %s "
+                        "(threshold: revert if >%.0f%% removed). "
+                        "Falling back to pre-removal mask. "
+                        "Consider using remove_penmarks_only=True or disabling "
+                        "remove_artifacts for this slide type.",
+                        removal_fraction * 100,
+                        slide_id,
+                        (1.0 - _MIN_TISSUE_SURVIVAL) * 100,
+                    )
+                    tissue_mask = pre_removal_mask
+                else:
+                    logger.info(
+                        "Artifact removal: %.0f%% of tissue retained for slide %s.",
+                        (1.0 - removal_fraction) * 100,
+                        slide_id,
+                    )
+                    tissue_mask = result_mask
             else:
                 logger.warning(
                     "artifact_remover_fn was provided but neither remove_artifacts nor "
@@ -832,6 +862,10 @@ def segment_tissue(
             tissue_mask, cv2.RETR_CCOMP, cv2.CHAIN_APPROX_NONE
         )  # Find contours
         if contours is None or hierarchy is None:
+            logger.warning(
+                "No contours found for slide %s (tissue mask may be empty after artifact removal or segmentation).",
+                slide_id,
+            )
             return None
         hierarchy = np.squeeze(hierarchy, axis=(0,))[:, 2:]
         foreground_contours, hole_contours = _filter_contours(
