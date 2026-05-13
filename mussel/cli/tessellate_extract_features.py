@@ -21,7 +21,8 @@ from omegaconf import MISSING, DictConfig, ListConfig, OmegaConf
 
 from mussel.cli.tessellate import (BiopsySegConfig, PngConfig,
                                    ResectionSegConfig, SegConfig,
-                                   TcgaSegConfig, VisConfig)
+                                   TcgaSegConfig, VisConfig,
+                                   _build_artifact_remover)
 from mussel.cli.tessellate_extract_features_common import (
     create_visualizations, process_slide_tessellation_and_filtering,
     process_slide_tessellation_only)
@@ -37,6 +38,11 @@ from mussel.utils import (aggregate_slide_features_batch,
                           resolve_aggregation_method, resolve_patch_encoder,
                           resolve_remote_paths, safe_path_join,
                           save_torch_tensor)
+from mussel.utils.artifact_removal import (
+    EXCLUDE_ALL_ARTIFACTS,
+    EXCLUDE_PENMARKS_ONLY,
+    GrandQCArtifactRemover,
+)
 from mussel.utils.feature_extract import _numpy_to_torch, _parse_feature_dtype
 from mussel.utils.file import WSI_EXTENSIONS, collect_wsi_paths
 
@@ -542,6 +548,8 @@ def _main_single(cfg: TessellateExtractFeaturesConfig):
     )
     skip_second_extraction = use_filtering and models_are_same
 
+    artifact_remover_fn = _build_artifact_remover(OmegaConf.to_container(cfg.seg_config))
+
     # Process the slide using shared logic
     result = process_slide_tessellation_and_filtering(
         slide_path=cfg.slide_path,
@@ -560,6 +568,7 @@ def _main_single(cfg: TessellateExtractFeaturesConfig):
         output_mask_path=cfg.output_mask_path,
         two_step_mode=False,  # Single-slide mode doesn't use two-step
         slide_model_path=slide_model_path,
+        artifact_remover_fn=artifact_remover_fn,
     )
 
     if result is None:
@@ -718,6 +727,10 @@ def _main_batch(
     # Phase 1: Tessellate all slides and perform filtering if needed
     logger.info(f"\n=== Phase 1: Tessellating {len(cfg.slide_paths)} slides ===")
 
+    # Instantiate artifact remover once per batch so model weights are loaded
+    # only once rather than once per slide.
+    artifact_remover_fn = _build_artifact_remover(OmegaConf.to_container(cfg.seg_config))
+
     slide_results = []
     for i, (slide_path, slide_id) in enumerate(zip(cfg.slide_paths, slide_ids)):
         logger.info(f"\nTessellating slide {i + 1}/{len(cfg.slide_paths)}: {slide_id}")
@@ -742,6 +755,7 @@ def _main_batch(
                 prefilter_model_path=prefilter_model_path,
                 skip_second_extraction=skip_second_extraction,
                 output_mask_path=output_mask_path,
+                artifact_remover_fn=artifact_remover_fn,
             )
 
             if result is None:
