@@ -21,7 +21,8 @@ from omegaconf import MISSING, DictConfig, ListConfig, OmegaConf
 
 from mussel.cli.tessellate import (BiopsySegConfig, PngConfig,
                                    ResectionSegConfig, SegConfig,
-                                   TcgaSegConfig, VisConfig)
+                                   TcgaSegConfig, VisConfig,
+                                   _build_artifact_remover)
 from mussel.cli.tessellate_extract_features_common import (
     create_visualizations, process_slide_tessellation_and_filtering,
     process_slide_tessellation_only)
@@ -416,48 +417,6 @@ def main(
             _main_single(cfg)
 
 
-def _build_artifact_remover(
-    cfg: TessellateExtractFeaturesConfig,
-) -> Optional[GrandQCArtifactRemover]:
-    """Instantiate a :class:`GrandQCArtifactRemover` from ``cfg.seg_config``.
-
-    Returns ``None`` when artifact removal is not requested.  The returned
-    instance is shared across all slides in a batch to avoid reloading weights.
-
-    Exclusion set resolution order:
-        1. ``artifact_exclude_classes`` list in seg_config — full per-run control.
-        2. Flags ``remove_artifacts`` / ``remove_penmarks``:
-              both True or ``remove_artifacts`` only → :data:`EXCLUDE_ALL_ARTIFACTS`
-              ``remove_penmarks`` only              → :data:`EXCLUDE_PENMARKS_ONLY`
-    """
-    from omegaconf import OmegaConf
-
-    seg_cfg = OmegaConf.to_container(cfg.seg_config)
-    if not (seg_cfg.get("remove_artifacts") or seg_cfg.get("remove_penmarks")):
-        return None
-
-    explicit = seg_cfg.get("artifact_exclude_classes")
-    if explicit:
-        exclude_classes = frozenset(int(c) for c in explicit)
-        mode = f"custom {sorted(exclude_classes)}"
-    elif bool(seg_cfg.get("remove_artifacts")):
-        exclude_classes = EXCLUDE_ALL_ARTIFACTS
-        mode = "EXCLUDE_ALL_ARTIFACTS (aggressive)"
-    else:
-        exclude_classes = EXCLUDE_PENMARKS_ONLY
-        mode = "EXCLUDE_PENMARKS_ONLY (conservative)"
-
-    remover = GrandQCArtifactRemover(exclude_classes=exclude_classes)
-    logger.info(
-        "Artifact removal enabled (shared instance): remove_artifacts=%s "
-        "remove_penmarks=%s exclude_classes=%s",
-        seg_cfg.get("remove_artifacts"),
-        seg_cfg.get("remove_penmarks"),
-        mode,
-    )
-    return remover
-
-
 @resolve_remote_paths("model_dir", "classifier_pkl", auto_detect=False)
 def _main_single(cfg: TessellateExtractFeaturesConfig):
     """Process a single slide."""
@@ -589,7 +548,7 @@ def _main_single(cfg: TessellateExtractFeaturesConfig):
     )
     skip_second_extraction = use_filtering and models_are_same
 
-    artifact_remover_fn = _build_artifact_remover(cfg)
+    artifact_remover_fn = _build_artifact_remover(OmegaConf.to_container(cfg.seg_config))
 
     # Process the slide using shared logic
     result = process_slide_tessellation_and_filtering(
@@ -770,7 +729,7 @@ def _main_batch(
 
     # Instantiate artifact remover once per batch so model weights are loaded
     # only once rather than once per slide.
-    artifact_remover_fn = _build_artifact_remover(cfg)
+    artifact_remover_fn = _build_artifact_remover(OmegaConf.to_container(cfg.seg_config))
 
     slide_results = []
     for i, (slide_path, slide_id) in enumerate(zip(cfg.slide_paths, slide_ids)):

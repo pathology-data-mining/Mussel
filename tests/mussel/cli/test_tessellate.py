@@ -94,7 +94,7 @@ def test_artifact_remover_fn_wired_when_remove_artifacts(tmp_path):
     The remover is passed as artifact_remover_fn to segment_tissue.  Without this
     fix the flag was silently ignored (segment_tissue warned and did nothing).
     """
-    from unittest.mock import MagicMock, patch, call
+    from unittest.mock import MagicMock, patch
     from mussel.cli.tessellate_extract_features_common import _tessellate_and_filter
     from omegaconf import OmegaConf
 
@@ -102,30 +102,35 @@ def test_artifact_remover_fn_wired_when_remove_artifacts(tmp_path):
     fake_polygon = MagicMock()
     fake_grid = MagicMock()
 
-    cfg = OmegaConf.create({
-        "seg_config": {
-            "mpp": 0.5,
-            "patch_size": 512,
-            "seg_model": "classic",
-            "remove_artifacts": True,
-            "remove_penmarks": False,
-        },
-        "vis_config": {},
-        "keep_intermediate_files": False,
-        "gpu_device_id": 0,
-        "use_gpu": False,
-        "batch_size": 8,
-        "num_workers": 0,
-        "gpu_device_ids": None,
-    })
+    cfg = OmegaConf.create(
+        {
+            "seg_config": {
+                "mpp": 0.5,
+                "patch_size": 512,
+                "seg_model": "classic",
+                "remove_artifacts": True,
+                "remove_penmarks": False,
+            },
+            "vis_config": {},
+            "keep_intermediate_files": False,
+            "gpu_device_id": 0,
+            "use_gpu": False,
+            "batch_size": 8,
+            "num_workers": 0,
+            "gpu_device_ids": None,
+        }
+    )
 
-    with patch(
-        "mussel.cli.tessellate_extract_features_common.segment_tissue",
-        return_value=(fake_polygon, fake_grid, fake_coords, None),
-    ) as mock_segment, patch(
-        "mussel.cli.tessellate_extract_features_common.GrandQCArtifactRemover",
-        autospec=True,
-    ) as MockRemover:
+    with (
+        patch(
+            "mussel.cli.tessellate_extract_features_common.segment_tissue",
+            return_value=(fake_polygon, fake_grid, fake_coords, None),
+        ) as mock_segment,
+        patch(
+            "mussel.cli.tessellate.GrandQCArtifactRemover",
+            autospec=True,
+        ) as MockRemover,
+    ):
         mock_remover_instance = MockRemover.return_value
 
         _tessellate_and_filter(
@@ -142,13 +147,14 @@ def test_artifact_remover_fn_wired_when_remove_artifacts(tmp_path):
 
     # GrandQCArtifactRemover must have been instantiated with EXCLUDE_ALL_ARTIFACTS
     from mussel.utils.artifact_removal import EXCLUDE_ALL_ARTIFACTS
+
     MockRemover.assert_called_once_with(exclude_classes=EXCLUDE_ALL_ARTIFACTS)
 
     # segment_tissue must have received the remover instance
     _, kwargs = mock_segment.call_args
-    assert kwargs.get("artifact_remover_fn") is mock_remover_instance, (
-        "artifact_remover_fn was not passed to segment_tissue"
-    )
+    assert (
+        kwargs.get("artifact_remover_fn") is mock_remover_instance
+    ), "artifact_remover_fn was not passed to segment_tissue"
 
 
 def test_artifact_remover_fn_not_instantiated_when_flags_false(tmp_path):
@@ -159,30 +165,35 @@ def test_artifact_remover_fn_not_instantiated_when_flags_false(tmp_path):
 
     fake_coords = np.array([[0, 0], [512, 0]])
 
-    cfg = OmegaConf.create({
-        "seg_config": {
-            "mpp": 0.5,
-            "patch_size": 512,
-            "seg_model": "classic",
-            "remove_artifacts": False,
-            "remove_penmarks": False,
-        },
-        "vis_config": {},
-        "keep_intermediate_files": False,
-        "gpu_device_id": 0,
-        "use_gpu": False,
-        "batch_size": 8,
-        "num_workers": 0,
-        "gpu_device_ids": None,
-    })
+    cfg = OmegaConf.create(
+        {
+            "seg_config": {
+                "mpp": 0.5,
+                "patch_size": 512,
+                "seg_model": "classic",
+                "remove_artifacts": False,
+                "remove_penmarks": False,
+            },
+            "vis_config": {},
+            "keep_intermediate_files": False,
+            "gpu_device_id": 0,
+            "use_gpu": False,
+            "batch_size": 8,
+            "num_workers": 0,
+            "gpu_device_ids": None,
+        }
+    )
 
-    with patch(
-        "mussel.cli.tessellate_extract_features_common.segment_tissue",
-        return_value=(MagicMock(), MagicMock(), fake_coords, None),
-    ) as mock_segment, patch(
-        "mussel.cli.tessellate_extract_features_common.GrandQCArtifactRemover",
-        autospec=True,
-    ) as MockRemover:
+    with (
+        patch(
+            "mussel.cli.tessellate_extract_features_common.segment_tissue",
+            return_value=(MagicMock(), MagicMock(), fake_coords, None),
+        ) as mock_segment,
+        patch(
+            "mussel.cli.tessellate.GrandQCArtifactRemover",
+            autospec=True,
+        ) as MockRemover,
+    ):
 
         _tessellate_and_filter(
             slide_path="tests/testdata/948176.svs",
@@ -209,30 +220,35 @@ def test_artifact_remover_fn_penmarks_only(tmp_path):
 
     fake_coords = np.array([[0, 0], [512, 0]])
 
-    cfg = OmegaConf.create({
-        "seg_config": {
-            "mpp": 0.5,
-            "patch_size": 512,
-            "seg_model": "classic",
-            "remove_artifacts": False,
-            "remove_penmarks": True,
-        },
-        "vis_config": {},
-        "keep_intermediate_files": False,
-        "gpu_device_id": 0,
-        "use_gpu": False,
-        "batch_size": 8,
-        "num_workers": 0,
-        "gpu_device_ids": None,
-    })
+    cfg = OmegaConf.create(
+        {
+            "seg_config": {
+                "mpp": 0.5,
+                "patch_size": 512,
+                "seg_model": "classic",
+                "remove_artifacts": False,
+                "remove_penmarks": True,
+            },
+            "vis_config": {},
+            "keep_intermediate_files": False,
+            "gpu_device_id": 0,
+            "use_gpu": False,
+            "batch_size": 8,
+            "num_workers": 0,
+            "gpu_device_ids": None,
+        }
+    )
 
-    with patch(
-        "mussel.cli.tessellate_extract_features_common.segment_tissue",
-        return_value=(MagicMock(), MagicMock(), fake_coords, None),
-    ), patch(
-        "mussel.cli.tessellate_extract_features_common.GrandQCArtifactRemover",
-        autospec=True,
-    ) as MockRemover:
+    with (
+        patch(
+            "mussel.cli.tessellate_extract_features_common.segment_tissue",
+            return_value=(MagicMock(), MagicMock(), fake_coords, None),
+        ),
+        patch(
+            "mussel.cli.tessellate.GrandQCArtifactRemover",
+            autospec=True,
+        ) as MockRemover,
+    ):
 
         _tessellate_and_filter(
             slide_path="tests/testdata/948176.svs",
@@ -247,6 +263,7 @@ def test_artifact_remover_fn_penmarks_only(tmp_path):
         )
 
     from mussel.utils.artifact_removal import EXCLUDE_PENMARKS_ONLY
+
     MockRemover.assert_called_once_with(exclude_classes=EXCLUDE_PENMARKS_ONLY)
 
 
@@ -259,30 +276,35 @@ def test_artifact_remover_fn_external_instance_reused(tmp_path):
     fake_coords = np.array([[0, 0], [512, 0]])
     external_remover = MagicMock()
 
-    cfg = OmegaConf.create({
-        "seg_config": {
-            "mpp": 0.5,
-            "patch_size": 512,
-            "seg_model": "classic",
-            "remove_artifacts": True,
-            "remove_penmarks": False,
-        },
-        "vis_config": {},
-        "keep_intermediate_files": False,
-        "gpu_device_id": 0,
-        "use_gpu": False,
-        "batch_size": 8,
-        "num_workers": 0,
-        "gpu_device_ids": None,
-    })
+    cfg = OmegaConf.create(
+        {
+            "seg_config": {
+                "mpp": 0.5,
+                "patch_size": 512,
+                "seg_model": "classic",
+                "remove_artifacts": True,
+                "remove_penmarks": False,
+            },
+            "vis_config": {},
+            "keep_intermediate_files": False,
+            "gpu_device_id": 0,
+            "use_gpu": False,
+            "batch_size": 8,
+            "num_workers": 0,
+            "gpu_device_ids": None,
+        }
+    )
 
-    with patch(
-        "mussel.cli.tessellate_extract_features_common.segment_tissue",
-        return_value=(MagicMock(), MagicMock(), fake_coords, None),
-    ) as mock_segment, patch(
-        "mussel.cli.tessellate_extract_features_common.GrandQCArtifactRemover",
-        autospec=True,
-    ) as MockRemover:
+    with (
+        patch(
+            "mussel.cli.tessellate_extract_features_common.segment_tissue",
+            return_value=(MagicMock(), MagicMock(), fake_coords, None),
+        ) as mock_segment,
+        patch(
+            "mussel.cli.tessellate.GrandQCArtifactRemover",
+            autospec=True,
+        ) as MockRemover,
+    ):
         _tessellate_and_filter(
             slide_path="tests/testdata/948176.svs",
             slide_id="948176",
@@ -394,9 +416,9 @@ def test_segment_tissue_artifact_mpp_exact_equality_escalates(tmp_path):
     assert result is not None, "segment_tissue should succeed"
     assert mock_remover.called, "artifact_remover_fn should have been called"
     # After escalation, the remover is called with an MPP <= exact_mpp.
-    assert called_mpps[0] <= exact_mpp, (
-        f"Remover should be called at MPP <= {exact_mpp}, got {called_mpps[0]}"
-    )
+    assert (
+        called_mpps[0] <= exact_mpp
+    ), f"Remover should be called at MPP <= {exact_mpp}, got {called_mpps[0]}"
 
 
 def test_segment_tissue_artifact_removal_empty_mask_fallback(tmp_path):
@@ -428,6 +450,6 @@ def test_segment_tissue_artifact_removal_empty_mask_fallback(tmp_path):
     )
 
     # Should not crash; should fall back and produce a valid result
-    assert result is not None, (
-        "segment_tissue should fall back to pre-removal mask when artifact removal empties it"
-    )
+    assert (
+        result is not None
+    ), "segment_tissue should fall back to pre-removal mask when artifact removal empties it"
