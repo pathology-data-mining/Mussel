@@ -468,8 +468,27 @@ save_model model_type=OPTIMUS output_path=optimus.pkl
 
 ### `convert`
 
-`convert` converts whole-slide images to pyramidal TIFF format. It supports both
-single-file and batch (directory) mode.
+`convert` converts whole-slide images and microscopy files to pyramidal GeoTIFF.
+It supports both single-file and batch (directory) mode.
+
+#### Supported input formats
+
+| Category | Extensions | Dependency |
+|---|---|---|
+| WSI scanners | `.svs`, `.ndpi`, `.scn`, `.mrxs`, `.vsi`, `.bif`, `.qptiff` | `aicsimageio[bioformats]` + Java |
+| Leica / Zeiss | `.lif`, `.zvi` | `aicsimageio[bioformats]` + Java |
+| Zeiss CZI | `.czi` | `pylibCZIrw` |
+| TIFF variants | `.tif`, `.tiff`, `.btf`, `.ome.tiff`, `.ome.tif`, `.ome.btf` | `aicsimageio[bioformats]` + Java |
+| HDF5 | `.h5`, `.hdf`, `.hdf5`, `.he5` | `aicsimageio[bioformats]` + Java |
+| DICOM | `.dicom`, `.dcm` | `aicsimageio[bioformats]` + Java |
+| Other scientific | `.ims`, `.ome.xml`, `.pcoraw`, `.jp2`, `.nrrd`, `.fg7` | `aicsimageio[bioformats]` + Java |
+| Flat images | `.png`, `.jpg`, `.jpeg` | Pillow (built-in) |
+
+All formats use **pyvips** as the fast streaming path when available.
+Bio-Formats formats fall back to **aicsimageio** (requires Java and
+`pip install "aicsimageio[bioformats]"`).
+CZI files require `pip install pylibCZIrw`.
+pyvips is required for writing the output pyramidal TIFF (`pip install pyvips`).
 
 **Single file:**
 ```bash
