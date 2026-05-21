@@ -49,8 +49,17 @@ _desc = """== ${hydra.help.app_name} ==
 
 Convert slide images of any supported format to pyramidal GeoTIFF.
 
-Supported input formats: SVS, NDPI, SCN, MRXS, TIFF, LIF, VSI, CZI, OME-TIFF,
-DICOM, ZVI, NRRD, PNG, JPEG, and more.  Requires pyvips and/or aicsimageio.
+Supported input formats
+  WSI scanners : SVS, NDPI, SCN, MRXS, VSI, BIF, QPTIFF
+  Leica/Zeiss  : LIF, CZI, ZVI
+  TIFF variants: TIFF, BigTIFF (BTF), OME-TIFF, OME-BTF
+  HDF5         : H5, HDF, HDF5, HE5
+  DICOM        : DICOM, DCM
+  Other        : IMS, OME-XML, PCORAW, JP2, NRRD, FG7
+  Flat images  : PNG, JPEG
+
+Requires pyvips for all outputs.  Bio-Formats formats additionally require
+aicsimageio[bioformats] + Java.  CZI requires pylibCZIrw.
 
 Single-file mode:
   convert input_path=slide.lif output_dir=./tiffs mpp=0.25
