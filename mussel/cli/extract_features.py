@@ -268,9 +268,12 @@ def _main_batch(cfg: ExtractFeaturesConfig):
     logger.info(f"Batch extracting features for {len(cfg.slide_paths)} slides")
 
     if use_two_step:
-        # Extract to intermediate patch feature files for later aggregation
+        # Extract to intermediate patch feature files for later aggregation.
+        # Use .patch_features.h5 suffix (not .patch.h5) to avoid overwriting the
+        # input tessellation h5, which shares the same {slide_id}.patch.h5 naming
+        # convention when output_dir == the task working directory.
         intermediate_h5_paths = [
-            str(output_dir / f"{slide_id}.patch.h5") for slide_id in slide_ids
+            str(output_dir / f"{slide_id}.patch_features.h5") for slide_id in slide_ids
         ]
 
         extract_patch_features_batch(
