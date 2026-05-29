@@ -1,5 +1,5 @@
 [project]
-name = "mussel"
+name = "mussel-pathology"
 version = "1.4.3"
 description = "weakly supervised computational pathology on whole slide images"
 license = { text = "GPL-3.0 license" }
