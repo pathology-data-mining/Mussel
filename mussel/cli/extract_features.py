@@ -22,6 +22,7 @@ from mussel.utils import (aggregate_slide_features_batch,
                           extract_patch_features_batch,
                           get_slide_ids_from_paths, resolve_remote_paths,
                           save_features)
+from mussel.utils.feature_extract import _numpy_to_torch
 from mussel.utils.file import save_hdf5, save_torch_tensor
 from mussel.utils.ml import collate_features
 
