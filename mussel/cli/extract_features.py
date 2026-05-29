@@ -332,7 +332,7 @@ def _main_batch(cfg: ExtractFeaturesConfig):
         # Save as PT format for consistency
         for output_h5, output_pt in zip(output_h5_paths, output_pt_paths):
             with h5py.File(output_h5, "r") as f:
-                features = torch.from_numpy(f["features"][:])
+                features = _numpy_to_torch(f["features"][:])
                 torch.save(features, output_pt)
 
     logger.info(f"Batch processing complete. Output saved to {output_dir}")
