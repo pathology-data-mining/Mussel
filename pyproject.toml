@@ -1,6 +1,6 @@
 [project]
 name = "mussel"
-version = "1.4.2"
+version = "1.4.3"
 description = "weakly supervised computational pathology on whole slide images"
 license = { text = "GPL-3.0 license" }
 readme = "README.md"
@@ -63,7 +63,9 @@ dev = [
 "torch-cpu" = ["torch < 2.6", "torchvision", "open-clip-torch", "segmentation-models-pytorch"]
 "torch-gpu" = ["torch < 2.6", "torchvision", "open-clip-torch", "segmentation-models-pytorch"]
 "fastattn" = [
-  "gigapath@git+https://github.com/prov-gigapath/prov-gigapath",
+  # gigapath must be installed manually:
+  # pip install git+https://github.com/prov-gigapath/prov-gigapath
+  # Excluded here because PyPI prohibits direct git URL dependencies.
   "fairscale",
   "torch==2.11.0",
   "torchvision",
