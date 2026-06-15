@@ -311,6 +311,18 @@ def _main_batch(cfg: ExtractFeaturesConfig):
             gpu_device_ids=cfg.gpu_device_ids,
             slide_batch_size=cfg.slide_batch_size,
         )
+
+        # Defense-in-depth: verify at least one output file was created.
+        # aggregate_slide_features_batch already raises when ALL slides fail,
+        # but guard here too in case of unexpected silent failures.
+        missing = [p for p in output_pt_paths if not os.path.isfile(p)]
+        if len(missing) == len(output_pt_paths):
+            raise RuntimeError(
+                f"extract_features produced no output files: all {len(output_pt_paths)} "
+                ".features.pt files are missing after slide-level aggregation. "
+                "All slides may have failed (e.g. CUDA out of memory in TITAN). "
+                "Check logs above for per-slide errors."
+            )
     else:
         # Single-step: extract directly to final output (no aggregation)
         extract_patch_features_batch(
