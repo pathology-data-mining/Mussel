@@ -131,7 +131,7 @@ def _titan_get_alibi_gpu_float16(self, w: int, h: int, bg_mask=None):
 
     if bg_mask is not None:
         # bg_mask shape is (1, H, W) bool — squeeze to (H, W), index into 2D grid
-        mask_2d = bg_mask.to(dev).squeeze(0).bool()  # (H, W) or (W*H,) depending on caller
+        mask_2d = bg_mask.to(device).squeeze(0).bool()  # (H, W) or (W*H,) depending on caller
         if mask_2d.dim() == 1:
             # Already flattened (w*h,)
             mask_flat = mask_2d
