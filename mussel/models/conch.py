@@ -352,16 +352,8 @@ class TitanSlideEncoderModel(TorchModel):
         vision_enc = self.obj.vision_encoder
         vision_enc.get_alibi = types.MethodType(_titan_get_alibi_gpu_float16, vision_enc)
         vision_enc.forward_features = types.MethodType(_titan_forward_features_efficient, vision_enc)
-        # vision_enc.blocks is a CustomSequential with a .modules_list attribute
-        blocks = getattr(vision_enc.blocks, 'modules_list', None) or list(vision_enc.blocks.children())
-        for block in blocks:
-            if hasattr(block, 'attn') and hasattr(block.attn, 'pos_encode'):
-                block.attn.forward = types.MethodType(
-                    _titan_attention_forward_efficient, block.attn
-                )
         logger.debug(
-            "TITAN: applied GPU float16 get_alibi + forward_features + EFFICIENT_ATTENTION "
-            "monkey-patches to %d transformer blocks", len(blocks)
+            "TITAN: applied GPU float16 get_alibi + expand-based forward_features monkey-patches"
         )
 
         def model_fun(patch_features, coords, patch_size):
