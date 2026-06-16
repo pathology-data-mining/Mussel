@@ -175,6 +175,56 @@ def _titan_get_alibi_gpu_float16(self, w: int, h: int, bg_mask=None):
     return all_bias
 
 
+def _titan_attention_forward_efficient(self, x, attn_bias, bg_mask=None):
+    """Memory-efficient replacement for TITAN Attention.forward().
+
+    Forces PyTorch SDPA to use SDPBackend.EFFICIENT_ATTENTION (xformers/cutlass),
+    which processes attention in tiles and never materializes the full QK^T matrix.
+    This saves ~22 GB of VRAM per layer for N=30k, preventing OOM on A100 when
+    combined with the 22 GB bias tensor.
+
+    Without this patch, the math kernel materializes QK^T (22 GB) + QK^T+bias copy
+    (22 GB) per layer = 44 GB additional → exceeds A100's 80 GB total.
+    """
+    B, N, C = x.shape
+    qkv = self.qkv(x).reshape(B, N, 3, self.num_heads, self.head_dim).permute(2, 0, 3, 1, 4)
+    q, k, v = qkv.unbind(0)
+    q, k = self.q_norm(q), self.k_norm(k)
+
+    if self.pos_encode == 'alibi':
+        if bg_mask is not None and B > 1:
+            bg_mask_v = bg_mask.view(B, -1)
+            bg_mask_v = torch.cat(
+                (torch.ones((B, 1), dtype=bg_mask_v.dtype, device=bg_mask_v.device), bg_mask_v),
+                dim=-1,
+            )
+            attn_mask = bg_mask_v.unsqueeze(2) * bg_mask_v.unsqueeze(1)
+            diag = torch.eye(attn_mask.size(1), device=attn_mask.device, dtype=torch.bool).unsqueeze(0)
+            attn_mask = torch.logical_or(attn_mask, diag)
+            attn_mask = (1 - attn_mask.float()) * torch.finfo(q.dtype).min
+            attn_mask = attn_mask.unsqueeze(1).expand(-1, self.num_heads, -1, -1) + attn_bias
+        else:
+            attn_mask = attn_bias
+    else:
+        attn_mask = None
+
+    try:
+        from torch.nn.attention import sdpa_kernel, SDPBackend
+        with sdpa_kernel(SDPBackend.EFFICIENT_ATTENTION):
+            out = torch.nn.functional.scaled_dot_product_attention(
+                q, k, v, attn_mask=attn_mask, dropout_p=self.attn_drop_prob
+            )
+    except Exception:
+        out = torch.nn.functional.scaled_dot_product_attention(
+            q, k, v, attn_mask=attn_mask, dropout_p=self.attn_drop_prob
+        )
+
+    out = out.transpose(1, 2).reshape(B, N, C)
+    out = self.proj(out)
+    out = self.proj_drop(out)
+    return out
+
+
 def _titan_forward_features_efficient(self, x, coords=None, mask=None, bg_mask=None):
     """Memory-efficient replacement for VisionTransformer.forward_features().
 
@@ -360,13 +410,14 @@ class TitanSlideEncoderModel(TorchModel):
         vision_enc = self.obj.vision_encoder
         vision_enc.get_alibi = types.MethodType(_titan_get_alibi_gpu_float16, vision_enc)
         vision_enc.forward_features = types.MethodType(_titan_forward_features_efficient, vision_enc)
-
-        # Clear allocator cache before inference to reduce fragmentation
-        if self.device.type == "cuda":
-            torch.cuda.empty_cache()
-
+        # Patch each Attention block to use EFFICIENT_ATTENTION (avoids materializing QK^T)
+        blocks = getattr(vision_enc.blocks, 'modules_list', None) or list(vision_enc.blocks.children())
+        for block in blocks:
+            if hasattr(block, 'attn') and hasattr(block.attn, 'pos_encode'):
+                block.attn.forward = types.MethodType(_titan_attention_forward_efficient, block.attn)
         logger.debug(
-            "TITAN: applied GPU float16 get_alibi + expand-based forward_features monkey-patches"
+            "TITAN: applied GPU float16 get_alibi + expand-based forward_features "
+            "+ EFFICIENT_ATTENTION monkey-patches (%d blocks)", len(blocks)
         )
 
         def model_fun(patch_features, coords, patch_size):

@@ -168,4 +168,5 @@ class TestMonkeyPatchApplied:
         tree = ast.parse(src)
         fn_names = {n.name for n in ast.walk(tree) if isinstance(n, ast.FunctionDef)}
         assert "_titan_get_alibi_gpu_float16" in fn_names
-        assert "_titan_forward_features_efficient" in fn_names, "Missing _titan_forward_features_efficient"
+        assert "_titan_forward_features_efficient" in fn_names
+        assert "_titan_attention_forward_efficient" in fn_names
