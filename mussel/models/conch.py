@@ -339,19 +339,32 @@ class TitanSlideEncoderModel(TorchModel):
     def get_model_fun(self) -> Callable:
         """Get model inference function for TITAN slide encoder.
 
-        Applies two monkey-patches to the TITAN vision encoder to avoid O(N²)
-        CPU RAM OOM on large slides (>25k patches):
+        Applies monkey-patches to the TITAN vision encoder to fix CPU/GPU RAM OOM
+        on large IMPACT slides (>25k patches):
 
-        1. ``get_alibi`` → GPU float16 via torch.cdist (eliminates ~17 GB numpy intermediate)
-        2. ``Attention.forward`` → SDPBackend.EFFICIENT_ATTENTION (no QK^T materialization)
+        1. ``get_alibi`` → GPU float16 via torch.cdist
+           Eliminates ~82 GB CPU RAM peak for N=30k patches.
+        2. ``forward_features`` → uses expand() instead of repeat()
+           Avoids a 22 GB copy of the bias tensor for N=30k.
 
-        These patches reduce peak memory from ~82 GB CPU → ~26 GB GPU for N=33k patches,
-        allowing TITAN to run on A100 for ~99% of IMPACT slides without OOM.
+        Memory budget on A100 (80 GB): bias (22 GB) + model (2 GB) + QK^T (22 GB)
+        + intermediates (~3 GB) ≈ 49 GB → fits with headroom.
+        Fragmentation is reduced by setting expandable_segments=True.
         """
+        import os
+        # Allow CUDA allocator to use expandable segments to reduce fragmentation
+        # between the large bias tensor and QK^T attention matrix
+        os.environ.setdefault("PYTORCH_CUDA_ALLOC_CONF", "expandable_segments:True")
+
         # Apply monkey-patches to the vision encoder
         vision_enc = self.obj.vision_encoder
         vision_enc.get_alibi = types.MethodType(_titan_get_alibi_gpu_float16, vision_enc)
         vision_enc.forward_features = types.MethodType(_titan_forward_features_efficient, vision_enc)
+
+        # Clear allocator cache before inference to reduce fragmentation
+        if self.device.type == "cuda":
+            torch.cuda.empty_cache()
+
         logger.debug(
             "TITAN: applied GPU float16 get_alibi + expand-based forward_features monkey-patches"
         )
