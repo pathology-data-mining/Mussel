@@ -410,15 +410,18 @@ class TitanSlideEncoderModel(TorchModel):
         vision_enc = self.obj.vision_encoder
         vision_enc.get_alibi = types.MethodType(_titan_get_alibi_gpu_float16, vision_enc)
         vision_enc.forward_features = types.MethodType(_titan_forward_features_efficient, vision_enc)
-        # Patch each Attention block to use EFFICIENT_ATTENTION (avoids materializing QK^T)
-        blocks = getattr(vision_enc.blocks, 'modules_list', None) or list(vision_enc.blocks.children())
-        for block in blocks:
-            if hasattr(block, 'attn') and hasattr(block.attn, 'pos_encode'):
-                block.attn.forward = types.MethodType(_titan_attention_forward_efficient, block.attn)
         logger.debug(
-            "TITAN: applied GPU float16 get_alibi + expand-based forward_features "
-            "+ EFFICIENT_ATTENTION monkey-patches (%d blocks)", len(blocks)
+            "TITAN: applied GPU float16 get_alibi + expand-based forward_features monkey-patches"
         )
+
+        # Use SDPBackend.EFFICIENT_ATTENTION globally in model_fun to prevent the math kernel
+        # from materializing the full QK^T matrix (~22 GB for N=18k), which would OOM.
+        try:
+            from torch.nn.attention import sdpa_kernel, SDPBackend
+            _efficient_ctx = lambda: sdpa_kernel(SDPBackend.EFFICIENT_ATTENTION)
+        except Exception:
+            import contextlib
+            _efficient_ctx = contextlib.nullcontext
 
         def model_fun(patch_features, coords, patch_size):
             """Run TITAN slide encoder on patch features with coordinates and patch size."""
@@ -426,6 +429,7 @@ class TitanSlideEncoderModel(TorchModel):
                 torch.no_grad(),
                 torch.inference_mode(),
                 torch.autocast(device_type=self.device.type, dtype=torch.float16),
+                _efficient_ctx(),
             ):
                 patch_features = patch_features.to(self.device, non_blocking=True)
                 coords = coords.to(self.device, non_blocking=True)
