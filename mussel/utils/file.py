@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import List, Optional
 
 import h5py
+import ml_dtypes
 import numpy as np
 import torch
 
@@ -346,13 +347,6 @@ def load_features_from_h5(h5_path: str, pt_path: Optional[str] = None):
             # HDF5 stores bfloat16 as |V2 opaque void (via ml_dtypes). Cast both
             # bfloat16 and float16 to float32 so downstream consumers work correctly.
             if features_arr.dtype.kind == "V" and features_arr.dtype.itemsize == 2:
-                try:
-                    import ml_dtypes
-                except ImportError:
-                    raise ImportError(
-                        "ml_dtypes is required to load bfloat16 features. "
-                        "Install it with: pip install ml-dtypes"
-                    )
                 features_arr = features_arr.view(ml_dtypes.bfloat16).astype(np.float32)
             elif features_arr.dtype == np.float16:
                 features_arr = features_arr.astype(np.float32)
