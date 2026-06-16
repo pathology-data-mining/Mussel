@@ -1685,7 +1685,7 @@ def aggregate_slide_features_batch(
     else:
         logger.info(f"\n=== All {num_slides} slides processed successfully ===")
 
-    if len(failed_slides) == num_slides:
+    if failed_slides and len(failed_slides) == num_slides:
         raise RuntimeError(
             f"All {num_slides} slide(s) failed during 'model' aggregation "
             f"(model={model_type}). Failed: {', '.join(failed_slides)}. "
