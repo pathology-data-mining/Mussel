@@ -175,7 +175,68 @@ def _titan_get_alibi_gpu_float16(self, w: int, h: int, bg_mask=None):
     return all_bias
 
 
-def _titan_attention_forward_efficient(self, x, attn_bias, bg_mask=None):
+def _titan_forward_features_efficient(self, x, coords=None, mask=None, bg_mask=None):
+    """Memory-efficient replacement for VisionTransformer.forward_features().
+
+    The original uses `attn_bias.repeat(B, 1, 1, 1)` which creates a full copy
+    of the (1, H, N, N) bias tensor — 22 GB for N=30k on A100. This replacement
+    uses `expand()` (a zero-copy view) and avoids redundant dtype/device casts
+    when the bias is already in the correct format (float16 on GPU from the
+    get_alibi monkey-patch).
+    """
+    import math as _math
+    B, nc, w, h = x.shape
+    x = x.flatten(2, 3).transpose(1, 2)
+
+    if self.pos_encode_type == 'alibi':
+        if w * h == 36 and B != 1:
+            if not self.local_alibi_status:
+                self.prepare_tensor(x, 'local', 'alibi')
+            attn_bias = self.local_alibi
+        elif w * h == 196 and B != 1:
+            if not self.global_alibi_status:
+                self.prepare_tensor(x, 'global', 'alibi')
+            attn_bias = self.global_alibi
+        else:
+            # Calls our monkey-patched get_alibi (returns float16 GPU tensor)
+            attn_bias = self.get_alibi(w, h, bg_mask) if B == 1 else self.get_alibi(w, h)
+            # Use expand instead of repeat: zero-copy view for the B dimension
+            attn_bias = attn_bias.expand(x.shape[0], -1, -1, -1)
+            # Only cast if dtype/device differ (avoids copy when already float16 on GPU)
+            if attn_bias.dtype != x.dtype or attn_bias.device != x.device:
+                attn_bias = attn_bias.to(dtype=x.dtype, device=x.device)
+    else:
+        attn_bias = None
+
+    if self.masked_im_modeling:
+        assert mask is not None
+        x = self.patch_embed(x)
+        x = self.mask_model(x, mask)
+    else:
+        x = self.patch_embed(x)
+
+    x = self._pos_embed(x, coords, w, h)
+    x = self.norm_pre(x)
+
+    # Mask background tokens when evaluating (B=1)
+    if bg_mask is not None and B == 1:
+        bg_mask_cat = torch.cat(
+            (torch.ones((1, 1), dtype=torch.bool, device=x.device), bg_mask.view(1, -1)),
+            dim=1,
+        )
+        x = x[bg_mask_cat].unsqueeze(0)
+
+    if self.grad_checkpointing and not torch.jit.is_scripting():
+        from timm.models._manipulate import checkpoint_seq
+        x = checkpoint_seq(self.blocks, x, attn_bias, bg_mask)
+    else:
+        x = self.blocks(x, attn_bias, bg_mask)
+
+    x = self.norm(x)
+    return x
+
+
+
     """Memory-efficient replacement for TITAN Attention.forward().
 
     Forces PyTorch SDPA to use the EFFICIENT_ATTENTION (xformers/cutlass) backend,
@@ -290,6 +351,7 @@ class TitanSlideEncoderModel(TorchModel):
         # Apply monkey-patches to the vision encoder
         vision_enc = self.obj.vision_encoder
         vision_enc.get_alibi = types.MethodType(_titan_get_alibi_gpu_float16, vision_enc)
+        vision_enc.forward_features = types.MethodType(_titan_forward_features_efficient, vision_enc)
         # vision_enc.blocks is a CustomSequential with a .modules_list attribute
         blocks = getattr(vision_enc.blocks, 'modules_list', None) or list(vision_enc.blocks.children())
         for block in blocks:
@@ -298,8 +360,8 @@ class TitanSlideEncoderModel(TorchModel):
                     _titan_attention_forward_efficient, block.attn
                 )
         logger.debug(
-            "TITAN: applied GPU float16 get_alibi + EFFICIENT_ATTENTION monkey-patches "
-            "to %d transformer blocks", len(blocks)
+            "TITAN: applied GPU float16 get_alibi + forward_features + EFFICIENT_ATTENTION "
+            "monkey-patches to %d transformer blocks", len(blocks)
         )
 
         def model_fun(patch_features, coords, patch_size):
