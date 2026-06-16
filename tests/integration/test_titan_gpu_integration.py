@@ -61,15 +61,33 @@ model = model_factory.get_model(ModelType.TITAN_SLIDE.path, use_gpu=(DEVICE == "
 model_fun = model.get_model_fun()
 print(f"  Model loaded on device: {model.device}")
 
+# TITAN's mlp_patch_embed_dim=768, so CONCH output features must be 768-dim
+CONCH_DIM = 768
+PATCH_SIZE = 420  # IMPACT: 224px patch at 0.5 MPP, level-0 size = 420px
+
+
+def _compact_grid_coords(N: int, step: int = 420):
+    """Create a compact 2D rectangular grid of N patch coordinates.
+    Avoids diagonal layouts which create N×N-cell bounding boxes.
+    """
+    W = int(N ** 0.5) + 1
+    H = (N + W - 1) // W
+    coords = torch.stack(torch.meshgrid(
+        torch.arange(W) * step,
+        torch.arange(H) * step,
+        indexing='ij',
+    ), dim=-1).reshape(-1, 2)[:N]
+    return coords.unsqueeze(0).to(torch.int64)  # (1, N, 2)
+
 
 # ---------------------------------------------------------------------------
 # Test 1: Small N (1k patches) — shape + finite values
 # ---------------------------------------------------------------------------
 def t1_small_n():
-    N, CONCH_DIM, patch_size = 1000, 1024, 420
+    N = 1000
     features = torch.randn(1, N, CONCH_DIM, dtype=torch.float32)
-    coords = (torch.arange(N).view(-1, 1) * torch.tensor([[420, 420]])).unsqueeze(0).to(torch.int64)
-    result = model_fun(features, coords, patch_size)
+    coords = _compact_grid_coords(N)
+    result = model_fun(features, coords, PATCH_SIZE)
     assert result.shape == (768,), f"Shape: {result.shape}"
     assert torch.isfinite(result).all(), "Non-finite values"
     assert result.dtype == torch.float32
@@ -83,25 +101,23 @@ def t2_large_n_no_oom():
         print("    (skipping — GPU required)")
         return
 
-    N, CONCH_DIM, patch_size = 30_000, 1024, 420
+    N = 30_000
     torch.cuda.reset_peak_memory_stats(0)
 
-    W, H = 173, 174
     features = torch.randn(1, N, CONCH_DIM, dtype=torch.float32)
-    grid = torch.stack(torch.meshgrid(
-        torch.arange(W) * 420,
-        torch.arange(H) * 420,
-        indexing='ij'
-    ), dim=-1).reshape(-1, 2)[:N].unsqueeze(0).to(torch.int64)
+    grid = _compact_grid_coords(N)  # compact ~173×174 grid
 
-    result = model_fun(features, grid, patch_size)
+    result = model_fun(features, grid, PATCH_SIZE)
 
     vram_peak = torch.cuda.max_memory_allocated(0) / 1e9
     print(f"    GPU VRAM peak: {vram_peak:.1f} GB")
 
     assert result.shape == (768,), f"Shape: {result.shape}"
     assert torch.isfinite(result).all(), "Non-finite values"
-    assert vram_peak < 70.0, f"VRAM peak {vram_peak:.1f} GB exceeds 70 GB limit"
+    # V100=16 GB: 30k patches → all_bias ~2.6 GB + model → should fit
+    # A100=80 GB: plenty of headroom
+    assert vram_peak < (16.0 if torch.cuda.get_device_properties(0).total_memory < 20e9 else 70.0), \
+        f"VRAM peak {vram_peak:.1f} GB too high"
 
 
 # ---------------------------------------------------------------------------
@@ -109,12 +125,12 @@ def t2_large_n_no_oom():
 # ---------------------------------------------------------------------------
 def t3_cpu_ram_bounded():
     import resource
-    N, CONCH_DIM, patch_size = 10_000, 1024, 420
+    N = 10_000
     rss_before = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss  # KB on Linux
 
     features = torch.randn(1, N, CONCH_DIM)
-    coords = torch.zeros(1, N, 2, dtype=torch.int64)
-    result = model_fun(features, coords, patch_size)
+    coords = _compact_grid_coords(N)
+    result = model_fun(features, coords, PATCH_SIZE)
 
     rss_after = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
     delta_gb = (rss_after - rss_before) / 1e6
