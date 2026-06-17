@@ -310,14 +310,20 @@ class TitanSlideEncoderModel(TorchModel):
             "TITAN: applied GPU float16 get_alibi + expand-based forward_features monkey-patches"
         )
 
-        # Use SDPBackend.EFFICIENT_ATTENTION globally in model_fun to prevent the math kernel
+        # Use SDPBackend.EFFICIENT_ATTENTION in model_fun to prevent the math kernel
         # from materializing the full QK^T matrix (~22 GB for N=18k), which would OOM.
+        # EFFICIENT_ATTENTION requires CUDA compute >= 8.0 (A100+); fall back to the
+        # default SDPA kernel selection on older hardware (P40, V100, etc.).
+        import contextlib
+        _efficient_ctx = contextlib.nullcontext
         try:
             from torch.nn.attention import sdpa_kernel, SDPBackend
-            _efficient_ctx = lambda: sdpa_kernel(SDPBackend.EFFICIENT_ATTENTION)
+            if torch.cuda.is_available():
+                major, _ = torch.cuda.get_device_capability(self.device)
+                if major >= 8:
+                    _efficient_ctx = lambda: sdpa_kernel(SDPBackend.EFFICIENT_ATTENTION)
         except Exception:
-            import contextlib
-            _efficient_ctx = contextlib.nullcontext
+            pass
 
         def model_fun(patch_features, coords, patch_size):
             """Run TITAN slide encoder on patch features with coordinates and patch size."""
