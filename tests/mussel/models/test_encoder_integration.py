@@ -36,6 +36,11 @@ _TESTDATA = Path(__file__).parent.parent.parent / "testdata"
 _SLIDE_PATH = str(_TESTDATA / "948176.svs")
 _PATCH_H5 = str(_TESTDATA / "948176.patch.h5")
 
+_skip_if_no_testdata = pytest.mark.skipif(
+    not (Path(_SLIDE_PATH).exists() and Path(_PATCH_H5).exists()),
+    reason="Test slide data not available (948176.svs / 948176.patch.h5)",
+)
+
 # Slide encoders that are *encoder-agnostic* (not listed in SLIDE_ENCODER_COMPATIBILITY
 # because they work with any patch encoder — e.g. ABMIL).
 _AGNOSTIC_SLIDE_ENCODERS = {ModelType.ABMIL_SLIDE}
@@ -137,6 +142,7 @@ def _skip_on_load_failure(fn):
 
 @pytest.mark.slow
 @pytest.mark.integration
+@_skip_if_no_testdata
 @pytest.mark.timeout(600)
 @pytest.mark.parametrize("model_type", _PATCH_ENCODER_TYPES, ids=lambda m: m.name)
 def test_patch_encoder_extracts_features(tmp_path, model_type, use_gpu):
@@ -372,6 +378,7 @@ _SNAPSHOT_DIR = _TESTDATA / "snapshots"
 
 @pytest.mark.slow
 @pytest.mark.integration
+@_skip_if_no_testdata
 @pytest.mark.timeout(600)
 @pytest.mark.parametrize("model_type", _PATCH_ENCODER_TYPES, ids=lambda m: m.name)
 def test_patch_encoder_is_deterministic(tmp_path, model_type, use_gpu):
@@ -421,6 +428,7 @@ def test_patch_encoder_is_deterministic(tmp_path, model_type, use_gpu):
 
 @pytest.mark.slow
 @pytest.mark.integration
+@_skip_if_no_testdata
 @pytest.mark.timeout(600)
 @pytest.mark.parametrize("model_type", _PATCH_ENCODER_TYPES, ids=lambda m: m.name)
 def test_patch_encoder_matches_snapshot(
