@@ -273,6 +273,48 @@ The tools currently available from Mussel are,
 These are described, with examples, in the accompanying document, [README-commands.md](README-commands.md)
 
 
+## Development
+
+### Docker/Apptainer Containers with Flash Attention
+
+Mussel supports building Docker containers with **flash-attn 2.0** for accelerated attention in the CONCH1.5 patch encoder. Flash attention provides ~30-50% speedup on patch encoding (~20% overall TITAN pipeline improvement).
+
+**Building the flash-attn container:**
+
+```bash
+# Build Docker image with flash-attn backend
+make docker-build BACKEND=fastattn
+# Or manually:
+docker build --build-arg BACKEND=fastattn -t mussel:fastattn .
+
+# Convert to Apptainer SIF for HPC deployment
+make sif
+# Or manually:
+apptainer build --force mussel-fastattn.sif docker-daemon://mussel:fastattn
+```
+
+**Key details:**
+- The `[fastattn]` extra in `pyproject.toml` installs:
+  - torch 2.11.0+cu126 (CUDA 12.6)
+  - flash-attn 2.6.3 (custom manylinux_2_28 wheels for Rocky 8 compatibility)
+  - xformers 0.0.35
+- Flash attention requires CUDA compute capability ≥ 8.0 (A100, H100, etc.)
+- For V100 (compute 7.0) or CPU, the code automatically falls back to PyTorch SDPA
+- TITAN slide encoder uses `SDPBackend.EFFICIENT_ATTENTION` (Phase 1 optimization); flash-attn only accelerates CONCH1.5 patch encoding
+
+**Using with mussel-nf:**
+
+Copy the SIF to your mussel-nf repo and use the `apptainer_fastattn` profile:
+
+```bash
+cp mussel-fastattn.sif /path/to/mussel-nf/
+cd /path/to/mussel-nf
+nextflow run main.nf -profile cluster,slurm,apptainer_fastattn ...
+```
+
+The profile automatically uses the flash-attn container for `FEATURIZE` tasks.
+
+
 ## License
 This code is made available under the GPLv3 License and is available for non-commercial academic purposes.
 Forked from CLAM, © [Mahmood Lab](http://www.mahmoodlab.org).
