@@ -175,56 +175,6 @@ def _titan_get_alibi_gpu_float16(self, w: int, h: int, bg_mask=None):
     return all_bias
 
 
-def _titan_attention_forward_efficient(self, x, attn_bias, bg_mask=None):
-    """Memory-efficient replacement for TITAN Attention.forward().
-
-    Forces PyTorch SDPA to use SDPBackend.EFFICIENT_ATTENTION (xformers/cutlass),
-    which processes attention in tiles and never materializes the full QK^T matrix.
-    This saves ~22 GB of VRAM per layer for N=30k, preventing OOM on A100 when
-    combined with the 22 GB bias tensor.
-
-    Without this patch, the math kernel materializes QK^T (22 GB) + QK^T+bias copy
-    (22 GB) per layer = 44 GB additional → exceeds A100's 80 GB total.
-    """
-    B, N, C = x.shape
-    qkv = self.qkv(x).reshape(B, N, 3, self.num_heads, self.head_dim).permute(2, 0, 3, 1, 4)
-    q, k, v = qkv.unbind(0)
-    q, k = self.q_norm(q), self.k_norm(k)
-
-    if self.pos_encode == 'alibi':
-        if bg_mask is not None and B > 1:
-            bg_mask_v = bg_mask.view(B, -1)
-            bg_mask_v = torch.cat(
-                (torch.ones((B, 1), dtype=bg_mask_v.dtype, device=bg_mask_v.device), bg_mask_v),
-                dim=-1,
-            )
-            attn_mask = bg_mask_v.unsqueeze(2) * bg_mask_v.unsqueeze(1)
-            diag = torch.eye(attn_mask.size(1), device=attn_mask.device, dtype=torch.bool).unsqueeze(0)
-            attn_mask = torch.logical_or(attn_mask, diag)
-            attn_mask = (1 - attn_mask.float()) * torch.finfo(q.dtype).min
-            attn_mask = attn_mask.unsqueeze(1).expand(-1, self.num_heads, -1, -1) + attn_bias
-        else:
-            attn_mask = attn_bias
-    else:
-        attn_mask = None
-
-    try:
-        from torch.nn.attention import sdpa_kernel, SDPBackend
-        with sdpa_kernel(SDPBackend.EFFICIENT_ATTENTION):
-            out = torch.nn.functional.scaled_dot_product_attention(
-                q, k, v, attn_mask=attn_mask, dropout_p=self.attn_drop_prob
-            )
-    except Exception:
-        out = torch.nn.functional.scaled_dot_product_attention(
-            q, k, v, attn_mask=attn_mask, dropout_p=self.attn_drop_prob
-        )
-
-    out = out.transpose(1, 2).reshape(B, N, C)
-    out = self.proj(out)
-    out = self.proj_drop(out)
-    return out
-
-
 def _titan_forward_features_efficient(self, x, coords=None, mask=None, bg_mask=None):
     """Memory-efficient replacement for VisionTransformer.forward_features().
 
@@ -284,58 +234,6 @@ def _titan_forward_features_efficient(self, x, coords=None, mask=None, bg_mask=N
 
     x = self.norm(x)
     return x
-
-
-
-    """Memory-efficient replacement for TITAN Attention.forward().
-
-    Forces PyTorch SDPA to use the EFFICIENT_ATTENTION (xformers/cutlass) backend,
-    which processes attention in tiles and does not materialize the full QK^T matrix.
-    This saves ~26 GB of VRAM for N=33k compared to the math (default) kernel.
-    Falls back to default SDPA if EFFICIENT_ATTENTION is unavailable.
-    """
-    B, N, C = x.shape
-    qkv = self.qkv(x).reshape(B, N, 3, self.num_heads, self.head_dim).permute(2, 0, 3, 1, 4)
-    q, k, v = qkv.unbind(0)
-    q, k = self.q_norm(q), self.k_norm(k)
-
-    # B=1 path: attn_bias is the full ALiBi bias (H, N, N); B>1 path uses bg_mask
-    if self.pos_encode == 'alibi':
-        if bg_mask is not None and B > 1:
-            bg_mask_v = bg_mask.view(B, -1)
-            bg_mask_v = torch.cat(
-                (torch.ones((B, 1), dtype=bg_mask_v.dtype, device=bg_mask_v.device), bg_mask_v),
-                dim=-1,
-            )
-            attn_mask = bg_mask_v.unsqueeze(2) * bg_mask_v.unsqueeze(1)
-            diag = torch.eye(attn_mask.size(1), device=attn_mask.device, dtype=torch.bool).unsqueeze(0)
-            attn_mask = torch.logical_or(attn_mask, diag)
-            attn_mask = (1 - attn_mask.float()) * torch.finfo(q.dtype).min
-            attn_mask = attn_mask.unsqueeze(1).expand(-1, self.num_heads, -1, -1) + attn_bias
-        else:
-            attn_mask = attn_bias
-    else:
-        attn_mask = None if not (bg_mask is not None and B > 1) else (
-            # non-alibi with bg_mask: reuse original logic
-            None  # simplified; full logic only needed for pos_encode!=alibi B>1 case
-        )
-
-    try:
-        from torch.nn.attention import sdpa_kernel, SDPBackend
-        with sdpa_kernel(SDPBackend.EFFICIENT_ATTENTION):
-            out = torch.nn.functional.scaled_dot_product_attention(
-                q, k, v, attn_mask=attn_mask, dropout_p=self.attn_drop_prob
-            )
-    except Exception:
-        # Fallback to default SDPA if efficient backend unavailable
-        out = torch.nn.functional.scaled_dot_product_attention(
-            q, k, v, attn_mask=attn_mask, dropout_p=self.attn_drop_prob
-        )
-
-    out = out.transpose(1, 2).reshape(B, N, C)
-    out = self.proj(out)
-    out = self.proj_drop(out)
-    return out
 
 
 @register_model(ModelType.TITAN_SLIDE)
@@ -399,13 +297,11 @@ class TitanSlideEncoderModel(TorchModel):
 
         Memory budget on A100 (80 GB): bias (22 GB) + model (2 GB) + QK^T (22 GB)
         + intermediates (~3 GB) ≈ 49 GB → fits with headroom.
-        Fragmentation is reduced by setting expandable_segments=True.
+        To further reduce allocator fragmentation set
+        ``PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True`` in the process
+        environment *before* Python starts (the CUDA allocator reads this env var
+        once at initialization, before any model is loaded).
         """
-        import os
-        # Allow CUDA allocator to use expandable segments to reduce fragmentation
-        # between the large bias tensor and QK^T attention matrix
-        os.environ.setdefault("PYTORCH_CUDA_ALLOC_CONF", "expandable_segments:True")
-
         # Apply monkey-patches to the vision encoder
         vision_enc = self.obj.vision_encoder
         vision_enc.get_alibi = types.MethodType(_titan_get_alibi_gpu_float16, vision_enc)
