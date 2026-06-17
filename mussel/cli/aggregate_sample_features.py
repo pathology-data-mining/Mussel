@@ -6,6 +6,7 @@ from typing import List, Optional
 
 import h5py
 import hydra
+import ml_dtypes
 import numpy as np
 import torch
 from hydra.conf import HelpConf, HydraConf
@@ -139,7 +140,16 @@ def main(cfg: AggregateSampleFeaturesConfig):
         coords_list = []
         for i in indices:
             with h5py.File(patch_features_h5_paths[i], "r") as h5:
-                features_list.append(np.array(h5["features"]))
+                features_arr = np.array(h5["features"])
+                # HDF5 stores bfloat16 as |V2 opaque void (via ml_dtypes). Cast both
+                # bfloat16 and float16 to float32 so downstream consumers work correctly.
+                if features_arr.dtype.kind == "V" and features_arr.dtype.itemsize == 2:
+                    features_arr = features_arr.view(ml_dtypes.bfloat16).astype(
+                        np.float32
+                    )
+                elif features_arr.dtype == np.float16:
+                    features_arr = features_arr.astype(np.float32)
+                features_list.append(features_arr)
                 coords_list.append(h5["coords"][:])
 
         result = aggregate_sample_features(
