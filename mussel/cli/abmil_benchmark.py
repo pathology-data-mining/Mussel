@@ -16,6 +16,7 @@ Usage::
 
 import json
 import logging
+import math
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
@@ -300,6 +301,9 @@ def _eval_auc(
         probs = torch.sigmoid(logits).cpu().numpy()
         all_probs.append(probs)
         all_labels.append(labels.numpy())
+    if not all_probs:
+        logger.warning("AUROC undefined: loader is empty.")
+        return float("nan")
     all_probs = np.concatenate(all_probs)
     all_labels = np.concatenate(all_labels)
     if all_labels.sum() == 0 or all_labels.sum() == len(all_labels):
@@ -403,8 +407,7 @@ def _run_one_seed(
     test_loader = _make_loader(test_df, shuffle=False)
 
     best_val_auc = float("-inf")
-    # Initialise with current weights so load_state_dict never receives None.
-    best_state: Dict = {k: v.cpu().clone() for k, v in model.state_dict().items()}
+    best_state: Optional[Dict] = None
 
     for epoch in range(cfg.n_epochs):
         model.train()
@@ -421,7 +424,7 @@ def _run_one_seed(
             epoch_loss += loss.item()
 
         val_auc = _eval_auc(model, val_loader, device)
-        if val_auc > best_val_auc:
+        if not math.isnan(val_auc) and val_auc > best_val_auc:
             best_val_auc = val_auc
             best_state = {k: v.cpu().clone() for k, v in model.state_dict().items()}
         logger.debug(
@@ -433,7 +436,10 @@ def _run_one_seed(
             best_val_auc,
         )
 
-    model.load_state_dict(best_state)
+    # Restore best weights; if val AUC was always undefined (single-class val split),
+    # best_state is None and we keep the final-epoch weights instead.
+    if best_state is not None:
+        model.load_state_dict(best_state)
     test_auc = _eval_auc(model, test_loader, device)
     logger.info("seed=%d  best_val_auc=%.4f  test_auc=%.4f", seed, best_val_auc, test_auc)
 
