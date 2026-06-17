@@ -264,6 +264,14 @@ def _split_by_slide(
     n_test = max(1, int(round(n * test_size)))
     n_val = max(1, int(round(n * val_size)))
 
+    if n_test + n_val >= n:
+        raise ValueError(
+            f"Too few slides ({n}) for the requested split sizes "
+            f"(test_size={test_size}, val_size={val_size}). "
+            f"Need at least {n_test + n_val + 1} slides but got {n}. "
+            "Reduce test_size/val_size or provide more slides."
+        )
+
     test_ids = set(slide_ids[:n_test])
     val_ids = set(slide_ids[n_test : n_test + n_val])
     train_ids = set(slide_ids[n_test + n_val :])
@@ -355,9 +363,20 @@ def _run_one_seed(
     np.random.seed(seed)
 
     if cfg.split_col is not None:
+        if cfg.split_col not in df.columns:
+            raise ValueError(
+                f"split_col={cfg.split_col!r} not found in parquet columns: {list(df.columns)}"
+            )
         train_df = df[df[cfg.split_col] == "train"].reset_index(drop=True)
         val_df = df[df[cfg.split_col] == "val"].reset_index(drop=True)
         test_df = df[df[cfg.split_col] == "test"].reset_index(drop=True)
+        for split_name, split_df in [("train", train_df), ("val", val_df), ("test", test_df)]:
+            if split_df.empty:
+                raise ValueError(
+                    f"split_col={cfg.split_col!r}: '{split_name}' split is empty. "
+                    "Ensure the parquet contains rows with "
+                    f"{cfg.split_col}='{split_name}'."
+                )
         logger.info(
             "Using split_col=%r: train=%d  val=%d  test=%d slides",
             cfg.split_col,
@@ -377,12 +396,14 @@ def _run_one_seed(
             features_dir,
             cast_dtype,
         )
+        num_workers = min(4, len(split_df))
         return DataLoader(
             ds,
             batch_size=cfg.batch_size,
             shuffle=shuffle,
             collate_fn=_collate_fn,
-            num_workers=min(4, len(split_df)),
+            num_workers=num_workers,
+            multiprocessing_context="spawn" if num_workers > 0 else None,
             pin_memory=device.type == "cuda",
         )
 
@@ -455,7 +476,10 @@ def _run_one_seed(
     test_labels = np.concatenate(test_labels)
 
     return (
-        {"val": {"auroc": best_val_auc}, "test": {"auroc": test_auc}},
+        {
+            "val": {"auroc": best_val_auc if math.isfinite(best_val_auc) else float("nan")},
+            "test": {"auroc": test_auc},
+        },
         test_probs,
         test_labels,
     )
