@@ -1,4 +1,5 @@
 import h5py
+import ml_dtypes
 import numpy as np
 import pytest
 import torch
@@ -329,12 +330,12 @@ def test_cli_mismatched_lengths_raises(tmp_path):
 def test_float16_features_upcast_to_float32(tmp_path):
     """float16 features stored in h5 are upcast to float32 in the output H5."""
     n_tiles, dim = 6, 8
-    rng = np.random.default_rng(0)
-    orig_f32 = rng.random((n_tiles, dim)).astype(np.float32)
-    expected = orig_f32.astype(np.float16).astype(np.float32)
-
     h5_path = tmp_path / "slide.h5"
     _write_fake_h5(h5_path, n_tiles=n_tiles, dim=dim, seed=0, feature_dtype=np.float16)
+
+    # Read back the exact values written so expected matches what was stored.
+    with h5py.File(h5_path) as f:
+        expected = f["features"][:].astype(np.float32)
 
     cfg = AggregateSampleFeaturesConfig(
         patch_features_h5_paths=[str(h5_path)],
@@ -350,28 +351,22 @@ def test_float16_features_upcast_to_float32(tmp_path):
     assert (
         out_features.dtype == np.float32
     ), f"Expected float32 output, got {out_features.dtype}"
-    np.testing.assert_allclose(
-        out_features,
-        expected,
-        rtol=1e-3,
-        err_msg="Float16→float32 values differ more than expected",
-    )
+    np.testing.assert_array_equal(out_features, expected)
 
 
 def test_bfloat16_features_upcast_to_float32(tmp_path):
     """bfloat16 features (stored as |V2 opaque void in h5) are upcast to float32."""
-    import ml_dtypes
-
     n_tiles, dim = 6, 8
-    rng = np.random.default_rng(0)
-    orig_f32 = rng.random((n_tiles, dim)).astype(np.float32)
-    expected = orig_f32.astype(ml_dtypes.bfloat16).astype(np.float32)
-
     h5_path = tmp_path / "slide.h5"
     _write_fake_h5(
         h5_path, n_tiles=n_tiles, dim=dim, seed=0, feature_dtype=ml_dtypes.bfloat16
     )
 
+    # Read back the exact opaque bytes written and reinterpret as float32.
+    with h5py.File(h5_path) as f:
+        raw = np.array(f["features"])
+    expected = raw.view(ml_dtypes.bfloat16).astype(np.float32)
+
     cfg = AggregateSampleFeaturesConfig(
         patch_features_h5_paths=[str(h5_path)],
         sample_ids=["s1"],
@@ -386,9 +381,4 @@ def test_bfloat16_features_upcast_to_float32(tmp_path):
     assert (
         out_features.dtype == np.float32
     ), f"Expected float32 output, got {out_features.dtype}"
-    np.testing.assert_allclose(
-        out_features,
-        expected,
-        rtol=1e-2,
-        err_msg="Bfloat16→float32 values differ more than expected",
-    )
+    np.testing.assert_array_equal(out_features, expected)

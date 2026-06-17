@@ -1,5 +1,6 @@
 import os
 import ssl
+from unittest.mock import patch
 
 import h5py
 import ml_dtypes
@@ -322,3 +323,65 @@ def test_extract_features_embedding_precision(
     assert pt_tensor.dtype == expected_torch_dtype, (
         f"Expected .pt tensor dtype {expected_torch_dtype}, got {pt_tensor.dtype}"
     )
+
+
+@pytest.mark.parametrize("embedding_precision", ["float16", "bfloat16"])
+def test_main_batch_single_step_embedding_precision(tmp_path, embedding_precision):
+    """Regression test: _main_batch single-step reads reduced-precision H5 → correct PT dtype.
+
+    The bug: torch.from_numpy() crashes on |V2 (numpy void) dtype that h5py uses
+    when storing ml_dtypes.bfloat16 arrays. _numpy_to_torch() handles this correctly.
+    This test would have caught the regression before it reached main.
+    """
+    # Stub files – only need to exist; extract_patch_features_batch is mocked.
+    patch_h5 = tmp_path / "slide.patch.h5"
+    slide_svs = tmp_path / "slide.svs"
+    patch_h5.touch()
+    slide_svs.touch()
+
+    output_dir = tmp_path / "out"
+
+    # Use the same dtype that extract_patch_features_batch writes for each precision.
+    # bfloat16 → ml_dtypes.bfloat16, which h5py stores as |V2 (2-byte opaque void).
+    # float16  → np.float16, which h5py stores as float16.
+    fake_np_dtype = ml_dtypes.bfloat16 if embedding_precision == "bfloat16" else np.float16
+    fake_features = np.array([[1.5, 2.5, 3.5]], dtype=fake_np_dtype)
+    fake_coords = np.array([[0, 0]], dtype=np.int64)
+
+    def _fake_extract(patch_h5_paths, slide_paths, output_h5_paths, **kwargs):
+        for path in output_h5_paths:
+            os.makedirs(os.path.dirname(path), exist_ok=True)
+            with h5py.File(path, "w") as f:
+                f.create_dataset("features", data=fake_features)
+                f.create_dataset("coords", data=fake_coords)
+
+    cfg = ExtractFeaturesConfig(
+        patch_h5_paths=[str(patch_h5)],
+        slide_paths=[str(slide_svs)],
+        slide_ids=["slide1"],
+        output_dir=str(output_dir),
+        model_type=ModelType.CLIP,
+        aggregation_method="identity",
+        embedding_precision=embedding_precision,
+        use_gpu=False,
+        num_workers=0,
+    )
+
+    with patch(
+        "mussel.cli.extract_features.extract_patch_features_batch",
+        side_effect=_fake_extract,
+    ):
+        mussel.cli.extract_features.main(OmegaConf.create(cfg))
+
+    pt_path = output_dir / "slide1.features.pt"
+    assert pt_path.exists(), "PT output must exist"
+
+    tensor = torch.load(pt_path, weights_only=True)
+    expected_dtype = torch.float16 if embedding_precision == "float16" else torch.bfloat16
+    assert tensor.dtype == expected_dtype, (
+        f"Expected PT dtype {expected_dtype} for {embedding_precision}, got {tensor.dtype}"
+    )
+    assert tensor.shape == (1, 3), f"Unexpected shape: {tensor.shape}"
+    # Values should survive the round-trip without corruption.
+    expected = torch.tensor([[1.5, 2.5, 3.5]], dtype=expected_dtype)
+    assert torch.allclose(tensor.float(), expected.float(), atol=1e-2)

@@ -1451,11 +1451,15 @@ def aggregate_slide_features_batch(
 
         if failed_slides:
             logger.warning(f"\n=== Batch Processing Summary ===")
-            logger.warning(
-                f"Successfully processed: {len(successful_slides)}/{num_slides} slides"
-            )
+            logger.warning(f"Successfully processed: {len(successful_slides)}/{num_slides} slides")
             logger.warning(f"Failed: {len(failed_slides)} slides")
             logger.warning(f"Failed slides: {', '.join(failed_slides)}")
+            if len(failed_slides) == num_slides:
+                raise RuntimeError(
+                    f"All {num_slides} slide(s) failed during {aggregation_method!r} aggregation. "
+                    f"Failed: {', '.join(failed_slides)}. "
+                    "Check logs above for per-slide errors."
+                )
         else:
             logger.info(f"\n=== All {num_slides} slides processed successfully ===")
 
@@ -1676,13 +1680,17 @@ def aggregate_slide_features_batch(
 
     if failed_slides:
         logger.warning(f"\n=== Batch Processing Summary ===")
-        logger.warning(
-            f"Successfully processed: {len(successful_slides)}/{num_slides} slides"
-        )
         logger.warning(f"Failed: {len(failed_slides)} slides")
         logger.warning(f"Failed slides: {', '.join(failed_slides)}")
     else:
         logger.info(f"\n=== All {num_slides} slides processed successfully ===")
+
+    if failed_slides and len(failed_slides) == num_slides:
+        raise RuntimeError(
+            f"All {num_slides} slide(s) failed during 'model' aggregation "
+            f"(model={model_type}). Failed: {', '.join(failed_slides)}. "
+            "Check logs above for per-slide errors (e.g. CUDA out of memory)."
+        )
 
     logger.info(f"Batch aggregation complete")
     return output_h5_paths, output_pt_paths

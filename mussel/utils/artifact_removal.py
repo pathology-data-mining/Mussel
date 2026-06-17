@@ -13,12 +13,21 @@ Model weights are downloaded automatically from
 Requires the ``torch-gpu`` or ``torch-cpu`` extra::
 
     uv sync --extra torch-gpu
+
+Class constants and preset exclusion sets are exported at module level::
+
+    from mussel.utils.artifact_removal import (
+        CLASS_PEN_MARKING, CLASS_BACKGROUND,
+        EXCLUDE_PENMARKS_ONLY, EXCLUDE_ALL_ARTIFACTS,
+        GrandQCArtifactRemover,
+    )
 """
 
 from __future__ import annotations
 
 import logging
-from typing import Optional
+import warnings
+from typing import FrozenSet, Optional
 
 import numpy as np
 
@@ -32,51 +41,155 @@ _GRANDQC_TARGET_MPP = 1.0  # model trained at 10x ≈ 1 µm/px
 _GRANDQC_TILE_SIZE = 512
 _GRANDQC_N_CLASSES = 8
 
-# Output class indices (0-indexed) as labelled in the GrandQC paper
-_CLASS_NORMAL_TISSUE = 1
-_CLASS_PEN_MARKING = 4
-_CLASS_BACKGROUND = 7
+# ---------------------------------------------------------------------------
+# Public GrandQC output class indices (0-indexed, as labelled in the paper).
+# ---------------------------------------------------------------------------
+
+#: Glass / clear-slide background.
+CLASS_GLASS: int = 0
+#: Normal (stained) tissue.
+CLASS_NORMAL_TISSUE: int = 1
+#: Blood / haemorrhage.
+CLASS_BLOOD: int = 2
+#: Necrosis.
+CLASS_NECROSIS: int = 3
+#: Pen marking.
+CLASS_PEN_MARKING: int = 4
+#: Tissue fold.
+CLASS_FOLD: int = 5
+#: Hole or physical slide damage.
+CLASS_HOLE: int = 6
+#: Non-tissue background.
+CLASS_BACKGROUND: int = 7
+
+# ---------------------------------------------------------------------------
+# Preset exclusion sets — pass as ``exclude_classes`` to GrandQCArtifactRemover.
+# ---------------------------------------------------------------------------
+
+#: Conservative: remove only pen markings and background.
+#: Keeps blood, necrosis, folds and holes as tissue.
+#: Recommended default to avoid removing out-of-distribution tissue types.
+EXCLUDE_PENMARKS_ONLY: FrozenSet[int] = frozenset(
+    {CLASS_PEN_MARKING, CLASS_BACKGROUND}
+)
+
+#: Moderate: also remove folds and physical damage, but keep blood and necrosis.
+EXCLUDE_FOLDS_AND_PENMARKS: FrozenSet[int] = frozenset(
+    {CLASS_PEN_MARKING, CLASS_FOLD, CLASS_HOLE, CLASS_BACKGROUND}
+)
+
+#: Aggressive: remove all non-normal-tissue classes.
+#: May over-remove tissue in slides with significant necrosis or haemorrhage
+#: (e.g. glioblastoma, high-grade sarcoma).
+EXCLUDE_ALL_ARTIFACTS: FrozenSet[int] = frozenset(
+    {
+        CLASS_BLOOD,
+        CLASS_NECROSIS,
+        CLASS_PEN_MARKING,
+        CLASS_FOLD,
+        CLASS_HOLE,
+        CLASS_BACKGROUND,
+    }
+)
+
+# Private aliases kept for internal backward compat.
+_CLASS_NORMAL_TISSUE = CLASS_NORMAL_TISSUE
+_CLASS_PEN_MARKING = CLASS_PEN_MARKING
+_CLASS_BACKGROUND = CLASS_BACKGROUND
 
 
 class GrandQCArtifactRemover:
     """Removes artifacts and/or pen marks from a binary tissue mask.
 
     Uses the GrandQC U-Net (EfficientNet-B0 encoder) to classify each pixel
-    of the slide thumbnail into tissue vs artifact categories.  Artifact
-    regions are zeroed out from the existing binary tissue mask.
+    of the slide thumbnail, then zeros out any masked region whose predicted
+    class is in ``exclude_classes``.
 
     Implements the ``artifact_remover_fn(img, mask, mpp) -> mask`` protocol
     expected by :func:`~mussel.utils.segment.segment_tissue`.
 
+    GrandQC output classes (0-indexed):
+        0 – :data:`CLASS_GLASS`         — glass / clear-slide background
+        1 – :data:`CLASS_NORMAL_TISSUE` — normal stained tissue
+        2 – :data:`CLASS_BLOOD`         — blood / haemorrhage
+        3 – :data:`CLASS_NECROSIS`      — necrosis
+        4 – :data:`CLASS_PEN_MARKING`   — pen marking
+        5 – :data:`CLASS_FOLD`          — tissue fold
+        6 – :data:`CLASS_HOLE`          — hole / physical slide damage
+        7 – :data:`CLASS_BACKGROUND`    — non-tissue background
+
     Args:
-        remove_penmarks_only: If ``True``, only pen markings and background
-            are suppressed; folds, dark spots, etc. are kept.  If ``False``
-            (default), all non-normal-tissue classes are removed.
+        exclude_classes: Set of GrandQC class indices to remove from the
+            tissue mask.  Defaults to :data:`EXCLUDE_PENMARKS_ONLY`
+            ``{CLASS_PEN_MARKING, CLASS_BACKGROUND}`` — a conservative
+            setting that keeps blood, necrosis and folds as tissue.
+            Use :data:`EXCLUDE_ALL_ARTIFACTS` for aggressive removal, or
+            build a custom set from the ``CLASS_*`` constants.
         device: Torch device string (e.g. ``"cuda"``, ``"cpu"``).  Defaults
             to CUDA if available.
         batch_size: Number of 512 × 512 tiles to process per forward pass.
+        max_input_mpp: Input thumbnails coarser than this µm/px value are
+            rejected (mask returned unchanged).  Default ``8.0``.
+        remove_penmarks_only: **Deprecated** — use ``exclude_classes``
+            instead.  ``True`` maps to :data:`EXCLUDE_PENMARKS_ONLY`;
+            ``False`` maps to :data:`EXCLUDE_ALL_ARTIFACTS`.
 
-    Example::
+    Examples::
 
-        from mussel.utils.artifact_removal import GrandQCArtifactRemover
-        from mussel.utils.segment import segment_tissue
+        from mussel.utils.artifact_removal import (
+            GrandQCArtifactRemover,
+            EXCLUDE_PENMARKS_ONLY,
+            EXCLUDE_FOLDS_AND_PENMARKS,
+            EXCLUDE_ALL_ARTIFACTS,
+            CLASS_BLOOD, CLASS_PEN_MARKING, CLASS_BACKGROUND,
+        )
 
+        # Conservative (default): pen marks + background only
         remover = GrandQCArtifactRemover()
-        segment_tissue(
-            slide_path="slide.svs",
-            remove_artifacts=True,
-            artifact_remover_fn=remover,
+
+        # Moderate: also remove folds and holes
+        remover = GrandQCArtifactRemover(exclude_classes=EXCLUDE_FOLDS_AND_PENMARKS)
+
+        # Aggressive: everything except normal tissue
+        remover = GrandQCArtifactRemover(exclude_classes=EXCLUDE_ALL_ARTIFACTS)
+
+        # Custom: blood and pen marks only
+        remover = GrandQCArtifactRemover(
+            exclude_classes=frozenset({CLASS_BLOOD, CLASS_PEN_MARKING, CLASS_BACKGROUND})
         )
     """
 
     def __init__(
         self,
-        remove_penmarks_only: bool = False,
+        exclude_classes: Optional[FrozenSet[int]] = None,
+        *,
         device: Optional[str] = None,
         batch_size: int = 8,
         max_input_mpp: float = 8.0,
+        # Deprecated parameter kept for backward compatibility.
+        remove_penmarks_only: Optional[bool] = None,
     ) -> None:
-        self.remove_penmarks_only = remove_penmarks_only
+        if remove_penmarks_only is not None:
+            warnings.warn(
+                "GrandQCArtifactRemover: 'remove_penmarks_only' is deprecated and will be "
+                "removed in a future release.  Use 'exclude_classes' instead:\n"
+                "  remove_penmarks_only=True  → exclude_classes=EXCLUDE_PENMARKS_ONLY\n"
+                "  remove_penmarks_only=False → exclude_classes=EXCLUDE_ALL_ARTIFACTS",
+                DeprecationWarning,
+                stacklevel=2,
+            )
+            if exclude_classes is None:
+                exclude_classes = (
+                    EXCLUDE_PENMARKS_ONLY
+                    if remove_penmarks_only
+                    else EXCLUDE_ALL_ARTIFACTS
+                )
+
+        self.exclude_classes: FrozenSet[int] = (
+            frozenset(exclude_classes)
+            if exclude_classes is not None
+            else EXCLUDE_PENMARKS_ONLY
+        )
         self.batch_size = batch_size
         self.max_input_mpp = max_input_mpp
         self._device: Optional[str] = device
@@ -148,7 +261,9 @@ class GrandQCArtifactRemover:
             mpp:  Microns-per-pixel of ``img``.
 
         Returns:
-            Corrected binary mask of the same shape and dtype as ``mask``.
+            Corrected binary mask of the same shape and dtype as ``mask``,
+            with pixels belonging to any class in :attr:`exclude_classes`
+            zeroed out.
         """
         import cv2
         import torch
@@ -194,6 +309,11 @@ class GrandQCArtifactRemover:
         ph, pw = img_padded.shape[:2]
         n_h, n_w = ph // tile, pw // tile
 
+        # Pre-build the exclude tensor once for this call.
+        exclude_tensor = torch.tensor(
+            sorted(self.exclude_classes), dtype=torch.long, device=self.device
+        )
+
         # Extract tiles and apply ImageNet normalisation.
         tiles = [
             self._transforms(
@@ -215,10 +335,7 @@ class GrandQCArtifactRemover:
                 logits = self._model(batch)
                 probs = torch.softmax(logits, dim=1)
                 _, cls = torch.max(probs, dim=1)  # (B, tile, tile)
-                if self.remove_penmarks_only:
-                    keep = ~((cls == _CLASS_PEN_MARKING) | (cls == _CLASS_BACKGROUND))
-                else:
-                    keep = cls <= _CLASS_NORMAL_TISSUE
+                keep = ~torch.isin(cls, exclude_tensor)
                 preds.append(keep.cpu().numpy().astype(np.uint8))
 
         # Reassemble tiles into a full prediction map and unpad.

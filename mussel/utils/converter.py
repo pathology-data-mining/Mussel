@@ -1,8 +1,49 @@
 """AnyToTiffConverter — convert exotic slide formats to pyramidal TIFF.
 
-Converts DICOM, LIF, VSI, OME-TIFF, CZI, ZVI, NRRD, and flat images to
-pyramidal GeoTIFF using pyvips (fast streaming path) with an aicsimageio
-fallback for formats that pyvips cannot decode.
+Converts whole-slide images and microscopy formats to pyramidal GeoTIFF using
+pyvips (fast streaming path) with an aicsimageio/Bio-Formats fallback for
+formats that pyvips cannot decode, and pylibCZIrw for Zeiss CZI files.
+
+Supported input formats
+-----------------------
+Whole-slide imaging (WSI):
+    .svs        Aperio SVS
+    .ndpi       Hamamatsu NDPI
+    .scn        Leica SCN
+    .mrxs       3DHISTECH MRXS
+    .vsi        Olympus VSI
+    .bif        Ventana BIF
+    .qptiff     PerkinElmer/Akoya QPTIFF
+
+Leica / Zeiss / Nikon:
+    .lif        Leica LIF
+    .czi        Zeiss CZI  (requires pylibCZIrw)
+    .zvi        Zeiss ZVI
+
+TIFF variants:
+    .tif / .tiff    Standard TIFF
+    .btf / .ome.btf BigTIFF
+    .ome.tiff / .ome.tif  OME-TIFF
+
+HDF5:
+    .h5 / .hdf / .hdf5 / .he5   HDF5-based image formats
+
+DICOM:
+    .dicom / .dcm   DICOM
+
+Other scientific formats:
+    .ims        Imaris IMS
+    .ome.xml    OME-XML
+    .pcoraw     PCO RAW
+    .jp2        JPEG 2000
+    .nrrd       NRRD
+    .fg7        FluoView FG7
+
+Flat images (via Pillow):
+    .png, .jpg / .jpeg
+
+All Bio-Formats-based formats require ``aicsimageio[bioformats]`` and Java.
+CZI requires ``pylibCZIrw``.  All paths use pyvips when possible.
 
 Optional dependencies (install as needed):
     pip install pyvips

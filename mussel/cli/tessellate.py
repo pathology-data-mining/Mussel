@@ -16,6 +16,11 @@ from omegaconf import MISSING, OmegaConf
 
 logger = logging.getLogger(__name__)
 
+from mussel.utils.artifact_removal import (
+    EXCLUDE_ALL_ARTIFACTS,
+    EXCLUDE_PENMARKS_ONLY,
+    GrandQCArtifactRemover,
+)
 from mussel.utils.segment import (draw_slide_mask, save_patches_png,
                                   segment_tissue)
 
@@ -106,6 +111,15 @@ class SegConfig:
     remove_penmarks: bool = (
         False  # If True, apply pen mark removal to the tissue mask before patching.
     )
+    artifact_exclude_classes: Optional[List[int]] = field(
+        default=None
+    )
+    # Optional list of GrandQC class indices to exclude (overrides remove_artifacts /
+    # remove_penmarks preset logic when set).  Use the CLASS_* constants from
+    # mussel.utils.artifact_removal, e.g. [4, 7] for pen marks + background only.
+    # Common presets: EXCLUDE_PENMARKS_ONLY=[4,7], EXCLUDE_FOLDS_AND_PENMARKS=[4,5,6,7],
+    # EXCLUDE_ALL_ARTIFACTS=[2,3,4,5,6,7].  When None, the preset is derived from the
+    # remove_artifacts / remove_penmarks flags.
     seg_model: str = (
         "classic"  # "classic" (HSV + fixed threshold), "otsu" (HSV + Otsu), or "neural" (DeepLabV3).
     )
@@ -296,16 +310,63 @@ cs.store(group="seg_config", name="tcga", node=TcgaSegConfig)
 cs.store(name="tessellate_config", node=TessellateConfig)
 
 
+def _build_artifact_remover(
+    seg_cfg: dict,
+) -> "Optional[GrandQCArtifactRemover]":
+    """Instantiate a :class:`~mussel.utils.artifact_removal.GrandQCArtifactRemover`
+    from a plain ``seg_cfg`` dict (as returned by ``OmegaConf.to_container``).
+
+    Returns ``None`` when artifact removal is not requested.  The returned
+    instance is safe to share across multiple slides.
+
+    Exclusion set resolution order:
+
+    1. ``artifact_exclude_classes`` list — full per-run control.
+    2. Flags ``remove_artifacts`` / ``remove_penmarks``:
+
+       * ``remove_artifacts=True``             → :data:`~mussel.utils.artifact_removal.EXCLUDE_ALL_ARTIFACTS`
+       * ``remove_penmarks=True`` only         → :data:`~mussel.utils.artifact_removal.EXCLUDE_PENMARKS_ONLY`
+    """
+    if not (seg_cfg.get("remove_artifacts") or seg_cfg.get("remove_penmarks")):
+        return None
+
+    explicit = seg_cfg.get("artifact_exclude_classes")
+    if explicit:
+        exclude_classes = frozenset(int(c) for c in explicit)
+        mode = f"custom {sorted(exclude_classes)}"
+    elif bool(seg_cfg.get("remove_artifacts")):
+        exclude_classes = EXCLUDE_ALL_ARTIFACTS
+        mode = "EXCLUDE_ALL_ARTIFACTS (aggressive)"
+    else:
+        exclude_classes = EXCLUDE_PENMARKS_ONLY
+        mode = "EXCLUDE_PENMARKS_ONLY (conservative)"
+
+    remover = GrandQCArtifactRemover(exclude_classes=exclude_classes)
+    logger.info(
+        "Artifact removal enabled: remove_artifacts=%s remove_penmarks=%s "
+        "exclude_classes=%s",
+        seg_cfg.get("remove_artifacts"),
+        seg_cfg.get("remove_penmarks"),
+        mode,
+    )
+    return remover
+
+
 @hydra.main(version_base=None, config_path=".", config_name="tessellate_config")
 def main(
     cfg: TessellateConfig,
 ):
     """Tile a whole slide image and perform tissue segmentation."""
+    seg_cfg = OmegaConf.to_container(cfg.seg_config)
+    artifact_remover_fn = _build_artifact_remover(seg_cfg)
+    # Strip config-only keys that are not segment_tissue() parameters.
+    seg_cfg.pop("artifact_exclude_classes", None)
     if values := segment_tissue(
         slide_path=cfg.slide_path,
         slide_id=cfg.slide_id,
         output_h5_path=cfg.output_h5_path,
-        **OmegaConf.to_container(cfg.seg_config),
+        artifact_remover_fn=artifact_remover_fn,
+        **seg_cfg,
     ):
         polygon, grid, coords, _ = values
     else:

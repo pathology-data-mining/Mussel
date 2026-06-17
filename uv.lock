@@ -2184,7 +2184,7 @@ wheels = [
 
 [[package]]
 name = "mussel"
-version = "1.3.3"
+version = "1.4.1"
 source = { editable = "." }
 dependencies = [
     { name = "configargparse" },
@@ -2197,6 +2197,8 @@ dependencies = [
     { name = "hydra-core" },
     { name = "matplotlib" },
     { name = "ml-dtypes" },
+    { name = "numcodecs", version = "0.13.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11' or (extra == 'extra-6-mussel-fastattn' and extra == 'extra-6-mussel-tensorflow-cpu') or (extra == 'extra-6-mussel-fastattn' and extra == 'extra-6-mussel-tensorflow-gpu') or (extra == 'extra-6-mussel-fastattn' and extra == 'extra-6-mussel-torch-cpu') or (extra == 'extra-6-mussel-fastattn' and extra == 'extra-6-mussel-torch-gpu') or (extra == 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-tensorflow-gpu') or (extra == 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-torch-cpu') or (extra == 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-torch-gpu') or (extra == 'extra-6-mussel-tensorflow-gpu' and extra == 'extra-6-mussel-torch-cpu') or (extra == 'extra-6-mussel-tensorflow-gpu' and extra == 'extra-6-mussel-torch-gpu') or (extra == 'extra-6-mussel-torch-cpu' and extra == 'extra-6-mussel-torch-gpu')" },
+    { name = "numcodecs", version = "0.15.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11' or (extra == 'extra-6-mussel-fastattn' and extra == 'extra-6-mussel-tensorflow-cpu') or (extra == 'extra-6-mussel-fastattn' and extra == 'extra-6-mussel-tensorflow-gpu') or (extra == 'extra-6-mussel-fastattn' and extra == 'extra-6-mussel-torch-cpu') or (extra == 'extra-6-mussel-fastattn' and extra == 'extra-6-mussel-torch-gpu') or (extra == 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-tensorflow-gpu') or (extra == 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-torch-cpu') or (extra == 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-torch-gpu') or (extra == 'extra-6-mussel-tensorflow-gpu' and extra == 'extra-6-mussel-torch-cpu') or (extra == 'extra-6-mussel-tensorflow-gpu' and extra == 'extra-6-mussel-torch-gpu') or (extra == 'extra-6-mussel-torch-cpu' and extra == 'extra-6-mussel-torch-gpu')" },
     { name = "numpy" },
     { name = "opencv-python-headless" },
     { name = "pandas" },
@@ -2208,7 +2210,6 @@ dependencies = [
     { name = "tiffslide" },
     { name = "tqdm" },
     { name = "transformers" },
-    { name = "umap-learn" },
 ]
 
 [package.optional-dependencies]
@@ -2288,6 +2289,9 @@ torch-gpu = [
     { name = "torch", version = "2.5.1+cu121", source = { registry = "https://download.pytorch.org/whl/cu121" } },
     { name = "torchvision", version = "0.20.1+cu121", source = { registry = "https://download.pytorch.org/whl/cu121" } },
 ]
+umap = [
+    { name = "umap-learn" },
+]
 zarr = [
     { name = "ome-zarr", version = "0.10.2", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version <= '3.10' or (extra == 'extra-6-mussel-fastattn' and extra == 'extra-6-mussel-tensorflow-cpu') or (extra == 'extra-6-mussel-fastattn' and extra == 'extra-6-mussel-tensorflow-gpu') or (extra == 'extra-6-mussel-fastattn' and extra == 'extra-6-mussel-torch-cpu') or (extra == 'extra-6-mussel-fastattn' and extra == 'extra-6-mussel-torch-gpu') or (extra == 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-tensorflow-gpu') or (extra == 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-torch-cpu') or (extra == 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-torch-gpu') or (extra == 'extra-6-mussel-tensorflow-gpu' and extra == 'extra-6-mussel-torch-cpu') or (extra == 'extra-6-mussel-tensorflow-gpu' and extra == 'extra-6-mussel-torch-gpu') or (extra == 'extra-6-mussel-torch-cpu' and extra == 'extra-6-mussel-torch-gpu')" },
     { name = "ome-zarr", version = "0.11.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version > '3.10' or (extra == 'extra-6-mussel-fastattn' and extra == 'extra-6-mussel-tensorflow-cpu') or (extra == 'extra-6-mussel-fastattn' and extra == 'extra-6-mussel-tensorflow-gpu') or (extra == 'extra-6-mussel-fastattn' and extra == 'extra-6-mussel-torch-cpu') or (extra == 'extra-6-mussel-fastattn' and extra == 'extra-6-mussel-torch-gpu') or (extra == 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-tensorflow-gpu') or (extra == 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-torch-cpu') or (extra == 'extra-6-mussel-tensorflow-cpu' and extra == 'extra-6-mussel-torch-gpu') or (extra == 'extra-6-mussel-tensorflow-gpu' and extra == 'extra-6-mussel-torch-cpu') or (extra == 'extra-6-mussel-tensorflow-gpu' and extra == 'extra-6-mussel-torch-gpu') or (extra == 'extra-6-mussel-torch-cpu' and extra == 'extra-6-mussel-torch-gpu')" },
@@ -2339,6 +2343,7 @@ requires-dist = [
     { name = "matplotlib" },
     { name = "ml-dtypes", specifier = ">=0.2" },
     { name = "ninja", marker = "extra == 'fastattn'", specifier = "==1.11.1.1" },
+    { name = "numcodecs", specifier = "<0.16" },
     { name = "numpy" },
     { name = "ome-zarr", marker = "extra == 'zarr'" },
     { name = "omegaconf", marker = "extra == 'fastattn'" },
@@ -2378,13 +2383,13 @@ requires-dist = [
     { name = "torchvision", marker = "extra == 'torch-gpu'", index = "https://download.pytorch.org/whl/cu121", conflict = { package = "mussel", extra = "torch-gpu" } },
     { name = "tqdm" },
     { name = "transformers", specifier = "<4.46" },
-    { name = "umap-learn" },
+    { name = "umap-learn", marker = "extra == 'umap'" },
     { name = "wandb", marker = "extra == 'fastattn'" },
     { name = "webdataset", marker = "extra == 'fastattn'" },
     { name = "xformers", marker = "extra == 'fastattn'", specifier = ">=0.0.34", index = "https://download.pytorch.org/whl/cu126", conflict = { package = "mussel", extra = "fastattn" } },
     { name = "zarr", marker = "extra == 'zarr'" },
 ]
-provides-extras = ["tensorflow-gpu", "tensorflow-cpu", "torch-cpu", "torch-gpu", "fastattn", "distributed", "convert", "cucim", "zarr"]
+provides-extras = ["tensorflow-gpu", "tensorflow-cpu", "torch-cpu", "torch-gpu", "fastattn", "distributed", "convert", "cucim", "zarr", "umap"]
 
 [package.metadata.requires-dev]
 dev = [

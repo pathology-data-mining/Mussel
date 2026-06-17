@@ -22,6 +22,7 @@ from mussel.utils import (aggregate_slide_features_batch,
                           extract_patch_features_batch,
                           get_slide_ids_from_paths, resolve_remote_paths,
                           save_features)
+from mussel.utils.feature_extract import _numpy_to_torch
 from mussel.utils.file import save_hdf5, save_torch_tensor
 from mussel.utils.ml import collate_features
 
@@ -268,9 +269,12 @@ def _main_batch(cfg: ExtractFeaturesConfig):
     logger.info(f"Batch extracting features for {len(cfg.slide_paths)} slides")
 
     if use_two_step:
-        # Extract to intermediate patch feature files for later aggregation
+        # Extract to intermediate patch feature files for later aggregation.
+        # Use .patch_features.h5 suffix (not .patch.h5) to avoid overwriting the
+        # input tessellation h5, which shares the same {slide_id}.patch.h5 naming
+        # convention when output_dir == the task working directory.
         intermediate_h5_paths = [
-            str(output_dir / f"{slide_id}.patch.h5") for slide_id in slide_ids
+            str(output_dir / f"{slide_id}.patch_features.h5") for slide_id in slide_ids
         ]
 
         extract_patch_features_batch(
@@ -307,6 +311,18 @@ def _main_batch(cfg: ExtractFeaturesConfig):
             gpu_device_ids=cfg.gpu_device_ids,
             slide_batch_size=cfg.slide_batch_size,
         )
+
+        # Defense-in-depth: verify at least one output file was created.
+        # aggregate_slide_features_batch already raises when ALL slides fail,
+        # but guard here too in case of unexpected silent failures.
+        missing = [p for p in output_pt_paths if not os.path.isfile(p)]
+        if output_pt_paths and len(missing) == len(output_pt_paths):
+            raise RuntimeError(
+                f"extract_features produced no output files: all {len(output_pt_paths)} "
+                ".features.pt files are missing after slide-level aggregation. "
+                "All slides may have failed (e.g. CUDA out of memory in TITAN). "
+                "Check logs above for per-slide errors."
+            )
     else:
         # Single-step: extract directly to final output (no aggregation)
         extract_patch_features_batch(
@@ -329,7 +345,7 @@ def _main_batch(cfg: ExtractFeaturesConfig):
         # Save as PT format for consistency
         for output_h5, output_pt in zip(output_h5_paths, output_pt_paths):
             with h5py.File(output_h5, "r") as f:
-                features = torch.from_numpy(f["features"][:])
+                features = _numpy_to_torch(f["features"][:])
                 torch.save(features, output_pt)
 
     logger.info(f"Batch processing complete. Output saved to {output_dir}")

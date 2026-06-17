@@ -16,7 +16,8 @@ from omegaconf import MISSING, OmegaConf
 
 from mussel.cli.tessellate import (BiopsySegConfig, PngConfig,
                                    ResectionSegConfig, SegConfig,
-                                   TcgaSegConfig, VisConfig)
+                                   TcgaSegConfig, VisConfig,
+                                   _build_artifact_remover)
 from mussel.cli.tessellate_extract_features_common import _build_grid_polygons
 from mussel.models import ModelType, get_default_patch_size
 from mussel.utils import (filter_features, load_classifier,
@@ -166,11 +167,17 @@ def _main(cfg: FilterTessellateConfig, temp_dir, base_path):
     else:
         tessellate_h5_path = os.path.join(temp_dir, "tessellate.h5")
 
+    seg_cfg = OmegaConf.to_container(cfg.seg_config)
+    artifact_remover_fn = _build_artifact_remover(seg_cfg)
+    # Strip config-only keys that are not segment_tissue() parameters.
+    seg_cfg.pop("artifact_exclude_classes", None)
+
     if values := segment_tissue(
         slide_path=cfg.slide_path,
         slide_id=cfg.slide_id,
         output_h5_path=tessellate_h5_path,
-        **OmegaConf.to_container(cfg.seg_config),
+        artifact_remover_fn=artifact_remover_fn,
+        **seg_cfg,
     ):
         polygon, grid, coords, _ = values
     else:
