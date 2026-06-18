@@ -284,7 +284,7 @@ and output management across large slide cohorts.
 
 ### Docker/Apptainer Containers with Flash Attention
 
-Mussel supports building Docker containers with **flash-attn 2.0** for accelerated attention in the CONCH1.5 patch encoder. Flash attention provides ~30-50% speedup on patch encoding (~20% overall TITAN pipeline improvement).
+Mussel supports building Docker containers with **flash-attn 2.0** for accelerated attention in the CONCH1.5 patch encoder and the Prov-GigaPath slide encoder. Flash attention provides ~30-50% speedup on patch encoding (~20% overall TITAN pipeline improvement).
 
 **Building the flash-attn container:**
 
@@ -305,9 +305,9 @@ apptainer build --force mussel-fastattn.sif docker-daemon://mussel:fastattn
   - torch 2.11.0+cu126 (CUDA 12.6)
   - flash-attn 2.6.3 (custom manylinux_2_28 wheels for Rocky 8 compatibility)
   - xformers 0.0.35
-- Flash attention requires CUDA compute capability ≥ 8.0 (A100, H100, etc.)
+- Flash attention is required for **CONCH1.5** (patch encoding) and **Prov-GigaPath** (slide encoding); both require CUDA compute capability ≥ 8.0 (A100, H100, etc.)
 - For V100 (compute 7.0) or CPU, the code automatically falls back to PyTorch SDPA
-- TITAN slide encoder uses `SDPBackend.EFFICIENT_ATTENTION` (Phase 1 optimization); flash-attn only accelerates CONCH1.5 patch encoding
+- TITAN slide encoder uses `SDPBackend.EFFICIENT_ATTENTION` (Phase 1 optimization); flash-attn accelerates CONCH1.5 patch encoding and GigaPath slide encoding
 
 **Using with mussel-nf:**
 
