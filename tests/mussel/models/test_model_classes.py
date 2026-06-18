@@ -487,6 +487,7 @@ class TestTitanSlideEncoderModelFun:
         )
 
         m = _make_model(TitanSlideEncoderModel, mock_model)
+        m._patch_oom = True
         model_fun = m.get_model_fun()
 
         patch_features = torch.rand(batch_size, num_patches, patch_dim)
@@ -496,6 +497,36 @@ class TestTitanSlideEncoderModelFun:
 
         mock_model.encode_slide_from_patch_features.assert_called_once()
         assert result.device.type == "cpu"
+        assert result.shape == torch.Size([embed_dim])
+
+    def test_patch_oom_false_skips_monkey_patches(self):
+        """When patch_oom=False, get_model_fun must NOT monkey-patch the vision encoder."""
+        embed_dim = 768
+        batch_size = 1
+        num_patches = 100
+        patch_dim = 768
+        patch_size = 512
+
+        mock_model = MagicMock()
+        mock_model.encode_slide_from_patch_features = MagicMock(
+            return_value=torch.rand(batch_size, embed_dim)
+        )
+        original_get_alibi = mock_model.vision_encoder.get_alibi
+        original_forward_features = mock_model.vision_encoder.forward_features
+
+        m = _make_model(TitanSlideEncoderModel, mock_model)
+        m._patch_oom = False
+        model_fun = m.get_model_fun()
+
+        # Patches must NOT have been applied
+        assert mock_model.vision_encoder.get_alibi == original_get_alibi
+        assert mock_model.vision_encoder.forward_features == original_forward_features
+
+        patch_features = torch.rand(batch_size, num_patches, patch_dim)
+        coords = torch.rand(batch_size, num_patches, 2)
+        result = model_fun(patch_features, coords, patch_size)
+
+        mock_model.encode_slide_from_patch_features.assert_called_once()
         assert result.shape == torch.Size([embed_dim])
 
 

@@ -250,6 +250,7 @@ class TitanSlideEncoderModel(TorchModel):
         model_path,
         use_gpu: bool = True,
         gpu_device_id: int | List[int] | None = None,
+        patch_oom: bool = True,
     ):
         """Initialize TITAN slide encoder model.
 
@@ -260,7 +261,13 @@ class TitanSlideEncoderModel(TorchModel):
             model_path: Path to slide encoder model directory or HuggingFace repo ID.
             use_gpu: Whether to use GPU (default: True).
             gpu_device_id: GPU device ID or list of IDs for multi-GPU (default: None).
+            patch_oom: Apply GPU float16 / expand() monkey-patches that fix CPU/GPU OOM
+                on large slides (>25k patches) and pin the model to the validated
+                HuggingFace revision (default: True).  Set to False to load the
+                latest unpinned TITAN code without any monkey-patches — useful when
+                testing upstream changes or on small slides where OOM is not a concern.
         """
+        self._patch_oom = patch_oom
         if model_path is None:
             model_path = ModelType.TITAN_SLIDE.path
 
@@ -277,12 +284,13 @@ class TitanSlideEncoderModel(TorchModel):
         # Load the TITAN model from HuggingFace or saved directory
         # TITAN doesn't support Flash Attention 2.0, so we use eager mode
         # Use locking when downloading from HuggingFace
+        revision = _TITAN_PINNED_REVISION if self._patch_oom else None
         with model_download_lock(model_path) as should_download:
             try:
                 model_obj = AutoModel.from_pretrained(
                     model_path,
                     trust_remote_code=True,
-                    revision=_TITAN_PINNED_REVISION,
+                    revision=revision,
                     attn_implementation="eager",
                 )
             except TypeError:
@@ -290,7 +298,7 @@ class TitanSlideEncoderModel(TorchModel):
                 model_obj = AutoModel.from_pretrained(
                     model_path,
                     trust_remote_code=True,
-                    revision=_TITAN_PINNED_REVISION,
+                    revision=revision,
                 )
         super().__init__(model_path, model_obj, use_gpu, gpu_device_id)
 
@@ -313,12 +321,15 @@ class TitanSlideEncoderModel(TorchModel):
         once at initialization, before any model is loaded).
         """
         # Apply monkey-patches to the vision encoder
-        vision_enc = self.obj.vision_encoder
-        vision_enc.get_alibi = types.MethodType(_titan_get_alibi_gpu_float16, vision_enc)
-        vision_enc.forward_features = types.MethodType(_titan_forward_features_efficient, vision_enc)
-        logger.debug(
-            "TITAN: applied GPU float16 get_alibi + expand-based forward_features monkey-patches"
-        )
+        if getattr(self, "_patch_oom", True):
+            vision_enc = self.obj.vision_encoder
+            vision_enc.get_alibi = types.MethodType(_titan_get_alibi_gpu_float16, vision_enc)
+            vision_enc.forward_features = types.MethodType(_titan_forward_features_efficient, vision_enc)
+            logger.debug(
+                "TITAN: applied GPU float16 get_alibi + expand-based forward_features monkey-patches"
+            )
+        else:
+            logger.debug("TITAN: patch_oom=False, running with unpatched upstream code")
 
         # Use SDPBackend.EFFICIENT_ATTENTION in model_fun to prevent the math kernel
         # from materializing the full QK^T matrix (~22 GB for N=18k), which would OOM.
