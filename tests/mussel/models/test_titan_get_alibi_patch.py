@@ -151,20 +151,15 @@ class TestGetAlibiGpuFloat16:
 
 
 class TestMonkeyPatchApplied:
-    """Test that the patch functions exist in the worktree module."""
+    """Test that the patch functions exist in the conch module."""
 
     def test_import(self):
-        """The patch functions exist in the worktree conch module."""
-        import importlib.util, sys
-        worktree = "/gpfs/mskmind_ess/limr/repos/Mussel-titan-fix"
-        spec = importlib.util.spec_from_file_location(
-            "conch_worktree",
-            f"{worktree}/mussel/models/conch.py",
-        )
-        mod = importlib.util.module_from_spec(spec)
-        # minimal deps — just check the names exist as module-level callables
+        """The patch functions exist as module-level callables in conch.py."""
         import ast
-        src = open(f"{worktree}/mussel/models/conch.py").read()
+        from pathlib import Path
+
+        conch_path = Path(__file__).parents[3] / "mussel" / "models" / "conch.py"
+        src = conch_path.read_text()
         tree = ast.parse(src)
         fn_names = {n.name for n in ast.walk(tree) if isinstance(n, ast.FunctionDef)}
         assert "_titan_get_alibi_gpu_float16" in fn_names
