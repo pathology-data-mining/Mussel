@@ -273,6 +273,13 @@ The tools currently available from Mussel are,
 These are described, with examples, in the accompanying document, [README-commands.md](README-commands.md)
 
 
+## Nextflow pipeline
+
+For running Mussel at scale on a compute cluster, see
+**[mussel-nf](https://github.com/pathology-data-mining/mussel-nf)** — a Nextflow
+pipeline that wraps the Mussel CLI tools and handles job scheduling, parallelism,
+and output management across large slide cohorts.
+
 ## Development
 
 ### Docker/Apptainer Containers with Flash Attention
@@ -313,7 +320,6 @@ nextflow run main.nf -profile cluster,slurm,apptainer_fastattn ...
 ```
 
 The profile automatically uses the flash-attn container for `FEATURIZE` tasks.
-
 
 ## License
 This code is made available under the GPLv3 License and is available for non-commercial academic purposes.

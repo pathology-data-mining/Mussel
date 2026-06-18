@@ -4,8 +4,10 @@ from pathlib import Path
 
 import h5py
 import numpy as np
+import pytest
+import torch
 
-from mussel.utils.file import load_pkl, save_hdf5, save_pkl
+from mussel.utils.file import load_features_from_h5, load_pkl, save_hdf5, save_pkl
 
 
 def test_save_and_load_pkl(tmp_path):
@@ -90,3 +92,51 @@ def test_save_hdf5_with_attr_h5_path(tmp_path):
     with h5py.File(target_file, "r") as f:
         assert f["data"].attrs["source"] == "test"
         assert f["data"].attrs["version"] == 1
+
+
+# =============================================================================
+# load_features_from_h5 dtype upcast tests
+# =============================================================================
+
+
+def _write_features_h5(path, features: np.ndarray):
+    coords = np.zeros((len(features), 2), dtype=np.int64)
+    with h5py.File(path, "w") as f:
+        f.create_dataset("features", data=features)
+        f.create_dataset("coords", data=coords)
+
+
+def test_load_features_from_h5_float32(tmp_path):
+    """float32 features are loaded as-is."""
+    feats = np.random.default_rng(0).random((4, 8)).astype(np.float32)
+    h5_path = tmp_path / "slide.h5"
+    _write_features_h5(h5_path, feats)
+
+    result, _ = load_features_from_h5(str(h5_path))
+    assert result.dtype == torch.float32
+    np.testing.assert_allclose(result.numpy(), feats)
+
+
+def test_load_features_from_h5_float16_upcast(tmp_path):
+    """float16 features are upcast to float32."""
+    feats = np.random.default_rng(0).random((4, 8)).astype(np.float16)
+    h5_path = tmp_path / "slide.h5"
+    _write_features_h5(h5_path, feats)
+
+    result, _ = load_features_from_h5(str(h5_path))
+    assert result.dtype == torch.float32
+    np.testing.assert_allclose(result.numpy(), feats.astype(np.float32), rtol=1e-3)
+
+
+def test_load_features_from_h5_bfloat16_upcast(tmp_path):
+    """bfloat16 features (stored as |V2 opaque void) are upcast to float32."""
+    ml_dtypes = pytest.importorskip("ml_dtypes")
+    feats = np.random.default_rng(0).random((4, 8)).astype(ml_dtypes.bfloat16)
+    h5_path = tmp_path / "slide.h5"
+    _write_features_h5(h5_path, feats)
+
+    result, _ = load_features_from_h5(str(h5_path))
+    assert result.dtype == torch.float32
+    np.testing.assert_allclose(
+        result.numpy(), feats.astype(np.float32), rtol=1e-2
+    )
