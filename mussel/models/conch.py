@@ -112,6 +112,12 @@ class Conch15Model(TorchModel):
 # TITAN monkey-patch helpers
 # ---------------------------------------------------------------------------
 
+# Commit hash of MahmoodLab/TITAN on HuggingFace that the monkey-patches were
+# written and verified against.  Both get_alibi() and forward_features() are
+# overridden; if the upstream implementation changes (new signature or logic)
+# the patches must be re-validated before bumping this pin.
+_TITAN_PINNED_REVISION = "dac6773d9961cfc75503440676ff157a2c6e8d2e"
+
 def _get_slopes(n: int) -> list:
     """ALiBi attention slopes for ``n`` heads (from TITAN/vision_transformer.py)."""
     if math.log2(n) == int(math.log2(n)):
@@ -276,12 +282,15 @@ class TitanSlideEncoderModel(TorchModel):
                 model_obj = AutoModel.from_pretrained(
                     model_path,
                     trust_remote_code=True,
+                    revision=_TITAN_PINNED_REVISION,
                     attn_implementation="eager",
                 )
             except TypeError:
                 # Fallback for older transformers that don't support attn_implementation
                 model_obj = AutoModel.from_pretrained(
-                    model_path, trust_remote_code=True
+                    model_path,
+                    trust_remote_code=True,
+                    revision=_TITAN_PINNED_REVISION,
                 )
         super().__init__(model_path, model_obj, use_gpu, gpu_device_id)
 
