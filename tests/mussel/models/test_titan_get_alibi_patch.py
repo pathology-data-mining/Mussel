@@ -11,22 +11,12 @@ import numpy as np
 import pytest
 import torch
 
+from mussel.models.conch import _get_slopes
+
 
 # ---------------------------------------------------------------------------
-# Helpers: reference implementation (copied from TITAN vision_transformer.py)
+# Helpers: reference implementation (original numpy float64 from TITAN)
 # ---------------------------------------------------------------------------
-
-def _get_slopes_ref(n: int) -> list:
-    if math.log2(n) == int(math.log2(n)):
-        p = 2 ** (-2 ** -(math.log2(n) - 3))
-        return [p * (p ** i) for i in range(n)]
-    nearest = 2 ** math.floor(math.log2(n))
-    base = _get_slopes_ref(nearest)
-    if nearest == n:
-        return base
-    extra = _get_slopes_ref(2 * nearest)[0::2][:n - nearest]
-    return base + extra
-
 
 def _get_alibi_original_numpy(w: int, h: int, num_heads: int = 12, bg_mask=None):
     """Original numpy float64 implementation from TITAN."""
@@ -37,7 +27,7 @@ def _get_alibi_original_numpy(w: int, h: int, num_heads: int = 12, bg_mask=None)
     points = np.stack([x.ravel(), y.ravel()], axis=1)
     diffs = points[:, None, :] - points[None, :, :]
     dists = np.sqrt(np.sum(diffs ** 2, axis=-1))
-    slopes = torch.tensor(_get_slopes_ref(num_heads), dtype=torch.float32).view(num_heads, 1, 1)
+    slopes = torch.tensor(_get_slopes(num_heads), dtype=torch.float32).view(num_heads, 1, 1)
     n_patches = dists.shape[-1]
     dists_tensor = torch.tensor(dists, dtype=torch.float32).view(1, n_patches, n_patches)
     bias_matrix = dists_tensor * slopes * -1
@@ -68,7 +58,7 @@ def _get_alibi_gpu_float16_standalone(w: int, h: int, num_heads: int = 12, bg_ma
     points = torch.stack([pts_x, pts_y], dim=1)
     dists = torch.cdist(points.float(), points.float(), p=2).to(dtype)
     slopes = torch.tensor(
-        _get_slopes_ref(num_heads), dtype=dtype, device=dev
+        _get_slopes(num_heads), dtype=dtype, device=dev
     ).view(num_heads, 1, 1)
     n_patches = dists.shape[0]
     bias_matrix = -dists.unsqueeze(0) * slopes

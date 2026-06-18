@@ -1,5 +1,6 @@
 """CONCH v1.5 patch encoder and TITAN slide encoder from MahmoodLab."""
 
+import contextlib
 import logging
 import math
 import types
@@ -111,6 +112,18 @@ class Conch15Model(TorchModel):
 # TITAN monkey-patch helpers
 # ---------------------------------------------------------------------------
 
+def _get_slopes(n: int) -> list:
+    """ALiBi attention slopes for ``n`` heads (from TITAN/vision_transformer.py)."""
+    if math.log2(n) == int(math.log2(n)):
+        p = 2 ** (-2 ** -(math.log2(n) - 3))
+        return [p * (p ** i) for i in range(n)]
+    nearest = 2 ** math.floor(math.log2(n))
+    base = _get_slopes(nearest)
+    if nearest == n:
+        return base
+    extra = _get_slopes(2 * nearest)[0::2][:n - nearest]
+    return base + extra
+
 def _titan_get_alibi_gpu_float16(self, w: int, h: int, bg_mask=None):
     """GPU float16 replacement for VisionTransformer.get_alibi().
 
@@ -150,17 +163,6 @@ def _titan_get_alibi_gpu_float16(self, w: int, h: int, bg_mask=None):
     # Pairwise Euclidean distances — fused CUDA, no (N, N, 2) intermediate
     dists = torch.cdist(points.float(), points.float(), p=2).to(dtype)  # (N, N)
 
-    def _get_slopes(n: int) -> list:
-        if math.log2(n) == int(math.log2(n)):
-            p = 2 ** (-2 ** -(math.log2(n) - 3))
-            return [p * (p ** i) for i in range(n)]
-        nearest = 2 ** math.floor(math.log2(n))
-        base = _get_slopes(nearest)
-        if nearest == n:
-            return base
-        extra = _get_slopes(2 * nearest)[0::2][:n - nearest]
-        return base + extra
-
     slopes = torch.tensor(
         _get_slopes(self.num_heads), dtype=dtype, device=device
     ).view(self.num_heads, 1, 1)
@@ -184,7 +186,6 @@ def _titan_forward_features_efficient(self, x, coords=None, mask=None, bg_mask=N
     when the bias is already in the correct format (float16 on GPU from the
     get_alibi monkey-patch).
     """
-    import math as _math
     B, nc, w, h = x.shape
     x = x.flatten(2, 3).transpose(1, 2)
 
@@ -314,15 +315,14 @@ class TitanSlideEncoderModel(TorchModel):
         # from materializing the full QK^T matrix (~22 GB for N=18k), which would OOM.
         # EFFICIENT_ATTENTION requires CUDA compute >= 8.0 (A100+); fall back to the
         # default SDPA kernel selection on older hardware (P40, V100, etc.).
-        import contextlib
         _efficient_ctx = contextlib.nullcontext
         try:
             from torch.nn.attention import sdpa_kernel, SDPBackend
-            if torch.cuda.is_available():
+            if self.device.type == 'cuda':
                 major, _ = torch.cuda.get_device_capability(self.device)
                 if major >= 8:
                     _efficient_ctx = lambda: sdpa_kernel(SDPBackend.EFFICIENT_ATTENTION)
-        except Exception:
+        except (ImportError, RuntimeError):
             pass
 
         def model_fun(patch_features, coords, patch_size):
