@@ -19,25 +19,38 @@ from hydra.conf import HelpConf, HydraConf
 from hydra.core.config_store import ConfigStore
 from omegaconf import MISSING, DictConfig, ListConfig, OmegaConf
 
-from mussel.cli.tessellate import (BiopsySegConfig, PngConfig,
-                                   ResectionSegConfig, SegConfig,
-                                   TcgaSegConfig, VisConfig,
-                                   _build_artifact_remover)
+# isort: off
+from mussel.cli.tessellate import (
+    BiopsySegConfig,
+    PngConfig,
+    ResectionSegConfig,
+    SegConfig,
+    TcgaSegConfig,
+    VisConfig,
+    _build_artifact_remover,
+)
 from mussel.cli.tessellate_extract_features_common import (
-    create_visualizations, process_slide_tessellation_and_filtering,
-    process_slide_tessellation_only)
-from mussel.models import (ModelType, get_default_patch_size,
-                           get_required_patch_encoder)
-from mussel.utils import (aggregate_slide_features_batch,
-                          ensure_directory_exists,
-                          extract_patch_features_batch,
-                          get_batch_size_for_model,
-                          get_classifier_pkl_from_model_dir,
-                          get_model_path_from_dir, get_slide_id_from_path,
-                          get_slide_ids_from_paths, is_remote_path,
-                          resolve_aggregation_method, resolve_patch_encoder,
-                          resolve_remote_paths, safe_path_join,
-                          save_torch_tensor)
+    create_visualizations,
+    process_slide_tessellation_and_filtering,
+    process_slide_tessellation_only,
+)
+from mussel.models import ModelType, get_default_patch_size, get_required_patch_encoder
+from mussel.utils import (
+    aggregate_slide_features_batch,
+    ensure_directory_exists,
+    extract_patch_features_batch,
+    get_batch_size_for_model,
+    get_classifier_pkl_from_model_dir,
+    get_model_path_from_dir,
+    get_slide_id_from_path,
+    get_slide_ids_from_paths,
+    is_remote_path,
+    resolve_aggregation_method,
+    resolve_patch_encoder,
+    resolve_remote_paths,
+    safe_path_join,
+    save_torch_tensor,
+)
 from mussel.utils.artifact_removal import (
     EXCLUDE_ALL_ARTIFACTS,
     EXCLUDE_PENMARKS_ONLY,
@@ -45,9 +58,51 @@ from mussel.utils.artifact_removal import (
 )
 from mussel.utils.feature_extract import _numpy_to_torch, _parse_feature_dtype
 from mussel.utils.file import WSI_EXTENSIONS, collect_wsi_paths
+from mussel.utils.gpu import first_gpu_device_id, resolve_gpu_device_id
+
+# isort: on
 
 # Private aliases used throughout this module
 _is_remote_path = is_remote_path
+
+
+def _build_neural_segmenter(
+    seg_cfg,
+    use_gpu: bool,
+    gpu_device_id: Optional[int | List[int]] = None,
+    gpu_device_ids: Optional[List[int]] = None,
+):
+    if str(seg_cfg.get("seg_model", "classic")).strip().lower() != "neural":
+        return None
+
+    from mussel.utils.neural_seg import NeuralTissueSegmenter
+
+    if not use_gpu:
+        return NeuralTissueSegmenter(device="cpu")
+    if not torch.cuda.is_available():
+        raise RuntimeError(
+            "seg_config.seg_model='neural' requested with use_gpu=True, "
+            "but CUDA is not available. Set use_gpu=False to run neural "
+            "segmentation on CPU."
+        )
+    device_id = first_gpu_device_id(
+        resolve_gpu_device_id(gpu_device_id, gpu_device_ids)
+    )
+
+    device = "cuda" if device_id is None else f"cuda:{device_id}"
+    return NeuralTissueSegmenter(device=device)
+
+
+def _build_segmentation_runtime(cfg: "TessellateExtractFeaturesConfig"):
+    seg_cfg = OmegaConf.to_container(cfg.seg_config)
+    artifact_remover_fn = _build_artifact_remover(seg_cfg)
+    neural_segmenter = _build_neural_segmenter(
+        seg_cfg,
+        cfg.use_gpu,
+        gpu_device_id=cfg.gpu_device_id,
+        gpu_device_ids=cfg.gpu_device_ids,
+    )
+    return artifact_remover_fn, neural_segmenter
 
 
 def _resolve_precision(cfg: "TessellateExtractFeaturesConfig", model_type) -> str:
@@ -59,10 +114,16 @@ def _resolve_precision(cfg: "TessellateExtractFeaturesConfig", model_type) -> st
     ``ModelType.HOPTIMUS1``).
     """
     if model_type is not None and cfg.model_embedding_precision:
-        key = model_type.name.lower() if hasattr(model_type, "name") else str(model_type).lower()
+        key = (
+            model_type.name.lower()
+            if hasattr(model_type, "name")
+            else str(model_type).lower()
+        )
         if key in cfg.model_embedding_precision:
             return cfg.model_embedding_precision[key]
     return cfg.embedding_precision
+
+
 _safe_path_join = safe_path_join
 
 
@@ -174,7 +235,9 @@ class TessellateExtractFeaturesConfig:
     output_h5_suffix: str = "features.h5"
     output_pt_suffix: str = "features.pt"
     slide_batch_size: int = 8
-    max_slide_patches: Optional[int] = None  # Max patches per slide for slide-level models; large slides are subsampled
+    max_slide_patches: Optional[int] = (
+        None  # Max patches per slide for slide-level models; large slides are subsampled
+    )
     # Common parameters
     classifier_pkl: Optional[str] = None
     classifier_threshold: float = 0.75
@@ -214,8 +277,12 @@ class TessellateExtractFeaturesConfig:
     aggregation_method: str = "identity"
     slide_model_type: Any = None  # Can be ModelType or List[ModelType]
     ssl_verify: bool = True  # Whether to verify SSL certificates for remote operations
-    embedding_precision: str = "float32"  # Precision for saved embeddings: "float32", "float16", or "bfloat16"
-    model_embedding_precision: Any = None  # Per-model precision overrides: {model_name: precision}
+    embedding_precision: str = (
+        "float32"  # Precision for saved embeddings: "float32", "float16", or "bfloat16"
+    )
+    model_embedding_precision: Any = (
+        None  # Per-model precision overrides: {model_name: precision}
+    )
 
     def __post_init__(self):
         """Set default patch size based on model type if not explicitly set."""
@@ -570,7 +637,7 @@ def _main_single(cfg: TessellateExtractFeaturesConfig):
     )
     skip_second_extraction = use_filtering and models_are_same
 
-    artifact_remover_fn = _build_artifact_remover(OmegaConf.to_container(cfg.seg_config))
+    artifact_remover_fn, neural_segmenter = _build_segmentation_runtime(cfg)
 
     # Process the slide using shared logic
     result = process_slide_tessellation_and_filtering(
@@ -591,6 +658,7 @@ def _main_single(cfg: TessellateExtractFeaturesConfig):
         two_step_mode=False,  # Single-slide mode doesn't use two-step
         slide_model_path=slide_model_path,
         artifact_remover_fn=artifact_remover_fn,
+        neural_segmenter=neural_segmenter,
     )
 
     if result is None:
@@ -751,7 +819,7 @@ def _main_batch(
 
     # Instantiate artifact remover once per batch so model weights are loaded
     # only once rather than once per slide.
-    artifact_remover_fn = _build_artifact_remover(OmegaConf.to_container(cfg.seg_config))
+    artifact_remover_fn, neural_segmenter = _build_segmentation_runtime(cfg)
 
     slide_results = []
     for i, (slide_path, slide_id) in enumerate(zip(cfg.slide_paths, slide_ids)):
@@ -778,6 +846,7 @@ def _main_batch(
                 skip_second_extraction=skip_second_extraction,
                 output_mask_path=output_mask_path,
                 artifact_remover_fn=artifact_remover_fn,
+                neural_segmenter=neural_segmenter,
             )
 
             if result is None:
@@ -981,8 +1050,12 @@ def _main_batch(
                 pt_dest = r["output_pt_path"]
                 with h5py.File(intermediate_h5_path, "r") as f:
                     raw = f["features"][:]
-                feature_dtype = _parse_feature_dtype(_resolve_precision(cfg, model_type))
-                features_arr = raw.astype(feature_dtype) if feature_dtype is not None else raw
+                feature_dtype = _parse_feature_dtype(
+                    _resolve_precision(cfg, model_type)
+                )
+                features_arr = (
+                    raw.astype(feature_dtype) if feature_dtype is not None else raw
+                )
                 features = _numpy_to_torch(features_arr)
                 save_torch_tensor(pt_dest, features, ssl_verify=cfg.ssl_verify)
                 logger.debug(f"Saved PT to {pt_dest}")
@@ -1124,8 +1197,12 @@ def _main_batch(
         for i, r in enumerate(slide_results):
             with h5py.File(temp_output_h5_paths[i], "r") as f:
                 raw = f["features"][:]
-                feature_dtype = _parse_feature_dtype(_resolve_precision(cfg, model_type))
-                features_arr = raw.astype(feature_dtype) if feature_dtype is not None else raw
+                feature_dtype = _parse_feature_dtype(
+                    _resolve_precision(cfg, model_type)
+                )
+                features_arr = (
+                    raw.astype(feature_dtype) if feature_dtype is not None else raw
+                )
                 features = _numpy_to_torch(features_arr)
                 save_torch_tensor(
                     r["output_pt_path"], features, ssl_verify=cfg.ssl_verify

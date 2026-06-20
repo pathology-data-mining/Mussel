@@ -8,8 +8,15 @@ import torch
 from omegaconf import OmegaConf
 
 from mussel.cli.tessellate import SegConfig
+
+# isort: off
 from mussel.cli.tessellate_extract_features import (
-    TessellateExtractFeaturesConfig, main)
+    TessellateExtractFeaturesConfig,
+    _build_neural_segmenter,
+    main,
+)
+
+# isort: on
 from mussel.models import ModelType
 
 _TEF_REQUIRED = dict(
@@ -47,6 +54,45 @@ def test_explicit_patch_size_preserved():
         seg_config=SegConfig(patch_size=384),
     )
     assert cfg.seg_config.patch_size == 384
+
+
+def test_neural_segmenter_use_gpu_false_forces_cpu():
+    seg_cfg = {"seg_model": "neural"}
+
+    with patch("mussel.utils.neural_seg.NeuralTissueSegmenter") as MockSegmenter:
+        result = _build_neural_segmenter(seg_cfg, use_gpu=False, gpu_device_id=1)
+
+    MockSegmenter.assert_called_once_with(device="cpu")
+    assert result is MockSegmenter.return_value
+
+
+def test_neural_segmenter_use_gpu_true_requires_cuda():
+    seg_cfg = {"seg_model": "neural"}
+
+    with patch("torch.cuda.is_available", return_value=False):
+        with pytest.raises(RuntimeError, match="CUDA is not available"):
+            _build_neural_segmenter(seg_cfg, use_gpu=True)
+
+
+@pytest.mark.parametrize(
+    ("kwargs", "expected_device"),
+    [
+        ({}, "cuda"),
+        ({"gpu_device_id": 2}, "cuda:2"),
+        ({"gpu_device_ids": [3, 4]}, "cuda:3"),
+    ],
+)
+def test_neural_segmenter_use_gpu_true_uses_cuda_device(kwargs, expected_device):
+    seg_cfg = {"seg_model": "neural"}
+
+    with (
+        patch("torch.cuda.is_available", return_value=True),
+        patch("mussel.utils.neural_seg.NeuralTissueSegmenter") as MockSegmenter,
+    ):
+        result = _build_neural_segmenter(seg_cfg, use_gpu=True, **kwargs)
+
+    MockSegmenter.assert_called_once_with(device=expected_device)
+    assert result is MockSegmenter.return_value
 
 
 @pytest.mark.slow

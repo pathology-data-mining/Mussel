@@ -14,8 +14,7 @@ import torch.nn as nn
 
 def _make_segmenter(model_obj=None, device="cpu"):
     """Return a NeuralTissueSegmenter with a pre-loaded mock model."""
-    from torchvision import transforms
-
+    from mussel.models.base import IMAGENET_MEAN, IMAGENET_STD
     from mussel.utils.neural_seg import NeuralTissueSegmenter
 
     seg = NeuralTissueSegmenter.__new__(NeuralTissueSegmenter)
@@ -23,11 +22,14 @@ def _make_segmenter(model_obj=None, device="cpu"):
     seg.confidence_thresh = 0.5
     seg.device = torch.device(device)
     seg._weights_path = None
-    seg._transform = transforms.Compose(
-        [
-            transforms.ToTensor(),
-        ]
+    dtype = torch.float16 if seg.device.type == "cuda" else torch.float32
+    seg._mean = torch.tensor(IMAGENET_MEAN, device=seg.device, dtype=dtype).view(
+        1, 3, 1, 1
     )
+    seg._std = torch.tensor(IMAGENET_STD, device=seg.device, dtype=dtype).view(
+        1, 3, 1, 1
+    )
+    seg.max_inference_tiles = 4096
     seg._model = model_obj
     return seg
 
@@ -148,6 +150,21 @@ class TestSlideMppRescaling:
         seg = _make_segmenter(_all_tissue_model())
         mask = seg.segment(img, slide_mpp=0.5)
         assert mask.shape == (1024, 1024)
+
+    def test_inference_tile_guard_blocks_accidental_massive_runs(self):
+        """The guard fails fast before model inference when rescaling explodes."""
+        from mussel.utils.neural_seg import NeuralTissueSegmenter
+
+        img = np.random.randint(0, 255, (64, 64, 3), dtype=np.uint8)
+        seg = NeuralTissueSegmenter(device="cpu", max_inference_tiles=1)
+
+        with patch.object(seg, "_ensure_model_loaded") as mock_load:
+            with patch("mussel.utils.neural_seg.cv2.resize") as mock_resize:
+                with pytest.raises(ValueError, match="max_inference_tiles"):
+                    seg.segment(img, slide_mpp=16.0)
+
+        mock_load.assert_not_called()
+        mock_resize.assert_not_called()
 
 
 # ---------------------------------------------------------------------------
