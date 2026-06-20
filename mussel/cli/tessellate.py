@@ -453,14 +453,40 @@ def _resolve_batch_outputs(cfg: TessellateConfig) -> list[tuple[str, str, str]]:
     return list(zip(slide_paths, slide_ids, output_h5_paths))
 
 
-def _build_neural_segmenter(seg_cfg: dict) -> Optional[Any]:
+def _build_neural_segmenter(
+    seg_cfg: dict,
+    use_gpu: Optional[bool] = None,
+    gpu_device_id: Optional[int | List[int]] = None,
+    gpu_device_ids: Optional[List[int]] = None,
+) -> Optional[Any]:
     if str(seg_cfg.get("seg_model", "classic")).strip().lower() != "neural":
         return None
 
     from mussel.utils.neural_seg import NeuralTissueSegmenter
 
-    logger.info("Loading neural tissue segmenter once for tessellate batch mode.")
-    return NeuralTissueSegmenter()
+    if use_gpu is None:
+        logger.info("Loading neural tissue segmenter.")
+        return NeuralTissueSegmenter()
+
+    if not use_gpu:
+        return NeuralTissueSegmenter(device="cpu")
+
+    import torch
+
+    from mussel.utils.gpu import first_gpu_device_id, resolve_gpu_device_id
+
+    if not torch.cuda.is_available():
+        raise RuntimeError(
+            "seg_config.seg_model='neural' requested with use_gpu=True, "
+            "but CUDA is not available. Set use_gpu=False to run neural "
+            "segmentation on CPU."
+        )
+    device_id = first_gpu_device_id(
+        resolve_gpu_device_id(gpu_device_id, gpu_device_ids)
+    )
+    device = "cuda" if device_id is None else f"cuda:{device_id}"
+    logger.info("Loading neural tissue segmenter.")
+    return NeuralTissueSegmenter(device=device)
 
 
 def _run_batch(cfg: TessellateConfig, seg_cfg: dict) -> None:
