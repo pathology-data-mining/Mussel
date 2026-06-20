@@ -382,10 +382,13 @@ def _run_tessellation(
     seg_cfg: dict,
     artifact_remover_fn: "Optional[GrandQCArtifactRemover]",
     slide_id: Optional[str] = None,
+    neural_segmenter: Optional[Any] = None,
 ) -> tuple[Any, Any, np.ndarray] | None:
     # Strip config-only keys that are not segment_tissue() parameters.
     call_seg_cfg = dict(seg_cfg)
     call_seg_cfg.pop("artifact_exclude_classes", None)
+    if neural_segmenter is not None:
+        call_seg_cfg["neural_segmenter"] = neural_segmenter
     values = segment_tissue(
         slide_path=slide_path,
         slide_id=slide_id,
@@ -450,6 +453,16 @@ def _resolve_batch_outputs(cfg: TessellateConfig) -> list[tuple[str, str, str]]:
     return list(zip(slide_paths, slide_ids, output_h5_paths))
 
 
+def _build_neural_segmenter(seg_cfg: dict) -> Optional[Any]:
+    if str(seg_cfg.get("seg_model", "classic")).strip().lower() != "neural":
+        return None
+
+    from mussel.utils.neural_seg import NeuralTissueSegmenter
+
+    logger.info("Loading neural tissue segmenter once for tessellate batch mode.")
+    return NeuralTissueSegmenter()
+
+
 def _run_batch(cfg: TessellateConfig, seg_cfg: dict) -> None:
     if any(
         value is not None
@@ -466,6 +479,7 @@ def _run_batch(cfg: TessellateConfig, seg_cfg: dict) -> None:
         )
 
     artifact_remover_fn = _build_artifact_remover(seg_cfg)
+    neural_segmenter = _build_neural_segmenter(seg_cfg)
     failures: list[tuple[str, str, str, str]] = []
     items = _resolve_batch_outputs(cfg)
     logger.info("Batch tessellating %d slide(s)", len(items))
@@ -480,6 +494,7 @@ def _run_batch(cfg: TessellateConfig, seg_cfg: dict) -> None:
                 output_h5_path=output_h5_path,
                 seg_cfg=seg_cfg,
                 artifact_remover_fn=artifact_remover_fn,
+                neural_segmenter=neural_segmenter,
             )
             if result is None or not Path(output_h5_path).exists():
                 raise RuntimeError(f"tessellation produced no patch H5 for {slide_id}")

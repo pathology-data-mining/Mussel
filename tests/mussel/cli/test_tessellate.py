@@ -108,6 +108,37 @@ def test_tessellate_batch_can_use_explicit_output_h5_paths(tmp_path):
     assert out_b.exists()
 
 
+def test_tessellate_batch_reuses_neural_segmenter(tmp_path):
+    output_dir = tmp_path / "tiles"
+    shared_segmenter = MagicMock()
+    cfg = TessellateConfig(
+        slide_paths=["slide_a.svs", "slide_b.svs"],
+        slide_ids=["A", "B"],
+        output_dir=str(output_dir),
+        seg_config=SegConfig(seg_model="neural"),
+    )
+
+    def fake_segment_tissue(*, output_h5_path, **kwargs):
+        Path(output_h5_path).write_text("patch h5")
+        return MagicMock(), MagicMock(), np.array([[0, 0]]), None
+
+    with patch(
+        "mussel.utils.neural_seg.NeuralTissueSegmenter",
+        return_value=shared_segmenter,
+    ) as mock_segmenter_cls:
+        with patch(
+            "mussel.cli.tessellate.segment_tissue", side_effect=fake_segment_tissue
+        ) as mock_segment:
+            mussel.cli.tessellate.main(OmegaConf.create(cfg))
+
+    mock_segmenter_cls.assert_called_once_with()
+    assert mock_segment.call_count == 2
+    assert all(
+        call.kwargs["neural_segmenter"] is shared_segmenter
+        for call in mock_segment.call_args_list
+    )
+
+
 def test_tessellate_batch_fails_on_first_slide_failure(tmp_path):
     output_dir = tmp_path / "tiles"
     cfg = TessellateConfig(
