@@ -12,13 +12,22 @@ from shapely.geometry import Polygon
 
 logger = logging.getLogger(__name__)
 
+# isort: off
 from mussel.cli.tessellate import _build_artifact_remover
-from mussel.utils import (filter_features, is_remote_path, load_classifier,
-                          load_features_from_h5, safe_path_join, save_features,
-                          save_hdf5, save_torch_tensor)
+from mussel.utils import (
+    filter_features,
+    is_remote_path,
+    load_classifier,
+    load_features_from_h5,
+    safe_path_join,
+    save_features,
+    save_hdf5,
+    save_torch_tensor,
+)
 from mussel.utils.artifact_removal import GrandQCArtifactRemover
-from mussel.utils.segment import (draw_slide_mask, save_patches_png,
-                                  segment_tissue)
+from mussel.utils.segment import draw_slide_mask, save_patches_png, segment_tissue
+
+# isort: on
 
 
 def _tessellate_and_filter(
@@ -33,6 +42,7 @@ def _tessellate_and_filter(
     skip_second_extraction: bool,
     output_mask_path: Optional[str] = None,
     artifact_remover_fn: Optional[GrandQCArtifactRemover] = None,
+    neural_segmenter=None,
 ) -> Optional[dict]:
     """Tessellate a slide and optionally extract/filter features for tile selection.
 
@@ -93,6 +103,7 @@ def _tessellate_and_filter(
         slide_id=slide_id,
         output_h5_path=tessellate_h5_path,
         artifact_remover_fn=artifact_remover_fn,
+        neural_segmenter=neural_segmenter,
         **seg_cfg,
     ):
         polygon, grid, coords, _ = values
@@ -213,6 +224,7 @@ def process_slide_tessellation_and_filtering(
     two_step_mode: bool = False,
     slide_model_path: Optional[str] = None,
     artifact_remover_fn: Optional[GrandQCArtifactRemover] = None,
+    neural_segmenter=None,
 ) -> Optional[dict]:
     """Process a single slide through tessellation, optional filtering, and feature extraction.
 
@@ -253,6 +265,7 @@ def process_slide_tessellation_and_filtering(
         skip_second_extraction=skip_second_extraction,
         output_mask_path=output_mask_path,
         artifact_remover_fn=artifact_remover_fn,
+        neural_segmenter=neural_segmenter,
     )
     if result is None:
         return None
@@ -351,6 +364,7 @@ def process_slide_tessellation_only(
     skip_second_extraction: bool,
     output_mask_path: Optional[str] = None,
     artifact_remover_fn: Optional[GrandQCArtifactRemover] = None,
+    neural_segmenter=None,
 ) -> Optional[dict]:
     """Process a slide through tessellation and optional filtering (no feature extraction).
 
@@ -385,6 +399,7 @@ def process_slide_tessellation_only(
         skip_second_extraction=skip_second_extraction,
         output_mask_path=output_mask_path,
         artifact_remover_fn=artifact_remover_fn,
+        neural_segmenter=neural_segmenter,
     )
     if result is None:
         return None

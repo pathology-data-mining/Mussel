@@ -1,6 +1,8 @@
 import functools
 import logging
+import math
 import multiprocessing as mp
+import os
 import warnings
 from dataclasses import dataclass
 from pathlib import Path
@@ -25,6 +27,9 @@ logger = logging.getLogger(__name__)
 
 _SEGMENT_THRESHOLD_DEFAULT = 20
 _MEDIAN_BLUR_DEFAULT = 7
+_NEURAL_TARGET_MPP = 1.0
+_NEURAL_MAX_AUTO_UPSCALE = 2.25
+_NEURAL_MAX_UPSCALE_ENV = "MUSSEL_NEURAL_SEG_MAX_UPSCALE"
 
 
 def get_slide_mpp(
@@ -179,6 +184,74 @@ def get_level_for_magnification(wsi, target_mag: float, fallback_level: int = 2)
         return wsi.get_best_level_for_downsample(downsample)
     except Exception:
         return fallback_level
+
+
+def _get_neural_seg_level(wsi, slide_mpp: float, level_downsamples) -> int:
+    """Choose a pyramid level near the neural model's native resolution.
+
+    Prefer levels at 1 µm/px or up to ~2× coarser. This avoids reading a huge
+    full-resolution image when a near-target pyramid level exists, while
+    preventing the very coarse 16×-style thumbnail upsampling that breaks the
+    neural model's input semantics.
+    """
+    level_mpps = [slide_mpp * ds[0] for ds in level_downsamples]
+    acceptable_coarser = [
+        (idx, level_mpp)
+        for idx, level_mpp in enumerate(level_mpps)
+        if _NEURAL_TARGET_MPP
+        <= level_mpp
+        <= _NEURAL_TARGET_MPP * _NEURAL_MAX_AUTO_UPSCALE
+    ]
+    if acceptable_coarser:
+        return min(acceptable_coarser, key=lambda item: item[1])[0]
+
+    finer_or_equal = [
+        (idx, level_mpp)
+        for idx, level_mpp in enumerate(level_mpps)
+        if level_mpp <= _NEURAL_TARGET_MPP
+    ]
+    if finer_or_equal:
+        return max(finer_or_equal, key=lambda item: item[1])[0]
+
+    return min(
+        range(len(level_mpps)),
+        key=lambda idx: abs(math.log(level_mpps[idx] / _NEURAL_TARGET_MPP)),
+    )
+
+
+def _get_neural_max_upscale() -> Optional[float]:
+    value = os.environ.get(_NEURAL_MAX_UPSCALE_ENV)
+    if value is None:
+        return _NEURAL_MAX_AUTO_UPSCALE
+    try:
+        parsed = float(value)
+    except ValueError:
+        warnings.warn(
+            f"Invalid {_NEURAL_MAX_UPSCALE_ENV} value; using default "
+            f"{_NEURAL_MAX_AUTO_UPSCALE}.",
+            RuntimeWarning,
+            stacklevel=2,
+        )
+        return _NEURAL_MAX_AUTO_UPSCALE
+    if parsed <= 0:
+        return None
+    return parsed
+
+
+def _validate_neural_seg_mpp(seg_level_mpp: float, seg_level: int) -> None:
+    max_upscale = _get_neural_max_upscale()
+    if max_upscale is None:
+        return
+    max_mpp = _NEURAL_TARGET_MPP * max_upscale
+    if seg_level_mpp <= max_mpp:
+        return
+    raise ValueError(
+        f"seg_model='neural' cannot use seg_level={seg_level} at "
+        f"{seg_level_mpp:.3f} µm/px because that would require "
+        f"{seg_level_mpp / _NEURAL_TARGET_MPP:.1f}x upsampling to the "
+        f"{_NEURAL_TARGET_MPP:.1f} µm/px neural model resolution. "
+        f"Use a finer seg_level or set {_NEURAL_MAX_UPSCALE_ENV}=0 to disable this guard."
+    )
 
 
 def is_white_patch(patch, saturation_threshold=5):
@@ -480,7 +553,9 @@ def _filter_contours(
     return foreground_contours, hole_contours
 
 
-def _segment_tissue_neural(img: np.ndarray, slide_mpp: float) -> np.ndarray:
+def _segment_tissue_neural(
+    img: np.ndarray, slide_mpp: float, segmenter=None
+) -> np.ndarray:
     """Generate a binary tissue mask using Mussel's native neural segmentor.
 
     Uses a DeepLabV3-ResNet50 model (pre-trained on histopathology slides) to
@@ -501,7 +576,8 @@ def _segment_tissue_neural(img: np.ndarray, slide_mpp: float) -> np.ndarray:
     """
     from mussel.utils.neural_seg import NeuralTissueSegmenter
 
-    segmenter = NeuralTissueSegmenter()
+    if segmenter is None:
+        segmenter = NeuralTissueSegmenter()
     return segmenter.segment(img, slide_mpp=slide_mpp)
 
 
@@ -532,6 +608,7 @@ def segment_tissue(
     artifact_remover_fn=None,  # Optional callable: (img, mask, mpp) -> mask
     seg_model: str = "classic",  # "classic" (HSV + manual threshold), "otsu" (HSV + Otsu threshold), or "neural" (DeepLabV3)
     slide_mpp_override: Optional[float] = None,
+    neural_segmenter=None,
 ):
     """Segment tissue regions in a whole-slide image and generate tissue patches.
 
@@ -631,62 +708,9 @@ def segment_tissue(
         if keep_ids is None:
             keep_ids = []
 
-        if seg_level < 0:
-            if len(wsi.level_dimensions) == 1:
-                seg_level = 0
-            else:
-                seg_level = wsi.get_best_level_for_downsample(64)
-
-        logger.info(f"Using level {seg_level} for segmentation")
-        width, height = wsi.level_dimensions[seg_level]
-        if width * height > 1e12:
-            logger.error(
-                "level_dim {} x {} is likely too large for successful segmentation, aborting".format(
-                    width, height
-                )
-            )
-            return None
-
-        if step_size is None:
-            if overlap < 0:
-                raise ValueError(f"overlap must be non-negative, got {overlap}")
-            if overlap > 0:
-                step_size = patch_size - overlap
-                if step_size <= 0:
-                    raise ValueError(
-                        f"overlap ({overlap}) must be less than patch_size ({patch_size})"
-                    )
-            else:
-                step_size = patch_size
-        elif overlap > 0:
-            raise ValueError(
-                f"Cannot specify both step_size ({step_size}) and overlap ({overlap}). "
-                "Use overlap to derive step_size automatically, or pass step_size directly."
-            )
-
-        # Get MPP with fallback handling.
-        # Probe without a default first to detect whether real metadata exists.
-        _mpp_probe = get_slide_mpp(
-            wsi, slide_path, default_mpp=None, slide_mpp_override=slide_mpp_override
-        )
-        slide_mpp = _mpp_probe if _mpp_probe is not None else get_slide_mpp(
-            wsi, slide_path, slide_mpp_override=slide_mpp_override
-        )
-        # True when no MPP metadata was found and the 0.5 µm/px default was used.
-        mpp_is_fallback = _mpp_probe is None and slide_mpp_override is None
-
-        native_step_size = get_native_size(step_size, mpp, slide_mpp)
-        native_patch_size = get_native_size(patch_size, mpp, slide_mpp)
-        logger.info(f"native_step_size: {native_step_size}")
-        logger.info(f"native_patch_size: {native_patch_size}")
-
-        img = np.array(
-            wsi.read_region((0, 0), seg_level, wsi.level_dimensions[seg_level])
-        )
-
-        level_downsamples = _assert_level_downsamples(wsi)
-
-        # Validate and normalise seg_model
+        # Validate and normalise seg_model before choosing the segmentation level.
+        # Neural segmentation needs a materially finer source image than the
+        # classic HSV thumbnail path.
         supported_seg_models = {"classic", "otsu", "neural"}
         if seg_model is None:
             seg_model = "classic"
@@ -710,6 +734,72 @@ def segment_tissue(
             )
             seg_model = "otsu"
 
+        # Get MPP with fallback handling.
+        # Probe without a default first to detect whether real metadata exists.
+        _mpp_probe = get_slide_mpp(
+            wsi, slide_path, default_mpp=None, slide_mpp_override=slide_mpp_override
+        )
+        slide_mpp = (
+            _mpp_probe
+            if _mpp_probe is not None
+            else get_slide_mpp(wsi, slide_path, slide_mpp_override=slide_mpp_override)
+        )
+        # True when no MPP metadata was found and the 0.5 µm/px default was used.
+        mpp_is_fallback = _mpp_probe is None and slide_mpp_override is None
+
+        level_downsamples = _assert_level_downsamples(wsi)
+
+        if seg_level < 0:
+            if len(wsi.level_dimensions) == 1:
+                seg_level = 0
+            elif seg_model == "neural":
+                seg_level = _get_neural_seg_level(wsi, slide_mpp, level_downsamples)
+            else:
+                seg_level = wsi.get_best_level_for_downsample(64)
+
+        logger.info(f"Using level {seg_level} for segmentation")
+        width, height = wsi.level_dimensions[seg_level]
+        if width * height > 1e12:
+            logger.error(
+                "level_dim {} x {} is likely too large for successful segmentation, aborting".format(
+                    width, height
+                )
+            )
+            return None
+
+        if seg_model == "neural":
+            seg_level_ds = level_downsamples[seg_level][0]
+            seg_level_mpp = slide_mpp * seg_level_ds
+            _validate_neural_seg_mpp(seg_level_mpp, seg_level)
+
+        if step_size is None:
+            if overlap < 0:
+                raise ValueError(f"overlap must be non-negative, got {overlap}")
+            if overlap > 0:
+                step_size = patch_size - overlap
+                if step_size <= 0:
+                    raise ValueError(
+                        f"overlap ({overlap}) must be less than patch_size ({patch_size})"
+                    )
+            else:
+                step_size = patch_size
+        elif overlap > 0:
+            raise ValueError(
+                f"Cannot specify both step_size ({step_size}) and overlap ({overlap}). "
+                "Use overlap to derive step_size automatically, or pass step_size directly."
+            )
+
+        native_step_size = get_native_size(step_size, mpp, slide_mpp)
+        native_patch_size = get_native_size(patch_size, mpp, slide_mpp)
+        logger.info(f"native_step_size: {native_step_size}")
+        logger.info(f"native_patch_size: {native_patch_size}")
+
+        img = np.array(
+            wsi.read_region((0, 0), seg_level, wsi.level_dimensions[seg_level])
+        )
+        if img.ndim == 3 and img.shape[2] > 3:
+            img = img[:, :, :3]
+
         # Warn about classic-only parameters that are ignored by the neural backend.
         if seg_model == "neural":
             ignored = []
@@ -727,9 +817,9 @@ def segment_tissue(
         if seg_model == "neural":
             # The img is read at seg_level. Compute its actual MPP so that
             # NeuralTissueSegmenter can rescale to the model's 1 µm/px target.
-            seg_level_ds = level_downsamples[seg_level][0]  # x-axis downsample
-            seg_level_mpp = slide_mpp * seg_level_ds
-            tissue_mask = _segment_tissue_neural(img, seg_level_mpp)
+            tissue_mask = _segment_tissue_neural(
+                img, seg_level_mpp, segmenter=neural_segmenter
+            )
         else:
             img_hsv = cv2.cvtColor(img, cv2.COLOR_RGB2HSV)  # Convert to HSV space
             img_med = cv2.medianBlur(
@@ -768,7 +858,9 @@ def segment_tissue(
                 if max_mpp is not None and img_mpp >= max_mpp:
                     target_ds = max_mpp / slide_mpp
                     artifact_level = wsi.get_best_level_for_downsample(target_ds)
-                    artifact_level_mpp = slide_mpp * level_downsamples[artifact_level][0]
+                    artifact_level_mpp = (
+                        slide_mpp * level_downsamples[artifact_level][0]
+                    )
                     if artifact_level_mpp <= max_mpp:
                         remover_img = np.array(
                             wsi.read_region(
@@ -792,7 +884,9 @@ def segment_tissue(
                         )
 
                 pre_removal_mask = tissue_mask.copy()
-                result_mask = artifact_remover_fn(remover_img, remover_mask, remover_mpp)
+                result_mask = artifact_remover_fn(
+                    remover_img, remover_mask, remover_mpp
+                )
 
                 # Resize result back to seg-level dimensions if needed.
                 if result_mask.shape != tissue_mask.shape:
@@ -807,7 +901,9 @@ def segment_tissue(
                 # revert to the pre-removal mask.  Over-aggressive removal can
                 # occur when the GrandQC model is out-of-distribution for a
                 # particular tissue type (e.g. necrotic CNS tumours).
-                _MIN_TISSUE_SURVIVAL = 0.10  # at least 10% of original tissue must remain
+                _MIN_TISSUE_SURVIVAL = (
+                    0.10  # at least 10% of original tissue must remain
+                )
                 pre_pixels = int(np.count_nonzero(pre_removal_mask))
                 post_pixels = int(np.count_nonzero(result_mask))
                 removal_fraction = (
@@ -994,9 +1090,19 @@ def draw_slide_mask(
             scaled_polygon = scale_geometry(polygon, scale[0])
             if isinstance(polygon, MultiPolygon):
                 for geom in scaled_polygon.geoms:
-                    draw.polygon(geom.exterior.coords, outline=outline, fill=fill, width=outline_width)
+                    draw.polygon(
+                        geom.exterior.coords,
+                        outline=outline,
+                        fill=fill,
+                        width=outline_width,
+                    )
             else:
-                draw.polygon(scaled_polygon.exterior.coords, outline=outline, fill=fill, width=outline_width)
+                draw.polygon(
+                    scaled_polygon.exterior.coords,
+                    outline=outline,
+                    fill=fill,
+                    width=outline_width,
+                )
 
         image_width, image_height = img.size
         if custom_downsample and custom_downsample > 1:
