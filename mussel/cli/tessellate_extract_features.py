@@ -14,7 +14,6 @@ from collections import defaultdict
 
 import h5py
 import hydra
-import torch
 from hydra.conf import HelpConf, HydraConf
 from hydra.core.config_store import ConfigStore
 from omegaconf import MISSING, DictConfig, ListConfig, OmegaConf
@@ -28,6 +27,7 @@ from mussel.cli.tessellate import (
     TcgaSegConfig,
     VisConfig,
     _build_artifact_remover,
+    _build_neural_segmenter,
 )
 from mussel.cli.tessellate_extract_features_common import (
     create_visualizations,
@@ -58,39 +58,11 @@ from mussel.utils.artifact_removal import (
 )
 from mussel.utils.feature_extract import _numpy_to_torch, _parse_feature_dtype
 from mussel.utils.file import WSI_EXTENSIONS, collect_wsi_paths
-from mussel.utils.gpu import first_gpu_device_id, resolve_gpu_device_id
 
 # isort: on
 
 # Private aliases used throughout this module
 _is_remote_path = is_remote_path
-
-
-def _build_neural_segmenter(
-    seg_cfg,
-    use_gpu: bool,
-    gpu_device_id: Optional[int | List[int]] = None,
-    gpu_device_ids: Optional[List[int]] = None,
-):
-    if str(seg_cfg.get("seg_model", "classic")).strip().lower() != "neural":
-        return None
-
-    from mussel.utils.neural_seg import NeuralTissueSegmenter
-
-    if not use_gpu:
-        return NeuralTissueSegmenter(device="cpu")
-    if not torch.cuda.is_available():
-        raise RuntimeError(
-            "seg_config.seg_model='neural' requested with use_gpu=True, "
-            "but CUDA is not available. Set use_gpu=False to run neural "
-            "segmentation on CPU."
-        )
-    device_id = first_gpu_device_id(
-        resolve_gpu_device_id(gpu_device_id, gpu_device_ids)
-    )
-
-    device = "cuda" if device_id is None else f"cuda:{device_id}"
-    return NeuralTissueSegmenter(device=device)
 
 
 def _build_segmentation_runtime(cfg: "TessellateExtractFeaturesConfig"):

@@ -21,8 +21,7 @@ from mussel.utils.artifact_removal import (
     EXCLUDE_PENMARKS_ONLY,
     GrandQCArtifactRemover,
 )
-from mussel.utils.segment import (draw_slide_mask, save_patches_png,
-                                  segment_tissue)
+from mussel.utils.segment import draw_slide_mask, save_patches_png, segment_tissue
 
 
 @dataclass
@@ -111,9 +110,7 @@ class SegConfig:
     remove_penmarks: bool = (
         False  # If True, apply pen mark removal to the tissue mask before patching.
     )
-    artifact_exclude_classes: Optional[List[int]] = field(
-        default=None
-    )
+    artifact_exclude_classes: Optional[List[int]] = field(default=None)
     # Optional list of GrandQC class indices to exclude (overrides remove_artifacts /
     # remove_penmarks preset logic when set).  Use the CLASS_* constants from
     # mussel.utils.artifact_removal, e.g. [4, 7] for pen marks + background only.
@@ -240,6 +237,20 @@ class TessellateConfig:
     slide_id (Optional[str]): Identifier written into the HDF5 output. Defaults to the slide
         filename without extension.
     output_h5_path (str): Path for the HDF5 output file containing tile coordinates and metadata.
+    slide_paths (Optional[List[str]]): Batch mode input slide paths. Mutually exclusive with
+        ``slide_path``.
+    slide_ids (Optional[List[str]]): Optional batch mode slide IDs. Defaults to each slide
+        filename without extension.
+    output_h5_paths (Optional[List[str]]): Batch mode output HDF5 paths. Mutually exclusive with
+        ``output_dir``.
+    output_dir (Optional[str]): Batch mode output directory. When set, writes
+        ``{slide_id}.patch.h5`` for each input slide.
+    continue_on_error (bool): In batch mode, continue processing remaining slides after a
+        per-slide failure and exit successfully after writing a failures TSV if
+        ``failures_tsv_path`` is set. By default any failure causes a non-zero exit after the
+        first failed slide.
+    failures_tsv_path (Optional[str]): Optional TSV path receiving ``slide_id, slide_path,
+        output_h5_path, error`` rows for batch failures.
     output_png_dir (Optional[str]): Directory to save each tile as an individual PNG file.
         Filtered by ``png_config`` settings when set.
     output_mask_path (Optional[str]): Path to save a PNG overlay showing the segmented tissue
@@ -255,9 +266,15 @@ class TessellateConfig:
     """
 
     defaults: List[Any] = field(default_factory=lambda: defaults)
-    slide_path: str = MISSING
+    slide_path: Optional[str] = None
     slide_id: Optional[str] = None
-    output_h5_path: str = MISSING
+    output_h5_path: Optional[str] = None
+    slide_paths: Optional[List[str]] = None
+    slide_ids: Optional[List[str]] = None
+    output_h5_paths: Optional[List[str]] = None
+    output_dir: Optional[str] = None
+    continue_on_error: bool = False
+    failures_tsv_path: Optional[str] = None
     output_png_dir: Optional[str] = None
     output_mask_path: Optional[str] = None
     output_grid_mask_path: Optional[str] = None
@@ -278,6 +295,7 @@ extract_features and tessellate_extract_features.
 Key options (use Hydra override syntax, e.g. seg_config.mpp=0.25):
   slide_path          Path to the slide file (required)
   output_h5_path      Path for the output HDF5 file (required)
+  slide_paths         Batch mode slide paths; use output_h5_paths or output_dir for outputs
   seg_config          Preset segmentation profile: default | biopsy | resection | tcga
   seg_config.mpp      Target resolution in µm/px (default 0.5 ≈ 20×; 0.25 ≈ 40×)
   seg_config.patch_size  Tile size in pixels at the target MPP (default 256)
@@ -285,6 +303,7 @@ Key options (use Hydra override syntax, e.g. seg_config.mpp=0.25):
 
 Example:
   tessellate slide_path=slide.svs output_h5_path=out.h5 seg_config=biopsy
+  tessellate 'slide_paths=[a.svs,b.svs]' output_dir=tiles seg_config=biopsy
 """
 
 parameter_doc = f"""
@@ -352,23 +371,214 @@ def _build_artifact_remover(
     return remover
 
 
+def _slide_id_for_path(slide_path: str, slide_id: Optional[str] = None) -> str:
+    return slide_id if slide_id else Path(slide_path).stem
+
+
+def _run_tessellation(
+    *,
+    slide_path: str,
+    output_h5_path: str,
+    seg_cfg: dict,
+    artifact_remover_fn: "Optional[GrandQCArtifactRemover]",
+    slide_id: Optional[str] = None,
+    neural_segmenter: Optional[Any] = None,
+) -> tuple[Any, Any, np.ndarray] | None:
+    # Strip config-only keys that are not segment_tissue() parameters.
+    call_seg_cfg = dict(seg_cfg)
+    call_seg_cfg.pop("artifact_exclude_classes", None)
+    if neural_segmenter is not None:
+        call_seg_cfg["neural_segmenter"] = neural_segmenter
+    values = segment_tissue(
+        slide_path=slide_path,
+        slide_id=slide_id,
+        output_h5_path=output_h5_path,
+        artifact_remover_fn=artifact_remover_fn,
+        **call_seg_cfg,
+    )
+    if not values:
+        return None
+    polygon, grid, coords, _ = values
+    return polygon, grid, coords
+
+
+def _resolve_batch_outputs(cfg: TessellateConfig) -> list[tuple[str, str, str]]:
+    slide_paths = list(cfg.slide_paths or [])
+    if not slide_paths:
+        raise ValueError(
+            "Batch mode requires slide_paths to contain at least one slide."
+        )
+
+    slide_ids = (
+        list(cfg.slide_ids)
+        if cfg.slide_ids is not None
+        else [_slide_id_for_path(p) for p in slide_paths]
+    )
+    if len(slide_ids) != len(slide_paths):
+        raise ValueError(
+            f"slide_ids length ({len(slide_ids)}) must match slide_paths length ({len(slide_paths)})."
+        )
+
+    has_output_h5_paths = cfg.output_h5_paths is not None
+    has_output_dir = cfg.output_dir is not None
+    if has_output_h5_paths == has_output_dir:
+        raise ValueError(
+            "Batch mode requires exactly one of output_h5_paths or output_dir."
+        )
+
+    if has_output_h5_paths:
+        output_h5_paths = list(cfg.output_h5_paths or [])
+        if len(output_h5_paths) != len(slide_paths):
+            raise ValueError(
+                "output_h5_paths length "
+                f"({len(output_h5_paths)}) must match slide_paths length ({len(slide_paths)})."
+            )
+    else:
+        output_dir = Path(cfg.output_dir)
+        output_h5_paths = [
+            str(output_dir / f"{slide_id}.patch.h5") for slide_id in slide_ids
+        ]
+
+    duplicate_outputs = sorted(
+        output_path
+        for output_path in set(output_h5_paths)
+        if output_h5_paths.count(output_path) > 1
+    )
+    if duplicate_outputs:
+        raise ValueError(
+            "Batch mode output paths must be unique; duplicate output_h5_path(s): "
+            + ", ".join(duplicate_outputs)
+        )
+
+    return list(zip(slide_paths, slide_ids, output_h5_paths))
+
+
+def _build_neural_segmenter(
+    seg_cfg: dict,
+    use_gpu: Optional[bool] = None,
+    gpu_device_id: Optional[int | List[int]] = None,
+    gpu_device_ids: Optional[List[int]] = None,
+) -> Optional[Any]:
+    if str(seg_cfg.get("seg_model", "classic")).strip().lower() != "neural":
+        return None
+
+    from mussel.utils.neural_seg import NeuralTissueSegmenter
+
+    if use_gpu is None:
+        logger.info("Loading neural tissue segmenter.")
+        return NeuralTissueSegmenter()
+
+    if not use_gpu:
+        return NeuralTissueSegmenter(device="cpu")
+
+    import torch
+
+    from mussel.utils.gpu import first_gpu_device_id, resolve_gpu_device_id
+
+    if not torch.cuda.is_available():
+        raise RuntimeError(
+            "seg_config.seg_model='neural' requested with use_gpu=True, "
+            "but CUDA is not available. Set use_gpu=False to run neural "
+            "segmentation on CPU."
+        )
+    device_id = first_gpu_device_id(
+        resolve_gpu_device_id(gpu_device_id, gpu_device_ids)
+    )
+    device = "cuda" if device_id is None else f"cuda:{device_id}"
+    logger.info("Loading neural tissue segmenter.")
+    return NeuralTissueSegmenter(device=device)
+
+
+def _run_batch(cfg: TessellateConfig, seg_cfg: dict) -> None:
+    if any(
+        value is not None
+        for value in (
+            cfg.output_png_dir,
+            cfg.output_mask_path,
+            cfg.output_grid_mask_path,
+            cfg.output_thumbnail_path,
+        )
+    ):
+        raise ValueError(
+            "Batch tessellate mode only writes patch H5 outputs; PNG, mask, grid-mask, "
+            "and thumbnail outputs are not supported."
+        )
+
+    artifact_remover_fn = _build_artifact_remover(seg_cfg)
+    neural_segmenter = _build_neural_segmenter(seg_cfg)
+    failures: list[tuple[str, str, str, str]] = []
+    items = _resolve_batch_outputs(cfg)
+    logger.info("Batch tessellating %d slide(s)", len(items))
+
+    for i, (slide_path, slide_id, output_h5_path) in enumerate(items, start=1):
+        try:
+            Path(output_h5_path).parent.mkdir(parents=True, exist_ok=True)
+            logger.info("Tessellating slide %d/%d: %s", i, len(items), slide_id)
+            result = _run_tessellation(
+                slide_path=slide_path,
+                slide_id=slide_id,
+                output_h5_path=output_h5_path,
+                seg_cfg=seg_cfg,
+                artifact_remover_fn=artifact_remover_fn,
+                neural_segmenter=neural_segmenter,
+            )
+            if result is None or not Path(output_h5_path).exists():
+                raise RuntimeError(f"tessellation produced no patch H5 for {slide_id}")
+        except Exception as exc:
+            failures.append((slide_id, slide_path, output_h5_path, str(exc)))
+            try:
+                Path(output_h5_path).unlink(missing_ok=True)
+            except Exception:
+                pass
+            logger.exception("Failed to tessellate %s", slide_id)
+            if not cfg.continue_on_error:
+                break
+
+    if failures and cfg.failures_tsv_path:
+        failure_path = Path(cfg.failures_tsv_path)
+        failure_path.parent.mkdir(parents=True, exist_ok=True)
+        with failure_path.open("w") as f:
+            f.write("slide_id\tslide_path\toutput_h5_path\terror\n")
+            for slide_id, slide_path, output_h5_path, error in failures:
+                f.write(f"{slide_id}\t{slide_path}\t{output_h5_path}\t{error}\n")
+
+    all_slides_failed = failures and len(failures) == len(items)
+    if failures and (not cfg.continue_on_error or all_slides_failed):
+        raise RuntimeError(
+            f"Tessellation failed for {len(failures)} of {len(items)} slide(s)."
+        )
+    if failures:
+        logger.warning(
+            "Tessellation failed for %d of %d slide(s).", len(failures), len(items)
+        )
+
+
 @hydra.main(version_base=None, config_path=".", config_name="tessellate_config")
 def main(
     cfg: TessellateConfig,
 ):
     """Tile a whole slide image and perform tissue segmentation."""
     seg_cfg = OmegaConf.to_container(cfg.seg_config)
+    if cfg.slide_paths is not None:
+        if cfg.slide_path is not None or cfg.output_h5_path is not None:
+            raise ValueError(
+                "Batch mode is mutually exclusive with slide_path and output_h5_path."
+            )
+        _run_batch(cfg, seg_cfg)
+        return
+
+    if cfg.slide_path is None or cfg.output_h5_path is None:
+        raise ValueError("Single-slide mode requires slide_path and output_h5_path.")
+
     artifact_remover_fn = _build_artifact_remover(seg_cfg)
-    # Strip config-only keys that are not segment_tissue() parameters.
-    seg_cfg.pop("artifact_exclude_classes", None)
-    if values := segment_tissue(
+    if values := _run_tessellation(
         slide_path=cfg.slide_path,
         slide_id=cfg.slide_id,
         output_h5_path=cfg.output_h5_path,
+        seg_cfg=seg_cfg,
         artifact_remover_fn=artifact_remover_fn,
-        **seg_cfg,
     ):
-        polygon, grid, coords, _ = values
+        polygon, grid, coords = values
     else:
         return
 

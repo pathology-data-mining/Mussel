@@ -49,6 +49,22 @@ tessellate \
     num_workers=1
 ```
 
+Batch mode groups multiple slides into one `tessellate` invocation and writes one patch
+HDF5 per slide. This is intended for workflow engines where many short per-slide jobs
+create scheduler overhead:
+
+```bash
+tessellate \
+    'slide_paths=[slide_a.svs,slide_b.svs]' \
+    'slide_ids=[slide_a,slide_b]' \
+    output_dir=tiles \
+    seg_config=biopsy
+```
+
+Use `output_h5_paths=[a.patch.h5,b.patch.h5]` instead of `output_dir` for explicit
+per-slide destinations. Batch mode writes patch H5 outputs only; thumbnail, mask,
+grid-mask, and tile PNG outputs are supported only in single-slide mode.
+
 #### Supported slide formats
 
 Mussel uses [tiffslide](https://github.com/Bayer-Group/tiffslide)
@@ -520,5 +536,4 @@ Each input file `<stem>.<ext>` produces `output_dir/<stem>.tiff`. Pass
 | `downscale_by` | `1` | Integer downsample factor (e.g. `2` converts a 40× slide to 20×). |
 | `num_workers` | `1` | Parallel workers for batch mode (`0` = all CPUs). |
 | `bigtiff` | `false` | Write BigTIFF format (required for files > ~4 GB). |
-
 
