@@ -436,6 +436,17 @@ def _resolve_batch_outputs(cfg: TessellateConfig) -> list[tuple[str, str, str]]:
             str(output_dir / f"{slide_id}.patch.h5") for slide_id in slide_ids
         ]
 
+    duplicate_outputs = sorted(
+        output_path
+        for output_path in set(output_h5_paths)
+        if output_h5_paths.count(output_path) > 1
+    )
+    if duplicate_outputs:
+        raise ValueError(
+            "Batch mode output paths must be unique; duplicate output_h5_path(s): "
+            + ", ".join(duplicate_outputs)
+        )
+
     return list(zip(slide_paths, slide_ids, output_h5_paths))
 
 
@@ -490,7 +501,8 @@ def _run_batch(cfg: TessellateConfig, seg_cfg: dict) -> None:
             for slide_id, slide_path, output_h5_path, error in failures:
                 f.write(f"{slide_id}\t{slide_path}\t{output_h5_path}\t{error}\n")
 
-    if failures and not cfg.continue_on_error:
+    all_slides_failed = failures and len(failures) == len(items)
+    if failures and (not cfg.continue_on_error or all_slides_failed):
         raise RuntimeError(
             f"Tessellation failed for {len(failures)} of {len(items)} slide(s)."
         )
@@ -507,6 +519,10 @@ def main(
     """Tile a whole slide image and perform tissue segmentation."""
     seg_cfg = OmegaConf.to_container(cfg.seg_config)
     if cfg.slide_paths is not None:
+        if cfg.slide_path is not None or cfg.output_h5_path is not None:
+            raise ValueError(
+                "Batch mode is mutually exclusive with slide_path and output_h5_path."
+            )
         _run_batch(cfg, seg_cfg)
         return
 

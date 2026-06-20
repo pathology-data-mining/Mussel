@@ -163,6 +163,64 @@ def test_tessellate_batch_continue_on_error_writes_failures_tsv(tmp_path):
     assert "A\tslide_a.svs" in failures_tsv.read_text()
 
 
+def test_tessellate_batch_continue_on_error_fails_when_all_slides_fail(tmp_path):
+    output_dir = tmp_path / "tiles"
+    failures_tsv = tmp_path / "failures.tsv"
+    cfg = TessellateConfig(
+        slide_paths=["slide_a.svs", "slide_b.svs"],
+        slide_ids=["A", "B"],
+        output_dir=str(output_dir),
+        continue_on_error=True,
+        failures_tsv_path=str(failures_tsv),
+        seg_config=SegConfig(segment_threshold=0),
+    )
+
+    with patch(
+        "mussel.cli.tessellate.segment_tissue", side_effect=RuntimeError("boom")
+    ) as mock_segment:
+        with pytest.raises(RuntimeError, match="2 of 2"):
+            mussel.cli.tessellate.main(OmegaConf.create(cfg))
+
+    assert mock_segment.call_count == 2
+    assert failures_tsv.exists()
+
+
+def test_tessellate_batch_rejects_duplicate_output_h5_paths(tmp_path):
+    duplicate_path = str(tmp_path / "duplicate.patch.h5")
+    cfg = TessellateConfig(
+        slide_paths=["slide_a.svs", "slide_b.svs"],
+        output_h5_paths=[duplicate_path, duplicate_path],
+        seg_config=SegConfig(segment_threshold=0),
+    )
+
+    with pytest.raises(ValueError, match="must be unique"):
+        mussel.cli.tessellate.main(OmegaConf.create(cfg))
+
+
+def test_tessellate_batch_rejects_duplicate_output_dir_slide_ids(tmp_path):
+    cfg = TessellateConfig(
+        slide_paths=["/a/slide.svs", "/b/slide.svs"],
+        output_dir=str(tmp_path),
+        seg_config=SegConfig(segment_threshold=0),
+    )
+
+    with pytest.raises(ValueError, match="must be unique"):
+        mussel.cli.tessellate.main(OmegaConf.create(cfg))
+
+
+def test_tessellate_batch_rejects_single_slide_options(tmp_path):
+    cfg = TessellateConfig(
+        slide_path="single.svs",
+        output_h5_path=str(tmp_path / "single.patch.h5"),
+        slide_paths=["slide_a.svs"],
+        output_dir=str(tmp_path),
+        seg_config=SegConfig(segment_threshold=0),
+    )
+
+    with pytest.raises(ValueError, match="mutually exclusive"):
+        mussel.cli.tessellate.main(OmegaConf.create(cfg))
+
+
 def test_tessellate_batch_rejects_optional_visual_outputs(tmp_path):
     cfg = TessellateConfig(
         slide_paths=["slide_a.svs"],
