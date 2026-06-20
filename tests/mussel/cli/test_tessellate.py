@@ -1,7 +1,10 @@
 import os
+from pathlib import Path
+from unittest.mock import MagicMock, patch
 
 import h5py
 import numpy as np
+import pytest
 from omegaconf import OmegaConf
 
 import mussel.cli.tessellate
@@ -58,6 +61,118 @@ def test_tessellate(tmp_path, num_workers):
         assert np.all(
             coords[:, 1] + patch_size <= _SLIDE_HEIGHT
         ), "y + patch_size exceeds slide height"
+
+
+def test_tessellate_batch_writes_patch_h5_outputs(tmp_path):
+    slide_paths = ["slide_a.svs", "slide_b.svs"]
+    output_dir = tmp_path / "tiles"
+    seg_config = SegConfig(segment_threshold=0)
+    cfg = TessellateConfig(
+        slide_paths=slide_paths,
+        slide_ids=["A", "B"],
+        output_dir=str(output_dir),
+        seg_config=seg_config,
+    )
+
+    def fake_segment_tissue(*, output_h5_path, **kwargs):
+        Path(output_h5_path).write_text("patch h5")
+        return MagicMock(), MagicMock(), np.array([[0, 0]]), None
+
+    with patch(
+        "mussel.cli.tessellate.segment_tissue", side_effect=fake_segment_tissue
+    ) as mock_segment:
+        mussel.cli.tessellate.main(OmegaConf.create(cfg))
+
+    assert mock_segment.call_count == 2
+    assert (output_dir / "A.patch.h5").exists()
+    assert (output_dir / "B.patch.h5").exists()
+
+
+def test_tessellate_batch_can_use_explicit_output_h5_paths(tmp_path):
+    out_a = tmp_path / "custom_a.h5"
+    out_b = tmp_path / "custom_b.h5"
+    cfg = TessellateConfig(
+        slide_paths=["slide_a.svs", "slide_b.svs"],
+        output_h5_paths=[str(out_a), str(out_b)],
+        seg_config=SegConfig(segment_threshold=0),
+    )
+
+    def fake_segment_tissue(*, output_h5_path, **kwargs):
+        Path(output_h5_path).write_text("patch h5")
+        return MagicMock(), MagicMock(), np.array([[0, 0]]), None
+
+    with patch("mussel.cli.tessellate.segment_tissue", side_effect=fake_segment_tissue):
+        mussel.cli.tessellate.main(OmegaConf.create(cfg))
+
+    assert out_a.exists()
+    assert out_b.exists()
+
+
+def test_tessellate_batch_fails_on_first_slide_failure(tmp_path):
+    output_dir = tmp_path / "tiles"
+    cfg = TessellateConfig(
+        slide_paths=["slide_a.svs", "slide_b.svs"],
+        slide_ids=["A", "B"],
+        output_dir=str(output_dir),
+        seg_config=SegConfig(segment_threshold=0),
+    )
+
+    def fake_segment_tissue(*, output_h5_path, **kwargs):
+        if output_h5_path.endswith("A.patch.h5"):
+            raise RuntimeError("boom")
+        Path(output_h5_path).write_text("patch h5")
+        return MagicMock(), MagicMock(), np.array([[0, 0]]), None
+
+    with patch(
+        "mussel.cli.tessellate.segment_tissue", side_effect=fake_segment_tissue
+    ) as mock_segment:
+        with pytest.raises(RuntimeError, match="1 of 2"):
+            mussel.cli.tessellate.main(OmegaConf.create(cfg))
+
+    assert mock_segment.call_count == 1
+    assert not (output_dir / "A.patch.h5").exists()
+    assert not (output_dir / "B.patch.h5").exists()
+
+
+def test_tessellate_batch_continue_on_error_writes_failures_tsv(tmp_path):
+    output_dir = tmp_path / "tiles"
+    failures_tsv = tmp_path / "failures.tsv"
+    cfg = TessellateConfig(
+        slide_paths=["slide_a.svs", "slide_b.svs"],
+        slide_ids=["A", "B"],
+        output_dir=str(output_dir),
+        continue_on_error=True,
+        failures_tsv_path=str(failures_tsv),
+        seg_config=SegConfig(segment_threshold=0),
+    )
+
+    def fake_segment_tissue(*, output_h5_path, **kwargs):
+        if output_h5_path.endswith("A.patch.h5"):
+            raise RuntimeError("boom")
+        Path(output_h5_path).write_text("patch h5")
+        return MagicMock(), MagicMock(), np.array([[0, 0]]), None
+
+    with patch(
+        "mussel.cli.tessellate.segment_tissue", side_effect=fake_segment_tissue
+    ) as mock_segment:
+        mussel.cli.tessellate.main(OmegaConf.create(cfg))
+
+    assert mock_segment.call_count == 2
+    assert not (output_dir / "A.patch.h5").exists()
+    assert (output_dir / "B.patch.h5").exists()
+    assert "A\tslide_a.svs" in failures_tsv.read_text()
+
+
+def test_tessellate_batch_rejects_optional_visual_outputs(tmp_path):
+    cfg = TessellateConfig(
+        slide_paths=["slide_a.svs"],
+        output_dir=str(tmp_path),
+        output_thumbnail_path=str(tmp_path / "thumb.png"),
+        seg_config=SegConfig(segment_threshold=0),
+    )
+
+    with pytest.raises(ValueError, match="only writes patch H5"):
+        mussel.cli.tessellate.main(OmegaConf.create(cfg))
 
 
 def test_seg_config_new_fields_defaults():
