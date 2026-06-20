@@ -16,6 +16,7 @@ from torch.utils.data import DataLoader
 from torchvision.datasets import ImageFolder
 from tqdm import tqdm
 
+# fmt: off
 from mussel.datasets import (FlatImageDataset, WholeSlideImageH5Dataset,
                              WholeSlideImageTileCoordDataset)
 from mussel.models import (ModelType, get_default_patch_size,
@@ -23,8 +24,11 @@ from mussel.models import (ModelType, get_default_patch_size,
                            validate_slide_encoder_compatibility)
 
 from .file import save_hdf5, save_torch_tensor
+from .gpu import resolve_gpu_device_id
 from .ml import collate_features
 from .timer import timed
+
+# fmt: on
 
 logger = logging.getLogger(__name__)
 
@@ -44,7 +48,11 @@ def _numpy_to_torch(arr: np.ndarray, dtype: Optional[np.dtype] = None) -> torch.
     # Auto-detect |V2 (HDF5 bfloat16 representation) without requiring a dtype hint.
     if arr.dtype.kind == "V" and arr.dtype.itemsize == 2:
         arr = arr.view(ml_dtypes.bfloat16)
-    elif dtype is not None and dtype == np.dtype(ml_dtypes.bfloat16) and arr.dtype.kind == "V":
+    elif (
+        dtype is not None
+        and dtype == np.dtype(ml_dtypes.bfloat16)
+        and arr.dtype.kind == "V"
+    ):
         arr = arr.view(ml_dtypes.bfloat16)
     if arr.dtype == np.dtype(ml_dtypes.bfloat16):
         return torch.from_numpy(arr.view(np.uint16)).view(torch.bfloat16)
@@ -289,7 +297,9 @@ class H5DatasetProcessor(DatasetProcessor):
         # Concatenate all results
         empty_dtype = feature_dtype if feature_dtype is not None else np.float32
         features = (
-            np.concatenate(all_features, axis=0) if all_features else np.array([], dtype=empty_dtype)
+            np.concatenate(all_features, axis=0)
+            if all_features
+            else np.array([], dtype=empty_dtype)
         )
         coords = np.concatenate(all_coords, axis=0) if all_coords else np.array([])
 
@@ -384,7 +394,9 @@ class ImageFolderProcessor(DatasetProcessor):
         # Concatenate all results
         empty_dtype = feature_dtype if feature_dtype is not None else np.float32
         features = (
-            np.concatenate(all_features, axis=0) if all_features else np.array([], dtype=empty_dtype)
+            np.concatenate(all_features, axis=0)
+            if all_features
+            else np.array([], dtype=empty_dtype)
         )
         labels = np.concatenate(all_labels, axis=0) if all_labels else np.array([])
 
@@ -788,7 +800,9 @@ def _apply_slide_aggregation(
         return features
     elif aggregation_method == "mean":
         # Mean pooling across patches; upcast to float32 so numpy ufuncs work reliably.
-        aggregated_features = np.mean(features.astype(np.float32), axis=0, keepdims=True)
+        aggregated_features = np.mean(
+            features.astype(np.float32), axis=0, keepdims=True
+        )
         logger.info(
             f"Applied mean pooling: {features.shape} -> {aggregated_features.shape}"
         )
@@ -809,8 +823,7 @@ def _apply_slide_aggregation(
 
         logger.info(f"Using model-based aggregation with {slide_model_type}")
 
-        if gpu_device_ids:
-            gpu_device_id = gpu_device_ids
+        gpu_device_id = resolve_gpu_device_id(gpu_device_id, gpu_device_ids)
 
         # Load or use pre-loaded slide encoder model
         if slide_model is not None:
@@ -820,7 +833,9 @@ def _apply_slide_aggregation(
             model_factory = get_model_factory(slide_model_type)
             if model_factory is None:
                 raise ValueError(f"Slide model type {slide_model_type} not recognized")
-            slide_model = model_factory.get_model(slide_model_path, use_gpu, gpu_device_id)
+            slide_model = model_factory.get_model(
+                slide_model_path, use_gpu, gpu_device_id
+            )
             model_fun = slide_model.get_model_fun()
 
         # Convert features to tensor (handles bfloat16/V2 correctly) and apply model
@@ -960,10 +975,11 @@ def get_features(
             )
     if slide_model is not None:
         if not callable(getattr(slide_model, "get_model_fun", None)):
-            raise TypeError("slide_model must provide a callable get_model_fun() method")
+            raise TypeError(
+                "slide_model must provide a callable get_model_fun() method"
+            )
 
-    if gpu_device_ids:
-        gpu_device_id = gpu_device_ids
+    gpu_device_id = resolve_gpu_device_id(gpu_device_id, gpu_device_ids)
 
     # Auto-set aggregation_method unconditionally so pre-loaded models also trigger slide encoding.
     if (
@@ -978,7 +994,11 @@ def get_features(
         aggregation_method = "model"
 
     # Validate patch/slide encoder compatibility regardless of how models are provided.
-    if use_slide_encoder and aggregation_method == "model" and slide_model_type is not None:
+    if (
+        use_slide_encoder
+        and aggregation_method == "model"
+        and slide_model_type is not None
+    ):
         if model is None:
             # Auto-infer required patch encoder when loading from disk.
             required_patch_encoder = get_required_patch_encoder(slide_model_type)
@@ -1098,8 +1118,7 @@ def extract_patch_features(
     Returns:
         Path to the output HDF5 file containing patch-level features.
     """
-    if gpu_device_ids:
-        gpu_device_id = gpu_device_ids
+    gpu_device_id = resolve_gpu_device_id(gpu_device_id, gpu_device_ids)
 
     logger.info("Step 1: Extracting patch-level features")
     logger.info("loading model checkpoint")
@@ -1243,8 +1262,7 @@ def extract_patch_features_batch(
     num_slides = len(patch_h5_paths)
     logger.info(f"Batch extracting patch-level features for {num_slides} slides")
 
-    if gpu_device_ids:
-        gpu_device_id = gpu_device_ids
+    gpu_device_id = resolve_gpu_device_id(gpu_device_id, gpu_device_ids)
 
     feature_dtype = _parse_feature_dtype(embedding_precision)
 
@@ -1417,7 +1435,11 @@ def aggregate_slide_features_batch(
                     )
 
                     feature_dtype = _parse_feature_dtype(embedding_precision)
-                    features_to_save = aggregated_features.astype(feature_dtype) if feature_dtype is not None else aggregated_features
+                    features_to_save = (
+                        aggregated_features.astype(feature_dtype)
+                        if feature_dtype is not None
+                        else aggregated_features
+                    )
 
                     # Save to HDF5 if requested
                     if output_h5:
@@ -1451,7 +1473,9 @@ def aggregate_slide_features_batch(
 
         if failed_slides:
             logger.warning(f"\n=== Batch Processing Summary ===")
-            logger.warning(f"Successfully processed: {len(successful_slides)}/{num_slides} slides")
+            logger.warning(
+                f"Successfully processed: {len(successful_slides)}/{num_slides} slides"
+            )
             logger.warning(f"Failed: {len(failed_slides)} slides")
             logger.warning(f"Failed slides: {', '.join(failed_slides)}")
             if len(failed_slides) == num_slides:
@@ -1468,8 +1492,7 @@ def aggregate_slide_features_batch(
     # Model-based aggregation with batching
     logger.info(f"Using batch processing with slide_batch_size={slide_batch_size}")
 
-    if gpu_device_ids:
-        gpu_device_id = gpu_device_ids
+    gpu_device_id = resolve_gpu_device_id(gpu_device_id, gpu_device_ids)
 
     # Resolve model_path from model_dir if provided
     if model_path is None and model_dir is not None:
@@ -1554,14 +1577,23 @@ def aggregate_slide_features_batch(
                         # Subsample patches if slide exceeds max_slide_patches.
                         # TITAN's alibi attention is O(N²) — large slides (>~8k patches)
                         # will OOM on most GPUs without subsampling.
-                        if max_slide_patches is not None and features.shape[0] > max_slide_patches:
+                        if (
+                            max_slide_patches is not None
+                            and features.shape[0] > max_slide_patches
+                        ):
                             logger.warning(
                                 f"Slide {slide_name} has {features.shape[0]} patches, "
                                 f"subsampling to {max_slide_patches} for TITAN_SLIDE "
                                 f"(O(N²) attention limit)."
                             )
-                            rng = np.random.default_rng(seed=abs(hash(slide_name)) % 2**32)
-                            indices = np.sort(rng.choice(features.shape[0], max_slide_patches, replace=False))
+                            rng = np.random.default_rng(
+                                seed=abs(hash(slide_name)) % 2**32
+                            )
+                            indices = np.sort(
+                                rng.choice(
+                                    features.shape[0], max_slide_patches, replace=False
+                                )
+                            )
                             features = features[indices]
                             coords = coords[indices]
 
@@ -1647,7 +1679,11 @@ def aggregate_slide_features_batch(
 
             try:
                 feature_dtype = _parse_feature_dtype(embedding_precision)
-                features_to_save = aggregated_features.astype(feature_dtype) if feature_dtype is not None else aggregated_features
+                features_to_save = (
+                    aggregated_features.astype(feature_dtype)
+                    if feature_dtype is not None
+                    else aggregated_features
+                )
 
                 # Save to HDF5 if requested
                 if output_h5_paths and output_h5_paths[i] is not None:
@@ -1765,7 +1801,11 @@ def aggregate_slide_features(
         )
 
         feature_dtype = _parse_feature_dtype(embedding_precision)
-        features_to_save = aggregated_features.astype(feature_dtype) if feature_dtype is not None else aggregated_features
+        features_to_save = (
+            aggregated_features.astype(feature_dtype)
+            if feature_dtype is not None
+            else aggregated_features
+        )
 
         # Save to HDF5 if requested
         if output_h5_path is not None:
@@ -1915,8 +1955,7 @@ def save_features(
         )
     else:
         # Single-step process (backward compatible)
-        if gpu_device_ids:
-            gpu_device_id = gpu_device_ids
+        gpu_device_id = resolve_gpu_device_id(gpu_device_id, gpu_device_ids)
 
         logger.info("loading model checkpoint")
 

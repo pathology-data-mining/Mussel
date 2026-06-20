@@ -17,6 +17,7 @@ from shapely.geometry import MultiPolygon, Polygon
 from shapely.ops import transform
 from shapely.prepared import prep
 
+from mussel.utils.env import parse_optional_positive_env
 from mussel.utils.file import save_hdf5
 from mussel.utils.timer import timed
 from mussel.utils.wsi_backend import open_slide as _wsi_open_slide
@@ -220,22 +221,11 @@ def _get_neural_seg_level(wsi, slide_mpp: float, level_downsamples) -> int:
 
 
 def _get_neural_max_upscale() -> Optional[float]:
-    value = os.environ.get(_NEURAL_MAX_UPSCALE_ENV)
-    if value is None:
-        return _NEURAL_MAX_AUTO_UPSCALE
-    try:
-        parsed = float(value)
-    except ValueError:
-        warnings.warn(
-            f"Invalid {_NEURAL_MAX_UPSCALE_ENV} value; using default "
-            f"{_NEURAL_MAX_AUTO_UPSCALE}.",
-            RuntimeWarning,
-            stacklevel=2,
-        )
-        return _NEURAL_MAX_AUTO_UPSCALE
-    if parsed <= 0:
-        return None
-    return parsed
+    return parse_optional_positive_env(
+        _NEURAL_MAX_UPSCALE_ENV,
+        default=_NEURAL_MAX_AUTO_UPSCALE,
+        parser=float,
+    )
 
 
 def _validate_neural_seg_mpp(seg_level_mpp: float, seg_level: int) -> None:

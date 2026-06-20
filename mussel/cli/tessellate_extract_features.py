@@ -58,6 +58,7 @@ from mussel.utils.artifact_removal import (
 )
 from mussel.utils.feature_extract import _numpy_to_torch, _parse_feature_dtype
 from mussel.utils.file import WSI_EXTENSIONS, collect_wsi_paths
+from mussel.utils.gpu import first_gpu_device_id, resolve_gpu_device_id
 
 # isort: on
 
@@ -84,15 +85,24 @@ def _build_neural_segmenter(
             "but CUDA is not available. Set use_gpu=False to run neural "
             "segmentation on CPU."
         )
-    if gpu_device_ids:
-        device_id = gpu_device_ids[0]
-    elif isinstance(gpu_device_id, list):
-        device_id = gpu_device_id[0] if gpu_device_id else None
-    else:
-        device_id = gpu_device_id
+    device_id = first_gpu_device_id(
+        resolve_gpu_device_id(gpu_device_id, gpu_device_ids)
+    )
 
     device = "cuda" if device_id is None else f"cuda:{device_id}"
     return NeuralTissueSegmenter(device=device)
+
+
+def _build_segmentation_runtime(cfg: "TessellateExtractFeaturesConfig"):
+    seg_cfg = OmegaConf.to_container(cfg.seg_config)
+    artifact_remover_fn = _build_artifact_remover(seg_cfg)
+    neural_segmenter = _build_neural_segmenter(
+        seg_cfg,
+        cfg.use_gpu,
+        gpu_device_id=cfg.gpu_device_id,
+        gpu_device_ids=cfg.gpu_device_ids,
+    )
+    return artifact_remover_fn, neural_segmenter
 
 
 def _resolve_precision(cfg: "TessellateExtractFeaturesConfig", model_type) -> str:
@@ -627,15 +637,7 @@ def _main_single(cfg: TessellateExtractFeaturesConfig):
     )
     skip_second_extraction = use_filtering and models_are_same
 
-    artifact_remover_fn = _build_artifact_remover(
-        OmegaConf.to_container(cfg.seg_config)
-    )
-    neural_segmenter = _build_neural_segmenter(
-        OmegaConf.to_container(cfg.seg_config),
-        cfg.use_gpu,
-        gpu_device_id=cfg.gpu_device_id,
-        gpu_device_ids=cfg.gpu_device_ids,
-    )
+    artifact_remover_fn, neural_segmenter = _build_segmentation_runtime(cfg)
 
     # Process the slide using shared logic
     result = process_slide_tessellation_and_filtering(
@@ -817,15 +819,7 @@ def _main_batch(
 
     # Instantiate artifact remover once per batch so model weights are loaded
     # only once rather than once per slide.
-    artifact_remover_fn = _build_artifact_remover(
-        OmegaConf.to_container(cfg.seg_config)
-    )
-    neural_segmenter = _build_neural_segmenter(
-        OmegaConf.to_container(cfg.seg_config),
-        cfg.use_gpu,
-        gpu_device_id=cfg.gpu_device_id,
-        gpu_device_ids=cfg.gpu_device_ids,
-    )
+    artifact_remover_fn, neural_segmenter = _build_segmentation_runtime(cfg)
 
     slide_results = []
     for i, (slide_path, slide_id) in enumerate(zip(cfg.slide_paths, slide_ids)):

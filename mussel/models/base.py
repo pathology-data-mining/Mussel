@@ -15,6 +15,8 @@ from huggingface_hub import hf_hub_download
 from timm.data import resolve_data_config
 from timm.data.transforms_factory import create_transform
 
+from mussel.utils.gpu import first_gpu_device_id
+
 try:
     from mussel.utils.model_cache import model_download_lock
 except ImportError:
@@ -183,11 +185,7 @@ class TorchModel(Model):
             raise OSError("cuda not available")
 
         device_type = "cuda" if use_gpu else "cpu"
-        device_id = (
-            gpu_device_id[0]
-            if isinstance(gpu_device_id, list) and len(gpu_device_id) > 0
-            else gpu_device_id
-        )
+        device_id = first_gpu_device_id(gpu_device_id)
         self.device = (
             torch.device(device_type, device_id)
             if device_id is not None

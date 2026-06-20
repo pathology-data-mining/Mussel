@@ -21,7 +21,6 @@ from __future__ import annotations
 
 import logging
 import os
-import warnings
 from pathlib import Path
 from typing import Optional
 
@@ -34,6 +33,7 @@ from huggingface_hub import snapshot_download
 from torchvision.models.segmentation import deeplabv3_resnet50
 
 from mussel.models.base import IMAGENET_MEAN, IMAGENET_STD
+from mussel.utils.env import parse_optional_positive_env
 
 logger = logging.getLogger(__name__)
 
@@ -259,21 +259,11 @@ def _num_tiles(height: int, width: int, patch_size: int) -> int:
 
 
 def _get_max_inference_tiles() -> Optional[int]:
-    value = os.environ.get("MUSSEL_NEURAL_SEG_MAX_TILES")
-    if value is None:
-        return 4096
-    try:
-        parsed = int(value)
-    except ValueError:
-        warnings.warn(
-            "Invalid MUSSEL_NEURAL_SEG_MAX_TILES value; using default 4096.",
-            RuntimeWarning,
-            stacklevel=2,
-        )
-        return 4096
-    if parsed <= 0:
-        return None
-    return parsed
+    return parse_optional_positive_env(
+        "MUSSEL_NEURAL_SEG_MAX_TILES",
+        default=4096,
+        parser=int,
+    )
 
 
 # ---------------------------------------------------------------------------

@@ -74,42 +74,24 @@ def test_neural_segmenter_use_gpu_true_requires_cuda():
             _build_neural_segmenter(seg_cfg, use_gpu=True)
 
 
-def test_neural_segmenter_use_gpu_true_uses_cuda_when_available():
+@pytest.mark.parametrize(
+    ("kwargs", "expected_device"),
+    [
+        ({}, "cuda"),
+        ({"gpu_device_id": 2}, "cuda:2"),
+        ({"gpu_device_ids": [3, 4]}, "cuda:3"),
+    ],
+)
+def test_neural_segmenter_use_gpu_true_uses_cuda_device(kwargs, expected_device):
     seg_cfg = {"seg_model": "neural"}
 
     with (
         patch("torch.cuda.is_available", return_value=True),
         patch("mussel.utils.neural_seg.NeuralTissueSegmenter") as MockSegmenter,
     ):
-        result = _build_neural_segmenter(seg_cfg, use_gpu=True)
+        result = _build_neural_segmenter(seg_cfg, use_gpu=True, **kwargs)
 
-    MockSegmenter.assert_called_once_with(device="cuda")
-    assert result is MockSegmenter.return_value
-
-
-def test_neural_segmenter_use_gpu_true_uses_requested_cuda_device():
-    seg_cfg = {"seg_model": "neural"}
-
-    with (
-        patch("torch.cuda.is_available", return_value=True),
-        patch("mussel.utils.neural_seg.NeuralTissueSegmenter") as MockSegmenter,
-    ):
-        result = _build_neural_segmenter(seg_cfg, use_gpu=True, gpu_device_id=2)
-
-    MockSegmenter.assert_called_once_with(device="cuda:2")
-    assert result is MockSegmenter.return_value
-
-
-def test_neural_segmenter_use_gpu_true_uses_first_multi_gpu_device():
-    seg_cfg = {"seg_model": "neural"}
-
-    with (
-        patch("torch.cuda.is_available", return_value=True),
-        patch("mussel.utils.neural_seg.NeuralTissueSegmenter") as MockSegmenter,
-    ):
-        result = _build_neural_segmenter(seg_cfg, use_gpu=True, gpu_device_ids=[3, 4])
-
-    MockSegmenter.assert_called_once_with(device="cuda:3")
+    MockSegmenter.assert_called_once_with(device=expected_device)
     assert result is MockSegmenter.return_value
 
 
