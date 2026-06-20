@@ -1098,7 +1098,9 @@ class TestSegmentTissueArtifactRemover:
         ), "Warning should use >= symbol in threshold message"
 
         # Fallback reverts to pre-removal mask → tissue still present → patches found
-        assert result is not None, "segment_tissue should not return None after fallback"
+        assert (
+            result is not None
+        ), "segment_tissue should not return None after fallback"
         _, _, coords, _ = result
         assert len(coords) > 0, "Pre-removal mask should yield patches after fallback"
 
@@ -1127,7 +1129,9 @@ class TestSegmentTissueArtifactRemover:
 
         assert len(call_count) == 1, "remover should have been called exactly once"
         # half_remover only keeps bottom tissue → should still produce some patches
-        assert result_with_removal is not None, "Should not return None when tissue survives"
+        assert (
+            result_with_removal is not None
+        ), "Should not return None when tissue survives"
 
     def test_tissue_survival_boundary_at_exactly_90pct_triggers_fallback(self, caplog):
         """Removal fraction == 0.90 (exactly at threshold) should trigger fallback."""
@@ -1136,6 +1140,7 @@ class TestSegmentTissueArtifactRemover:
         def exactly_90pct_remover(img, mask, mpp):
             # Zero out exactly 90% of the nonzero pixels using ceil so we hit exactly >=90%
             import math
+
             flat = mask.flatten()
             nonzero_idx = np.flatnonzero(flat)
             n_to_zero = math.ceil(len(nonzero_idx) * 0.90)
@@ -1170,7 +1175,9 @@ class TestSegmentTissueArtifactRemover:
 
         # All-gray uniform image → saturation channel = 0 → tissue mask is all-zero
         # (classic segmenter thresholds on HSV saturation; gray has S=0 < threshold=20)
-        mock_wsi = _make_mock_wsi_with_tissue()  # uniform-gray → no tissue after segmentation
+        mock_wsi = (
+            _make_mock_wsi_with_tissue()
+        )  # uniform-gray → no tissue after segmentation
 
         with caplog.at_level(logging.WARNING, logger="mussel.utils.segment"):
             _run_segment_with_mocks(
@@ -1183,7 +1190,9 @@ class TestSegmentTissueArtifactRemover:
             )
 
         # Remover IS called even when tissue mask is all-zero (no early-return before remover block)
-        assert len(call_count) == 1, "remover is called regardless of tissue mask content"
+        assert (
+            len(call_count) == 1
+        ), "remover is called regardless of tissue mask content"
         # pre_pixels=0 → removal_fraction=1.0 → fallback triggered
         assert any(
             "Falling back to pre-removal mask" in msg for msg in caplog.messages
@@ -1196,7 +1205,9 @@ class TestSegmentTissueArtifactRemover:
         call_args = []
 
         def mpp_checking_remover(img, mask, mpp):
-            call_args.append({"img_shape": img.shape, "mask_shape": mask.shape, "mpp": mpp})
+            call_args.append(
+                {"img_shape": img.shape, "mask_shape": mask.shape, "mpp": mpp}
+            )
             return mask
 
         mpp_checking_remover.max_input_mpp = 4.0  # requires <= 4 µm/px
@@ -1219,8 +1230,9 @@ class TestSegmentTissueArtifactRemover:
 
         mock_wsi.read_region.side_effect = smart_read
 
-        from mussel.utils.segment import segment_tissue
         from unittest.mock import patch as _patch
+
+        from mussel.utils.segment import segment_tissue
 
         with (
             _patch("mussel.utils.segment.tiffslide.open_slide", return_value=mock_wsi),
@@ -1242,13 +1254,13 @@ class TestSegmentTissueArtifactRemover:
 
         assert len(call_args) == 1, "remover should be called once"
         # At escalation, level 0 mpp = 0.5 * 1.0 = 0.5 < max_input_mpp=4.0
-        assert call_args[0]["mpp"] == pytest.approx(0.5), (
-            f"Expected escalated mpp=0.5, got {call_args[0]['mpp']}"
-        )
+        assert call_args[0]["mpp"] == pytest.approx(
+            0.5
+        ), f"Expected escalated mpp=0.5, got {call_args[0]['mpp']}"
         # The fine-level image should be larger than the 512×512 coarse seg thumbnail
-        assert call_args[0]["img_shape"][0] == 4096, (
-            "Remover should receive the finer-level thumbnail, not the coarse seg thumbnail"
-        )
+        assert (
+            call_args[0]["img_shape"][0] == 4096
+        ), "Remover should receive the finer-level thumbnail, not the coarse seg thumbnail"
 
     def test_mpp_escalation_skipped_when_img_mpp_below_max(self):
         """When img_mpp < max_input_mpp, the seg-level thumbnail is used directly."""
@@ -1277,13 +1289,13 @@ class TestSegmentTissueArtifactRemover:
 
         assert len(call_args) == 1
         # img_mpp = 0.5 * 4.0 = 2.0 (seg level, not escalated)
-        assert call_args[0]["mpp"] == pytest.approx(2.0), (
-            f"Expected seg-level mpp=2.0, got {call_args[0]['mpp']}"
-        )
+        assert call_args[0]["mpp"] == pytest.approx(
+            2.0
+        ), f"Expected seg-level mpp=2.0, got {call_args[0]['mpp']}"
         # Thumbnail should be 1024×1024 (4096/4), the seg-level size
-        assert call_args[0]["img_shape"][0] == 1024, (
-            "Should use seg-level thumbnail when mpp is within limit"
-        )
+        assert (
+            call_args[0]["img_shape"][0] == 1024
+        ), "Should use seg-level thumbnail when mpp is within limit"
 
 
 class TestSegmentTissueSegModel:
@@ -1397,6 +1409,137 @@ class TestSegmentTissueSegModel:
                 seg_model="neural",
             )
             mock_neural.assert_called_once()
+
+    def test_neural_auto_seg_level_avoids_coarse_thumbnail_upsampling(self):
+        """Auto neural mode chooses a near-target level instead of the 64x thumbnail."""
+        mock_wsi = MagicMock()
+        mock_wsi.level_dimensions = [
+            (85656, 19917),
+            (21414, 4979),
+            (5353, 1244),
+            (2676, 622),
+        ]
+        mock_wsi.level_downsamples = [1.0, 4.0, 16.0, 32.0]
+
+        def read_region(_origin, level, dims):
+            width, height = dims
+            return np.ones((height, width, 3), dtype=np.uint8) * 200
+
+        mock_wsi.read_region.side_effect = read_region
+        fake_mask = np.zeros((4979, 21414), dtype=np.uint8)
+        fake_mask[100:200, 100:200] = 255
+
+        with (
+            patch("mussel.utils.segment.tiffslide.open_slide", return_value=mock_wsi),
+            patch("mussel.utils.segment.get_slide_mpp", return_value=0.5026),
+            patch(
+                "mussel.utils.segment._assert_level_downsamples",
+                return_value=[
+                    (1.0, 1.0),
+                    (4.0, 4.0),
+                    (16.0, 16.0),
+                    (32.0, 32.0),
+                ],
+            ),
+            patch(
+                "mussel.utils.segment._segment_tissue_neural",
+                return_value=fake_mask,
+            ) as mock_neural,
+        ):
+            from mussel.utils.segment import segment_tissue
+
+            segment_tissue(
+                "/fake/slide.svs",
+                patch_size=256,
+                mpp=0.5,
+                tissue_area_threshold=1,
+                seg_model="neural",
+            )
+
+        read_level = mock_wsi.read_region.call_args.args[1]
+        assert read_level == 1
+        neural_img, neural_mpp = mock_neural.call_args.args[:2]
+        assert neural_img.shape[:2] == (4979, 21414)
+        assert neural_mpp == pytest.approx(0.5026 * 4.0)
+
+    def test_neural_explicit_coarse_seg_level_raises_before_read(self, monkeypatch):
+        """Manual coarse neural seg_level cannot silently reintroduce huge upsampling."""
+        monkeypatch.delenv("MUSSEL_NEURAL_SEG_MAX_UPSCALE", raising=False)
+
+        mock_wsi = MagicMock()
+        mock_wsi.level_dimensions = [
+            (85656, 19917),
+            (21414, 4979),
+            (5353, 1244),
+            (2676, 622),
+        ]
+        mock_wsi.level_downsamples = [1.0, 4.0, 16.0, 32.0]
+
+        with (
+            patch("mussel.utils.segment._wsi_open_slide", return_value=mock_wsi),
+            patch("mussel.utils.segment.get_slide_mpp", return_value=0.5026),
+            patch(
+                "mussel.utils.segment._assert_level_downsamples",
+                return_value=[
+                    (1.0, 1.0),
+                    (4.0, 4.0),
+                    (16.0, 16.0),
+                    (32.0, 32.0),
+                ],
+            ),
+            patch("mussel.utils.segment._segment_tissue_neural") as mock_neural,
+        ):
+            from mussel.utils.segment import segment_tissue
+
+            with pytest.raises(ValueError, match="would require 16.1x upsampling"):
+                segment_tissue(
+                    "/fake/slide.svs",
+                    patch_size=256,
+                    mpp=0.5,
+                    tissue_area_threshold=1,
+                    seg_model="neural",
+                    seg_level=3,
+                )
+
+        mock_wsi.read_region.assert_not_called()
+        mock_neural.assert_not_called()
+
+    def test_neural_explicit_coarse_seg_level_allows_env_override(self, monkeypatch):
+        """The coarse-level guard can be disabled for intentional expert use."""
+        monkeypatch.setenv("MUSSEL_NEURAL_SEG_MAX_UPSCALE", "0")
+
+        mock_wsi = MagicMock()
+        mock_wsi.level_dimensions = [(4096, 4096), (1024, 1024)]
+        mock_wsi.level_downsamples = [1.0, 8.0]
+        mock_wsi.read_region.return_value = np.ones((1024, 1024, 3), dtype=np.uint8)
+        fake_mask = np.zeros((1024, 1024), dtype=np.uint8)
+        fake_mask[100:200, 100:200] = 255
+
+        with (
+            patch("mussel.utils.segment._wsi_open_slide", return_value=mock_wsi),
+            patch("mussel.utils.segment.get_slide_mpp", return_value=0.5),
+            patch(
+                "mussel.utils.segment._assert_level_downsamples",
+                return_value=[(1.0, 1.0), (8.0, 8.0)],
+            ),
+            patch(
+                "mussel.utils.segment._segment_tissue_neural",
+                return_value=fake_mask,
+            ) as mock_neural,
+        ):
+            from mussel.utils.segment import segment_tissue
+
+            segment_tissue(
+                "/fake/slide.svs",
+                patch_size=256,
+                mpp=0.5,
+                tissue_area_threshold=1,
+                seg_model="neural",
+                seg_level=1,
+            )
+
+        mock_wsi.read_region.assert_called_once()
+        mock_neural.assert_called_once()
 
     def test_seg_model_invalid_raises(self):
         """Unknown seg_model raises ValueError."""

@@ -21,7 +21,6 @@ from __future__ import annotations
 
 import logging
 import os
-import warnings
 from pathlib import Path
 from typing import Optional
 
@@ -31,11 +30,10 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from huggingface_hub import snapshot_download
-from PIL import Image
-from torchvision import transforms
 from torchvision.models.segmentation import deeplabv3_resnet50
 
 from mussel.models.base import IMAGENET_MEAN, IMAGENET_STD
+from mussel.utils.env import parse_optional_positive_env
 
 logger = logging.getLogger(__name__)
 
@@ -75,6 +73,7 @@ class NeuralTissueSegmenter:
         device: str = "auto",
         batch_size: int = 8,
         confidence_thresh: float = 0.5,
+        max_inference_tiles: Optional[int] = None,
     ):
         if device == "auto":
             self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -83,9 +82,15 @@ class NeuralTissueSegmenter:
 
         self.batch_size = batch_size
         self.confidence_thresh = confidence_thresh
+        self.max_inference_tiles = (
+            _get_max_inference_tiles()
+            if max_inference_tiles is None
+            else max_inference_tiles
+        )
         self._model = None
         self._weights_path = weights_path
-        self._transform = None  # built lazily alongside the model
+        self._mean = None  # built lazily alongside the model
+        self._std = None
 
     # ------------------------------------------------------------------
     # Public API
@@ -105,8 +110,6 @@ class NeuralTissueSegmenter:
             Binary uint8 mask of shape ``(H, W)`` where 255 = tissue and
             0 = background, at the same spatial resolution as ``img``.
         """
-        self._ensure_model_loaded()
-
         H, W = img.shape[:2]
 
         # 1. Rescale to target inference resolution (1 µm/px).
@@ -114,11 +117,28 @@ class NeuralTissueSegmenter:
         if scale != 1.0:
             target_H = max(1, int(round(H * scale)))
             target_W = max(1, int(round(W * scale)))
+        else:
+            target_H, target_W = H, W
+
+        n_tiles = _num_tiles(target_H, target_W, _INPUT_SIZE)
+        if self.max_inference_tiles is not None and n_tiles > self.max_inference_tiles:
+            raise ValueError(
+                "Neural tissue segmentation would require "
+                f"{n_tiles:,} {_INPUT_SIZE}x{_INPUT_SIZE} inference tiles "
+                f"after rescaling from {H}x{W} at {slide_mpp:.3f} µm/px "
+                f"to {target_H}x{target_W} at {_TARGET_MPP:.1f} µm/px. "
+                f"This exceeds max_inference_tiles={self.max_inference_tiles:,}. "
+                "Use a finer slide pyramid level or set MUSSEL_NEURAL_SEG_MAX_TILES=0 "
+                "to disable this guard."
+            )
+
+        self._ensure_model_loaded()
+
+        if scale != 1.0:
             resized = cv2.resize(
                 img, (target_W, target_H), interpolation=cv2.INTER_CUBIC
             )
         else:
-            target_H, target_W = H, W
             resized = img
 
         # 2. Tile into _INPUT_SIZE × _INPUT_SIZE patches and run inference.
@@ -145,12 +165,11 @@ class NeuralTissueSegmenter:
         self._model = self._model.to(self.device)
         if self.device.type == "cuda":
             self._model = self._model.half()
-        self._transform = transforms.Compose(
-            [
-                transforms.ToTensor(),
-                transforms.Normalize(mean=IMAGENET_MEAN, std=IMAGENET_STD),
-            ]
-        )
+        self._mean = torch.tensor(IMAGENET_MEAN, device=self.device).view(1, 3, 1, 1)
+        self._std = torch.tensor(IMAGENET_STD, device=self.device).view(1, 3, 1, 1)
+        if self.device.type == "cuda":
+            self._mean = self._mean.half()
+            self._std = self._std.half()
         logger.info(f"NeuralTissueSegmenter loaded on {self.device}")
 
     def _build_model(self, weights_path: str):
@@ -182,6 +201,9 @@ class NeuralTissueSegmenter:
         patch_size = _INPUT_SIZE
         full_mask = np.zeros((H, W), dtype=np.uint8)
 
+        use_fp16 = self.device.type == "cuda"
+        dtype = torch.float16 if use_fp16 else torch.float32
+
         patches: list[np.ndarray] = []
         positions: list[tuple[int, int, int, int]] = []
 
@@ -190,7 +212,6 @@ class NeuralTissueSegmenter:
                 crop = img[y : y + patch_size, x : x + patch_size]
                 y1 = min(y + patch_size, H)
                 x1 = min(x + patch_size, W)
-                # Pad to full patch_size if the crop is smaller (border tiles).
                 if crop.shape[0] < patch_size or crop.shape[1] < patch_size:
                     padded = np.zeros((patch_size, patch_size, 3), dtype=np.uint8)
                     padded[: crop.shape[0], : crop.shape[1]] = crop
@@ -198,28 +219,51 @@ class NeuralTissueSegmenter:
                 patches.append(crop)
                 positions.append((y, x, y1, x1))
 
-        use_fp16 = self.device.type == "cuda"
-        dtype = torch.float16 if use_fp16 else torch.float32
+                if len(patches) == self.batch_size:
+                    self._infer_batch(patches, positions, full_mask, dtype)
+                    patches = []
+                    positions = []
 
-        for batch_start in range(0, len(patches), self.batch_size):
-            batch = patches[batch_start : batch_start + self.batch_size]
-            batch_pos = positions[batch_start : batch_start + self.batch_size]
-
-            tensors = torch.stack(
-                [self._transform(Image.fromarray(p)) for p in batch]
-            ).to(self.device, dtype=dtype)
-
-            with torch.no_grad():
-                logits = self._model(tensors)["out"]  # (B, 2, 512, 512)
-                probs = F.softmax(logits.float(), dim=1)
-                # Channel 1 = tissue probability.
-                preds = (probs[:, 1] > self.confidence_thresh).to(torch.uint8)
-                preds = preds.cpu().numpy()  # (B, 512, 512)
-
-            for pred, (y0, x0, y1, x1) in zip(preds, batch_pos):
-                full_mask[y0:y1, x0:x1] = pred[: y1 - y0, : x1 - x0]
+        if patches:
+            self._infer_batch(patches, positions, full_mask, dtype)
 
         return full_mask  # values 0 or 1
+
+    def _infer_batch(
+        self,
+        patches: list[np.ndarray],
+        positions: list[tuple[int, int, int, int]],
+        full_mask: np.ndarray,
+        dtype: torch.dtype,
+    ) -> None:
+        batch_np = np.stack(patches, axis=0)
+        tensors = torch.from_numpy(batch_np).permute(0, 3, 1, 2)
+        tensors = tensors.to(self.device, dtype=dtype).div_(255.0)
+        tensors = (tensors - self._mean) / self._std
+
+        with torch.no_grad():
+            logits = self._model(tensors)["out"]  # (B, 2, 512, 512)
+            probs = F.softmax(logits.float(), dim=1)
+            # Channel 1 = tissue probability.
+            preds = (probs[:, 1] > self.confidence_thresh).to(torch.uint8)
+            preds = preds.cpu().numpy()  # (B, 512, 512)
+
+        for pred, (y0, x0, y1, x1) in zip(preds, positions):
+            full_mask[y0:y1, x0:x1] = pred[: y1 - y0, : x1 - x0]
+
+
+def _num_tiles(height: int, width: int, patch_size: int) -> int:
+    return ((height + patch_size - 1) // patch_size) * (
+        (width + patch_size - 1) // patch_size
+    )
+
+
+def _get_max_inference_tiles() -> Optional[int]:
+    return parse_optional_positive_env(
+        "MUSSEL_NEURAL_SEG_MAX_TILES",
+        default=4096,
+        parser=int,
+    )
 
 
 # ---------------------------------------------------------------------------
