@@ -485,7 +485,7 @@ class TestProcessAllBehavior:
 
         c = self._make_converter(tmp_path)
         with patch.object(c, "process_file") as mock_pf, \
-             patch("mussel.utils.converter.mp.cpu_count", return_value=1):
+             patch.object(mp, "cpu_count", return_value=1):
             c.process_all(str(input_dir), mpp_csv=csv_path, num_workers=0)
 
         mock_pf.assert_called_once()
