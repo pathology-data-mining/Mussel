@@ -155,6 +155,7 @@ def _tessellate_and_filter(
             batch_size=cfg.batch_size,
             num_workers=cfg.num_workers,
             gpu_device_ids=cfg.gpu_device_ids,
+            model_kwargs=getattr(cfg, "model_kwargs", {}),
         )
 
         logger.info(f"Filtering features: {slide_path}")
@@ -317,6 +318,7 @@ def process_slide_tessellation_and_filtering(
             aggregation_method="identity",
             slide_model_type=None,
             slide_model_path=None,
+            model_kwargs=getattr(cfg, "model_kwargs", {}),
         )
         return {
             "intermediate_h5_path": intermediate_h5_path,
@@ -344,6 +346,8 @@ def process_slide_tessellation_and_filtering(
             aggregation_method=cfg.aggregation_method,
             slide_model_type=getattr(cfg, "slide_model_type", None),
             slide_model_path=slide_model_path,
+            model_kwargs=getattr(cfg, "model_kwargs", {}),
+            slide_model_kwargs=getattr(cfg, "slide_model_kwargs", {}),
         )
         return {
             "final_coords": final_coords,

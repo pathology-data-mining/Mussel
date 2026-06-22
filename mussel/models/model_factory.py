@@ -239,13 +239,14 @@ def register_model(model_type: ModelType):
 
 class ModelFactory(ABC):
     @abstractmethod
-    def get_model(self, model_path, use_gpu, gpu_device_id) -> "Model":
+    def get_model(self, model_path, use_gpu, gpu_device_id, **kwargs) -> "Model":
         """Get a model instance.
 
         Args:
             model_path: Path to model weights or config.
             use_gpu: Whether to use GPU.
             gpu_device_id: GPU device ID or list of IDs.
+            **kwargs: Extra keyword arguments forwarded to the model constructor.
 
         Returns:
             Model instance.
@@ -259,8 +260,8 @@ class _SimpleModelFactory(ModelFactory):
     def __init__(self, model_cls):
         self._cls = model_cls
 
-    def get_model(self, model_path=None, use_gpu=True, gpu_device_id=None) -> "Model":
-        return self._cls(model_path, use_gpu, gpu_device_id)
+    def get_model(self, model_path=None, use_gpu=True, gpu_device_id=None, **kwargs) -> "Model":
+        return self._cls(model_path, use_gpu, gpu_device_id, **kwargs)
 
 
 def get_model_factory(

@@ -153,6 +153,12 @@ class TessellateExtractFeaturesConfig:
                 * GIGAPATH_SLIDE requires GIGAPATH patch encoder
                 * TITAN_SLIDE requires CONCH1_5 patch encoder
             - The required patch encoder is automatically paired and run as needed
+        model_kwargs (Dict[str, Any]): Extra keyword arguments forwarded to patch model constructors.
+        slide_model_kwargs (Dict[str, Any]): Extra keyword arguments forwarded to slide model constructors.
+            TITAN_SLIDE applies GPU float16/expand-based OOM monkey-patches and a
+            validated revision pin by default (patch_oom=True). Pass
+            slide_model_kwargs={patch_oom:false} to disable that patch when testing
+            upstream TITAN behavior.
         model_dir (Optional[str]): Directory containing pre-downloaded models.
             - When specified, the system looks for model subdirectories named after each model type
             - For example: /mnt/batch_models/GIGAPATH_SLIDE, /mnt/batch_models/CONCH1_5
@@ -216,6 +222,8 @@ class TessellateExtractFeaturesConfig:
     prefilter_model_type: Optional[ModelType] = None  # No prefilter by default
     prefilter_model_path: Optional[str] = None  # Path to prefilter model file
     model_type: Any = None  # Can be ModelType or List[ModelType]
+    model_kwargs: Dict[str, Any] = field(default_factory=dict)
+    slide_model_kwargs: Dict[str, Any] = field(default_factory=dict)
     model_dir: Optional[str] = None  # Directory containing pre-downloaded models
     pre_download_models: bool = False  # Whether to pre-download models to model_dir
     # Single mode visualization
@@ -272,6 +280,10 @@ class TessellateExtractFeaturesConfig:
         # Convert DictConfig to regular dict for model_batch_sizes
         if isinstance(self.model_batch_sizes, DictConfig):
             self.model_batch_sizes = dict(self.model_batch_sizes)
+        if isinstance(self.model_kwargs, DictConfig):
+            self.model_kwargs = dict(self.model_kwargs)
+        if isinstance(self.slide_model_kwargs, DictConfig):
+            self.slide_model_kwargs = dict(self.slide_model_kwargs)
 
         # Convert DictConfig to regular dict for model_embedding_precision
         if isinstance(self.model_embedding_precision, DictConfig):
@@ -910,6 +922,7 @@ def _main_batch(
                 num_workers=cfg.num_workers,
                 pin_memory=True,
                 is_test_run=False,
+                model_kwargs=cfg.model_kwargs,
             )
         except Exception as e:
             logger.error(f"Error during batch feature extraction: {e}")
@@ -1079,6 +1092,7 @@ def _main_batch(
                     slide_batch_size=cfg.slide_batch_size,
                     max_slide_patches=cfg.max_slide_patches,
                     embedding_precision=_resolve_precision(cfg, cfg.slide_model_type),
+                    slide_model_kwargs=cfg.slide_model_kwargs,
                 )
             except Exception as e:
                 logger.error(f"Error during batch aggregation: {e}")
@@ -1163,6 +1177,7 @@ def _main_batch(
             num_workers=cfg.num_workers,
             pin_memory=True,
             is_test_run=False,
+            model_kwargs=cfg.model_kwargs,
         )
 
         # Save PT files and coords-only H5

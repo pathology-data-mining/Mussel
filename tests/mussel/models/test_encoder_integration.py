@@ -36,6 +36,11 @@ _TESTDATA = Path(__file__).parent.parent.parent / "testdata"
 _SLIDE_PATH = str(_TESTDATA / "948176.svs")
 _PATCH_H5 = str(_TESTDATA / "948176.patch.h5")
 
+_skip_if_no_testdata = pytest.mark.skipif(
+    not (Path(_SLIDE_PATH).exists() and Path(_PATCH_H5).exists()),
+    reason="Test slide data not available (948176.svs / 948176.patch.h5)",
+)
+
 # Slide encoders that are *encoder-agnostic* (not listed in SLIDE_ENCODER_COMPATIBILITY
 # because they work with any patch encoder — e.g. ABMIL).
 _AGNOSTIC_SLIDE_ENCODERS = {ModelType.ABMIL_SLIDE}
@@ -137,6 +142,7 @@ def _skip_on_load_failure(fn):
 
 @pytest.mark.slow
 @pytest.mark.integration
+@_skip_if_no_testdata
 @pytest.mark.timeout(600)
 @pytest.mark.parametrize("model_type", _PATCH_ENCODER_TYPES, ids=lambda m: m.name)
 def test_patch_encoder_extracts_features(tmp_path, model_type, use_gpu):
@@ -372,6 +378,7 @@ _SNAPSHOT_DIR = _TESTDATA / "snapshots"
 
 @pytest.mark.slow
 @pytest.mark.integration
+@_skip_if_no_testdata
 @pytest.mark.timeout(600)
 @pytest.mark.parametrize("model_type", _PATCH_ENCODER_TYPES, ids=lambda m: m.name)
 def test_patch_encoder_is_deterministic(tmp_path, model_type, use_gpu):
@@ -421,6 +428,7 @@ def test_patch_encoder_is_deterministic(tmp_path, model_type, use_gpu):
 
 @pytest.mark.slow
 @pytest.mark.integration
+@_skip_if_no_testdata
 @pytest.mark.timeout(600)
 @pytest.mark.parametrize("model_type", _PATCH_ENCODER_TYPES, ids=lambda m: m.name)
 def test_patch_encoder_matches_snapshot(
@@ -475,6 +483,81 @@ def test_patch_encoder_matches_snapshot(
         )
 
     run()
+
+
+@pytest.mark.slow
+@pytest.mark.integration
+@pytest.mark.timeout(300)
+@pytest.mark.parametrize("slide_model_type", _SLIDE_ENCODER_TYPES, ids=lambda m: m.name)
+def test_slide_encoder_matches_snapshot(
+    tmp_path, slide_model_type, use_gpu, update_snapshots
+):
+    """Slide encoder embeddings match a previously saved golden snapshot (regression test).
+
+    On first run (or with ``--update-snapshots``) the current output is saved
+    to ``tests/testdata/snapshots/<MODEL>.npy`` and the test is skipped.
+    On subsequent runs the saved snapshot is compared with ``np.allclose``.
+
+    Generate / refresh snapshots::
+
+        uv run pytest tests/mussel/models/test_encoder_integration.py \\
+            -k test_slide_encoder_matches_snapshot --use-gpu --update-snapshots
+    """
+    snapshot_path = _SNAPSHOT_DIR / f"{slide_model_type.name}.npy"
+
+    required_patch_enc = get_required_patch_encoder(slide_model_type)
+    patch_dim = _SLIDE_ENCODER_INPUT_DIM.get(
+        slide_model_type
+    ) or _PATCH_ENCODER_DIM.get(required_patch_enc)
+    if patch_dim is None:
+        pytest.skip(
+            f"Feature dim for {required_patch_enc.name} not in _PATCH_ENCODER_DIM"
+        )
+
+    n_patches = 32
+    rng = np.random.default_rng(42)
+    fake_features = rng.standard_normal((n_patches, patch_dim)).astype(np.float32)
+    fake_features /= np.linalg.norm(fake_features, axis=1, keepdims=True) + 1e-8
+
+    patch_size_native = 512
+    fake_coords = np.stack(
+        [
+            np.arange(n_patches) * patch_size_native,
+            np.zeros(n_patches, dtype=np.int64),
+        ],
+        axis=1,
+    ).astype(np.int64)
+
+    @_skip_on_load_failure
+    def run():
+        return _apply_slide_aggregation(
+            features=fake_features,
+            aggregation_method="model",
+            slide_model_type=slide_model_type,
+            use_gpu=use_gpu,
+            coords=fake_coords,
+            patch_size=patch_size_native,
+        )
+
+    result = run()
+
+    if update_snapshots or not snapshot_path.exists():
+        _SNAPSHOT_DIR.mkdir(parents=True, exist_ok=True)
+        np.save(snapshot_path, result)
+        if not update_snapshots:
+            pytest.skip(
+                f"Snapshot saved to {snapshot_path.name}; re-run to compare."
+            )
+        return
+
+    golden = np.load(snapshot_path)
+    assert (
+        result.shape == golden.shape
+    ), f"{slide_model_type.name}: shape {result.shape} != snapshot {golden.shape}"
+    assert np.allclose(result, golden, rtol=1e-3, atol=1e-4), (
+        f"{slide_model_type.name}: embedding differs from snapshot "
+        "(model weights, attention backend, or preprocessing changed?)"
+    )
 
 
 # ---------------------------------------------------------------------------
