@@ -1,6 +1,6 @@
 [project]
 name = "mussel-pathology"
-version = "1.4.3"
+version = "1.4.4"
 description = "weakly supervised computational pathology on whole slide images"
 license = { text = "GPL-3.0 license" }
 readme = "README.md"
