@@ -2,10 +2,8 @@ name: Build and Push Docker Images
 
 on:
   push:
-    branches: [ main ]
     tags:
       - 'v*'
-  workflow_dispatch:
 
 permissions:
   contents: read
@@ -58,10 +56,9 @@ jobs:
       with:
         images: ${{ env.IMAGE_NAME }}
         tags: |
-          type=ref,event=branch,suffix=-${{ matrix.backend }}
           type=semver,pattern={{version}},suffix=-${{ matrix.backend }}
           type=semver,pattern={{major}}.{{minor}},suffix=-${{ matrix.backend }}
-          type=raw,value=latest,suffix=-${{ matrix.backend }},enable={{is_default_branch}}
+          type=raw,value=latest,suffix=-${{ matrix.backend }}
 
     - name: Build and push Docker image
       uses: docker/build-push-action@v6
