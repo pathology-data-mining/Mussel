@@ -767,6 +767,7 @@ def _apply_slide_aggregation(
     coords: Optional[np.ndarray] = None,
     patch_size: Optional[int] = None,
     slide_model=None,
+    slide_model_kwargs: Optional[dict] = None,
 ) -> np.ndarray:
     """Apply slide-level aggregation to patch features.
 
@@ -786,6 +787,9 @@ def _apply_slide_aggregation(
             If not provided, will be extracted from h5 file 'coords' attributes or default to 256.
         slide_model: Optional pre-loaded slide encoder model instance. If provided,
             slide_model_type and slide_model_path are ignored.
+        slide_model_kwargs: Extra keyword arguments forwarded to the slide model
+            constructor when loading the model. For TITAN_SLIDE, patch_oom=True is
+            the default OOM fix; set {"patch_oom": False} to disable it.
 
     Returns:
         Numpy array of aggregated features.
@@ -834,7 +838,7 @@ def _apply_slide_aggregation(
             if model_factory is None:
                 raise ValueError(f"Slide model type {slide_model_type} not recognized")
             slide_model = model_factory.get_model(
-                slide_model_path, use_gpu, gpu_device_id
+                slide_model_path, use_gpu, gpu_device_id, **(slide_model_kwargs or {})
             )
             model_fun = slide_model.get_model_fun()
 
@@ -932,6 +936,8 @@ def get_features(
     aggregation_method: str = "identity",
     model=None,
     slide_model=None,
+    model_kwargs: Optional[dict] = None,
+    slide_model_kwargs: Optional[dict] = None,
 ) -> tuple[np.ndarray, np.ndarray]:
     """Extract features from whole slide image tiles.
 
@@ -961,6 +967,10 @@ def get_features(
             model_type and model_path are ignored.
         slide_model: Optional pre-loaded slide encoder model instance. If provided,
             slide_model_type and slide_model_path are ignored for slide encoding.
+        model_kwargs: Extra keyword arguments forwarded to the patch model constructor.
+        slide_model_kwargs: Extra keyword arguments forwarded to the slide model
+            constructor. For TITAN_SLIDE, patch_oom=True is the default OOM fix;
+            set {"patch_oom": False} to disable it.
 
     Returns:
         Tuple of (features array, labels array).
@@ -1016,7 +1026,9 @@ def get_features(
         model_factory = get_model_factory(model_type)
         if model_factory is None:
             raise ValueError("model not recognized")
-        model = model_factory.get_model(model_path, use_gpu, gpu_device_id)
+        model = model_factory.get_model(
+            model_path, use_gpu, gpu_device_id, **(model_kwargs or {})
+        )
     else:
         logger.info("using pre-loaded model")
     preprocessing = model.get_preprocessing_fun()
@@ -1067,6 +1079,7 @@ def get_features(
             coords=coords,
             patch_size=patch_size,
             slide_model=slide_model,
+            slide_model_kwargs=slide_model_kwargs,
         )
 
     return features, labels
@@ -1089,6 +1102,7 @@ def extract_patch_features(
     pin_memory: bool = True,
     is_test_run: bool = False,
     embedding_precision: str = "float32",
+    model_kwargs: Optional[dict] = None,
 ) -> str:
     """Extract patch-level features from whole slide image (Step 1: Patch Encoding).
 
@@ -1111,6 +1125,7 @@ def extract_patch_features(
         num_workers: Number of worker processes for data loading (default: 16).
         pin_memory: Whether to pin memory for data loading (default: True).
         is_test_run: If True, only process first 3 batches (default: False).
+        model_kwargs: Extra keyword arguments forwarded to the patch model constructor.
         embedding_precision: Numeric precision for saved patch embeddings.
             "float32" (default) preserves full model precision; "float16" halves
             storage size; "bfloat16" uses brain-float format.
@@ -1129,7 +1144,9 @@ def extract_patch_features(
     model_factory = get_model_factory(model_type)
     if model_factory is None:
         raise ValueError("model not recognized")
-    model = model_factory.get_model(model_path, use_gpu, gpu_device_id)
+    model = model_factory.get_model(
+        model_path, use_gpu, gpu_device_id, **(model_kwargs or {})
+    )
     if model_save_path is not None:
         Path(model_save_path).parent.mkdir(parents=True, exist_ok=True)
         logger.info(f"saving model to {model_save_path}")
@@ -1216,6 +1233,7 @@ def extract_patch_features_batch(
     pin_memory=True,
     is_test_run=False,
     embedding_precision="float32",
+    model_kwargs=None,
 ):
     """Extract patch-level features from multiple slides in batch mode.
 
@@ -1240,6 +1258,7 @@ def extract_patch_features_batch(
         num_workers: Number of worker processes for data loading (default: 16).
         pin_memory: Whether to pin memory for data loading (default: True).
         is_test_run: If True, only process first 3 batches per slide (default: False).
+        model_kwargs: Extra keyword arguments forwarded to the patch model constructor.
         embedding_precision: Numeric precision for saved patch embeddings.
             "float32" (default) preserves full model precision; "float16" halves
             storage size; "bfloat16" uses brain-float format.
@@ -1278,7 +1297,9 @@ def extract_patch_features_batch(
     model_factory = get_model_factory(model_type)
     if model_factory is None:
         raise ValueError("model not recognized")
-    model = model_factory.get_model(model_path, use_gpu, gpu_device_id)
+    model = model_factory.get_model(
+        model_path, use_gpu, gpu_device_id, **(model_kwargs or {})
+    )
     preprocessing = model.get_preprocessing_fun()
     model_fun = model.get_model_fun()
 
@@ -1349,6 +1370,7 @@ def aggregate_slide_features_batch(
     slide_batch_size=8,
     max_slide_patches=None,
     embedding_precision="float32",
+    slide_model_kwargs=None,
 ):
     """Aggregate patch-level features to slide-level for multiple slides (Step 2: Batch Slide Encoding).
 
@@ -1379,6 +1401,9 @@ def aggregate_slide_features_batch(
             When a slide exceeds this limit, patches are randomly subsampled before encoding.
             Useful for TITAN whose alibi attention is O(N²) and OOMs on very large slides.
             None (default) disables subsampling.
+        slide_model_kwargs: Extra keyword arguments forwarded to the slide model constructor.
+            For TITAN_SLIDE, patch_oom=True is the default OOM fix; set
+            {"patch_oom": False} to disable it.
         embedding_precision: Numeric precision for saved slide embeddings ("float32",
             "float16", or "bfloat16"). Default "float32". Applied to the aggregated
             output before saving; input patch features are always read as-is.
@@ -1432,6 +1457,7 @@ def aggregate_slide_features_batch(
                         gpu_device_ids=gpu_device_ids,
                         coords=coords,
                         patch_size=patch_size,
+                        slide_model_kwargs=slide_model_kwargs,
                     )
 
                     feature_dtype = _parse_feature_dtype(embedding_precision)
@@ -1515,7 +1541,9 @@ def aggregate_slide_features_batch(
     model_factory = get_model_factory(model_type)
     if model_factory is None:
         raise ValueError(f"Slide model type {model_type} not recognized")
-    model = model_factory.get_model(model_path, use_gpu, gpu_device_id)
+    model = model_factory.get_model(
+        model_path, use_gpu, gpu_device_id, **(slide_model_kwargs or {})
+    )
     model_fun = model.get_model_fun()
 
     successful_slides = []
@@ -1744,6 +1772,7 @@ def aggregate_slide_features(
     gpu_device_id: Optional[Union[int, List[int]]] = None,
     gpu_device_ids: Optional[List[int]] = None,
     embedding_precision: str = "float32",
+    slide_model_kwargs: Optional[dict] = None,
 ) -> Union[tuple[Optional[str], Optional[str]], np.ndarray]:
     """Aggregate patch-level features to slide-level (Step 2: Slide Encoding).
 
@@ -1768,6 +1797,9 @@ def aggregate_slide_features(
         embedding_precision: Numeric precision for saved slide embeddings ("float32",
             "float16", or "bfloat16"). Default "float32". Cast is applied to the
             aggregated output before saving; input patch features are read as-is.
+        slide_model_kwargs: Extra keyword arguments forwarded to the slide model
+            constructor. For TITAN_SLIDE, patch_oom=True is the default OOM fix;
+            set {"patch_oom": False} to disable it.
 
     Returns:
         Tuple of (output_h5_path, output_pt_path) if saving, otherwise features tensor.
@@ -1798,6 +1830,7 @@ def aggregate_slide_features(
             gpu_device_ids=gpu_device_ids,
             coords=coords,
             patch_size=patch_size,
+            slide_model_kwargs=slide_model_kwargs,
         )
 
         feature_dtype = _parse_feature_dtype(embedding_precision)
@@ -1849,6 +1882,8 @@ def save_features(
     slide_model_type: Optional[ModelType] = None,
     slide_model_path: Optional[str] = None,
     embedding_precision: str = "float32",
+    model_kwargs: Optional[dict] = None,
+    slide_model_kwargs: Optional[dict] = None,
 ) -> tuple[str, Optional[str]]:
     """Extract features from whole slide image and save to HDF5 and PyTorch formats.
 
@@ -1881,6 +1916,10 @@ def save_features(
             The required patch encoder will be automatically inferred and used. For example,
             specifying GIGAPATH_SLIDE will automatically use GIGAPATH as the patch encoder.
         slide_model_path: Optional path to slide encoder model weights.
+        model_kwargs: Extra keyword arguments forwarded to the patch model constructor.
+        slide_model_kwargs: Extra keyword arguments forwarded to the slide model
+            constructor. For TITAN_SLIDE, patch_oom=True is the default OOM fix;
+            set {"patch_oom": False} to disable it.
         embedding_precision: Numeric precision for saved patch embeddings.
             "float32" (default) preserves full model precision; "float16" halves
             storage size; "bfloat16" uses brain-float format.
@@ -1938,6 +1977,7 @@ def save_features(
             pin_memory=pin_memory,
             is_test_run=is_test_run,
             embedding_precision="float32",
+            model_kwargs=model_kwargs,
         )
 
         # Step 2: Aggregate to slide level — apply embedding_precision to final output
@@ -1952,6 +1992,7 @@ def save_features(
             gpu_device_id=gpu_device_id,
             gpu_device_ids=gpu_device_ids,
             embedding_precision=embedding_precision,
+            slide_model_kwargs=slide_model_kwargs,
         )
     else:
         # Single-step process (backward compatible)
@@ -1964,7 +2005,9 @@ def save_features(
         model_factory = get_model_factory(model_type)
         if model_factory is None:
             raise ValueError("model not recognized")
-        model = model_factory.get_model(model_path, use_gpu, gpu_device_id)
+        model = model_factory.get_model(
+            model_path, use_gpu, gpu_device_id, **(model_kwargs or {})
+        )
         if model_save_path is not None:
             Path(model_save_path).parent.mkdir(parents=True, exist_ok=True)
             logger.info(f"saving model to {model_save_path}")

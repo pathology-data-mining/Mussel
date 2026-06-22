@@ -1,9 +1,9 @@
 import logging
 import os
 import ssl
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional
 
 import h5py
 import hydra
@@ -11,17 +11,20 @@ import numpy as np
 import torch
 from hydra.conf import HelpConf, HydraConf
 from hydra.core.config_store import ConfigStore
-from omegaconf import MISSING
+from omegaconf import MISSING, DictConfig
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 
 from mussel.datasets import WholeSlideImageTileCoordDataset
 from mussel.models import ModelType, get_model_factory
-from mussel.utils import (aggregate_slide_features_batch,
-                          ensure_directory_exists,
-                          extract_patch_features_batch,
-                          get_slide_ids_from_paths, resolve_remote_paths,
-                          save_features)
+from mussel.utils import (
+    aggregate_slide_features_batch,
+    ensure_directory_exists,
+    extract_patch_features_batch,
+    get_slide_ids_from_paths,
+    resolve_remote_paths,
+    save_features,
+)
 from mussel.utils.feature_extract import _numpy_to_torch
 from mussel.utils.file import save_hdf5, save_torch_tensor
 from mussel.utils.ml import collate_features
@@ -76,6 +79,10 @@ class ExtractFeaturesConfig:
         aggregation_method (str): Aggregation method: identity (single-step), mean/max/model (two-step).
         slide_model_type (Optional[ModelType]): Type of slide encoder model (when aggregation_method="model").
         slide_model_path (Optional[str]): Path to slide encoder model weights.
+        model_kwargs (Dict[str, Any]): Extra keyword arguments forwarded to the patch model constructor.
+        slide_model_kwargs (Dict[str, Any]): Extra keyword arguments forwarded to the slide model constructor.
+            TITAN_SLIDE applies its OOM patch by default via patch_oom=True; pass
+            slide_model_kwargs={patch_oom:false} to disable that patch and revision pin.
         ssl_verify (bool): Whether to verify SSL certificates when downloading models or accessing remote resources (default: True).
 
     Processing Parameters:
@@ -115,6 +122,8 @@ class ExtractFeaturesConfig:
     aggregation_method: str = "identity"
     slide_model_type: Optional[ModelType] = None
     slide_model_path: Optional[str] = None
+    model_kwargs: Dict[str, Any] = field(default_factory=dict)
+    slide_model_kwargs: Dict[str, Any] = field(default_factory=dict)
     ssl_verify: bool = True  # Whether to verify SSL certificates for remote operations
     # Processing parameters
     batch_size: int = 64
@@ -124,6 +133,12 @@ class ExtractFeaturesConfig:
     num_workers: int = 16
     is_test_run: bool = False
     embedding_precision: str = "float32"
+
+    def __post_init__(self):
+        if isinstance(self.model_kwargs, DictConfig):
+            self.model_kwargs = dict(self.model_kwargs)
+        if isinstance(self.slide_model_kwargs, DictConfig):
+            self.slide_model_kwargs = dict(self.slide_model_kwargs)
 
 
 desc_doc = """== ${hydra.help.app_name} ==
@@ -223,6 +238,8 @@ def _main_single(cfg: ExtractFeaturesConfig):
         aggregation_method=cfg.aggregation_method,
         slide_model_type=cfg.slide_model_type,
         slide_model_path=cfg.slide_model_path,
+        model_kwargs=cfg.model_kwargs,
+        slide_model_kwargs=cfg.slide_model_kwargs,
         embedding_precision=cfg.embedding_precision,
     )
 
@@ -292,6 +309,7 @@ def _main_batch(cfg: ExtractFeaturesConfig):
             pin_memory=True,
             is_test_run=cfg.is_test_run,
             embedding_precision=cfg.embedding_precision,
+            model_kwargs=cfg.model_kwargs,
         )
 
         # Aggregate to slide level using batch processing
@@ -310,6 +328,7 @@ def _main_batch(cfg: ExtractFeaturesConfig):
             gpu_device_id=cfg.gpu_device_id,
             gpu_device_ids=cfg.gpu_device_ids,
             slide_batch_size=cfg.slide_batch_size,
+            slide_model_kwargs=cfg.slide_model_kwargs,
         )
 
         # Defense-in-depth: verify at least one output file was created.
@@ -340,6 +359,7 @@ def _main_batch(cfg: ExtractFeaturesConfig):
             pin_memory=True,
             is_test_run=cfg.is_test_run,
             embedding_precision=cfg.embedding_precision,
+            model_kwargs=cfg.model_kwargs,
         )
 
         # Save as PT format for consistency

@@ -1,11 +1,11 @@
 import logging
-from dataclasses import dataclass
-from typing import List, Optional
+from dataclasses import dataclass, field
+from typing import Any, Dict, List, Optional
 
 import hydra
 from hydra.conf import HelpConf, HydraConf
 from hydra.core.config_store import ConfigStore
-from omegaconf import MISSING
+from omegaconf import MISSING, DictConfig
 
 from mussel.models import ModelType
 from mussel.utils import aggregate_slide_features, resolve_aggregation_method
@@ -24,6 +24,9 @@ class AggregateSlideFeaturesConfig:
         aggregation_method (str): Method for aggregation: 'identity' (no aggregation), 'mean', 'max', or 'model'.
         slide_model_type (Optional[ModelType]): Type of slide encoder model (when aggregation_method="model").
         slide_model_path (Optional[str]): Path to slide encoder model weights.
+        slide_model_kwargs (Dict[str, Any]): Extra keyword arguments forwarded to the slide model constructor.
+            TITAN_SLIDE applies its OOM patch by default via patch_oom=True; pass
+            slide_model_kwargs={patch_oom:false} to disable that patch and revision pin.
         use_gpu (bool): Whether to use GPU for computation.
         gpu_device_id (Optional[int]): Specific GPU device ID to use.
         gpu_device_ids (Optional[List[int]]): List of GPU device IDs for multi-GPU inference.
@@ -37,11 +40,16 @@ class AggregateSlideFeaturesConfig:
     aggregation_method: str = "identity"
     slide_model_type: Optional[ModelType] = None
     slide_model_path: Optional[str] = None
+    slide_model_kwargs: Dict[str, Any] = field(default_factory=dict)
     use_gpu: bool = True
     gpu_device_id: Optional[int] = None
     gpu_device_ids: Optional[List[int]] = None
     ssl_verify: bool = True  # Whether to verify SSL certificates for remote operations
     embedding_precision: str = "float32"
+
+    def __post_init__(self):
+        if isinstance(self.slide_model_kwargs, DictConfig):
+            self.slide_model_kwargs = dict(self.slide_model_kwargs)
 
 
 desc_doc = """== ${hydra.help.app_name} ==
@@ -104,6 +112,13 @@ def main(cfg: AggregateSlideFeaturesConfig):
             patch_features_h5_path=patch_features.h5 \\
             output_h5_path=slide_features.h5 \\
             slide_model_type=TITAN_SLIDE
+
+        # Disable TITAN's default OOM monkey-patch/revision pin, e.g. to test upstream
+        aggregate_slide_features \\
+            patch_features_h5_path=patch_features.h5 \\
+            output_h5_path=slide_features.h5 \\
+            slide_model_type=TITAN_SLIDE \\
+            slide_model_kwargs={patch_oom:false}
     """
     logger.info("Starting slide feature aggregation")
     logger.info(f"Input: {cfg.patch_features_h5_path}")
@@ -131,6 +146,7 @@ def main(cfg: AggregateSlideFeaturesConfig):
         gpu_device_id=cfg.gpu_device_id,
         gpu_device_ids=cfg.gpu_device_ids,
         embedding_precision=cfg.embedding_precision,
+        slide_model_kwargs=cfg.slide_model_kwargs,
     )
 
     logger.info(f"Slide features saved to: {cfg.output_h5_path}")

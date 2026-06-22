@@ -247,6 +247,19 @@ The following models are currently supported,
 | MADELEINE      | MADELEINE_SLIDE | CONCH1_5 | 🔒 gated |
 | CHIEF          | CHIEF_SLIDE     | CTRANSPATH | local ckpt |
 
+`model_kwargs={...}` forwards extra constructor arguments to patch encoders, and
+`slide_model_kwargs={...}` forwards them to slide encoders. `TITAN_SLIDE` applies
+its GPU OOM patch by default (`patch_oom=true`), which also pins the validated
+TITAN revision. Disable it only when testing upstream behavior:
+
+```bash
+aggregate_slide_features \
+    patch_features_h5_path=patch_features.h5 \
+    output_h5_path=slide_features.h5 \
+    slide_model_type=TITAN_SLIDE \
+    slide_model_kwargs={patch_oom:false}
+```
+
 OpenCLIP is used by default, with the default model being [QuiltNet-B-16-PMB](https://huggingface.co/wisdomik/QuiltNet-B-16-PMB).  Use the `model_type` parameter to specify a different model.
 To use H-Optimus-0, for example,
 
@@ -536,4 +549,3 @@ Each input file `<stem>.<ext>` produces `output_dir/<stem>.tiff`. Pass
 | `downscale_by` | `1` | Integer downsample factor (e.g. `2` converts a 40× slide to 20×). |
 | `num_workers` | `1` | Parallel workers for batch mode (`0` = all CPUs). |
 | `bigtiff` | `false` | Write BigTIFF format (required for files > ~4 GB). |
-
