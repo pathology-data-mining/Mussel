@@ -131,7 +131,7 @@ def test_tessellate_batch_reuses_neural_segmenter(tmp_path):
         ) as mock_segment:
             mussel.cli.tessellate.main(OmegaConf.create(cfg))
 
-    mock_segmenter_cls.assert_called_once_with()
+    mock_segmenter_cls.assert_called_once_with(**vars(NeuralSegConfig()))
     assert mock_segment.call_count == 2
     assert all(
         call.kwargs["neural_segmenter"] is shared_segmenter

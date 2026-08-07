@@ -36,7 +36,8 @@ class NeuralSegConfig:
     device: str = "auto"
     batch_size: int = 8
     confidence_thresh: float = 0.5
-    max_inference_tiles: Optional[int] = 4096
+    # None preserves the segmenter's environment fallback (4096 when unset).
+    max_inference_tiles: Optional[int] = None
 
 
 @dataclass
@@ -496,42 +497,43 @@ def _build_neural_segmenter(
 
     neural_config = dict(neural_config or {})
     neural_config.pop("_target_", None)
-    # Avoid changing the no-override constructor call (and let the segmenter
-    # retain its environment-based defaults) when Hydra supplied only the
-    # structured config defaults.
-    neural_defaults = vars(NeuralSegConfig())
-    neural_config = {
-        key: value
-        for key, value in neural_config.items()
-        if key not in neural_defaults or value != neural_defaults[key]
-    }
+    configured_device = neural_config.get("device", "auto")
+    device_is_auto = str(configured_device).strip().lower() == "auto"
 
-    if use_gpu is None:
-        logger.info("Loading neural tissue segmenter.")
-        return NeuralTissueSegmenter(**neural_config)
+    # An explicit neural device is independent from feature extraction's
+    # use_gpu setting. Only resolve GPU options when the neural device is auto.
+    if device_is_auto and use_gpu is not None:
+        if not use_gpu:
+            neural_config["device"] = "cpu"
+        else:
+            import torch
 
-    if not use_gpu:
-        # Feature extraction's use_gpu flag is authoritative for the
-        # integrated workflow, while retaining all other neural controls.
-        neural_config["device"] = "cpu"
-        return NeuralTissueSegmenter(**neural_config)
+            from mussel.utils.gpu import first_gpu_device_id, resolve_gpu_device_id
 
-    import torch
+            if not torch.cuda.is_available():
+                raise RuntimeError(
+                    "seg_config.seg_model='neural' requested with use_gpu=True, "
+                    "but CUDA is not available. Set use_gpu=False or "
+                    "neural_config.device=cpu to run neural segmentation on CPU."
+                )
+            device_id = first_gpu_device_id(
+                resolve_gpu_device_id(gpu_device_id, gpu_device_ids)
+            )
+            neural_config["device"] = (
+                "cuda" if device_id is None else f"cuda:{device_id}"
+            )
+    elif not device_is_auto and str(configured_device).strip().lower().startswith(
+        "cuda"
+    ):
+        import torch
 
-    from mussel.utils.gpu import first_gpu_device_id, resolve_gpu_device_id
+        if not torch.cuda.is_available():
+            raise RuntimeError(
+                f"neural_config.device={configured_device!r} requested, "
+                "but CUDA is not available. Set neural_config.device=cpu."
+            )
 
-    if not torch.cuda.is_available():
-        raise RuntimeError(
-            "seg_config.seg_model='neural' requested with use_gpu=True, "
-            "but CUDA is not available. Set use_gpu=False to run neural "
-            "segmentation on CPU."
-        )
-    device_id = first_gpu_device_id(
-        resolve_gpu_device_id(gpu_device_id, gpu_device_ids)
-    )
-    device = "cuda" if device_id is None else f"cuda:{device_id}"
     logger.info("Loading neural tissue segmenter.")
-    neural_config["device"] = device
     return NeuralTissueSegmenter(**neural_config)
 
 

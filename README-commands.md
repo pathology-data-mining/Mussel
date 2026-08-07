@@ -209,7 +209,7 @@ Neural model loading and inference are controlled independently through
 | `neural_config.device` | `"auto"` | PyTorch device (`"auto"`, `"cpu"`, `"cuda"`, or `"cuda:N"`). |
 | `neural_config.batch_size` | `8` | Number of 512×512 inference tiles per forward pass. |
 | `neural_config.confidence_thresh` | `0.5` | Tissue probability threshold (0–1). |
-| `neural_config.max_inference_tiles` | `4096` | Fail fast if one slide would require more model tiles; set to `0` to disable. |
+| `neural_config.max_inference_tiles` | `null` (effective default `4096`) | Fail fast if one slide would require more model tiles; explicit values override `MUSSEL_NEURAL_SEG_MAX_TILES`; set to `0` to disable. |
 
 For example, cap the final HDF5 at 10,000 tiles while limiting neural inference:
 
