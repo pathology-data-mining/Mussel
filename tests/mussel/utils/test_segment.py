@@ -1286,6 +1286,41 @@ class TestSegmentTissueArtifactRemover:
         )
 
 
+class TestSegmentTissueMaxTiles:
+    def test_max_tiles_caps_output_and_is_seeded(self):
+        mock_wsi = _make_mock_wsi_with_real_tissue()
+        result_a = _run_segment_with_mocks(
+            mock_wsi,
+            seg_level=1,
+            patch_size=256,
+            mpp=0.5,
+            tissue_area_threshold=1,
+            max_tiles=3,
+            max_tiles_seed=17,
+        )
+        mock_wsi.read_region.reset_mock()
+        result_b = _run_segment_with_mocks(
+            mock_wsi,
+            seg_level=1,
+            patch_size=256,
+            mpp=0.5,
+            tissue_area_threshold=1,
+            max_tiles=3,
+            max_tiles_seed=17,
+        )
+        assert result_a is not None and result_b is not None
+        _, _, coords_a, attrs_a = result_a
+        _, _, coords_b, _ = result_b
+        assert len(coords_a) == 3
+        assert np.array_equal(coords_a, coords_b)
+        assert attrs_a["max_tiles"] == 3
+
+    def test_max_tiles_rejects_non_positive_values(self):
+        mock_wsi = _make_mock_wsi_with_tissue()
+        with pytest.raises(ValueError, match="max_tiles"):
+            _run_segment_with_mocks(mock_wsi, max_tiles=0)
+
+
 class TestSegmentTissueSegModel:
     """Tests for the seg_model parameter in segment_tissue."""
 

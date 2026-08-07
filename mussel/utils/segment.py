@@ -2,6 +2,7 @@ import functools
 import logging
 import multiprocessing as mp
 import warnings
+from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from typing import List, Optional
@@ -480,7 +481,11 @@ def _filter_contours(
     return foreground_contours, hole_contours
 
 
-def _segment_tissue_neural(img: np.ndarray, slide_mpp: float) -> np.ndarray:
+def _segment_tissue_neural(
+    img: np.ndarray,
+    slide_mpp: float,
+    neural_config: Optional[dict] = None,
+) -> np.ndarray:
     """Generate a binary tissue mask using Mussel's native neural segmentor.
 
     Uses a DeepLabV3-ResNet50 model (pre-trained on histopathology slides) to
@@ -501,7 +506,15 @@ def _segment_tissue_neural(img: np.ndarray, slide_mpp: float) -> np.ndarray:
     """
     from mussel.utils.neural_seg import NeuralTissueSegmenter
 
-    segmenter = NeuralTissueSegmenter()
+    # Keep model/runtime controls out of the classic ``segment_tissue`` API,
+    # while allowing the CLI to pass a structured ``neural_config`` through.
+    if neural_config is None:
+        neural_config = {}
+    elif isinstance(neural_config, Mapping):
+        neural_config = dict(neural_config)
+    elif not isinstance(neural_config, dict):
+        neural_config = vars(neural_config)
+    segmenter = NeuralTissueSegmenter(**neural_config)
     return segmenter.segment(img, slide_mpp=slide_mpp)
 
 
@@ -532,6 +545,10 @@ def segment_tissue(
     artifact_remover_fn=None,  # Optional callable: (img, mask, mpp) -> mask
     seg_model: str = "classic",  # "classic" (HSV + manual threshold), "otsu" (HSV + Otsu threshold), or "neural" (DeepLabV3)
     slide_mpp_override: Optional[float] = None,
+    neural_config: Optional[dict] = None,
+    max_tiles: Optional[int] = None,
+    max_tiles_strategy: str = "random",
+    max_tiles_seed: int = 42,
 ):
     """Segment tissue regions in a whole-slide image and generate tissue patches.
 
@@ -597,6 +614,14 @@ def segment_tissue(
             ``morphology_ex_kernel`` applies to all three modes.
         slide_mpp_override: If set, use this value (µm/px) as the slide's native MPP
             instead of reading it from slide metadata.
+        neural_config: Optional model/runtime controls passed to
+            :class:`~mussel.utils.neural_seg.NeuralTissueSegmenter` when
+            ``seg_model="neural"``.
+        max_tiles: Optional maximum number of output tiles to retain after all
+            tissue filtering. ``None`` keeps all tiles.
+        max_tiles_strategy: ``"random"`` (seeded) or ``"first"`` when
+            ``max_tiles`` is smaller than the available tile count.
+        max_tiles_seed: Seed used by the random max-tile strategy.
 
     Returns:
         tuple: A 4-tuple containing:
@@ -624,6 +649,13 @@ def segment_tissue(
         if not (0.0 <= min_tissue_proportion <= 1.0):
             raise ValueError(
                 f"min_tissue_proportion must be in [0.0, 1.0], got {min_tissue_proportion}"
+            )
+        if max_tiles is not None and max_tiles <= 0:
+            raise ValueError(f"max_tiles must be positive or None, got {max_tiles}")
+        if max_tiles_strategy not in {"random", "first"}:
+            raise ValueError(
+                "max_tiles_strategy must be 'random' or 'first', "
+                f"got {max_tiles_strategy!r}"
             )
 
         if exclude_ids is None:
@@ -729,7 +761,9 @@ def segment_tissue(
             # NeuralTissueSegmenter can rescale to the model's 1 µm/px target.
             seg_level_ds = level_downsamples[seg_level][0]  # x-axis downsample
             seg_level_mpp = slide_mpp * seg_level_ds
-            tissue_mask = _segment_tissue_neural(img, seg_level_mpp)
+            tissue_mask = _segment_tissue_neural(
+                img, seg_level_mpp, neural_config=neural_config
+            )
         else:
             img_hsv = cv2.cvtColor(img, cv2.COLOR_RGB2HSV)  # Convert to HSV space
             img_med = cv2.medianBlur(
@@ -920,6 +954,27 @@ def segment_tissue(
                 f"{len(coords)} patches remaining"
             )
 
+        # Apply the optional output budget only after tissue and per-tile
+        # filtering, so the budget is spent on valid tiles. Preserve the
+        # partition order after random selection for stable downstream output.
+        if max_tiles is not None and len(coords) > max_tiles:
+            if max_tiles_strategy == "random":
+                selected = np.sort(
+                    np.random.default_rng(max_tiles_seed).choice(
+                        len(coords), size=max_tiles, replace=False
+                    )
+                )
+            else:
+                selected = np.arange(max_tiles)
+            grid = [grid[i] for i in selected]
+            coords = [coords[i] for i in selected]
+            logger.info(
+                "After max_tiles=%d (%s) filter: %d patches remaining",
+                max_tiles,
+                max_tiles_strategy,
+                len(coords),
+            )
+
         attrs = {
             "seg_level": seg_level,
             "segment_threshold": segment_threshold,
@@ -942,6 +997,9 @@ def segment_tissue(
             "overlap": overlap,
             "min_tissue_proportion": min_tissue_proportion,
             "seg_model": seg_model,
+            "max_tiles": -1 if max_tiles is None else max_tiles,
+            "max_tiles_strategy": max_tiles_strategy,
+            "max_tiles_seed": max_tiles_seed,
         }
         if output_h5_path:
             asset_dict = {"coords": np.array(coords, dtype=np.int64)}

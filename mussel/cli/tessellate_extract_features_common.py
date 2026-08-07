@@ -81,6 +81,20 @@ def _tessellate_and_filter(
         )
 
     seg_cfg = OmegaConf.to_container(cfg.seg_config)
+    neural_cfg_obj = getattr(cfg, "neural_config", None)
+    neural_cfg = (
+        OmegaConf.to_container(neural_cfg_obj, resolve=True)
+        if neural_cfg_obj is not None
+        else None
+    )
+    # In the integrated CLI, ``use_gpu=False`` should also force neural
+    # segmentation onto CPU unless the caller explicitly selected a device.
+    if (
+        isinstance(neural_cfg, dict)
+        and neural_cfg.get("device", "auto") == "auto"
+        and getattr(cfg, "use_gpu", None) is False
+    ):
+        neural_cfg["device"] = "cpu"
 
     if artifact_remover_fn is None:
         artifact_remover_fn = _build_artifact_remover(seg_cfg)
@@ -93,6 +107,7 @@ def _tessellate_and_filter(
         slide_id=slide_id,
         output_h5_path=tessellate_h5_path,
         artifact_remover_fn=artifact_remover_fn,
+        neural_config=neural_cfg,
         **seg_cfg,
     ):
         polygon, grid, coords, _ = values

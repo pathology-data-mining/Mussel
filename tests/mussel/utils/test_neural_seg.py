@@ -150,6 +150,25 @@ class TestSlideMppRescaling:
         assert mask.shape == (1024, 1024)
 
 
+class TestInferenceTileGuard:
+    def test_max_inference_tiles_raises_before_model_inference(self):
+        """Large inputs are rejected before loading/running the model."""
+        seg = _make_segmenter(_all_tissue_model())
+        seg.max_inference_tiles = 1
+        img = np.zeros((1024, 1024, 3), dtype=np.uint8)
+
+        with pytest.raises(ValueError, match="max_inference_tiles"):
+            seg.segment(img, slide_mpp=1.0)
+
+    def test_zero_max_inference_tiles_disables_guard(self):
+        from mussel.utils.neural_seg import NeuralTissueSegmenter
+
+        seg = NeuralTissueSegmenter(
+            device="cpu", batch_size=1, max_inference_tiles=0
+        )
+        assert seg.max_inference_tiles is None
+
+
 # ---------------------------------------------------------------------------
 # _segment_tissue_neural in segment.py
 # ---------------------------------------------------------------------------
@@ -172,6 +191,31 @@ class TestSegmentTissueNeuralIntegration:
 
             result = seg_module._segment_tissue_neural(img, slide_mpp=4.0)
             mock_fn.assert_called_once_with(img, slide_mpp=4.0)
+
+    def test_neural_config_is_forwarded_to_segmenter(self):
+        from mussel.utils import segment as seg_module
+
+        fake_segmenter = MagicMock()
+        fake_segmenter.segment.return_value = np.zeros((8, 8), dtype=np.uint8)
+        config = {
+            "device": "cpu",
+            "batch_size": 2,
+            "confidence_thresh": 0.4,
+            "max_inference_tiles": 10,
+        }
+        with patch(
+            "mussel.utils.neural_seg.NeuralTissueSegmenter",
+            return_value=fake_segmenter,
+        ) as mock_cls:
+            result = seg_module._segment_tissue_neural(
+                np.zeros((8, 8, 3), dtype=np.uint8),
+                slide_mpp=1.0,
+                neural_config=config,
+            )
+
+        mock_cls.assert_called_once_with(**config)
+        fake_segmenter.segment.assert_called_once()
+        assert result.shape == (8, 8)
 
 
 # ---------------------------------------------------------------------------

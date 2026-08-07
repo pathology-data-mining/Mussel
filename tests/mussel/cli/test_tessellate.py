@@ -5,7 +5,7 @@ import numpy as np
 from omegaconf import OmegaConf
 
 import mussel.cli.tessellate
-from mussel.cli.tessellate import SegConfig, TessellateConfig
+from mussel.cli.tessellate import NeuralSegConfig, SegConfig, TessellateConfig
 
 # Dimensions of the test slide (85656 x 19917 at level 0)
 _SLIDE_WIDTH = 85656
@@ -86,6 +86,27 @@ def test_seg_config_seg_model_neural():
     """SegConfig accepts seg_model='neural'."""
     cfg = SegConfig(seg_model="neural")
     assert cfg.seg_model == "neural"
+
+
+def test_neural_seg_config_defaults_and_overrides():
+    cfg = NeuralSegConfig(
+        device="cpu",
+        batch_size=2,
+        confidence_thresh=0.35,
+        max_inference_tiles=100,
+    )
+    assert cfg.device == "cpu"
+    assert cfg.batch_size == 2
+    assert cfg.confidence_thresh == 0.35
+    assert cfg.max_inference_tiles == 100
+
+
+def test_seg_config_max_tiles_defaults_and_overrides():
+    assert SegConfig().max_tiles is None
+    cfg = SegConfig(max_tiles=25, max_tiles_strategy="first", max_tiles_seed=7)
+    assert cfg.max_tiles == 25
+    assert cfg.max_tiles_strategy == "first"
+    assert cfg.max_tiles_seed == 7
 
 
 def test_artifact_remover_fn_wired_when_remove_artifacts(tmp_path):

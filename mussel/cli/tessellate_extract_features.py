@@ -19,7 +19,7 @@ from hydra.conf import HelpConf, HydraConf
 from hydra.core.config_store import ConfigStore
 from omegaconf import MISSING, DictConfig, ListConfig, OmegaConf
 
-from mussel.cli.tessellate import (BiopsySegConfig, PngConfig,
+from mussel.cli.tessellate import (BiopsySegConfig, NeuralSegConfig, PngConfig,
                                    ResectionSegConfig, SegConfig,
                                    TcgaSegConfig, VisConfig,
                                    _build_artifact_remover)
@@ -146,6 +146,8 @@ class TessellateExtractFeaturesConfig:
 
     Segmentation & Processing Parameters:
         seg_config (SegConfig): Configuration for segmentation parameters.
+        neural_config (NeuralSegConfig): Neural model/runtime controls used
+            when ``seg_config.seg_model="neural"``.
         vis_config (VisConfig): Configuration for visualization parameters.
         png_config (PngConfig): Configuration for PNG saving parameters.
         num_workers (int): Number of workers for saving patches and feature extraction.
@@ -208,6 +210,7 @@ class TessellateExtractFeaturesConfig:
         True  # Save final features to .h5 files; if False, only .pt files are saved (but tile_h5 is kept for patch encoders)
     )
     seg_config: SegConfig = MISSING
+    neural_config: NeuralSegConfig = field(default_factory=NeuralSegConfig)
     vis_config: VisConfig = field(default_factory=VisConfig)
     png_config: PngConfig = field(default_factory=PngConfig)
     intermediate_h5_path: Optional[str] = None
@@ -311,6 +314,7 @@ parameter_doc = f"""
 == Available Parameters ==
 {TessellateExtractFeaturesConfig.__doc__}
 seg_config: {SegConfig.__doc__}
+neural_config: {NeuralSegConfig.__doc__}
 vis_config: {VisConfig.__doc__}
 png_config: {PngConfig.__doc__}
 

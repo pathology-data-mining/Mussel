@@ -67,6 +67,10 @@ class NeuralTissueSegmenter:
         batch_size: Number of 512×512 patches to process per forward pass.
         confidence_thresh: Sigmoid threshold for tissue/background decision.
             Lower values → more tissue retained. Default 0.5.
+        max_inference_tiles: Maximum number of 512×512 tiles used to build the
+            neural mask after rescaling to the model resolution. ``None`` or
+            ``0`` disables the guard. This prevents an accidental full-slide
+            inference from exhausting memory or running indefinitely.
     """
 
     def __init__(
@@ -75,14 +79,28 @@ class NeuralTissueSegmenter:
         device: str = "auto",
         batch_size: int = 8,
         confidence_thresh: float = 0.5,
+        max_inference_tiles: Optional[int] = 4096,
     ):
         if device == "auto":
             self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         else:
             self.device = torch.device(device)
 
+        if batch_size <= 0:
+            raise ValueError(f"batch_size must be positive, got {batch_size}")
+        if not 0.0 <= confidence_thresh <= 1.0:
+            raise ValueError(
+                f"confidence_thresh must be between 0 and 1, got {confidence_thresh}"
+            )
+        if max_inference_tiles is not None and max_inference_tiles < 0:
+            raise ValueError(
+                "max_inference_tiles must be non-negative or None, "
+                f"got {max_inference_tiles}"
+            )
+
         self.batch_size = batch_size
         self.confidence_thresh = confidence_thresh
+        self.max_inference_tiles = max_inference_tiles or None
         self._model = None
         self._weights_path = weights_path
         self._transform = None  # built lazily alongside the model
@@ -105,8 +123,6 @@ class NeuralTissueSegmenter:
             Binary uint8 mask of shape ``(H, W)`` where 255 = tissue and
             0 = background, at the same spatial resolution as ``img``.
         """
-        self._ensure_model_loaded()
-
         H, W = img.shape[:2]
 
         # 1. Rescale to target inference resolution (1 µm/px).
@@ -114,11 +130,27 @@ class NeuralTissueSegmenter:
         if scale != 1.0:
             target_H = max(1, int(round(H * scale)))
             target_W = max(1, int(round(W * scale)))
+        else:
+            target_H, target_W = H, W
+
+        n_tiles = _num_tiles(target_H, target_W, _INPUT_SIZE)
+        max_tiles = getattr(self, "max_inference_tiles", None)
+        if max_tiles is not None and n_tiles > max_tiles:
+            raise ValueError(
+                "Neural tissue segmentation would require "
+                f"{n_tiles:,} {_INPUT_SIZE}x{_INPUT_SIZE} inference tiles, "
+                f"which exceeds max_inference_tiles={max_tiles:,}. "
+                "Use a coarser segmentation level or set "
+                "neural_config.max_inference_tiles=0 to disable this guard."
+            )
+
+        self._ensure_model_loaded()
+
+        if scale != 1.0:
             resized = cv2.resize(
                 img, (target_W, target_H), interpolation=cv2.INTER_CUBIC
             )
         else:
-            target_H, target_W = H, W
             resized = img
 
         # 2. Tile into _INPUT_SIZE × _INPUT_SIZE patches and run inference.
@@ -220,6 +252,13 @@ class NeuralTissueSegmenter:
                 full_mask[y0:y1, x0:x1] = pred[: y1 - y0, : x1 - x0]
 
         return full_mask  # values 0 or 1
+
+
+def _num_tiles(height: int, width: int, patch_size: int) -> int:
+    """Return the number of padded inference tiles for an image."""
+    return ((height + patch_size - 1) // patch_size) * (
+        (width + patch_size - 1) // patch_size
+    )
 
 
 # ---------------------------------------------------------------------------

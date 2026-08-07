@@ -204,6 +204,13 @@ Then pass `seg_config.seg_model=neural` to `tessellate` or
 `tessellate_extract_features`. A CUDA GPU is recommended for practical
 performance but CPU inference is supported.
 
+Neural model controls use Hydra overrides such as
+`neural_config.device=cpu`, `neural_config.batch_size=4`,
+`neural_config.confidence_thresh=0.4`, and
+`neural_config.max_inference_tiles=4096` (set to `0` to disable the safety
+guard). To limit the final tessellation output independently, use
+`seg_config.max_tiles=10000`.
+
 ## Development Notes
 
 * Any commands executed using `uv run <command...>` are automatically executed in the project environment.

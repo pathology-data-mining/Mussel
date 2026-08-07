@@ -120,6 +120,9 @@ tessellate slide_path=slide.svs output_h5_path=out.h5 seg_config=tcga seg_config
 | `seg_config.patch_size` | `256` | Tile size in pixels at the target MPP. |
 | `seg_config.overlap` | `0` | Patch overlap in absolute pixels. Sets `step_size = patch_size - overlap`. |
 | `seg_config.min_tissue_proportion` | `0.0` | Per-tile filter: discard tiles where the fraction of tissue pixels is below this value (0.0–1.0). Applied after tiling; `0.1` discards mostly-background edge tiles. |
+| `seg_config.max_tiles` | `null` | Optional maximum number of output tiles after tissue filtering. `null` keeps all tiles. |
+| `seg_config.max_tiles_strategy` | `random` | Selection strategy when `max_tiles` is reached: seeded `random` or `first`. |
+| `seg_config.max_tiles_seed` | `42` | Seed for the random output-tile cap. |
 | `seg_config.tissue_area_threshold` | `100` | Pre-tile filter: minimum size of a tissue **region** (contour), in number of tiles. Regions smaller than this are discarded as debris before tiling begins. Default 100 ≈ a ~3.2 mm² blob at 256 px / 0.5 µm/px. Set to `1` to keep all regions (recommended for biopsies). |
 | `seg_config.hole_area_threshold` | `16` | Minimum size of a hole inside a tissue region, in number of tiles. Holes smaller than this are filled (treated as tissue). |
 | `seg_config.remove_artifacts` | `false` | Enable artifact removal (requires `artifact_remover_fn` hook). |
@@ -159,6 +162,16 @@ The neural segmenter operates at 1 µm/px resolution (≈10×); images are auto-
 before inference and the mask is rescaled back to the slide's native resolution. A CUDA
 GPU is recommended for practical performance but CPU inference is supported.
 
+Neural runtime controls are available through `neural_config.*`:
+
+| Option | Default | Description |
+|---|---:|---|
+| `neural_config.weights_path` | `null` | Local checkpoint path; `null` downloads the HEST checkpoint automatically. |
+| `neural_config.device` | `auto` | PyTorch device (`auto`, `cpu`, `cuda`, or `cuda:<id>`). |
+| `neural_config.batch_size` | `8` | Number of 512×512 inference tiles per forward pass. |
+| `neural_config.confidence_thresh` | `0.5` | Tissue probability threshold. |
+| `neural_config.max_inference_tiles` | `4096` | Safety cap on neural inference tiles after rescaling. Set `0` to disable. |
+
 No extra packages are required — neural segmentation works with any `torch-gpu` or
 `torch-cpu` install:
 
@@ -172,6 +185,16 @@ tessellate \
     slide_path=tests/testdata/948176.svs \
     output_h5_path=948176_coord.h5 \
     seg_config.seg_model=neural
+
+# Example: use a local checkpoint, smaller inference batches, and cap output tiles
+tessellate \
+    slide_path=tests/testdata/948176.svs \
+    output_h5_path=948176_coord.h5 \
+    seg_config.seg_model=neural \
+    neural_config.weights_path=/models/deeplabv3_seg_v4.ckpt \
+    neural_config.batch_size=4 \
+    neural_config.max_inference_tiles=2000 \
+    seg_config.max_tiles=10000
 
 tessellate_extract_features \
     slide_path=tests/testdata/948176.svs \
@@ -337,7 +360,8 @@ tessellate_extract_features \
 
 Supported WSI extensions discovered during directory scan: `.svs`, `.ndpi`, `.tiff`, `.tif`, `.scn`, `.mrxs`, `.vms`, `.vmu`, `.bif`, `.qptiff`, `.czi`.
 All `seg_config.*` options (including `seg_model=neural` and `slide_mpp_override`) are
-also available on this command; see the [`tessellate` section](#tessellate) above.
+also available on this command, as are the `neural_config.*` runtime controls; see the
+[`tessellate` section](#tessellate) above.
 
 ### `annotate`
 
@@ -520,5 +544,3 @@ Each input file `<stem>.<ext>` produces `output_dir/<stem>.tiff`. Pass
 | `downscale_by` | `1` | Integer downsample factor (e.g. `2` converts a 40× slide to 20×). |
 | `num_workers` | `1` | Parallel workers for batch mode (`0` = all CPUs). |
 | `bigtiff` | `false` | Write BigTIFF format (required for files > ~4 GB). |
-
-
