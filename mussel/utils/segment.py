@@ -599,6 +599,9 @@ def segment_tissue(
     seg_model: str = "classic",  # "classic" (HSV + manual threshold), "otsu" (HSV + Otsu threshold), or "neural" (DeepLabV3)
     slide_mpp_override: Optional[float] = None,
     neural_segmenter=None,
+    max_tiles: Optional[int] = None,
+    max_tiles_strategy: str = "random",
+    max_tiles_seed: int = 42,
 ):
     """Segment tissue regions in a whole-slide image and generate tissue patches.
 
@@ -664,6 +667,13 @@ def segment_tissue(
             ``morphology_ex_kernel`` applies to all three modes.
         slide_mpp_override: If set, use this value (µm/px) as the slide's native MPP
             instead of reading it from slide metadata.
+        neural_segmenter: Optional preloaded neural segmenter instance. This is useful
+            for reusing model weights across slides in batch workflows.
+        max_tiles: Optional maximum number of output tiles to retain after all tissue
+            filtering. ``None`` keeps all tiles.
+        max_tiles_strategy: ``"random"`` (seeded) or ``"first"`` when ``max_tiles``
+            is smaller than the available tile count.
+        max_tiles_seed: Seed used by the random max-tile strategy.
 
     Returns:
         tuple: A 4-tuple containing:
@@ -691,6 +701,13 @@ def segment_tissue(
         if not (0.0 <= min_tissue_proportion <= 1.0):
             raise ValueError(
                 f"min_tissue_proportion must be in [0.0, 1.0], got {min_tissue_proportion}"
+            )
+        if max_tiles is not None and max_tiles <= 0:
+            raise ValueError(f"max_tiles must be positive or None, got {max_tiles}")
+        if max_tiles_strategy not in {"random", "first"}:
+            raise ValueError(
+                "max_tiles_strategy must be 'random' or 'first', "
+                f"got {max_tiles_strategy!r}"
             )
 
         if exclude_ids is None:
@@ -1006,6 +1023,27 @@ def segment_tissue(
                 f"{len(coords)} patches remaining"
             )
 
+        # Apply the output budget after all tissue and per-tile filtering so
+        # that the budget is spent only on valid tiles. Sorting the sampled
+        # indices preserves partition order for stable downstream output.
+        if max_tiles is not None and len(coords) > max_tiles:
+            if max_tiles_strategy == "random":
+                selected = np.sort(
+                    np.random.default_rng(max_tiles_seed).choice(
+                        len(coords), size=max_tiles, replace=False
+                    )
+                )
+            else:
+                selected = np.arange(max_tiles)
+            grid = [grid[i] for i in selected]
+            coords = [coords[i] for i in selected]
+            logger.info(
+                "After max_tiles=%d (%s) filter: %d patches remaining",
+                max_tiles,
+                max_tiles_strategy,
+                len(coords),
+            )
+
         attrs = {
             "seg_level": seg_level,
             "segment_threshold": segment_threshold,
@@ -1028,6 +1066,9 @@ def segment_tissue(
             "overlap": overlap,
             "min_tissue_proportion": min_tissue_proportion,
             "seg_model": seg_model,
+            "max_tiles": -1 if max_tiles is None else max_tiles,
+            "max_tiles_strategy": max_tiles_strategy,
+            "max_tiles_seed": max_tiles_seed,
         }
         if output_h5_path:
             asset_dict = {"coords": np.array(coords, dtype=np.int64)}

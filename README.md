@@ -204,6 +204,11 @@ Then pass `seg_config.seg_model=neural` to `tessellate` or
 `tessellate_extract_features`. A CUDA GPU is recommended for practical
 performance but CPU inference is supported.
 
+Neural runtime controls are available under `neural_config.*` (weights path,
+device, batch size, confidence threshold, and `max_inference_tiles`). Use
+`seg_config.max_tiles` with `seg_config.max_tiles_strategy` and
+`seg_config.max_tiles_seed` to cap and reproducibly sample the final output tiles.
+
 ## Development Notes
 
 * Any commands executed using `uv run <command...>` are automatically executed in the project environment.

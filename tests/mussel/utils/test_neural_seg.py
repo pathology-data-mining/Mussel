@@ -127,6 +127,22 @@ class TestSegmentAllBackground:
 
 
 class TestSlideMppRescaling:
+    def test_constructor_validates_runtime_controls(self):
+        from mussel.utils.neural_seg import NeuralTissueSegmenter
+
+        with pytest.raises(ValueError, match="batch_size"):
+            NeuralTissueSegmenter(batch_size=0)
+        with pytest.raises(ValueError, match="confidence_thresh"):
+            NeuralTissueSegmenter(confidence_thresh=1.1)
+        with pytest.raises(ValueError, match="max_inference_tiles"):
+            NeuralTissueSegmenter(max_inference_tiles=-1)
+
+    def test_zero_max_inference_tiles_disables_guard(self):
+        from mussel.utils.neural_seg import NeuralTissueSegmenter
+
+        seg = NeuralTissueSegmenter(device="cpu", max_inference_tiles=0)
+        assert seg.max_inference_tiles is None
+
     def test_mpp_scaling_preserves_output_size(self):
         """Output mask must match original img size regardless of slide_mpp."""
         H, W = 100, 200

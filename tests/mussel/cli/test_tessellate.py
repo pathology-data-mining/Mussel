@@ -8,7 +8,7 @@ import pytest
 from omegaconf import OmegaConf
 
 import mussel.cli.tessellate
-from mussel.cli.tessellate import SegConfig, TessellateConfig
+from mussel.cli.tessellate import NeuralSegConfig, SegConfig, TessellateConfig
 
 # Dimensions of the test slide (85656 x 19917 at level 0)
 _SLIDE_WIDTH = 85656
@@ -137,6 +137,25 @@ def test_tessellate_batch_reuses_neural_segmenter(tmp_path):
         call.kwargs["neural_segmenter"] is shared_segmenter
         for call in mock_segment.call_args_list
     )
+
+
+def test_neural_segmenter_runtime_config_is_forwarded():
+    seg_cfg = {"seg_model": "neural"}
+    neural_cfg = {
+        "weights_path": "/tmp/tissue.ckpt",
+        "device": "cpu",
+        "batch_size": 16,
+        "confidence_thresh": 0.65,
+        "max_inference_tiles": 2048,
+    }
+
+    with patch("mussel.utils.neural_seg.NeuralTissueSegmenter") as MockSegmenter:
+        result = mussel.cli.tessellate._build_neural_segmenter(
+            seg_cfg, neural_config=neural_cfg
+        )
+
+    MockSegmenter.assert_called_once_with(**neural_cfg)
+    assert result is MockSegmenter.return_value
 
 
 def test_tessellate_batch_fails_on_first_slide_failure(tmp_path):

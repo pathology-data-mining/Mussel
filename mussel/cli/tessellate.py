@@ -25,6 +25,21 @@ from mussel.utils.segment import draw_slide_mask, save_patches_png, segment_tiss
 
 
 @dataclass
+class NeuralSegConfig:
+    """Runtime controls for the ``seg_model=neural`` backend.
+
+    These parameters configure model loading and inference, rather than the
+    tissue-mask morphology controls in :class:`SegConfig`.
+    """
+
+    weights_path: Optional[str] = None
+    device: str = "auto"
+    batch_size: int = 8
+    confidence_thresh: float = 0.5
+    max_inference_tiles: Optional[int] = 4096
+
+
+@dataclass
 class SegConfig:
     """
     patch_size (int): Tile size in pixels at the resolution set by ``mpp``.
@@ -74,6 +89,11 @@ class SegConfig:
         ``morphology_ex_kernel`` applies to all three backends.
     slide_mpp_override (float): If set, use this value (µm/px) as the slide's native MPP instead of
         reading it from slide metadata. Useful when MPP tags are missing or incorrect.
+    max_tiles (Optional[int]): Maximum number of output tiles to retain after tissue filtering.
+        ``None`` keeps all tiles.
+    max_tiles_strategy (str): Sampling strategy when ``max_tiles`` is reached: ``"random"``
+        (seeded, default) or ``"first"``.
+    max_tiles_seed (int): Random seed used by the ``"random"`` max-tile strategy.
     artifact_remover_fn: Optional callable ``(img, mask, mpp) -> mask`` where ``img`` is the RGB
         thumbnail, ``mask`` is the binary tissue mask, and ``mpp`` is the thumbnail's µm/px.
         Returns a corrected binary mask. Use :class:`~mussel.utils.artifact_removal.GrandQCArtifactRemover`
@@ -123,6 +143,9 @@ class SegConfig:
     slide_mpp_override: Optional[float] = (
         None  # If set, use this as the slide's native MPP instead of reading from metadata.
     )
+    max_tiles: Optional[int] = None
+    max_tiles_strategy: str = "random"
+    max_tiles_seed: int = 42
 
 
 @dataclass
@@ -260,6 +283,8 @@ class TessellateConfig:
     output_thumbnail_path (Optional[str]): Path to save a plain slide thumbnail (no overlay).
     thumbnail_size (tuple): Width × height in pixels for the saved thumbnail (default 1024×1024).
     seg_config (SegConfig): Segmentation and tiling parameters (see below).
+    neural_config (NeuralSegConfig): Model and inference parameters used when
+        ``seg_config.seg_model="neural"``.
     vis_config (VisConfig): Visualization appearance parameters for mask overlays (see below).
     png_config (PngConfig): Filtering parameters applied when saving PNG tiles (see below).
     num_workers (int): Number of parallel workers used when saving PNG tiles.
@@ -282,6 +307,7 @@ class TessellateConfig:
     thumbnail_size: tuple = (1024, 1024)
     num_workers: int = 4
     seg_config: SegConfig = MISSING
+    neural_config: NeuralSegConfig = field(default_factory=NeuralSegConfig)
     vis_config: VisConfig = field(default_factory=VisConfig)
     png_config: PngConfig = field(default_factory=PngConfig)
 
@@ -300,6 +326,8 @@ Key options (use Hydra override syntax, e.g. seg_config.mpp=0.25):
   seg_config.mpp      Target resolution in µm/px (default 0.5 ≈ 20×; 0.25 ≈ 40×)
   seg_config.patch_size  Tile size in pixels at the target MPP (default 256)
   seg_config.seg_model   Segmentation backend: classic | otsu | neural
+  seg_config.max_tiles   Optional cap on output tiles after tissue filtering
+  neural_config.*        Neural model/runtime controls (used with seg_model=neural)
 
 Example:
   tessellate slide_path=slide.svs output_h5_path=out.h5 seg_config=biopsy
@@ -310,6 +338,7 @@ parameter_doc = f"""
 == Available Parameters ==
 {TessellateConfig.__doc__}
 seg_config: {SegConfig.__doc__}
+neural_config: {NeuralSegConfig.__doc__}
 vis_config: {VisConfig.__doc__}
 png_config: {PngConfig.__doc__}
 
@@ -458,18 +487,34 @@ def _build_neural_segmenter(
     use_gpu: Optional[bool] = None,
     gpu_device_id: Optional[int | List[int]] = None,
     gpu_device_ids: Optional[List[int]] = None,
+    neural_config: Optional[dict] = None,
 ) -> Optional[Any]:
     if str(seg_cfg.get("seg_model", "classic")).strip().lower() != "neural":
         return None
 
     from mussel.utils.neural_seg import NeuralTissueSegmenter
 
+    neural_config = dict(neural_config or {})
+    neural_config.pop("_target_", None)
+    # Avoid changing the no-override constructor call (and let the segmenter
+    # retain its environment-based defaults) when Hydra supplied only the
+    # structured config defaults.
+    neural_defaults = vars(NeuralSegConfig())
+    neural_config = {
+        key: value
+        for key, value in neural_config.items()
+        if key not in neural_defaults or value != neural_defaults[key]
+    }
+
     if use_gpu is None:
         logger.info("Loading neural tissue segmenter.")
-        return NeuralTissueSegmenter()
+        return NeuralTissueSegmenter(**neural_config)
 
     if not use_gpu:
-        return NeuralTissueSegmenter(device="cpu")
+        # Feature extraction's use_gpu flag is authoritative for the
+        # integrated workflow, while retaining all other neural controls.
+        neural_config["device"] = "cpu"
+        return NeuralTissueSegmenter(**neural_config)
 
     import torch
 
@@ -486,10 +531,13 @@ def _build_neural_segmenter(
     )
     device = "cuda" if device_id is None else f"cuda:{device_id}"
     logger.info("Loading neural tissue segmenter.")
-    return NeuralTissueSegmenter(device=device)
+    neural_config["device"] = device
+    return NeuralTissueSegmenter(**neural_config)
 
 
-def _run_batch(cfg: TessellateConfig, seg_cfg: dict) -> None:
+def _run_batch(
+    cfg: TessellateConfig, seg_cfg: dict, neural_config: Optional[dict] = None
+) -> None:
     if any(
         value is not None
         for value in (
@@ -505,7 +553,7 @@ def _run_batch(cfg: TessellateConfig, seg_cfg: dict) -> None:
         )
 
     artifact_remover_fn = _build_artifact_remover(seg_cfg)
-    neural_segmenter = _build_neural_segmenter(seg_cfg)
+    neural_segmenter = _build_neural_segmenter(seg_cfg, neural_config=neural_config)
     failures: list[tuple[str, str, str, str]] = []
     items = _resolve_batch_outputs(cfg)
     logger.info("Batch tessellating %d slide(s)", len(items))
@@ -558,25 +606,35 @@ def main(
     cfg: TessellateConfig,
 ):
     """Tile a whole slide image and perform tissue segmentation."""
-    seg_cfg = OmegaConf.to_container(cfg.seg_config)
+    seg_cfg = OmegaConf.to_container(cfg.seg_config, resolve=True)
+    neural_cfg_obj = getattr(cfg, "neural_config", NeuralSegConfig())
+    neural_cfg = (
+        OmegaConf.to_container(neural_cfg_obj, resolve=True)
+        if OmegaConf.is_config(neural_cfg_obj)
+        else vars(neural_cfg_obj)
+    )
     if cfg.slide_paths is not None:
         if cfg.slide_path is not None or cfg.output_h5_path is not None:
             raise ValueError(
                 "Batch mode is mutually exclusive with slide_path and output_h5_path."
             )
-        _run_batch(cfg, seg_cfg)
+        _run_batch(cfg, seg_cfg, neural_config=neural_cfg)
         return
 
     if cfg.slide_path is None or cfg.output_h5_path is None:
         raise ValueError("Single-slide mode requires slide_path and output_h5_path.")
 
     artifact_remover_fn = _build_artifact_remover(seg_cfg)
+    neural_segmenter = _build_neural_segmenter(
+        seg_cfg, neural_config=neural_cfg
+    )
     if values := _run_tessellation(
         slide_path=cfg.slide_path,
         slide_id=cfg.slide_id,
         output_h5_path=cfg.output_h5_path,
         seg_cfg=seg_cfg,
         artifact_remover_fn=artifact_remover_fn,
+        neural_segmenter=neural_segmenter,
     ):
         polygon, grid, coords = values
     else:

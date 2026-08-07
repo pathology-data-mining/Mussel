@@ -873,6 +873,7 @@ class TestSegmentTissueOverlap:
                     "/fake/slide.svs", seg_level=0, patch_size=256, overlap=256
                 )
 
+
     def test_overlap_greater_than_patch_size_raises(self):
         """overlap > patch_size must raise ValueError."""
         from mussel.utils.segment import segment_tissue
@@ -904,6 +905,53 @@ class TestSegmentTissueOverlap:
                 segment_tissue(
                     "/fake/slide.svs", seg_level=0, patch_size=256, overlap=-50
                 )
+
+
+class TestSegmentTissueMaxTiles:
+    def test_max_tiles_first_caps_output_and_records_attrs(self):
+        result = _run_segment_with_mocks(
+            _make_mock_wsi_with_real_tissue(),
+            seg_level=1,
+            patch_size=256,
+            mpp=0.5,
+            tissue_area_threshold=1,
+            max_tiles=5,
+            max_tiles_strategy="first",
+        )
+
+        assert result is not None
+        _, _, coords, attrs = result
+        assert len(coords) == 5
+        assert attrs["max_tiles"] == 5
+        assert attrs["max_tiles_strategy"] == "first"
+
+    def test_max_tiles_random_selection_is_seeded(self):
+        kwargs = dict(
+            seg_level=1,
+            patch_size=256,
+            mpp=0.5,
+            tissue_area_threshold=1,
+            max_tiles=5,
+            max_tiles_strategy="random",
+            max_tiles_seed=7,
+        )
+        result_a = _run_segment_with_mocks(
+            _make_mock_wsi_with_real_tissue(), **kwargs
+        )
+        result_b = _run_segment_with_mocks(
+            _make_mock_wsi_with_real_tissue(), **kwargs
+        )
+
+        assert result_a is not None and result_b is not None
+        assert result_a[2] == result_b[2]
+
+    def test_max_tiles_validates_positive_limit_and_strategy(self):
+        with pytest.raises(ValueError, match="max_tiles must be positive"):
+            _run_segment_with_mocks(_make_mock_wsi_with_tissue(), max_tiles=0)
+        with pytest.raises(ValueError, match="max_tiles_strategy"):
+            _run_segment_with_mocks(
+                _make_mock_wsi_with_tissue(), max_tiles_strategy="weighted"
+            )
 
 
 class TestSegmentTissueMinTissueProportion:
