@@ -142,6 +142,9 @@ tessellate slide_path=slide.svs output_h5_path=out.h5 seg_config=tcga seg_config
 | `seg_config.remove_penmarks` | `false` | Enable pen-mark removal (requires `artifact_remover_fn` hook). |
 | `seg_config.seg_model` | `"classic"` | Segmentation backend: `"classic"` (HSV + fixed threshold), `"otsu"` (HSV + Otsu automatic threshold), or `"neural"` (deep learning; see below). Note: the old `seg_config.use_otsu=true` flag is deprecated — use `seg_model=otsu` instead. |
 | `seg_config.slide_mpp_override` | `null` | Override the slide's native MPP; useful when metadata is missing or wrong. |
+| `seg_config.max_tiles` | `null` | Optional cap on output tiles after tissue and per-tile filtering. |
+| `seg_config.max_tiles_strategy` | `"random"` | How to select tiles when the cap is reached: seeded `"random"` or `"first"`. |
+| `seg_config.max_tiles_seed` | `42` | Seed for the random output-tile selection. |
 
 Example with 50% overlap and tissue filtering:
 ```bash
@@ -195,6 +198,25 @@ tessellate_extract_features \
     output_pt_path=948176_embed.pt \
     model_type=UNI2 \
     seg_config.seg_model=neural
+```
+
+Neural model loading and inference are controlled independently through
+`neural_config.*` (available on both commands):
+
+| Parameter | Default | Description |
+|---|---|---|
+| `neural_config.weights_path` | `null` | Local checkpoint path; otherwise download the HEST checkpoint on first use. |
+| `neural_config.device` | `"auto"` | PyTorch device (`"auto"`, `"cpu"`, `"cuda"`, or `"cuda:N"`). |
+| `neural_config.batch_size` | `8` | Number of 512×512 inference tiles per forward pass. |
+| `neural_config.confidence_thresh` | `0.5` | Tissue probability threshold (0–1). |
+| `neural_config.max_inference_tiles` | `null` (effective default `4096`) | Fail fast if one slide would require more model tiles; explicit values override `MUSSEL_NEURAL_SEG_MAX_TILES`; set to `0` to disable. |
+
+For example, cap the final HDF5 at 10,000 tiles while limiting neural inference:
+
+```bash
+tessellate slide_path=slide.svs output_h5_path=out.h5 \
+    seg_config.seg_model=neural seg_config.max_tiles=10000 \
+    neural_config.batch_size=16 neural_config.max_inference_tiles=8192
 ```
 
 ### `extract_features`

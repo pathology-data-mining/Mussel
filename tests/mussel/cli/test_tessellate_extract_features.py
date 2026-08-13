@@ -66,6 +66,35 @@ def test_neural_segmenter_use_gpu_false_forces_cpu():
     assert result is MockSegmenter.return_value
 
 
+def test_explicit_neural_device_overrides_use_gpu():
+    seg_cfg = {"seg_model": "neural"}
+    neural_cfg = {"device": "cpu", "batch_size": 16}
+
+    with patch("mussel.utils.neural_seg.NeuralTissueSegmenter") as MockSegmenter:
+        result = _build_neural_segmenter(
+            seg_cfg, use_gpu=True, neural_config=neural_cfg
+        )
+
+    MockSegmenter.assert_called_once_with(**neural_cfg)
+    assert result is MockSegmenter.return_value
+
+
+def test_explicit_neural_cuda_device_overrides_cpu_workflow():
+    seg_cfg = {"seg_model": "neural"}
+    neural_cfg = {"device": "cuda:2"}
+
+    with (
+        patch("torch.cuda.is_available", return_value=True),
+        patch("mussel.utils.neural_seg.NeuralTissueSegmenter") as MockSegmenter,
+    ):
+        result = _build_neural_segmenter(
+            seg_cfg, use_gpu=False, neural_config=neural_cfg
+        )
+
+    MockSegmenter.assert_called_once_with(**neural_cfg)
+    assert result is MockSegmenter.return_value
+
+
 def test_neural_segmenter_use_gpu_true_requires_cuda():
     seg_cfg = {"seg_model": "neural"}
 

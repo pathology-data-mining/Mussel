@@ -21,6 +21,7 @@ from omegaconf import MISSING, DictConfig, ListConfig, OmegaConf
 # isort: off
 from mussel.cli.tessellate import (
     BiopsySegConfig,
+    NeuralSegConfig,
     PngConfig,
     ResectionSegConfig,
     SegConfig,
@@ -66,13 +67,20 @@ _is_remote_path = is_remote_path
 
 
 def _build_segmentation_runtime(cfg: "TessellateExtractFeaturesConfig"):
-    seg_cfg = OmegaConf.to_container(cfg.seg_config)
+    seg_cfg = OmegaConf.to_container(cfg.seg_config, resolve=True)
+    neural_cfg_obj = getattr(cfg, "neural_config", NeuralSegConfig())
+    neural_cfg = (
+        OmegaConf.to_container(neural_cfg_obj, resolve=True)
+        if OmegaConf.is_config(neural_cfg_obj)
+        else vars(neural_cfg_obj)
+    )
     artifact_remover_fn = _build_artifact_remover(seg_cfg)
     neural_segmenter = _build_neural_segmenter(
         seg_cfg,
         cfg.use_gpu,
         gpu_device_id=cfg.gpu_device_id,
         gpu_device_ids=cfg.gpu_device_ids,
+        neural_config=neural_cfg,
     )
     return artifact_remover_fn, neural_segmenter
 
@@ -185,6 +193,8 @@ class TessellateExtractFeaturesConfig:
 
     Segmentation & Processing Parameters:
         seg_config (SegConfig): Configuration for segmentation parameters.
+        neural_config (NeuralSegConfig): Model and inference parameters used when
+            ``seg_config.seg_model="neural"``.
         vis_config (VisConfig): Configuration for visualization parameters.
         png_config (PngConfig): Configuration for PNG saving parameters.
         num_workers (int): Number of workers for saving patches and feature extraction.
@@ -251,6 +261,7 @@ class TessellateExtractFeaturesConfig:
         True  # Save final features to .h5 files; if False, only .pt files are saved (but tile_h5 is kept for patch encoders)
     )
     seg_config: SegConfig = MISSING
+    neural_config: NeuralSegConfig = field(default_factory=NeuralSegConfig)
     vis_config: VisConfig = field(default_factory=VisConfig)
     png_config: PngConfig = field(default_factory=PngConfig)
     intermediate_h5_path: Optional[str] = None
@@ -362,6 +373,7 @@ parameter_doc = f"""
 == Available Parameters ==
 {TessellateExtractFeaturesConfig.__doc__}
 seg_config: {SegConfig.__doc__}
+neural_config: {NeuralSegConfig.__doc__}
 vis_config: {VisConfig.__doc__}
 png_config: {PngConfig.__doc__}
 

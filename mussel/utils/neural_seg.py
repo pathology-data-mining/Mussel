@@ -65,6 +65,9 @@ class NeuralTissueSegmenter:
         batch_size: Number of 512×512 patches to process per forward pass.
         confidence_thresh: Sigmoid threshold for tissue/background decision.
             Lower values → more tissue retained. Default 0.5.
+        max_inference_tiles: Maximum number of model inference tiles for one
+            slide. ``None`` uses ``MUSSEL_NEURAL_SEG_MAX_TILES`` (default 4096);
+            zero disables the guard.
     """
 
     def __init__(
@@ -75,6 +78,18 @@ class NeuralTissueSegmenter:
         confidence_thresh: float = 0.5,
         max_inference_tiles: Optional[int] = None,
     ):
+        if batch_size <= 0:
+            raise ValueError(f"batch_size must be positive, got {batch_size}")
+        if not 0.0 <= confidence_thresh <= 1.0:
+            raise ValueError(
+                f"confidence_thresh must be in [0.0, 1.0], got {confidence_thresh}"
+            )
+        if max_inference_tiles is not None and max_inference_tiles < 0:
+            raise ValueError(
+                "max_inference_tiles must be non-negative or None, "
+                f"got {max_inference_tiles}"
+            )
+
         if device == "auto":
             self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         else:
@@ -82,11 +97,14 @@ class NeuralTissueSegmenter:
 
         self.batch_size = batch_size
         self.confidence_thresh = confidence_thresh
-        self.max_inference_tiles = (
+        configured_max_tiles = (
             _get_max_inference_tiles()
             if max_inference_tiles is None
             else max_inference_tiles
         )
+        # A value of zero is a convenient explicit way to disable the guard,
+        # matching the environment-variable behavior.
+        self.max_inference_tiles = configured_max_tiles or None
         self._model = None
         self._weights_path = weights_path
         self._mean = None  # built lazily alongside the model
