@@ -95,6 +95,10 @@ class SegConfig:
     max_tiles_strategy (str): Sampling strategy when ``max_tiles`` is reached: ``"random"``
         (seeded, default) or ``"first"``.
     max_tiles_seed (int): Random seed used by the ``"random"`` max-tile strategy.
+    selection_mode (str): Tile selection backend: ``"full_mask"`` (default) or
+        ``"bounded_neural"`` for fast neural validation of a bounded candidate set.
+    max_candidate_tiles (Optional[int]): Candidate budget for ``bounded_neural``
+        selection. Defaults to 256 in that mode.
     artifact_remover_fn: Optional callable ``(img, mask, mpp) -> mask`` where ``img`` is the RGB
         thumbnail, ``mask`` is the binary tissue mask, and ``mpp`` is the thumbnail's µm/px.
         Returns a corrected binary mask. Use :class:`~mussel.utils.artifact_removal.GrandQCArtifactRemover`
@@ -147,6 +151,25 @@ class SegConfig:
     max_tiles: Optional[int] = None
     max_tiles_strategy: str = "random"
     max_tiles_seed: int = 42
+    selection_mode: str = "full_mask"
+    max_candidate_tiles: Optional[int] = None
+
+
+@dataclass
+class StainSegConfig(SegConfig):
+    """Fast, tissue-rich preset for stain classification.
+
+    The preset uses neural segmentation to validate at least 75% tissue per
+    output tile, retains small tissue regions, and stops after 32 accepted
+    tiles or 256 neural candidate evaluations.
+    """
+
+    tissue_area_threshold: int = 1
+    min_tissue_proportion: float = 0.75
+    seg_model: str = "neural"
+    max_tiles: Optional[int] = 32
+    selection_mode: str = "bounded_neural"
+    max_candidate_tiles: Optional[int] = 256
 
 
 @dataclass
@@ -323,7 +346,7 @@ Key options (use Hydra override syntax, e.g. seg_config.mpp=0.25):
   slide_path          Path to the slide file (required)
   output_h5_path      Path for the output HDF5 file (required)
   slide_paths         Batch mode slide paths; use output_h5_paths or output_dir for outputs
-  seg_config          Preset segmentation profile: default | biopsy | resection | tcga
+  seg_config          Preset segmentation profile: default | biopsy | resection | tcga | stain
   seg_config.mpp      Target resolution in µm/px (default 0.5 ≈ 20×; 0.25 ≈ 40×)
   seg_config.patch_size  Tile size in pixels at the target MPP (default 256)
   seg_config.seg_model   Segmentation backend: classic | otsu | neural
@@ -356,6 +379,7 @@ cs.store(group="seg_config", name="default", node=SegConfig)
 cs.store(group="seg_config", name="biopsy", node=BiopsySegConfig)
 cs.store(group="seg_config", name="resection", node=ResectionSegConfig)
 cs.store(group="seg_config", name="tcga", node=TcgaSegConfig)
+cs.store(group="seg_config", name="stain", node=StainSegConfig)
 cs.store(name="tessellate_config", node=TessellateConfig)
 
 

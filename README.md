@@ -211,6 +211,12 @@ uses that setting. Use
 `seg_config.max_tiles` with `seg_config.max_tiles_strategy` and
 `seg_config.max_tiles_seed` to cap and reproducibly sample the final output tiles.
 
+For stain classification, use `seg_config=stain`. This speed-oriented preset
+uses bounded neural validation, keeps up to 32 tiles with at least 75% tissue,
+and checks at most 256 candidates. It avoids full-slide neural inference; when
+fewer than 32 candidates qualify, it returns the qualifying tiles without
+relaxing the tissue cutoff.
+
 ## Development Notes
 
 * Any commands executed using `uv run <command...>` are automatically executed in the project environment.

@@ -121,6 +121,20 @@ class TestSegmentAllBackground:
         assert np.all(mask == 0)
 
 
+class TestSegmentPatches:
+    def test_segment_patches_preserves_each_input_shape_and_batches(self):
+        images = [
+            np.ones((128, 192, 3), dtype=np.uint8) * 200,
+            np.ones((64, 96, 3), dtype=np.uint8) * 180,
+        ]
+        seg = _make_segmenter(_all_tissue_model())
+
+        masks = seg.segment_patches(images, slide_mpp=1.0)
+
+        assert [mask.shape for mask in masks] == [(128, 192), (64, 96)]
+        assert all(np.all(mask == 255) for mask in masks)
+
+
 # ---------------------------------------------------------------------------
 # slide_mpp rescaling
 # ---------------------------------------------------------------------------
