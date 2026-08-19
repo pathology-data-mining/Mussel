@@ -204,6 +204,12 @@ Then pass `seg_config.seg_model=neural` to `tessellate` or
 `tessellate_extract_features`. A CUDA GPU is recommended for practical
 performance but CPU inference is supported.
 
+For stain classification, use `seg_config=stain`. This speed-oriented preset
+uses bounded neural validation, keeps up to 32 tiles with at least 75% tissue,
+and checks at most 256 candidates. It avoids full-slide neural inference; when
+fewer than 32 candidates qualify, it returns the qualifying tiles without
+relaxing the tissue cutoff.
+
 Neural model controls use Hydra overrides such as
 `neural_config.device=cpu`, `neural_config.batch_size=4`,
 `neural_config.confidence_thresh=0.4`, and

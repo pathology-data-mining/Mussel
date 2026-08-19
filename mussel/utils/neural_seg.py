@@ -162,6 +162,107 @@ class NeuralTissueSegmenter:
 
         return (full_mask * 255).astype(np.uint8)
 
+    def segment_patches(
+        self, images: list[np.ndarray], slide_mpp: float = 1.0
+    ) -> list[np.ndarray]:
+        """Segment a bounded collection of image patches in shared batches.
+
+        This is the fast-path API used by stain classification.  Unlike
+        :meth:`segment`, it never constructs a full-slide mask: each input is
+        resized to the model resolution, tiled into model windows, and
+        inferred alongside the other inputs. The returned masks have the same
+        height and width as their corresponding inputs.
+        """
+        if not images:
+            return []
+        if slide_mpp <= 0:
+            raise ValueError(f"slide_mpp must be positive, got {slide_mpp}")
+
+        self._ensure_model_loaded()
+        patch_size = _INPUT_SIZE
+        prepared: list[tuple[np.ndarray, tuple[int, int]]] = []
+        for image in images:
+            image = np.asarray(image)
+            if image.ndim != 3 or image.shape[2] < 3:
+                raise ValueError(
+                    "Each neural segmentation patch must have shape (H, W, 3+)"
+                )
+            image = image[:, :, :3].astype(np.uint8, copy=False)
+            height, width = image.shape[:2]
+            scale = slide_mpp / _TARGET_MPP
+            target_height = max(1, int(round(height * scale)))
+            target_width = max(1, int(round(width * scale)))
+            if (target_height, target_width) != (height, width):
+                image = cv2.resize(
+                    image,
+                    (target_width, target_height),
+                    interpolation=cv2.INTER_CUBIC,
+                )
+            prepared.append((image, (height, width)))
+
+        # Flatten each input into model-sized windows while retaining the
+        # originating image and window coordinates.  Batching across inputs is
+        # important here: bounded stain selection usually supplies one window
+        # per candidate context, so a single forward pass can validate many
+        # candidates at once.  Tiling also keeps this API correct if a caller
+        # supplies a context larger than one model window.
+        tile_records: list[tuple[int, int, int, int, int]] = []
+        tiles: list[np.ndarray] = []
+        output_masks = []
+        for image_index, (image, _) in enumerate(prepared):
+            target_height, target_width = image.shape[:2]
+            output_masks.append(
+                np.zeros((target_height, target_width), dtype=np.uint8)
+            )
+            for y in range(0, target_height, patch_size):
+                for x in range(0, target_width, patch_size):
+                    y1 = min(y + patch_size, target_height)
+                    x1 = min(x + patch_size, target_width)
+                    crop = image[y:y1, x:x1]
+                    if crop.shape[:2] != (patch_size, patch_size):
+                        padded = np.full(
+                            (patch_size, patch_size, 3), 255, dtype=np.uint8
+                        )
+                        padded[: crop.shape[0], : crop.shape[1]] = crop
+                        crop = padded
+                    tiles.append(crop)
+                    tile_records.append((image_index, x, y, x1, y1))
+
+        use_fp16 = self.device.type == "cuda"
+        dtype = torch.float16 if use_fp16 else torch.float32
+        for batch_start in range(0, len(tiles), self.batch_size):
+            batch = tiles[batch_start : batch_start + self.batch_size]
+            tensors = [self._transform(Image.fromarray(tile)) for tile in batch]
+
+            batch_tensor = torch.stack(tensors).to(self.device, dtype=dtype)
+            with torch.no_grad():
+                logits = self._model(batch_tensor)["out"]
+                probs = F.softmax(logits.float(), dim=1)
+                predictions = (
+                    probs[:, 1] > self.confidence_thresh
+                ).to(torch.uint8).cpu().numpy()
+
+            for prediction, record in zip(
+                predictions, tile_records[batch_start : batch_start + len(batch)]
+            ):
+                image_index, x, y, x1, y1 = record
+                output_masks[image_index][y:y1, x:x1] = prediction[
+                    : y1 - y, : x1 - x
+                ]
+
+        masks: list[np.ndarray] = []
+        for output_mask, (_, (original_height, original_width)) in zip(
+            output_masks, prepared
+        ):
+            if output_mask.shape != (original_height, original_width):
+                output_mask = cv2.resize(
+                    output_mask,
+                    (original_width, original_height),
+                    interpolation=cv2.INTER_NEAREST,
+                )
+            masks.append((output_mask * 255).astype(np.uint8))
+        return masks
+
     # ------------------------------------------------------------------
     # Private helpers
     # ------------------------------------------------------------------

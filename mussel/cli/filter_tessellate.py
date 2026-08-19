@@ -16,7 +16,7 @@ from omegaconf import MISSING, OmegaConf
 
 from mussel.cli.tessellate import (BiopsySegConfig, PngConfig,
                                    ResectionSegConfig, SegConfig,
-                                   TcgaSegConfig, VisConfig,
+                                   StainSegConfig, TcgaSegConfig, VisConfig,
                                    _build_artifact_remover)
 from mussel.cli.tessellate_extract_features_common import _build_grid_polygons
 from mussel.models import ModelType, get_default_patch_size
@@ -132,6 +132,7 @@ cs.store(group="seg_config", name="default", node=SegConfig)
 cs.store(group="seg_config", name="biopsy", node=BiopsySegConfig)
 cs.store(group="seg_config", name="resection", node=ResectionSegConfig)
 cs.store(group="seg_config", name="tcga", node=TcgaSegConfig)
+cs.store(group="seg_config", name="stain", node=StainSegConfig)
 cs.store(name="filter_tessellate_config", node=FilterTessellateConfig)
 
 

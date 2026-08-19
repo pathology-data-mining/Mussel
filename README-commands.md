@@ -103,6 +103,7 @@ specimen type. Individual parameters can still be overridden after the preset:
 ```bash
 tessellate slide_path=slide.svs output_h5_path=out.h5 seg_config=biopsy
 tessellate slide_path=slide.svs output_h5_path=out.h5 seg_config=tcga seg_config.mpp=0.25
+tessellate slide_path=slide.svs output_h5_path=out.h5 seg_config=stain
 ```
 
 | Preset | Best for | Key differences from `default` | With `seg_model=neural` |
@@ -111,6 +112,7 @@ tessellate slide_path=slide.svs output_h5_path=out.h5 seg_config=tcga seg_config
 | `biopsy` | Needle-core / punch biopsies | Lower area thresholds (`tissue_area_threshold=1`, `hole_area_threshold=1`) to keep small tissue cores; fewer holes (`max_num_holes=2`). | Area thresholds and `max_num_holes` still apply; `segment_threshold`/`median_blur_ksize` are ignored with a warning. |
 | `resection` | Surgical resection specimens | Stronger morphological closing (`morphology_ex_kernel=4`) to bridge gaps in large sections; same area thresholds as `default`. | Only `morphology_ex_kernel=4` has effect; `segment_threshold`/`median_blur_ksize` are ignored with a warning. Consider `default seg_config.seg_model=neural seg_config.morphology_ex_kernel=4` to avoid the warning. |
 | `tcga` | TCGA whole-slide images | Lower `segment_threshold=8` to capture pale/faded tissue; stronger closing (`morphology_ex_kernel=4`); reduced area thresholds. | `segment_threshold` is ignored with a warning (`median_blur_ksize=7` matches the default so no second warning); `morphology_ex_kernel=4` and area thresholds still apply. |
+| `stain` | Fast H&E/IHC stain classification | Neural validation, 32-tile cap, 75% minimum tissue fraction, small-region retention, and bounded candidate sampling (up to 256 candidates). | Uses the bounded neural path; it does not build a full-slide mask. |
 
 #### Segmentation and patching options
 
@@ -123,6 +125,8 @@ tessellate slide_path=slide.svs output_h5_path=out.h5 seg_config=tcga seg_config
 | `seg_config.max_tiles` | `null` | Optional maximum number of output tiles after tissue filtering. `null` keeps all tiles. |
 | `seg_config.max_tiles_strategy` | `random` | Selection strategy when `max_tiles` is reached: seeded `random` or `first`. |
 | `seg_config.max_tiles_seed` | `42` | Seed for the random output-tile cap. |
+| `seg_config.selection_mode` | `full_mask` | `full_mask` segments the complete slide; `bounded_neural` proposes candidates cheaply and neural-validates only a bounded set. |
+| `seg_config.max_candidate_tiles` | `null` | Maximum neural candidates in `bounded_neural` mode; the `stain` preset sets this to `256`. |
 | `seg_config.tissue_area_threshold` | `100` | Pre-tile filter: minimum size of a tissue **region** (contour), in number of tiles. Regions smaller than this are discarded as debris before tiling begins. Default 100 ≈ a ~3.2 mm² blob at 256 px / 0.5 µm/px. Set to `1` to keep all regions (recommended for biopsies). |
 | `seg_config.hole_area_threshold` | `16` | Minimum size of a hole inside a tissue region, in number of tiles. Holes smaller than this are filled (treated as tissue). |
 | `seg_config.remove_artifacts` | `false` | Enable artifact removal (requires `artifact_remover_fn` hook). |
@@ -138,6 +142,22 @@ tessellate \
     seg_config.overlap=128 \
     seg_config.min_tissue_proportion=0.5
 ```
+
+For stain classification, use the speed-oriented preset:
+
+```bash
+tessellate_extract_features \
+    slide_path=slide.svs \
+    output_h5_path=slide.features.h5 \
+    output_pt_path=slide.features.pt \
+    model_type=HOPTIMUS0 \
+    seg_config=stain
+```
+
+The preset stops after 32 tiles with at least 75% neural tissue, or after 256
+candidate checks. If fewer than 32 tiles qualify, it returns the qualifying
+tiles without relaxing the cutoff. In bounded mode, mask output represents
+the accepted tile footprints rather than a complete slide tissue contour.
 
 #### Neural tissue segmentation (`seg_model="neural"`)
 

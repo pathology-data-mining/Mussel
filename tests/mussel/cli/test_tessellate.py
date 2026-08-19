@@ -5,7 +5,12 @@ import numpy as np
 from omegaconf import OmegaConf
 
 import mussel.cli.tessellate
-from mussel.cli.tessellate import NeuralSegConfig, SegConfig, TessellateConfig
+from mussel.cli.tessellate import (
+    NeuralSegConfig,
+    SegConfig,
+    StainSegConfig,
+    TessellateConfig,
+)
 
 # Dimensions of the test slide (85656 x 19917 at level 0)
 _SLIDE_WIDTH = 85656
@@ -107,6 +112,16 @@ def test_seg_config_max_tiles_defaults_and_overrides():
     assert cfg.max_tiles == 25
     assert cfg.max_tiles_strategy == "first"
     assert cfg.max_tiles_seed == 7
+
+
+def test_stain_seg_config_is_speed_oriented():
+    cfg = StainSegConfig()
+    assert cfg.seg_model == "neural"
+    assert cfg.selection_mode == "bounded_neural"
+    assert cfg.max_tiles == 32
+    assert cfg.max_candidate_tiles == 256
+    assert cfg.min_tissue_proportion == 0.75
+    assert cfg.tissue_area_threshold == 1
 
 
 def test_artifact_remover_fn_wired_when_remove_artifacts(tmp_path):

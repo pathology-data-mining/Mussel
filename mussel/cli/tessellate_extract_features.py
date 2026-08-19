@@ -21,7 +21,7 @@ from omegaconf import MISSING, DictConfig, ListConfig, OmegaConf
 
 from mussel.cli.tessellate import (BiopsySegConfig, NeuralSegConfig, PngConfig,
                                    ResectionSegConfig, SegConfig,
-                                   TcgaSegConfig, VisConfig,
+                                   StainSegConfig, TcgaSegConfig, VisConfig,
                                    _build_artifact_remover)
 from mussel.cli.tessellate_extract_features_common import (
     create_visualizations, process_slide_tessellation_and_filtering,
@@ -64,6 +64,31 @@ def _resolve_precision(cfg: "TessellateExtractFeaturesConfig", model_type) -> st
             return cfg.model_embedding_precision[key]
     return cfg.embedding_precision
 _safe_path_join = safe_path_join
+
+
+def _build_batch_neural_segmenter(cfg):
+    """Build one neural segmenter for all slides in a tessellation batch."""
+    seg_cfg = OmegaConf.to_container(cfg.seg_config, resolve=True)
+    if str(seg_cfg.get("seg_model", "classic")).strip().lower() != "neural":
+        return None
+
+    from mussel.utils.neural_seg import NeuralTissueSegmenter
+
+    neural_cfg_obj = getattr(cfg, "neural_config", None)
+    neural_cfg = (
+        OmegaConf.to_container(neural_cfg_obj, resolve=True)
+        if neural_cfg_obj is not None
+        else {}
+    )
+    if not isinstance(neural_cfg, dict):
+        neural_cfg = {}
+    if (
+        neural_cfg.get("device", "auto") == "auto"
+        and getattr(cfg, "use_gpu", None) is False
+    ):
+        neural_cfg["device"] = "cpu"
+    logger.info("Loading one reusable neural tissue segmenter for the batch")
+    return NeuralTissueSegmenter(**neural_cfg)
 
 
 defaults = ["_self_", {"seg_config": "default"}]
@@ -331,6 +356,7 @@ cs.store(group="seg_config", name="default", node=SegConfig)
 cs.store(group="seg_config", name="biopsy", node=BiopsySegConfig)
 cs.store(group="seg_config", name="resection", node=ResectionSegConfig)
 cs.store(group="seg_config", name="tcga", node=TcgaSegConfig)
+cs.store(group="seg_config", name="stain", node=StainSegConfig)
 cs.store(
     name="tessellate_extract_features_config", node=TessellateExtractFeaturesConfig
 )
@@ -756,6 +782,7 @@ def _main_batch(
     # Instantiate artifact remover once per batch so model weights are loaded
     # only once rather than once per slide.
     artifact_remover_fn = _build_artifact_remover(OmegaConf.to_container(cfg.seg_config))
+    neural_segmenter = _build_batch_neural_segmenter(cfg)
 
     slide_results = []
     for i, (slide_path, slide_id) in enumerate(zip(cfg.slide_paths, slide_ids)):
@@ -782,6 +809,7 @@ def _main_batch(
                 skip_second_extraction=skip_second_extraction,
                 output_mask_path=output_mask_path,
                 artifact_remover_fn=artifact_remover_fn,
+                neural_segmenter=neural_segmenter,
             )
 
             if result is None:

@@ -12,8 +12,8 @@ import numpy as np
 import shapely
 import tiffslide
 from PIL import Image, ImageDraw
-from shapely.geometry import MultiPolygon, Polygon
-from shapely.ops import transform
+from shapely.geometry import MultiPolygon, Polygon, box
+from shapely.ops import transform, unary_union
 from shapely.prepared import prep
 
 from mussel.utils.file import save_hdf5
@@ -485,6 +485,7 @@ def _segment_tissue_neural(
     img: np.ndarray,
     slide_mpp: float,
     neural_config: Optional[dict] = None,
+    segmenter=None,
 ) -> np.ndarray:
     """Generate a binary tissue mask using Mussel's native neural segmentor.
 
@@ -514,8 +515,252 @@ def _segment_tissue_neural(
         neural_config = dict(neural_config)
     elif not isinstance(neural_config, dict):
         neural_config = vars(neural_config)
-    segmenter = NeuralTissueSegmenter(**neural_config)
+    if segmenter is None:
+        segmenter = NeuralTissueSegmenter(**neural_config)
     return segmenter.segment(img, slide_mpp=slide_mpp)
+
+
+def _neural_segmenter_from_config(neural_config: Optional[dict]):
+    """Create a neural segmenter for bounded, reusable candidate inference."""
+    from mussel.utils.neural_seg import NeuralTissueSegmenter
+
+    config = dict(neural_config or {})
+    return NeuralTissueSegmenter(**config)
+
+
+def _axis_origins(length: int, patch_size: int, step_size: int) -> list[int]:
+    """Return valid tile origins, including the far boundary when needed."""
+    if length <= patch_size:
+        return [0]
+    last = length - patch_size
+    origins = list(range(0, last + 1, step_size))
+    if origins[-1] != last:
+        origins.append(last)
+    return origins
+
+
+def _bounded_candidate_origins(
+    proposal_mask: np.ndarray,
+    level_dimensions: tuple[int, int],
+    proposal_downsample: tuple[float, float],
+    native_patch_size: int,
+    native_step_size: int,
+    seed: int,
+) -> list[tuple[int, int]]:
+    """Find output-tile origins from a conservative thumbnail proposal.
+
+    The proposal is deliberately permissive.  It is only an I/O-saving hint;
+    the neural model makes the final tissue decision for every selected tile.
+    """
+    slide_width, slide_height = level_dimensions
+    proposal_height, proposal_width = proposal_mask.shape[:2]
+    x_origins = _axis_origins(slide_width, native_patch_size, native_step_size)
+    y_origins = _axis_origins(slide_height, native_patch_size, native_step_size)
+
+    candidates: list[tuple[int, int]] = []
+    for y in y_origins:
+        py0 = max(0, int(np.floor(y / proposal_downsample[1])))
+        py1 = min(
+            proposal_height,
+            max(py0 + 1, int(np.ceil((y + native_patch_size) / proposal_downsample[1]))),
+        )
+        for x in x_origins:
+            px0 = max(0, int(np.floor(x / proposal_downsample[0])))
+            px1 = min(
+                proposal_width,
+                max(px0 + 1, int(np.ceil((x + native_patch_size) / proposal_downsample[0]))),
+            )
+            # A one-percent threshold retains narrow tissue fragments while
+            # avoiding thousands of completely white slide tiles.
+            if float(proposal_mask[py0:py1, px0:px1].mean()) >= 0.01:
+                candidates.append((x, y))
+
+    # If the permissive thumbnail gate found nothing, retain a bounded random
+    # sample from the complete grid.  Neural inference remains the authority.
+    if not candidates:
+        candidates = [(x, y) for y in y_origins for x in x_origins]
+
+    order = np.random.default_rng(seed).permutation(len(candidates))
+    return [candidates[int(i)] for i in order]
+
+
+def _proposal_mask(img: np.ndarray) -> np.ndarray:
+    """Return a cheap, high-recall foreground proposal from an RGB thumbnail."""
+    if img.ndim == 3 and img.shape[2] > 3:
+        img = img[:, :, :3]
+    hsv = cv2.cvtColor(img, cv2.COLOR_RGB2HSV)
+    saturation = hsv[:, :, 1]
+    value = hsv[:, :, 2]
+    # Saturation catches ordinary stains; the value branch retains pale tissue
+    # and IHC while still rejecting a clean white background.
+    proposal = ((saturation >= 5) | (value < 245)).astype(np.uint8)
+    kernel = np.ones((3, 3), dtype=np.uint8)
+    proposal = cv2.morphologyEx(proposal, cv2.MORPH_CLOSE, kernel)
+    return cv2.dilate(proposal, kernel, iterations=1)
+
+
+def _bounded_neural_tessellation(
+    *,
+    wsi,
+    proposal_img: np.ndarray,
+    slide_mpp: float,
+    level_downsamples: list[tuple[float, float]],
+    native_patch_size: int,
+    native_step_size: int,
+    patch_size: int,
+    mpp: float,
+    min_tissue_proportion: float,
+    max_tiles: int,
+    max_candidate_tiles: int,
+    max_tiles_seed: int,
+    neural_config: Optional[dict],
+    neural_segmenter=None,
+) -> tuple[MultiPolygon, list[Polygon], list[tuple[int, int]], dict] | None:
+    """Select a small number of neural-validated tiles without full-slide inference."""
+    level_dimensions = wsi.level_dimensions[0]
+    proposal_level = next(
+        i
+        for i, dimensions in enumerate(wsi.level_dimensions)
+        if dimensions == proposal_img.shape[1::-1]
+    )
+    proposal_downsample = level_downsamples[proposal_level]
+
+    proposal = _proposal_mask(proposal_img)
+    candidates = _bounded_candidate_origins(
+        proposal,
+        level_dimensions,
+        proposal_downsample,
+        native_patch_size,
+        native_step_size,
+        max_tiles_seed,
+    )
+    proposal_count = len(candidates)
+    # A thumbnail is a high-recall hint, not a hard tissue mask.  If it
+    # proposes fewer windows than the budget allows, append a deterministic
+    # sample of the remaining slide grid.  This keeps sparse or very pale
+    # slides from ending with an unnecessarily tiny sample while the neural
+    # cutoff remains authoritative.
+    if proposal_count < max_candidate_tiles:
+        x_origins = _axis_origins(
+            level_dimensions[0], native_patch_size, native_step_size
+        )
+        y_origins = _axis_origins(
+            level_dimensions[1], native_patch_size, native_step_size
+        )
+        proposed = set(candidates)
+        remaining = [
+            (x, y)
+            for y in y_origins
+            for x in x_origins
+            if (x, y) not in proposed
+        ]
+        if remaining:
+            order = np.random.default_rng(max_tiles_seed + 1).permutation(
+                len(remaining)
+            )
+            candidates.extend(remaining[int(i)] for i in order)
+
+    # Read candidate contexts at the finest available pyramid level near the
+    # neural model's 1 µm/px operating resolution.  Each context is 512 µm
+    # wide, so one model window covers the final tile plus useful surroundings.
+    target_downsample = 1.0 / slide_mpp
+    neural_level = wsi.get_best_level_for_downsample(target_downsample)
+    neural_downsample = level_downsamples[neural_level]
+    neural_level_mpp = slide_mpp * neural_downsample[0]
+    context_native_size = max(
+        native_patch_size, int(round(512.0 / slide_mpp))
+    )
+    context_level_width = max(
+        1, int(np.ceil(context_native_size / neural_downsample[0]))
+    )
+    context_level_height = max(
+        1, int(np.ceil(context_native_size / neural_downsample[1]))
+    )
+    segmenter = (
+        neural_segmenter
+        if neural_segmenter is not None
+        else _neural_segmenter_from_config(neural_config)
+    )
+    accepted: list[tuple[int, int]] = []
+    evaluated = 0
+    for batch_start in range(0, min(len(candidates), max_candidate_tiles), segmenter.batch_size):
+        candidate_batch = candidates[
+            batch_start : min(batch_start + segmenter.batch_size, max_candidate_tiles)
+        ]
+        contexts: list[np.ndarray] = []
+        mappings: list[tuple[int, int, int, int]] = []
+        for x, y in candidate_batch:
+            center_x = x + native_patch_size / 2.0
+            center_y = y + native_patch_size / 2.0
+            origin_x = int(round(center_x - context_native_size / 2.0))
+            origin_y = int(round(center_y - context_native_size / 2.0))
+            max_origin_x = max(0, int(level_dimensions[0] - context_native_size))
+            max_origin_y = max(0, int(level_dimensions[1] - context_native_size))
+            origin_x = min(max(0, origin_x), max_origin_x)
+            origin_y = min(max(0, origin_y), max_origin_y)
+            context = np.asarray(
+                wsi.read_region(
+                    (origin_x, origin_y),
+                    neural_level,
+                    (context_level_width, context_level_height),
+                )
+            )
+            if context.ndim == 3 and context.shape[2] > 3:
+                context = context[:, :, :3]
+            contexts.append(context.astype(np.uint8, copy=False))
+            tile_x = int(round((x - origin_x) / neural_downsample[0]))
+            tile_y = int(round((y - origin_y) / neural_downsample[1]))
+            tile_width = max(1, int(round(native_patch_size / neural_downsample[0])))
+            tile_height = max(1, int(round(native_patch_size / neural_downsample[1])))
+            mappings.append((tile_x, tile_y, tile_width, tile_height))
+
+        masks = segmenter.segment_patches(contexts, slide_mpp=neural_level_mpp)
+        evaluated += len(candidate_batch)
+        for (x, y), mask, (tile_x, tile_y, tile_width, tile_height) in zip(
+            candidate_batch, masks, mappings
+        ):
+            y0 = max(0, tile_y)
+            x0 = max(0, tile_x)
+            y1 = min(mask.shape[0], tile_y + tile_height)
+            x1 = min(mask.shape[1], tile_x + tile_width)
+            if y1 <= y0 or x1 <= x0:
+                fraction = 0.0
+            else:
+                fraction = float(mask[y0:y1, x0:x1].mean()) / 255.0
+            if fraction >= min_tissue_proportion:
+                accepted.append((x, y))
+                if len(accepted) >= max_tiles:
+                    break
+        if len(accepted) >= max_tiles:
+            break
+
+    if not accepted:
+        logger.warning("Bounded neural sampling found no tissue-rich tiles")
+        return None
+
+    grid = [
+        box(x, y, x + native_patch_size, y + native_patch_size)
+        for x, y in accepted
+    ]
+    polygon = unary_union(grid)
+    attrs = {
+        "selection_mode": "bounded_neural",
+        "candidate_tiles_proposed": proposal_count,
+        "candidate_tiles_evaluated": evaluated,
+        "candidate_tiles_accepted": len(accepted),
+        "max_candidate_tiles": max_candidate_tiles,
+        "neural_level": neural_level,
+        "neural_level_mpp": neural_level_mpp,
+        "tile_patch_size": patch_size,
+        "tile_mpp": mpp,
+    }
+    logger.info(
+        "Bounded neural sampling accepted %d/%d tiles after %d candidate evaluations",
+        len(accepted),
+        max_tiles,
+        evaluated,
+    )
+    return polygon, grid, accepted, attrs
 
 
 @timed
@@ -549,6 +794,9 @@ def segment_tissue(
     max_tiles: Optional[int] = None,
     max_tiles_strategy: str = "random",
     max_tiles_seed: int = 42,
+    selection_mode: str = "full_mask",
+    max_candidate_tiles: Optional[int] = None,
+    neural_segmenter=None,
 ):
     """Segment tissue regions in a whole-slide image and generate tissue patches.
 
@@ -622,6 +870,13 @@ def segment_tissue(
         max_tiles_strategy: ``"random"`` (seeded) or ``"first"`` when
             ``max_tiles`` is smaller than the available tile count.
         max_tiles_seed: Seed used by the random max-tile strategy.
+        selection_mode: ``"full_mask"`` (default) runs neural segmentation over
+            the complete slide. ``"bounded_neural"`` uses a conservative
+            thumbnail proposal and neural-validates at most
+            ``max_candidate_tiles`` candidates.
+        max_candidate_tiles: Maximum number of candidate windows evaluated by
+            bounded neural selection. Defaults to 256 in bounded mode.
+        neural_segmenter: Optional preloaded segmenter to reuse across slides.
 
     Returns:
         tuple: A 4-tuple containing:
@@ -657,6 +912,30 @@ def segment_tissue(
                 "max_tiles_strategy must be 'random' or 'first', "
                 f"got {max_tiles_strategy!r}"
             )
+        if selection_mode not in {"full_mask", "bounded_neural"}:
+            raise ValueError(
+                "selection_mode must be 'full_mask' or 'bounded_neural', "
+                f"got {selection_mode!r}"
+            )
+        if max_candidate_tiles is not None and max_candidate_tiles <= 0:
+            raise ValueError(
+                "max_candidate_tiles must be positive or None, "
+                f"got {max_candidate_tiles}"
+            )
+        if selection_mode == "bounded_neural":
+            if str(seg_model or "classic").strip().lower() != "neural":
+                raise ValueError(
+                    "selection_mode='bounded_neural' requires seg_model='neural'"
+                )
+            if max_tiles is None or max_tiles <= 0:
+                raise ValueError(
+                    "selection_mode='bounded_neural' requires a positive max_tiles"
+                )
+            max_candidate_tiles = max_candidate_tiles or 256
+            if max_candidate_tiles < max_tiles:
+                raise ValueError(
+                    "max_candidate_tiles must be at least max_tiles in bounded mode"
+                )
 
         if exclude_ids is None:
             exclude_ids = []
@@ -757,12 +1036,76 @@ def segment_tissue(
                 )
 
         if seg_model == "neural":
+            if selection_mode == "bounded_neural":
+                if remove_artifacts or remove_penmarks or artifact_remover_fn is not None:
+                    raise ValueError(
+                        "Artifact removal is not supported with bounded neural selection"
+                    )
+                bounded = _bounded_neural_tessellation(
+                    wsi=wsi,
+                    proposal_img=img,
+                    slide_mpp=slide_mpp,
+                    level_downsamples=level_downsamples,
+                    native_patch_size=native_patch_size,
+                    native_step_size=native_step_size,
+                    patch_size=patch_size,
+                    mpp=mpp,
+                    min_tissue_proportion=min_tissue_proportion,
+                    max_tiles=max_tiles,
+                    max_candidate_tiles=max_candidate_tiles,
+                    max_tiles_seed=max_tiles_seed,
+                    neural_config=neural_config,
+                    neural_segmenter=neural_segmenter,
+                )
+                if bounded is None:
+                    return None
+                polygon, grid, coords, bounded_attrs = bounded
+                attrs = {
+                    "seg_level": seg_level,
+                    "segment_threshold": segment_threshold,
+                    "segment_max_value": segment_max_value,
+                    "median_blur_ksize": median_blur_ksize,
+                    "morphology_ex_kernel": morphology_ex_kernel,
+                    "tissue_area_threshold": tissue_area_threshold,
+                    "hole_area_threshold": hole_area_threshold,
+                    "max_num_holes": max_num_holes,
+                    "ref_patch_size": ref_patch_size,
+                    "patch_size": native_patch_size,
+                    "step_size": native_step_size,
+                    "patch_size_to_resize_to_for_desired_mpp": patch_size,
+                    "patch_level": 0,
+                    "mpp": mpp,
+                    "native_mpp": slide_mpp,
+                    "mpp_is_fallback": mpp_is_fallback,
+                    "level_dim": wsi.level_dimensions[0],
+                    "name": slide_id,
+                    "overlap": overlap,
+                    "min_tissue_proportion": min_tissue_proportion,
+                    "seg_model": seg_model,
+                    "max_tiles": max_tiles,
+                    "max_tiles_strategy": max_tiles_strategy,
+                    "max_tiles_seed": max_tiles_seed,
+                    **bounded_attrs,
+                }
+                if output_h5_path:
+                    save_hdf5(
+                        output_h5_path,
+                        {"coords": np.array(coords, dtype=np.int64)},
+                        {"coords": attrs},
+                        mode="w",
+                    )
+                    logger.info(f"Writing to {output_h5_path}")
+                return polygon, grid, coords, attrs
+
             # The img is read at seg_level. Compute its actual MPP so that
             # NeuralTissueSegmenter can rescale to the model's 1 µm/px target.
             seg_level_ds = level_downsamples[seg_level][0]  # x-axis downsample
             seg_level_mpp = slide_mpp * seg_level_ds
             tissue_mask = _segment_tissue_neural(
-                img, seg_level_mpp, neural_config=neural_config
+                img,
+                seg_level_mpp,
+                neural_config=neural_config,
+                segmenter=neural_segmenter,
             )
         else:
             img_hsv = cv2.cvtColor(img, cv2.COLOR_RGB2HSV)  # Convert to HSV space
@@ -1000,6 +1343,10 @@ def segment_tissue(
             "max_tiles": -1 if max_tiles is None else max_tiles,
             "max_tiles_strategy": max_tiles_strategy,
             "max_tiles_seed": max_tiles_seed,
+            "selection_mode": selection_mode,
+            "max_candidate_tiles": (
+                -1 if max_candidate_tiles is None else max_candidate_tiles
+            ),
         }
         if output_h5_path:
             asset_dict = {"coords": np.array(coords, dtype=np.int64)}

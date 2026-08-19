@@ -33,6 +33,7 @@ def _tessellate_and_filter(
     skip_second_extraction: bool,
     output_mask_path: Optional[str] = None,
     artifact_remover_fn: Optional[GrandQCArtifactRemover] = None,
+    neural_segmenter=None,
 ) -> Optional[dict]:
     """Tessellate a slide and optionally extract/filter features for tile selection.
 
@@ -56,6 +57,8 @@ def _tessellate_and_filter(
             slides (weights are loaded only once).  When ``None`` a new instance is
             created from ``cfg.seg_config`` flags, which incurs a model-weight
             download on first use for every slide.
+        neural_segmenter: Optional preloaded neural segmenter to reuse across
+            slides in batch mode.
 
     Returns:
         ``None`` on tessellation failure; otherwise a dict with:
@@ -108,6 +111,7 @@ def _tessellate_and_filter(
         output_h5_path=tessellate_h5_path,
         artifact_remover_fn=artifact_remover_fn,
         neural_config=neural_cfg,
+        neural_segmenter=neural_segmenter,
         **seg_cfg,
     ):
         polygon, grid, coords, _ = values
@@ -228,6 +232,7 @@ def process_slide_tessellation_and_filtering(
     two_step_mode: bool = False,
     slide_model_path: Optional[str] = None,
     artifact_remover_fn: Optional[GrandQCArtifactRemover] = None,
+    neural_segmenter=None,
 ) -> Optional[dict]:
     """Process a single slide through tessellation, optional filtering, and feature extraction.
 
@@ -250,6 +255,7 @@ def process_slide_tessellation_and_filtering(
         slide_model_path: Path to slide encoder model weights.
         artifact_remover_fn: Pre-instantiated artifact remover to reuse across slides.
             See :func:`_tessellate_and_filter` for details.
+        neural_segmenter: Optional preloaded neural segmenter to reuse across slides.
 
     Returns:
         ``None`` if processing failed (tessellation error); otherwise a dict with
@@ -268,6 +274,7 @@ def process_slide_tessellation_and_filtering(
         skip_second_extraction=skip_second_extraction,
         output_mask_path=output_mask_path,
         artifact_remover_fn=artifact_remover_fn,
+        neural_segmenter=neural_segmenter,
     )
     if result is None:
         return None
@@ -366,6 +373,7 @@ def process_slide_tessellation_only(
     skip_second_extraction: bool,
     output_mask_path: Optional[str] = None,
     artifact_remover_fn: Optional[GrandQCArtifactRemover] = None,
+    neural_segmenter=None,
 ) -> Optional[dict]:
     """Process a slide through tessellation and optional filtering (no feature extraction).
 
@@ -384,6 +392,7 @@ def process_slide_tessellation_only(
         output_mask_path: Optional path to save mask visualization.
         artifact_remover_fn: Pre-instantiated artifact remover to reuse across slides.
             See :func:`_tessellate_and_filter` for details.
+        neural_segmenter: Optional preloaded neural segmenter to reuse across slides.
 
     Returns:
         Dict with paths and coordinates for batch feature extraction, or ``None`` on failure.
@@ -400,6 +409,7 @@ def process_slide_tessellation_only(
         skip_second_extraction=skip_second_extraction,
         output_mask_path=output_mask_path,
         artifact_remover_fn=artifact_remover_fn,
+        neural_segmenter=neural_segmenter,
     )
     if result is None:
         return None
