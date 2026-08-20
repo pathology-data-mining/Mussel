@@ -1347,6 +1347,28 @@ class TestSegmentTissueArtifactRemover:
 
 
 class TestBoundedNeuralSelection:
+    def test_bounded_neural_honors_first_candidate_order(self):
+        from mussel.utils.segment import _bounded_candidate_origins
+
+        proposal = np.ones((256, 256), dtype=np.uint8)
+        origins = _bounded_candidate_origins(
+            proposal,
+            (1024, 1024),
+            (4.0, 4.0),
+            native_patch_size=256,
+            native_step_size=256,
+            seed=42,
+            strategy="first",
+        )
+
+        assert origins[:5] == [
+            (0, 0),
+            (256, 0),
+            (512, 0),
+            (768, 0),
+            (0, 256),
+        ]
+
     def test_bounded_neural_selects_tissue_tiles_with_candidate_cap(self):
         mock_wsi = _make_mock_wsi_with_real_tissue(width=4096, height=4096)
         segmenter = MagicMock()
@@ -1384,6 +1406,28 @@ class TestBoundedNeuralSelection:
                 selection_mode="bounded_neural",
                 max_tiles=3,
                 max_candidate_tiles=8,
+            )
+
+    def test_bounded_neural_rejects_deprecated_otsu_override(self):
+        with pytest.raises(ValueError, match="requires seg_model='neural'"):
+            _run_segment_with_mocks(
+                _make_mock_wsi_with_tissue(),
+                seg_model="neural",
+                use_otsu=True,
+                selection_mode="bounded_neural",
+                max_tiles=3,
+                max_candidate_tiles=8,
+            )
+
+    def test_bounded_neural_rejects_contour_id_filters(self):
+        with pytest.raises(ValueError, match="contour IDs"):
+            _run_segment_with_mocks(
+                _make_mock_wsi_with_tissue(),
+                seg_model="neural",
+                selection_mode="bounded_neural",
+                max_tiles=3,
+                max_candidate_tiles=8,
+                keep_ids=[0],
             )
 
 

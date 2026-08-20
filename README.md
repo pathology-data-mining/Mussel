@@ -205,7 +205,8 @@ Then pass `seg_config.seg_model=neural` to `tessellate` or
 performance but CPU inference is supported.
 
 Neural runtime controls are available under `neural_config.*` (weights path,
-device, batch size, confidence threshold, and `max_inference_tiles`). An explicit
+device, batch size, confidence threshold, and `max_inference_tiles`) for
+`tessellate`, `tessellate_extract_features`, and `filter_tessellate`. An explicit
 neural device takes precedence over the workflow's `use_gpu` setting; `auto`
 uses that setting. Use
 `seg_config.max_tiles` with `seg_config.max_tiles_strategy` and

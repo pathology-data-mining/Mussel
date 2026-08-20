@@ -128,7 +128,7 @@ tessellate slide_path=slide.svs output_h5_path=out.h5 seg_config=stain
 | `biopsy` | Needle-core / punch biopsies | Lower area thresholds (`tissue_area_threshold=1`, `hole_area_threshold=1`) to keep small tissue cores; fewer holes (`max_num_holes=2`). | Area thresholds and `max_num_holes` still apply; `segment_threshold`/`median_blur_ksize` are ignored with a warning. |
 | `resection` | Surgical resection specimens | Stronger morphological closing (`morphology_ex_kernel=4`) to bridge gaps in large sections; same area thresholds as `default`. | Only `morphology_ex_kernel=4` has effect; `segment_threshold`/`median_blur_ksize` are ignored with a warning. Consider `default seg_config.seg_model=neural seg_config.morphology_ex_kernel=4` to avoid the warning. |
 | `tcga` | TCGA whole-slide images | Lower `segment_threshold=8` to capture pale/faded tissue; stronger closing (`morphology_ex_kernel=4`); reduced area thresholds. | `segment_threshold` is ignored with a warning (`median_blur_ksize=7` matches the default so no second warning); `morphology_ex_kernel=4` and area thresholds still apply. |
-| `stain` | Fast H&E/IHC stain classification | Neural validation, 32-tile cap, 75% minimum tissue fraction, small-region retention, and bounded candidate sampling (up to 256 candidates). | Uses the bounded neural path; it does not build a full-slide mask. |
+| `stain` | Fast H&E/IHC stain classification | Neural validation, 32-tile cap, 75% minimum tissue fraction, no contour pruning, and bounded candidate sampling (up to 256 candidates). | Uses the bounded neural path; it does not build a full-slide mask. |
 
 #### Segmentation and patching options
 
@@ -140,8 +140,8 @@ tessellate slide_path=slide.svs output_h5_path=out.h5 seg_config=stain
 | `seg_config.min_tissue_proportion` | `0.0` | Per-tile filter: discard tiles where the fraction of tissue pixels is below this value (0.0–1.0). Applied after tiling; `0.1` discards mostly-background edge tiles. |
 | `seg_config.selection_mode` | `full_mask` | `full_mask` segments the complete slide; `bounded_neural` proposes candidates cheaply and neural-validates only a bounded set. |
 | `seg_config.max_candidate_tiles` | `null` | Maximum neural candidates in `bounded_neural` mode; the `stain` preset sets this to `256`. |
-| `seg_config.tissue_area_threshold` | `100` | Pre-tile filter: minimum size of a tissue **region** (contour), in number of tiles. Regions smaller than this are discarded as debris before tiling begins. Default 100 ≈ a ~3.2 mm² blob at 256 px / 0.5 µm/px. Set to `1` to keep all regions (recommended for biopsies). |
-| `seg_config.hole_area_threshold` | `16` | Minimum size of a hole inside a tissue region, in number of tiles. Holes smaller than this are filled (treated as tissue). |
+| `seg_config.tissue_area_threshold` | `100` | Full-mask mode only: minimum size of a tissue **region** (contour), in number of tiles. Bounded neural mode performs no contour filtering. |
+| `seg_config.hole_area_threshold` | `16` | Full-mask mode only: minimum size of a hole inside a tissue region, in number of tiles. |
 | `seg_config.remove_artifacts` | `false` | Enable artifact removal (requires `artifact_remover_fn` hook). |
 | `seg_config.remove_penmarks` | `false` | Enable pen-mark removal (requires `artifact_remover_fn` hook). |
 | `seg_config.seg_model` | `"classic"` | Segmentation backend: `"classic"` (HSV + fixed threshold), `"otsu"` (HSV + Otsu automatic threshold), or `"neural"` (deep learning; see below). Note: the old `seg_config.use_otsu=true` flag is deprecated — use `seg_model=otsu` instead. |
@@ -173,7 +173,9 @@ tessellate_extract_features \
 The preset stops after 32 tiles with at least 75% neural tissue, or after 256
 candidate checks. If fewer than 32 tiles qualify, it returns the qualifying
 tiles without relaxing the cutoff. In bounded mode, mask output represents
-the accepted tile footprints rather than a complete slide tissue contour.
+the accepted tile footprints rather than a complete slide tissue contour. Contour
+ID filters are unsupported; `morphology_ex_kernel` is applied to each candidate
+mask before its tissue fraction is calculated.
 
 #### Neural tissue segmentation (`seg_model="neural"`)
 
@@ -221,7 +223,8 @@ tessellate_extract_features \
 ```
 
 Neural model loading and inference are controlled independently through
-`neural_config.*` (available on both commands):
+`neural_config.*` (available on `tessellate`, `tessellate_extract_features`, and
+`filter_tessellate`):
 
 | Parameter | Default | Description |
 |---|---|---|

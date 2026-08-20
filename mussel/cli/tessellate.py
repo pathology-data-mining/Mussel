@@ -65,16 +65,19 @@ class SegConfig:
     ref_patch_size (int): Reference patch size (in pixels) used to scale the ``tissue_area_threshold``
         and ``hole_area_threshold`` values.
     use_otsu (bool): **Deprecated** — use ``seg_model="otsu"`` instead.
-    tissue_area_threshold (int): Minimum size of a tissue contour, expressed as the number of
-        tiles (at the configured ``patch_size`` and ``mpp``) the region must span. Contours
-        smaller than this are discarded as debris. Default 100 (≈ a ~3.2 mm² region at
-        256 px / 0.5 µm/px). Set to 1 to keep all contours (useful for biopsies).
-    hole_area_threshold (int): Minimum size of a hole inside a tissue contour, expressed as the
-        number of tiles it spans. Holes smaller than this are filled in (treated as tissue).
-        Default 16.
+    tissue_area_threshold (int): Minimum size of a tissue contour in ``full_mask`` mode,
+        expressed as the number of tiles (at the configured ``patch_size`` and ``mpp``)
+        the region must span. Contours smaller than this are discarded as debris. Default
+        100 (≈ a ~3.2 mm² region at 256 px / 0.5 µm/px). Bounded neural mode does not
+        build contours and therefore does not apply this setting.
+    hole_area_threshold (int): Minimum size of a hole inside a tissue contour in ``full_mask``
+        mode, expressed as the number of tiles it spans. Holes smaller than this are filled
+        in (treated as tissue). Bounded neural mode does not apply this setting. Default 16.
     max_num_holes (int): Maximum number of holes retained per tissue contour.
-    keep_ids (List[int]): Contour IDs to keep; all others are discarded. Empty list keeps all.
-    exclude_ids (List[int]): Contour IDs to discard. Empty list excludes none.
+    keep_ids (List[int]): Contour IDs to keep in ``full_mask`` mode; all others are discarded.
+        Empty list keeps all. Not supported in bounded neural mode.
+    exclude_ids (List[int]): Contour IDs to discard in ``full_mask`` mode. Empty list excludes
+        none. Not supported in bounded neural mode.
     min_tissue_proportion (float): Minimum fraction of tile area that must be tissue (0.0–1.0).
         Tiles below this threshold are discarded.
     remove_artifacts (bool): If True, apply artifact removal to the tissue mask before patching
@@ -160,11 +163,11 @@ class StainSegConfig(SegConfig):
     """Fast, tissue-rich preset for stain classification.
 
     The preset uses neural segmentation to validate at least 75% tissue per
-    output tile, retains small tissue regions, and stops after 32 accepted
-    tiles or 256 neural candidate evaluations.
+    output tile, performs no contour pruning so small tissue regions remain
+    eligible, and stops after 32 accepted tiles or 256 neural candidate
+    evaluations.
     """
 
-    tissue_area_threshold: int = 1
     min_tissue_proportion: float = 0.75
     seg_model: str = "neural"
     max_tiles: Optional[int] = 32

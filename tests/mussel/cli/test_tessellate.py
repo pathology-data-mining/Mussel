@@ -323,7 +323,6 @@ def test_stain_seg_config_is_speed_oriented():
     assert cfg.max_tiles == 32
     assert cfg.max_candidate_tiles == 256
     assert cfg.min_tissue_proportion == 0.75
-    assert cfg.tissue_area_threshold == 1
 
 def test_artifact_remover_fn_wired_when_remove_artifacts(tmp_path):
     """_tessellate_and_filter instantiates GrandQCArtifactRemover when remove_artifacts=True.

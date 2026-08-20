@@ -597,6 +597,7 @@ def _bounded_candidate_origins(
     native_patch_size: int,
     native_step_size: int,
     seed: int,
+    strategy: str,
 ) -> list[tuple[int, int]]:
     """Find output-tile origins from a conservative thumbnail proposal.
 
@@ -631,8 +632,10 @@ def _bounded_candidate_origins(
     if not candidates:
         candidates = [(x, y) for y in y_origins for x in x_origins]
 
-    order = np.random.default_rng(seed).permutation(len(candidates))
-    return [candidates[int(i)] for i in order]
+    if strategy == "random":
+        order = np.random.default_rng(seed).permutation(len(candidates))
+        return [candidates[int(i)] for i in order]
+    return candidates
 
 
 def _proposal_mask(img: np.ndarray) -> np.ndarray:
@@ -663,7 +666,9 @@ def _bounded_neural_tessellation(
     min_tissue_proportion: float,
     max_tiles: int,
     max_candidate_tiles: int,
+    max_tiles_strategy: str,
     max_tiles_seed: int,
+    morphology_ex_kernel: int,
     neural_segmenter=None,
 ) -> tuple[MultiPolygon, list[Polygon], list[tuple[int, int]], dict] | None:
     """Select a small number of neural-validated tiles without full-slide inference."""
@@ -683,6 +688,7 @@ def _bounded_neural_tessellation(
         native_patch_size,
         native_step_size,
         max_tiles_seed,
+        max_tiles_strategy,
     )
     proposal_count = len(candidates)
     # A thumbnail is a high-recall hint, not a hard tissue mask.  If it
@@ -705,10 +711,13 @@ def _bounded_neural_tessellation(
             if (x, y) not in proposed
         ]
         if remaining:
-            order = np.random.default_rng(max_tiles_seed + 1).permutation(
-                len(remaining)
-            )
-            candidates.extend(remaining[int(i)] for i in order)
+            if max_tiles_strategy == "random":
+                order = np.random.default_rng(max_tiles_seed + 1).permutation(
+                    len(remaining)
+                )
+                candidates.extend(remaining[int(i)] for i in order)
+            else:
+                candidates.extend(remaining)
 
     # Read candidate contexts at the finest available pyramid level near the
     # neural model's 1 µm/px operating resolution.  Each context is 512 µm
@@ -731,6 +740,11 @@ def _bounded_neural_tessellation(
         segmenter = _neural_segmenter_from_config(None)
     accepted: list[tuple[int, int]] = []
     evaluated = 0
+    morphology_kernel = None
+    if morphology_ex_kernel > 0:
+        morphology_kernel = np.ones(
+            (morphology_ex_kernel, morphology_ex_kernel), dtype=np.uint8
+        )
     for batch_start in range(0, min(len(candidates), max_candidate_tiles), segmenter.batch_size):
         candidate_batch = candidates[
             batch_start : min(batch_start + segmenter.batch_size, max_candidate_tiles)
@@ -767,6 +781,8 @@ def _bounded_neural_tessellation(
         for (x, y), mask, (tile_x, tile_y, tile_width, tile_height) in zip(
             candidate_batch, masks, mappings
         ):
+            if morphology_kernel is not None:
+                mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, morphology_kernel)
             y0 = max(0, tile_y)
             x0 = max(0, tile_x)
             y1 = min(mask.shape[0], tile_y + tile_height)
@@ -801,6 +817,7 @@ def _bounded_neural_tessellation(
         "neural_level_mpp": neural_level_mpp,
         "tile_patch_size": patch_size,
         "tile_mpp": mpp,
+        "contour_filtering_applied": False,
     }
     logger.info(
         "Bounded neural sampling accepted %d/%d tiles after %d candidate evaluations",
@@ -968,19 +985,7 @@ def segment_tissue(
                 f"got {max_candidate_tiles}"
             )
         if selection_mode == "bounded_neural":
-            if str(seg_model or "classic").strip().lower() != "neural":
-                raise ValueError(
-                    "selection_mode='bounded_neural' requires seg_model='neural'"
-                )
-            if max_tiles is None or max_tiles <= 0:
-                raise ValueError(
-                    "selection_mode='bounded_neural' requires a positive max_tiles"
-                )
             max_candidate_tiles = max_candidate_tiles or 256
-            if max_candidate_tiles < max_tiles:
-                raise ValueError(
-                    "max_candidate_tiles must be at least max_tiles in bounded mode"
-                )
 
         if exclude_ids is None:
             exclude_ids = []
@@ -1012,6 +1017,25 @@ def segment_tissue(
                 stacklevel=2,
             )
             seg_model = "otsu"
+
+        if selection_mode == "bounded_neural":
+            if seg_model != "neural":
+                raise ValueError(
+                    "selection_mode='bounded_neural' requires seg_model='neural'"
+                )
+            if max_tiles is None or max_tiles <= 0:
+                raise ValueError(
+                    "selection_mode='bounded_neural' requires a positive max_tiles"
+                )
+            if max_candidate_tiles < max_tiles:
+                raise ValueError(
+                    "max_candidate_tiles must be at least max_tiles in bounded mode"
+                )
+            if keep_ids or exclude_ids:
+                raise ValueError(
+                    "contour IDs (keep_ids and exclude_ids) are not supported "
+                    "with bounded neural selection"
+                )
 
         # Get MPP with fallback handling.
         # Probe without a default first to detect whether real metadata exists.
@@ -1111,7 +1135,9 @@ def segment_tissue(
                     min_tissue_proportion=min_tissue_proportion,
                     max_tiles=max_tiles,
                     max_candidate_tiles=max_candidate_tiles,
+                    max_tiles_strategy=max_tiles_strategy,
                     max_tiles_seed=max_tiles_seed,
+                    morphology_ex_kernel=morphology_ex_kernel,
                     neural_segmenter=neural_segmenter,
                 )
                 if bounded is None:
