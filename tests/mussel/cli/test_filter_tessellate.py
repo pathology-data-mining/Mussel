@@ -89,6 +89,7 @@ def test_filter_tessellate_forwards_reusable_neural_segmenter(tmp_path):
     build_segmenter.assert_called_once()
     assert build_segmenter.call_args.kwargs["neural_config"]["batch_size"] == 32
     assert segment.call_args.kwargs["neural_segmenter"] is shared_segmenter
+    shared_segmenter.release.assert_called_once()
 
 
 @pytest.mark.slow

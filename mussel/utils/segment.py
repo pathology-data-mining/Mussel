@@ -738,6 +738,24 @@ def _bounded_neural_tessellation(
     segmenter = neural_segmenter
     if segmenter is None:
         segmenter = _neural_segmenter_from_config(None)
+    from mussel.utils.neural_seg import _num_inference_tiles_for_shape
+
+    inference_tiles_per_candidate = _num_inference_tiles_for_shape(
+        context_level_height, context_level_width, neural_level_mpp
+    )
+    configured_inference_limit = getattr(segmenter, "max_inference_tiles", None)
+    effective_candidate_limit = max_candidate_tiles
+    if isinstance(configured_inference_limit, (int, np.integer)):
+        if configured_inference_limit < inference_tiles_per_candidate:
+            raise ValueError(
+                "max_inference_tiles is too small for one bounded neural "
+                f"candidate ({inference_tiles_per_candidate} model tiles required, "
+                f"limit is {configured_inference_limit})"
+            )
+        effective_candidate_limit = min(
+            effective_candidate_limit,
+            configured_inference_limit // inference_tiles_per_candidate,
+        )
     accepted: list[tuple[int, int]] = []
     evaluated = 0
     morphology_kernel = None
@@ -745,9 +763,13 @@ def _bounded_neural_tessellation(
         morphology_kernel = np.ones(
             (morphology_ex_kernel, morphology_ex_kernel), dtype=np.uint8
         )
-    for batch_start in range(0, min(len(candidates), max_candidate_tiles), segmenter.batch_size):
+    for batch_start in range(
+        0, min(len(candidates), effective_candidate_limit), segmenter.batch_size
+    ):
         candidate_batch = candidates[
-            batch_start : min(batch_start + segmenter.batch_size, max_candidate_tiles)
+            batch_start : min(
+                batch_start + segmenter.batch_size, effective_candidate_limit
+            )
         ]
         contexts: list[np.ndarray] = []
         mappings: list[tuple[int, int, int, int]] = []
@@ -813,6 +835,14 @@ def _bounded_neural_tessellation(
         "candidate_tiles_evaluated": evaluated,
         "candidate_tiles_accepted": len(accepted),
         "max_candidate_tiles": max_candidate_tiles,
+        "effective_candidate_tiles": effective_candidate_limit,
+        "inference_tiles_evaluated": evaluated * inference_tiles_per_candidate,
+        "max_inference_tiles": (
+            -1
+            if configured_inference_limit is None
+            or not isinstance(configured_inference_limit, (int, np.integer))
+            else configured_inference_limit
+        ),
         "neural_level": neural_level,
         "neural_level_mpp": neural_level_mpp,
         "tile_patch_size": patch_size,

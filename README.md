@@ -214,9 +214,10 @@ uses that setting. Use
 
 For stain classification, use `seg_config=stain`. This speed-oriented preset
 uses bounded neural validation, keeps up to 32 tiles with at least 75% tissue,
-and checks at most 256 candidates. It avoids full-slide neural inference; when
-fewer than 32 candidates qualify, it returns the qualifying tiles without
-relaxing the tissue cutoff.
+checks at most 256 candidates, and honors `neural_config.max_inference_tiles` as
+an additional inference budget. It avoids full-slide neural inference; when
+fewer than 32 candidates qualify or the inference budget is reached, it returns
+the qualifying tiles without relaxing the tissue cutoff.
 
 ## Development Notes
 

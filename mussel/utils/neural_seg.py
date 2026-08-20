@@ -67,7 +67,8 @@ class NeuralTissueSegmenter:
             Lower values → more tissue retained. Default 0.5.
         max_inference_tiles: Maximum number of model inference tiles for one
             slide. ``None`` uses ``MUSSEL_NEURAL_SEG_MAX_TILES`` (default 4096);
-            zero disables the guard.
+            zero disables the guard. Bounded neural selection treats this as an
+            additional sampling budget and may return fewer accepted tiles.
     """
 
     def __init__(
@@ -138,7 +139,7 @@ class NeuralTissueSegmenter:
         else:
             target_H, target_W = H, W
 
-        n_tiles = _num_tiles(target_H, target_W, _INPUT_SIZE)
+        n_tiles = _num_inference_tiles_for_shape(H, W, slide_mpp)
         if self.max_inference_tiles is not None and n_tiles > self.max_inference_tiles:
             raise ValueError(
                 "Neural tissue segmentation would require "
@@ -184,7 +185,6 @@ class NeuralTissueSegmenter:
         if slide_mpp <= 0:
             raise ValueError(f"slide_mpp must be positive, got {slide_mpp}")
 
-        self._ensure_model_loaded()
         patch_size = _INPUT_SIZE
         prepared: list[tuple[np.ndarray, tuple[int, int]]] = []
         for image in images:
@@ -234,6 +234,18 @@ class NeuralTissueSegmenter:
                     tiles.append(crop)
                     tile_records.append((image_index, x, y, x1, y1))
 
+        n_tiles = len(tiles)
+        if (
+            self.max_inference_tiles is not None
+            and n_tiles > self.max_inference_tiles
+        ):
+            raise ValueError(
+                "Neural tissue segmentation patches would require "
+                f"{n_tiles:,} {_INPUT_SIZE}x{_INPUT_SIZE} inference tiles, "
+                f"which exceeds max_inference_tiles={self.max_inference_tiles:,}."
+            )
+
+        self._ensure_model_loaded()
         use_fp16 = self.device.type == "cuda"
         dtype = torch.float16 if use_fp16 else torch.float32
         for batch_start in range(0, len(tiles), self.batch_size):
@@ -269,6 +281,20 @@ class NeuralTissueSegmenter:
                 )
             masks.append((output_mask * 255).astype(np.uint8))
         return masks
+
+    def release(self) -> None:
+        """Release model weights and CUDA allocations held by this segmenter.
+
+        The segmenter can be used again after release; weights will be loaded
+        lazily on the next inference call.
+        """
+        model = self._model
+        self._model = None
+        self._mean = None
+        self._std = None
+        del model
+        if self.device.type == "cuda":
+            torch.cuda.empty_cache()
 
     # ------------------------------------------------------------------
     # Private helpers
@@ -376,6 +402,18 @@ def _num_tiles(height: int, width: int, patch_size: int) -> int:
     return ((height + patch_size - 1) // patch_size) * (
         (width + patch_size - 1) // patch_size
     )
+
+
+def _num_inference_tiles_for_shape(
+    height: int, width: int, slide_mpp: float
+) -> int:
+    """Return model-window count for an image shape at the given MPP."""
+    if slide_mpp <= 0:
+        raise ValueError(f"slide_mpp must be positive, got {slide_mpp}")
+    scale = slide_mpp / _TARGET_MPP
+    target_height = max(1, int(round(height * scale)))
+    target_width = max(1, int(round(width * scale)))
+    return _num_tiles(target_height, target_width, _INPUT_SIZE)
 
 
 def _get_max_inference_tiles() -> Optional[int]:

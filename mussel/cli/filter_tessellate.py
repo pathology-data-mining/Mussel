@@ -191,14 +191,21 @@ def _main(cfg: FilterTessellateConfig, temp_dir, base_path):
     # Strip config-only keys that are not segment_tissue() parameters.
     seg_cfg.pop("artifact_exclude_classes", None)
 
-    if values := segment_tissue(
-        slide_path=cfg.slide_path,
-        slide_id=cfg.slide_id,
-        output_h5_path=tessellate_h5_path,
-        artifact_remover_fn=artifact_remover_fn,
-        neural_segmenter=neural_segmenter,
-        **seg_cfg,
-    ):
+    try:
+        values = segment_tissue(
+            slide_path=cfg.slide_path,
+            slide_id=cfg.slide_id,
+            output_h5_path=tessellate_h5_path,
+            artifact_remover_fn=artifact_remover_fn,
+            neural_segmenter=neural_segmenter,
+            **seg_cfg,
+        )
+    finally:
+        release = getattr(neural_segmenter, "release", None)
+        if callable(release):
+            release()
+
+    if values:
         polygon, grid, coords, _ = values
     else:
         logger.error("Tessellation failed")

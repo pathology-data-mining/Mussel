@@ -134,6 +134,29 @@ class TestSegmentPatches:
         assert [mask.shape for mask in masks] == [(128, 192), (64, 96)]
         assert all(np.all(mask == 255) for mask in masks)
 
+    def test_segment_patches_enforces_inference_tile_guard_before_loading(self):
+        images = [
+            np.ones((512, 512, 3), dtype=np.uint8) * 200,
+            np.ones((512, 512, 3), dtype=np.uint8) * 180,
+        ]
+        seg = _make_segmenter(_all_tissue_model())
+        seg.max_inference_tiles = 1
+
+        with patch.object(seg, "_ensure_model_loaded") as mock_load:
+            with pytest.raises(ValueError, match="max_inference_tiles"):
+                seg.segment_patches(images, slide_mpp=1.0)
+
+        mock_load.assert_not_called()
+
+    def test_release_drops_loaded_model_and_normalization_tensors(self):
+        seg = _make_segmenter(_all_tissue_model())
+
+        seg.release()
+
+        assert seg._model is None
+        assert seg._mean is None
+        assert seg._std is None
+
 
 # ---------------------------------------------------------------------------
 # slide_mpp rescaling

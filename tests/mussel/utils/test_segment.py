@@ -1398,6 +1398,34 @@ class TestBoundedNeuralSelection:
         assert attrs["candidate_tiles_evaluated"] <= 8
         segmenter.segment_patches.assert_called()
 
+    def test_bounded_neural_applies_inference_tile_budget(self):
+        mock_wsi = _make_mock_wsi_with_real_tissue(width=4096, height=4096)
+        segmenter = MagicMock()
+        segmenter.batch_size = 4
+        segmenter.max_inference_tiles = 2
+        segmenter.segment_patches.side_effect = lambda images, slide_mpp: [
+            np.ones(image.shape[:2], dtype=np.uint8) * 255 for image in images
+        ]
+
+        result = _run_segment_with_mocks(
+            mock_wsi,
+            seg_level=1,
+            patch_size=256,
+            mpp=0.5,
+            seg_model="neural",
+            selection_mode="bounded_neural",
+            max_tiles=3,
+            max_candidate_tiles=8,
+            min_tissue_proportion=0.75,
+            neural_segmenter=segmenter,
+        )
+
+        assert result is not None
+        _, _, coords, attrs = result
+        assert len(coords) == 2
+        assert attrs["effective_candidate_tiles"] == 2
+        assert attrs["inference_tiles_evaluated"] == 2
+
     def test_bounded_neural_requires_neural_backend(self):
         mock_wsi = _make_mock_wsi_with_tissue()
         with pytest.raises(ValueError, match="requires seg_model='neural'"):
