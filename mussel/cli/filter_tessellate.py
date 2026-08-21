@@ -15,9 +15,10 @@ from hydra.core.config_store import ConfigStore
 from omegaconf import MISSING, OmegaConf
 
 from mussel.cli.tessellate import (BiopsySegConfig, PngConfig,
-                                   ResectionSegConfig, SegConfig,
-                                   TcgaSegConfig, VisConfig,
-                                   _build_artifact_remover)
+                                   NeuralSegConfig, ResectionSegConfig,
+                                   SegConfig, StainSegConfig, TcgaSegConfig,
+                                   VisConfig, _build_artifact_remover,
+                                   _build_neural_segmenter)
 from mussel.cli.tessellate_extract_features_common import _build_grid_polygons
 from mussel.models import ModelType, get_default_patch_size
 from mussel.utils import (filter_features, load_classifier,
@@ -47,6 +48,8 @@ class FilterTessellateConfig:
     output_thumbnail_path (Optional[str]): Path to save the thumbnail image.
     thumbnail_size (tuple): Size of the thumbnail image.
     seg_config (SegConfig): Configuration for segmentation parameters.
+    neural_config (NeuralSegConfig): Runtime controls for neural segmentation, including
+        model device and inference batch size.
     vis_config (VisConfig): Configuration for visualization parameters.
     png_config (PngConfig): Configuration for PNG saving parameters.
     num_workers (int): Number of workers for saving patches and feature extraction.
@@ -82,6 +85,7 @@ class FilterTessellateConfig:
     keep_intermediate_files: bool = False
     ssl_verify: bool = True  # Whether to verify SSL certificates for remote operations
     seg_config: SegConfig = MISSING
+    neural_config: NeuralSegConfig = field(default_factory=NeuralSegConfig)
     vis_config: VisConfig = field(default_factory=VisConfig)
     png_config: PngConfig = field(default_factory=PngConfig)
 
@@ -116,6 +120,7 @@ parameter_doc = f"""
 == Available Parameters ==
 {FilterTessellateConfig.__doc__}
 seg_config: {SegConfig.__doc__}
+neural_config: {NeuralSegConfig.__doc__}
 vis_config: {VisConfig.__doc__}
 png_config: {PngConfig.__doc__}
 
@@ -132,6 +137,7 @@ cs.store(group="seg_config", name="default", node=SegConfig)
 cs.store(group="seg_config", name="biopsy", node=BiopsySegConfig)
 cs.store(group="seg_config", name="resection", node=ResectionSegConfig)
 cs.store(group="seg_config", name="tcga", node=TcgaSegConfig)
+cs.store(group="seg_config", name="stain", node=StainSegConfig)
 cs.store(name="filter_tessellate_config", node=FilterTessellateConfig)
 
 
@@ -169,16 +175,37 @@ def _main(cfg: FilterTessellateConfig, temp_dir, base_path):
 
     seg_cfg = OmegaConf.to_container(cfg.seg_config)
     artifact_remover_fn = _build_artifact_remover(seg_cfg)
+    neural_cfg_obj = getattr(cfg, "neural_config", NeuralSegConfig())
+    neural_cfg = (
+        OmegaConf.to_container(neural_cfg_obj, resolve=True)
+        if OmegaConf.is_config(neural_cfg_obj)
+        else vars(neural_cfg_obj)
+    )
+    neural_segmenter = _build_neural_segmenter(
+        seg_cfg,
+        use_gpu=cfg.use_gpu,
+        gpu_device_id=cfg.gpu_device_id,
+        gpu_device_ids=cfg.gpu_device_ids,
+        neural_config=neural_cfg,
+    )
     # Strip config-only keys that are not segment_tissue() parameters.
     seg_cfg.pop("artifact_exclude_classes", None)
 
-    if values := segment_tissue(
-        slide_path=cfg.slide_path,
-        slide_id=cfg.slide_id,
-        output_h5_path=tessellate_h5_path,
-        artifact_remover_fn=artifact_remover_fn,
-        **seg_cfg,
-    ):
+    try:
+        values = segment_tissue(
+            slide_path=cfg.slide_path,
+            slide_id=cfg.slide_id,
+            output_h5_path=tessellate_h5_path,
+            artifact_remover_fn=artifact_remover_fn,
+            neural_segmenter=neural_segmenter,
+            **seg_cfg,
+        )
+    finally:
+        release = getattr(neural_segmenter, "release", None)
+        if callable(release):
+            release()
+
+    if values:
         polygon, grid, coords, _ = values
     else:
         logger.error("Tessellation failed")

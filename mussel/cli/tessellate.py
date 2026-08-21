@@ -65,16 +65,19 @@ class SegConfig:
     ref_patch_size (int): Reference patch size (in pixels) used to scale the ``tissue_area_threshold``
         and ``hole_area_threshold`` values.
     use_otsu (bool): **Deprecated** — use ``seg_model="otsu"`` instead.
-    tissue_area_threshold (int): Minimum size of a tissue contour, expressed as the number of
-        tiles (at the configured ``patch_size`` and ``mpp``) the region must span. Contours
-        smaller than this are discarded as debris. Default 100 (≈ a ~3.2 mm² region at
-        256 px / 0.5 µm/px). Set to 1 to keep all contours (useful for biopsies).
-    hole_area_threshold (int): Minimum size of a hole inside a tissue contour, expressed as the
-        number of tiles it spans. Holes smaller than this are filled in (treated as tissue).
-        Default 16.
+    tissue_area_threshold (int): Minimum size of a tissue contour in ``full_mask`` mode,
+        expressed as the number of tiles (at the configured ``patch_size`` and ``mpp``)
+        the region must span. Contours smaller than this are discarded as debris. Default
+        100 (≈ a ~3.2 mm² region at 256 px / 0.5 µm/px). Bounded neural mode does not
+        build contours and therefore does not apply this setting.
+    hole_area_threshold (int): Minimum size of a hole inside a tissue contour in ``full_mask``
+        mode, expressed as the number of tiles it spans. Holes smaller than this are filled
+        in (treated as tissue). Bounded neural mode does not apply this setting. Default 16.
     max_num_holes (int): Maximum number of holes retained per tissue contour.
-    keep_ids (List[int]): Contour IDs to keep; all others are discarded. Empty list keeps all.
-    exclude_ids (List[int]): Contour IDs to discard. Empty list excludes none.
+    keep_ids (List[int]): Contour IDs to keep in ``full_mask`` mode; all others are discarded.
+        Empty list keeps all. Not supported in bounded neural mode.
+    exclude_ids (List[int]): Contour IDs to discard in ``full_mask`` mode. Empty list excludes
+        none. Not supported in bounded neural mode.
     min_tissue_proportion (float): Minimum fraction of tile area that must be tissue (0.0–1.0).
         Tiles below this threshold are discarded.
     remove_artifacts (bool): If True, apply artifact removal to the tissue mask before patching
@@ -95,6 +98,10 @@ class SegConfig:
     max_tiles_strategy (str): Sampling strategy when ``max_tiles`` is reached: ``"random"``
         (seeded, default) or ``"first"``.
     max_tiles_seed (int): Random seed used by the ``"random"`` max-tile strategy.
+    selection_mode (str): Tile selection backend: ``"full_mask"`` (default) or
+        ``"bounded_neural"`` for fast neural validation of a bounded candidate set.
+    max_candidate_tiles (Optional[int]): Candidate budget for ``bounded_neural``
+        selection. Defaults to 256 in that mode.
     artifact_remover_fn: Optional callable ``(img, mask, mpp) -> mask`` where ``img`` is the RGB
         thumbnail, ``mask`` is the binary tissue mask, and ``mpp`` is the thumbnail's µm/px.
         Returns a corrected binary mask. Use :class:`~mussel.utils.artifact_removal.GrandQCArtifactRemover`
@@ -147,6 +154,25 @@ class SegConfig:
     max_tiles: Optional[int] = None
     max_tiles_strategy: str = "random"
     max_tiles_seed: int = 42
+    selection_mode: str = "full_mask"
+    max_candidate_tiles: Optional[int] = None
+
+
+@dataclass
+class StainSegConfig(SegConfig):
+    """Fast, tissue-rich preset for stain classification.
+
+    The preset uses neural segmentation to validate at least 75% tissue per
+    output tile, performs no contour pruning so small tissue regions remain
+    eligible, and stops after 32 accepted tiles or 256 neural candidate
+    evaluations.
+    """
+
+    min_tissue_proportion: float = 0.75
+    seg_model: str = "neural"
+    max_tiles: Optional[int] = 32
+    selection_mode: str = "bounded_neural"
+    max_candidate_tiles: Optional[int] = 256
 
 
 @dataclass
@@ -323,7 +349,7 @@ Key options (use Hydra override syntax, e.g. seg_config.mpp=0.25):
   slide_path          Path to the slide file (required)
   output_h5_path      Path for the output HDF5 file (required)
   slide_paths         Batch mode slide paths; use output_h5_paths or output_dir for outputs
-  seg_config          Preset segmentation profile: default | biopsy | resection | tcga
+  seg_config          Preset segmentation profile: default | biopsy | resection | tcga | stain
   seg_config.mpp      Target resolution in µm/px (default 0.5 ≈ 20×; 0.25 ≈ 40×)
   seg_config.patch_size  Tile size in pixels at the target MPP (default 256)
   seg_config.seg_model   Segmentation backend: classic | otsu | neural
@@ -356,6 +382,7 @@ cs.store(group="seg_config", name="default", node=SegConfig)
 cs.store(group="seg_config", name="biopsy", node=BiopsySegConfig)
 cs.store(group="seg_config", name="resection", node=ResectionSegConfig)
 cs.store(group="seg_config", name="tcga", node=TcgaSegConfig)
+cs.store(group="seg_config", name="stain", node=StainSegConfig)
 cs.store(name="tessellate_config", node=TessellateConfig)
 
 

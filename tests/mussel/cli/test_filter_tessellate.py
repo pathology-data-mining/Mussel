@@ -1,10 +1,12 @@
 import os
 from pathlib import Path
+from unittest.mock import MagicMock, patch
 
 import pytest
+from omegaconf import OmegaConf
 
 from mussel.cli.filter_tessellate import FilterTessellateConfig
-from mussel.cli.tessellate import SegConfig
+from mussel.cli.tessellate import NeuralSegConfig, SegConfig, StainSegConfig
 from mussel.models import ModelType
 
 _FILTER_TESSELLATE_REQUIRED = dict(
@@ -44,6 +46,50 @@ def test_filter_tessellate_explicit_patch_size_preserved():
         seg_config=SegConfig(patch_size=384),
     )
     assert cfg.seg_config.patch_size == 384
+
+
+def test_filter_tessellate_exposes_neural_runtime_config():
+    cfg = FilterTessellateConfig(
+        **_FILTER_TESSELLATE_REQUIRED,
+        seg_config=StainSegConfig(),
+        neural_config=NeuralSegConfig(batch_size=32, device="cpu"),
+    )
+
+    assert cfg.neural_config.batch_size == 32
+    assert cfg.neural_config.device == "cpu"
+
+
+def test_filter_tessellate_forwards_reusable_neural_segmenter(tmp_path):
+    cfg = OmegaConf.create(
+        FilterTessellateConfig(
+            **_FILTER_TESSELLATE_REQUIRED,
+            seg_config=StainSegConfig(),
+            neural_config=NeuralSegConfig(batch_size=32, device="cpu"),
+            use_gpu=False,
+        )
+    )
+    shared_segmenter = MagicMock()
+
+    with (
+        patch(
+            "mussel.cli.filter_tessellate._build_neural_segmenter",
+            return_value=shared_segmenter,
+        ) as build_segmenter,
+        patch(
+            "mussel.cli.filter_tessellate._build_artifact_remover", return_value=None
+        ),
+        patch(
+            "mussel.cli.filter_tessellate.segment_tissue", return_value=None
+        ) as segment,
+    ):
+        from mussel.cli.filter_tessellate import _main
+
+        _main(cfg, str(tmp_path), tmp_path)
+
+    build_segmenter.assert_called_once()
+    assert build_segmenter.call_args.kwargs["neural_config"]["batch_size"] == 32
+    assert segment.call_args.kwargs["neural_segmenter"] is shared_segmenter
+    shared_segmenter.release.assert_called_once()
 
 
 @pytest.mark.slow

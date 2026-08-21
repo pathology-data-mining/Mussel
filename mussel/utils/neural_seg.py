@@ -67,7 +67,8 @@ class NeuralTissueSegmenter:
             Lower values → more tissue retained. Default 0.5.
         max_inference_tiles: Maximum number of model inference tiles for one
             slide. ``None`` uses ``MUSSEL_NEURAL_SEG_MAX_TILES`` (default 4096);
-            zero disables the guard.
+            zero disables the guard. Bounded neural selection treats this as an
+            additional sampling budget and may return fewer accepted tiles.
     """
 
     def __init__(
@@ -138,7 +139,7 @@ class NeuralTissueSegmenter:
         else:
             target_H, target_W = H, W
 
-        n_tiles = _num_tiles(target_H, target_W, _INPUT_SIZE)
+        n_tiles = _num_inference_tiles_for_shape(H, W, slide_mpp)
         if self.max_inference_tiles is not None and n_tiles > self.max_inference_tiles:
             raise ValueError(
                 "Neural tissue segmentation would require "
@@ -167,6 +168,133 @@ class NeuralTissueSegmenter:
             full_mask = cv2.resize(full_mask, (W, H), interpolation=cv2.INTER_NEAREST)
 
         return (full_mask * 255).astype(np.uint8)
+
+    def segment_patches(
+        self, images: list[np.ndarray], slide_mpp: float = 1.0
+    ) -> list[np.ndarray]:
+        """Segment a bounded collection of image patches in shared batches.
+
+        This is the fast-path API used by stain classification.  Unlike
+        :meth:`segment`, it never constructs a full-slide mask: each input is
+        resized to the model resolution, tiled into model windows, and
+        inferred alongside the other inputs. The returned masks have the same
+        height and width as their corresponding inputs.
+        """
+        if not images:
+            return []
+        if slide_mpp <= 0:
+            raise ValueError(f"slide_mpp must be positive, got {slide_mpp}")
+
+        patch_size = _INPUT_SIZE
+        prepared: list[tuple[np.ndarray, tuple[int, int]]] = []
+        for image in images:
+            image = np.asarray(image)
+            if image.ndim != 3 or image.shape[2] < 3:
+                raise ValueError(
+                    "Each neural segmentation patch must have shape (H, W, 3+)"
+                )
+            image = image[:, :, :3].astype(np.uint8, copy=False)
+            height, width = image.shape[:2]
+            scale = slide_mpp / _TARGET_MPP
+            target_height = max(1, int(round(height * scale)))
+            target_width = max(1, int(round(width * scale)))
+            if (target_height, target_width) != (height, width):
+                image = cv2.resize(
+                    image,
+                    (target_width, target_height),
+                    interpolation=cv2.INTER_CUBIC,
+                )
+            prepared.append((image, (height, width)))
+
+        # Flatten each input into model-sized windows while retaining the
+        # originating image and window coordinates.  Batching across inputs is
+        # important here: bounded stain selection usually supplies one window
+        # per candidate context, so a single forward pass can validate many
+        # candidates at once.  Tiling also keeps this API correct if a caller
+        # supplies a context larger than one model window.
+        tile_records: list[tuple[int, int, int, int, int]] = []
+        tiles: list[np.ndarray] = []
+        output_masks = []
+        for image_index, (image, _) in enumerate(prepared):
+            target_height, target_width = image.shape[:2]
+            output_masks.append(
+                np.zeros((target_height, target_width), dtype=np.uint8)
+            )
+            for y in range(0, target_height, patch_size):
+                for x in range(0, target_width, patch_size):
+                    y1 = min(y + patch_size, target_height)
+                    x1 = min(x + patch_size, target_width)
+                    crop = image[y:y1, x:x1]
+                    if crop.shape[:2] != (patch_size, patch_size):
+                        padded = np.full(
+                            (patch_size, patch_size, 3), 255, dtype=np.uint8
+                        )
+                        padded[: crop.shape[0], : crop.shape[1]] = crop
+                        crop = padded
+                    tiles.append(crop)
+                    tile_records.append((image_index, x, y, x1, y1))
+
+        n_tiles = len(tiles)
+        if (
+            self.max_inference_tiles is not None
+            and n_tiles > self.max_inference_tiles
+        ):
+            raise ValueError(
+                "Neural tissue segmentation patches would require "
+                f"{n_tiles:,} {_INPUT_SIZE}x{_INPUT_SIZE} inference tiles, "
+                f"which exceeds max_inference_tiles={self.max_inference_tiles:,}."
+            )
+
+        self._ensure_model_loaded()
+        use_fp16 = self.device.type == "cuda"
+        dtype = torch.float16 if use_fp16 else torch.float32
+        for batch_start in range(0, len(tiles), self.batch_size):
+            batch = tiles[batch_start : batch_start + self.batch_size]
+            batch_np = np.stack(batch, axis=0)
+            batch_tensor = torch.from_numpy(batch_np).permute(0, 3, 1, 2)
+            batch_tensor = batch_tensor.to(self.device, dtype=dtype).div_(255.0)
+            batch_tensor = (batch_tensor - self._mean) / self._std
+            with torch.no_grad():
+                logits = self._model(batch_tensor)["out"]
+                probs = F.softmax(logits.float(), dim=1)
+                predictions = (
+                    probs[:, 1] > self.confidence_thresh
+                ).to(torch.uint8).cpu().numpy()
+
+            for prediction, record in zip(
+                predictions, tile_records[batch_start : batch_start + len(batch)]
+            ):
+                image_index, x, y, x1, y1 = record
+                output_masks[image_index][y:y1, x:x1] = prediction[
+                    : y1 - y, : x1 - x
+                ]
+
+        masks: list[np.ndarray] = []
+        for output_mask, (_, (original_height, original_width)) in zip(
+            output_masks, prepared
+        ):
+            if output_mask.shape != (original_height, original_width):
+                output_mask = cv2.resize(
+                    output_mask,
+                    (original_width, original_height),
+                    interpolation=cv2.INTER_NEAREST,
+                )
+            masks.append((output_mask * 255).astype(np.uint8))
+        return masks
+
+    def release(self) -> None:
+        """Release model weights and CUDA allocations held by this segmenter.
+
+        The segmenter can be used again after release; weights will be loaded
+        lazily on the next inference call.
+        """
+        model = self._model
+        self._model = None
+        self._mean = None
+        self._std = None
+        del model
+        if self.device.type == "cuda":
+            torch.cuda.empty_cache()
 
     # ------------------------------------------------------------------
     # Private helpers
@@ -274,6 +402,18 @@ def _num_tiles(height: int, width: int, patch_size: int) -> int:
     return ((height + patch_size - 1) // patch_size) * (
         (width + patch_size - 1) // patch_size
     )
+
+
+def _num_inference_tiles_for_shape(
+    height: int, width: int, slide_mpp: float
+) -> int:
+    """Return model-window count for an image shape at the given MPP."""
+    if slide_mpp <= 0:
+        raise ValueError(f"slide_mpp must be positive, got {slide_mpp}")
+    scale = slide_mpp / _TARGET_MPP
+    target_height = max(1, int(round(height * scale)))
+    target_width = max(1, int(round(width * scale)))
+    return _num_tiles(target_height, target_width, _INPUT_SIZE)
 
 
 def _get_max_inference_tiles() -> Optional[int]:

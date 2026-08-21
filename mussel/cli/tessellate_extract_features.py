@@ -25,6 +25,7 @@ from mussel.cli.tessellate import (
     PngConfig,
     ResectionSegConfig,
     SegConfig,
+    StainSegConfig,
     TcgaSegConfig,
     VisConfig,
     _build_artifact_remover,
@@ -390,6 +391,7 @@ cs.store(group="seg_config", name="default", node=SegConfig)
 cs.store(group="seg_config", name="biopsy", node=BiopsySegConfig)
 cs.store(group="seg_config", name="resection", node=ResectionSegConfig)
 cs.store(group="seg_config", name="tcga", node=TcgaSegConfig)
+cs.store(group="seg_config", name="stain", node=StainSegConfig)
 cs.store(
     name="tessellate_extract_features_config", node=TessellateExtractFeaturesConfig
 )
