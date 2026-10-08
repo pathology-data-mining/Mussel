@@ -95,8 +95,10 @@ class MuskModel(TorchModel):
             from musk import modeling  # noqa: F401
             from musk import utils as musk_utils
         except ImportError as e:
+            # Keep the original "No module named 'musk'" text: callers (and the
+            # integration tests' skip logic) match on it.
             raise ImportError(
-                "MUSK requires the 'musk' package: "
+                f"{e}. MUSK requires the 'musk' package: "
                 "pip install git+https://github.com/lilab-stanford/MUSK"
             ) from e
         from timm.models import create_model
