@@ -280,6 +280,8 @@ The following models are currently supported,
 | Lunit ViT-S/16 | LUNIT_VITS16  | public | https://huggingface.co/1aurent/vit_small_patch16_224.lunit_dino |
 | OpenMidnight   | OPENMIDNIGHT  | 🔒 gated | https://huggingface.co/SophontAI/OpenMidnight |
 | GenBio-PathFM  | GENBIO_PATHFM | 🔒 gated | https://huggingface.co/genbio-ai/genbio-pathfm |
+| MUSK           | MUSK          | 🔒 gated | https://huggingface.co/xiangjx/musk |
+| KEEP           | KEEP          | public | https://huggingface.co/Astaxanthin/KEEP |
 
 **Slide encoders** (require patch-level features as input):
 
@@ -333,8 +335,9 @@ export HF_TOKEN=hf_...
 - **HistAI**: HIBOU_L
 - **SophontAI**: OPENMIDNIGHT
 - **GenBio AI**: GENBIO_PATHFM
+- **Stanford (lilab)**: MUSK (also needs `pip install git+https://github.com/lilab-stanford/MUSK`)
 
-**Public models** (no token needed): RESNET50, CLIP, PHIKON, PHIKON_V2, MIDNIGHT12K, GPFM, KAIKO_VITS8, KAIKO_VITS16, KAIKO_VITB8, KAIKO_VITB16, KAIKO_VITL14, LUNIT_VITS8, LUNIT_VITS16
+**Public models** (no token needed): RESNET50, CLIP, PHIKON, PHIKON_V2, MIDNIGHT12K, GPFM, KAIKO_VITS8, KAIKO_VITS16, KAIKO_VITB8, KAIKO_VITB16, KAIKO_VITL14, LUNIT_VITS8, LUNIT_VITS16, KEEP
 
 **Local-checkpoint-only models**: CTRANSPATH and CHIEF_SLIDE require manually downloaded checkpoints (no HuggingFace download). Pass the checkpoint path via `model_path=`.
 
