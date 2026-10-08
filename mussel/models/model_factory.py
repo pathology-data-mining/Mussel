@@ -76,6 +76,8 @@ class ModelType(Enum):
     OPENMIDNIGHT = 33, "openmidnight", "SophontAI/OpenMidnight"
     GENBIO_PATHFM = 34, "genbio_pathfm", "genbio-ai/genbio-pathfm"
     ABMIL_SLIDE = 35, "abmil_slide", ""
+    MUSK = 36, "musk", "hf-hub:xiangjx/musk"
+    KEEP = 37, "keep", "hf-hub:Astaxanthin/KEEP"
 
 
 # Mapping of slide encoder models to their compatible patch encoder models
@@ -128,6 +130,8 @@ MODEL_PATCH_SIZES = {
     ModelType.LUNIT_VITS16: 224,
     ModelType.OPENMIDNIGHT: 224,
     ModelType.GENBIO_PATHFM: 224,
+    ModelType.MUSK: 384,
+    ModelType.KEEP: 224,
     # ABMIL slide encoder: encoder-agnostic; default matches common patch encoders
     ModelType.ABMIL_SLIDE: 256,
 }

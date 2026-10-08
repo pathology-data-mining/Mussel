@@ -134,6 +134,8 @@ PyTorch is required for the following patch encoders:
 | Lunit DINO ViT-S/16 | `LUNIT_VITS16` | public | [1aurent/vit_small_patch16_224.lunit_dino](https://huggingface.co/1aurent/vit_small_patch16_224.lunit_dino) |
 | OpenMidnight | `OPENMIDNIGHT` | 🔒 gated | [SophontAI/OpenMidnight](https://huggingface.co/SophontAI/OpenMidnight) |
 | GenBio-PathFM | `GENBIO_PATHFM` | 🔒 gated | [genbio-ai/genbio-pathfm](https://huggingface.co/genbio-ai/genbio-pathfm) |
+| MUSK | `MUSK` | 🔒 gated | [xiangjx/musk](https://huggingface.co/xiangjx/musk) |
+| KEEP | `KEEP` | public | [Astaxanthin/KEEP](https://huggingface.co/Astaxanthin/KEEP) |
 
 And the following slide encoders (aggregate patch features into a single slide embedding):
 
