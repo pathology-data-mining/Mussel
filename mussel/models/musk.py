@@ -29,6 +29,8 @@ Input: 384×384, Inception normalisation (mean = std = 0.5).
 
 import logging
 import os
+import sys
+import types
 from typing import Callable, List
 
 import torch
@@ -41,8 +43,46 @@ from mussel.models.model_factory import ModelType, register_model
 logger = logging.getLogger(__name__)
 
 _CHECKPOINT_FILENAME = "model.safetensors"
+_MUSK_FLASH_ATTENTION_MODULE = "musk.torchscale.component.flash_attention"
 _INCEPTION_MEAN = [0.5, 0.5, 0.5]
 _INCEPTION_STD = [0.5, 0.5, 0.5]
+
+
+def _import_musk_modeling() -> None:
+    """Import ``musk.modeling``, which registers musk_large_patch16_384 with timm.
+
+    MUSK's attention module eagerly imports an optional fused-attention
+    backend: flash-attn on sm80+ GPUs, xformers on older ones.  It only falls
+    back to ``flash_attn_func = None`` on ModuleNotFoundError, so a backend
+    that is installed but unimportable (e.g. xformers rejecting the installed
+    flash-attn version on a V100) breaks the whole import.  The model never
+    uses that backend (``flash_attention`` defaults to False and MUSK computes
+    attention with plain matmuls), so in that case install MUSK's own
+    "no backend" fallback and import again.
+    """
+    try:
+        from musk import modeling  # noqa: F401
+
+        return
+    except ModuleNotFoundError as e:
+        if (e.name or "").split(".")[0] == "musk":
+            # Keep the original "No module named 'musk'" text: callers (and
+            # the integration tests' skip logic) match on it.
+            raise ImportError(
+                f"{e}. MUSK requires the 'musk' package: "
+                "pip install git+https://github.com/lilab-stanford/MUSK"
+            ) from e
+        raise
+    except ImportError as e:
+        logger.warning(
+            "MUSK's optional fused-attention backend failed to import (%s); "
+            "using MUSK's built-in fallback, which the model uses anyway.",
+            e,
+        )
+    stub = types.ModuleType(_MUSK_FLASH_ATTENTION_MODULE)
+    stub.flash_attn_func = None
+    sys.modules[_MUSK_FLASH_ATTENTION_MODULE] = stub
+    from musk import modeling  # noqa: F401,F811
 
 
 class _MuskImageEncoder(nn.Module):
@@ -90,17 +130,8 @@ class MuskModel(TorchModel):
 
     @staticmethod
     def _load(model_path: str) -> nn.Module:
-        try:
-            # Importing musk.modeling registers musk_large_patch16_384 with timm.
-            from musk import modeling  # noqa: F401
-            from musk import utils as musk_utils
-        except ImportError as e:
-            # Keep the original "No module named 'musk'" text: callers (and the
-            # integration tests' skip logic) match on it.
-            raise ImportError(
-                f"{e}. MUSK requires the 'musk' package: "
-                "pip install git+https://github.com/lilab-stanford/MUSK"
-            ) from e
+        _import_musk_modeling()
+        from musk import utils as musk_utils
         from timm.models import create_model
 
         if os.path.isfile(model_path):
