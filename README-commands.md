@@ -335,7 +335,7 @@ export HF_TOKEN=hf_...
 - **HistAI**: HIBOU_L
 - **SophontAI**: OPENMIDNIGHT
 - **GenBio AI**: GENBIO_PATHFM
-- **Stanford (lilab)**: MUSK (also needs `pip install git+https://github.com/lilab-stanford/MUSK`)
+- **Stanford (lilab)**: MUSK (preinstalled in the Docker images; for other installs: `pip install --no-deps fairscale git+https://github.com/lilab-stanford/MUSK`)
 
 **Public models** (no token needed): RESNET50, CLIP, PHIKON, PHIKON_V2, MIDNIGHT12K, GPFM, KAIKO_VITS8, KAIKO_VITS16, KAIKO_VITB8, KAIKO_VITB16, KAIKO_VITL14, LUNIT_VITS8, LUNIT_VITS16, KEEP
 

@@ -52,6 +52,15 @@ COPY . /app
 RUN --mount=type=cache,target=/root/.cache/uv \
   uv pip install --no-deps .
 
+# MUSK model code (ModelType.MUSK). Not on PyPI and not vendored (CC-BY-NC-ND),
+# so install a pinned commit. --no-deps: its requirements.txt pins torch 2.0 /
+# timm 0.9; at import time it only needs torch, timm, einops, safetensors,
+# huggingface_hub (already installed) and fairscale.
+ARG MUSK_REF=714b666969c1911e5efe70d991140a21030f4ef3
+RUN --mount=type=cache,target=/root/.cache/uv \
+  uv pip install --no-deps fairscale==0.4.13 \
+  "musk @ git+https://github.com/lilab-stanford/MUSK@${MUSK_REF}"
+
 # Stage 2: Runtime
 FROM nvidia/cuda:12.1.1-cudnn8-devel-ubuntu22.04
 
