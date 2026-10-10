@@ -44,6 +44,13 @@ class _FakeVisionEncoder(torch.nn.Module):
         self.anchor = torch.nn.Parameter(torch.zeros(1))  # device comes from parameters()
 
 
+def _sparse_mask(w: int, h: int, density: float):
+    """(1, W, H) tissue mask like TITAN's bg_mask; density 1.0 means no mask."""
+    if density >= 1.0:
+        return None
+    return torch.from_numpy(np.random.default_rng(0).random((1, w, h)) < density)
+
+
 def _patched(w: int, h: int, num_heads: int = 12, bg_mask=None):
     return _titan_get_alibi_gpu(_FakeVisionEncoder(num_heads), w, h, bg_mask)
 
@@ -60,18 +67,20 @@ class TestGetAlibiGpu:
         ref = _get_alibi_original_numpy(w, h, 12)
         assert _patched(w, h, 12).shape == ref.shape
 
-    @pytest.mark.parametrize("w,h", [(6, 6), (30, 40), (150, 120)])
-    def test_matches_reference_at_reef_scale(self, w, h):
-        """Matches TITAN's float64 reference to float32 precision, also on grids
-        as large as reef slides' (biases near -100), where float16 was off by ~0.06."""
-        ref = _get_alibi_original_numpy(w, h, 16)
-        patched = _patched(w, h, 16)
+    @pytest.mark.parametrize("w,h,density", [(6, 6, 1.0), (30, 40, 1.0), (150, 120, 0.15)])
+    def test_matches_reference_at_reef_scale(self, w, h, density):
+        """Matches TITAN's float64 reference to float32 precision, also on a grid
+        spanning a reef slide (sparse tissue, biases near -100), where float16
+        was off by ~0.06."""
+        mask = _sparse_mask(w, h, density)
+        ref = _get_alibi_original_numpy(w, h, 16, bg_mask=mask)
+        patched = _patched(w, h, 16, bg_mask=mask)
         assert patched.dtype == torch.float32
         torch.testing.assert_close(patched, ref, rtol=1e-6, atol=1e-4)
 
     def test_float16_would_fail_at_reef_scale(self):
         """Guards the reason for float32: float16 rounding of these biases is ~0.06."""
-        ref = _get_alibi_original_numpy(150, 120, 16)
+        ref = _get_alibi_original_numpy(150, 120, 16, bg_mask=_sparse_mask(150, 120, 0.15))
         assert (ref.half().float() - ref).abs().max() > 0.01
 
     def test_with_bg_mask(self):
@@ -100,8 +109,7 @@ def test_matches_reference_on_gpu_with_tf32_at_reef_scale():
     torch.backends.cuda.matmul.allow_tf32 = True
     try:
         w, h = 156, 71
-        rng = np.random.default_rng(0)
-        bg_mask = torch.from_numpy(rng.random((1, w, h)) < 0.3)
+        bg_mask = _sparse_mask(w, h, 0.3)
         enc = _FakeVisionEncoder(12).cuda()
         patched = _titan_get_alibi_gpu(enc, w, h, bg_mask).cpu()
         ref = _get_alibi_original_numpy(w, h, 12, bg_mask=bg_mask)
