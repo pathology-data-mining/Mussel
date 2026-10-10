@@ -89,3 +89,22 @@ class TestGetAlibiGpu:
         patched = _patched(4, 4, num_heads=12)
         for head in range(12):
             assert (torch.diagonal(patched[0, head, 1:, 1:]) == 0).all()
+
+
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="needs CUDA")
+def test_matches_reference_on_gpu_with_tf32_at_reef_scale():
+    """On GPU with TF32 matmul on (as mussel.models.base sets it), a reef slide's
+    156x71 grid with a sparse tissue mask must still match the float64 reference.
+    cdist's matmul path was off by up to 2.8 in the bias here."""
+    prev = torch.backends.cuda.matmul.allow_tf32
+    torch.backends.cuda.matmul.allow_tf32 = True
+    try:
+        w, h = 156, 71
+        rng = np.random.default_rng(0)
+        bg_mask = torch.from_numpy(rng.random((1, w, h)) < 0.3)
+        enc = _FakeVisionEncoder(12).cuda()
+        patched = _titan_get_alibi_gpu(enc, w, h, bg_mask).cpu()
+        ref = _get_alibi_original_numpy(w, h, 12, bg_mask=bg_mask)
+        torch.testing.assert_close(patched, ref, rtol=1e-5, atol=1e-3)
+    finally:
+        torch.backends.cuda.matmul.allow_tf32 = prev

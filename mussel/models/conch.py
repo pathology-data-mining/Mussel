@@ -139,10 +139,11 @@ def _titan_get_alibi_gpu(self, w: int, h: int, bg_mask=None):
     fused in CUDA and does not create the intermediate (N, N, 2) array that
     numpy broadcasting would require.
 
-    The bias is float32, like the original's. It was float16 before, but ALiBi
-    values reach about -150 on reef slides, where float16 resolves only
-    0.06-0.125. That shifted TITAN embeddings by up to 0.03 cosine from float32
-    TITAN. float32 costs heads * N² * 4 bytes (about 28 GB for N=21k).
+    Distances are computed exactly (no matmul expansion) and the bias is
+    float32, like the original's. Before, cdist's matmul path under TF32 plus a
+    float16 bias shifted TITAN embeddings by up to 0.03 cosine from upstream
+    TITAN on reef slides. float32 costs heads * N² * 4 bytes (about 21 GB for
+    12 heads at N=21k).
     """
     device = next(self.parameters()).device
     dtype = torch.float32
@@ -170,7 +171,10 @@ def _titan_get_alibi_gpu(self, w: int, h: int, bg_mask=None):
     points = torch.stack([pts_x, pts_y], dim=1)  # (N, 2)
 
     # Pairwise Euclidean distances — fused CUDA, no (N, N, 2) intermediate
-    dists = torch.cdist(points, points, p=2)  # (N, N)
+    # Exact pairwise distances. cdist's default matmul path (|a|²+|b|²-2ab)
+    # cancels badly for nearby points, and with TF32 matmul (enabled globally in
+    # mussel.models.base) it was off by up to ~5 grid cells on reef slides.
+    dists = torch.cdist(points, points, p=2, compute_mode="donot_use_mm_for_euclid_dist")  # (N, N)
 
     slopes = torch.tensor(
         _get_slopes(self.num_heads), dtype=dtype, device=device
