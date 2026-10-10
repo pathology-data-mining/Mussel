@@ -97,6 +97,11 @@ def _tessellate_and_filter(
 
     # Strip config-only keys that are not segment_tissue() parameters.
     seg_cfg.pop("artifact_exclude_classes", None)
+    if seg_cfg.pop("patch_sizes", None):
+        raise ValueError(
+            "seg_config.patch_sizes (several tile sizes) is only supported by tessellate; "
+            "tessellate_extract_features tiles at seg_config.patch_size."
+        )
 
     if values := segment_tissue(
         slide_path=slide_path,

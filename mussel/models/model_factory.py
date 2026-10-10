@@ -1,11 +1,14 @@
 """Model registry, factory, and type definitions for all supported foundation models."""
 
+import logging
 from abc import ABC, abstractmethod
 from enum import Enum
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Optional
 
 if TYPE_CHECKING:
     from mussel.models.base import Model
+
+logger = logging.getLogger(__name__)
 
 
 class ModelType(Enum):
@@ -176,6 +179,79 @@ def get_default_patch_size(model_type: ModelType) -> int:
         )
 
     return MODEL_PATCH_SIZES[model_type]
+
+
+# Resolution (µm/px) a model's tiles must be read at, where its authors specify
+# one. Models not listed here are not checked for MPP.
+MODEL_TARGET_MPP = {
+    # TITAN: CONCH v1.5 features of non-overlapping 512x512 px patches at 20x
+    # (Ding et al. 2024; MahmoodLab/TITAN model card).
+    ModelType.CONCH1_5: 0.5,
+    ModelType.TITAN_SLIDE: 0.5,
+}
+
+TILE_SIZE_CHECK_MODES = ("warn", "error", "off")
+
+
+def check_tile_size(
+    model_type: ModelType,
+    tile_attrs: Optional[dict],
+    mode: str = "warn",
+    context: str = "",
+    mpp_tolerance: float = 0.05,
+) -> Optional[str]:
+    """Check that tiles match the model's recommended tile size (and MPP, if known).
+
+    Compares ``patch_size_to_resize_to_for_desired_mpp`` and ``mpp`` from a
+    patch H5's ``coords`` attributes (written by ``tessellate``) with
+    :data:`MODEL_PATCH_SIZES` and :data:`MODEL_TARGET_MPP`. A model run on
+    tiles of another size still produces features, just not the ones it was
+    trained to produce; e.g. TITAN fed CONCH v1.5 features of 224 px tiles.
+
+    Args:
+        model_type: Patch or slide encoder the tiles are for.
+        tile_attrs: ``coords`` attributes of the patch H5 (None or missing keys skip the check).
+        mode: ``"warn"`` logs a warning, ``"error"`` raises ``ValueError``,
+            ``"off"`` skips the check.
+        context: Text prepended to the message (e.g. the slide ID).
+        mpp_tolerance: Relative MPP difference tolerated.
+
+    Returns:
+        The mismatch message, or None if the tiles match or cannot be checked.
+    """
+    if mode not in TILE_SIZE_CHECK_MODES:
+        raise ValueError(f"tile_size_check must be one of {TILE_SIZE_CHECK_MODES}, got {mode!r}")
+    if mode == "off" or not tile_attrs:
+        return None
+    problems = []
+    tile_px = tile_attrs.get("patch_size_to_resize_to_for_desired_mpp")
+    expected_px = MODEL_PATCH_SIZES.get(model_type)
+    if tile_px is not None and expected_px is not None and int(tile_px) != expected_px:
+        problems.append(f"tiles are {int(tile_px)} px, recommended {expected_px} px")
+    tile_mpp = tile_attrs.get("mpp")
+    expected_mpp = MODEL_TARGET_MPP.get(model_type)
+    if (
+        tile_mpp is not None
+        and expected_mpp is not None
+        and abs(float(tile_mpp) - expected_mpp) > mpp_tolerance * expected_mpp
+    ):
+        problems.append(f"tiles are at {float(tile_mpp):g} µm/px, recommended {expected_mpp:g}")
+    if not problems:
+        return None
+    name = getattr(model_type, "name", str(model_type))
+    message = (
+        f"{context + ': ' if context else ''}{name} {'; '.join(problems)}. "
+        "Re-tessellate at the recommended size, or set tile_size_check=off if this is intended."
+    )
+    if mode == "error":
+        raise ValueError(message)
+    logger.warning(message)
+    return message
+
+
+def recommended_patch_sizes() -> dict:
+    """Recommended tile size per model code, e.g. {"titan_slide": 512, ...}."""
+    return {model_type.code: size for model_type, size in MODEL_PATCH_SIZES.items()}
 
 
 def validate_slide_encoder_compatibility(
