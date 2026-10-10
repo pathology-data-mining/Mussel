@@ -615,7 +615,7 @@ def test_aggregate_slide_features_forwards_slide_model_kwargs():
         with h5py.File(patch_h5, "w") as f:
             f.create_dataset("features", data=features)
             f.create_dataset("coords", data=coords)
-            f["features"].attrs["patch_size"] = 256
+            f["coords"].attrs["patch_size"] = 1024  # level-0 tile spacing, as tessellate writes it
 
         fake_model = MagicMock()
         fake_model.get_model_fun.return_value = (

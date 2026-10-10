@@ -130,19 +130,23 @@ def _get_slopes(n: int) -> list:
     extra = _get_slopes(2 * nearest)[0::2][:n - nearest]
     return base + extra
 
-def _titan_get_alibi_gpu_float16(self, w: int, h: int, bg_mask=None):
-    """GPU float16 replacement for VisionTransformer.get_alibi().
+def _titan_get_alibi_gpu(self, w: int, h: int, bg_mask=None):
+    """GPU float32 replacement for VisionTransformer.get_alibi().
 
     The original implementation creates O(N²) numpy float64 arrays on CPU
     (17 GB for N=33k), causing SLURM OOM on large IMPACT resection specimens.
-    This version uses torch.cdist in float16 on the model's GPU, reducing peak
-    memory from ~82 GB CPU → ~26 GB GPU for N=33k.
+    This version builds the bias on the model's GPU with torch.cdist, which is
+    fused in CUDA and does not create the intermediate (N, N, 2) array that
+    numpy broadcasting would require.
 
-    torch.cdist is fused in CUDA and does not create the intermediate (N, N, 2)
-    array that numpy broadcasting would require.
+    Distances are computed exactly (no matmul expansion) and the bias is
+    float32, like the original's. Before, cdist's matmul path under TF32 plus a
+    float16 bias shifted TITAN embeddings by up to 0.03 cosine from upstream
+    TITAN on reef slides. float32 costs heads * N² * 4 bytes (about 21 GB for
+    12 heads at N=21k).
     """
     device = next(self.parameters()).device
-    dtype = torch.float16
+    dtype = torch.float32
 
     x_coords = torch.arange(w, device=device, dtype=dtype)
     y_coords = torch.arange(h, device=device, dtype=dtype)
@@ -164,10 +168,13 @@ def _titan_get_alibi_gpu_float16(self, w: int, h: int, bg_mask=None):
         pts_x = grid_x.ravel()
         pts_y = grid_y.ravel()
 
-    points = torch.stack([pts_x, pts_y], dim=1)  # (N, 2) float16
+    points = torch.stack([pts_x, pts_y], dim=1)  # (N, 2)
 
     # Pairwise Euclidean distances — fused CUDA, no (N, N, 2) intermediate
-    dists = torch.cdist(points.float(), points.float(), p=2).to(dtype)  # (N, N)
+    # Exact pairwise distances. cdist's default matmul path (|a|²+|b|²-2ab)
+    # cancels badly for nearby points, and with TF32 matmul (enabled globally in
+    # mussel.models.base) it was off by up to ~5 grid cells on reef slides.
+    dists = torch.cdist(points, points, p=2, compute_mode="donot_use_mm_for_euclid_dist")  # (N, N)
 
     slopes = torch.tensor(
         _get_slopes(self.num_heads), dtype=dtype, device=device
@@ -189,7 +196,7 @@ def _titan_forward_features_efficient(self, x, coords=None, mask=None, bg_mask=N
     The original uses `attn_bias.repeat(B, 1, 1, 1)` which creates a full copy
     of the (1, H, N, N) bias tensor — 22 GB for N=30k on A100. This replacement
     uses `expand()` (a zero-copy view) and avoids redundant dtype/device casts
-    when the bias is already in the correct format (float16 on GPU from the
+    when the bias is already in the correct format (float32 on GPU from the
     get_alibi monkey-patch).
     """
     B, nc, w, h = x.shape
@@ -205,11 +212,11 @@ def _titan_forward_features_efficient(self, x, coords=None, mask=None, bg_mask=N
                 self.prepare_tensor(x, 'global', 'alibi')
             attn_bias = self.global_alibi
         else:
-            # Calls our monkey-patched get_alibi (returns float16 GPU tensor)
+            # Calls our monkey-patched get_alibi (returns a float32 GPU tensor)
             attn_bias = self.get_alibi(w, h, bg_mask) if B == 1 else self.get_alibi(w, h)
             # Use expand instead of repeat: zero-copy view for the B dimension
             attn_bias = attn_bias.expand(x.shape[0], -1, -1, -1)
-            # Only cast if dtype/device differ (avoids copy when already float16 on GPU)
+            # Only cast if dtype/device differ (avoids a copy when they already match)
             if attn_bias.dtype != x.dtype or attn_bias.device != x.device:
                 attn_bias = attn_bias.to(dtype=x.dtype, device=x.device)
     else:
@@ -261,7 +268,7 @@ class TitanSlideEncoderModel(TorchModel):
             model_path: Path to slide encoder model directory or HuggingFace repo ID.
             use_gpu: Whether to use GPU (default: True).
             gpu_device_id: GPU device ID or list of IDs for multi-GPU (default: None).
-            patch_oom: Apply GPU float16 / expand() monkey-patches that fix CPU/GPU OOM
+            patch_oom: Apply GPU get_alibi / expand() monkey-patches that fix CPU/GPU OOM
                 on large slides (>25k patches) and pin the model to the validated
                 HuggingFace revision (default: True).  Set to False to load the
                 latest unpinned TITAN code without any monkey-patches — useful when
@@ -308,7 +315,7 @@ class TitanSlideEncoderModel(TorchModel):
         Applies monkey-patches to the TITAN vision encoder to fix CPU/GPU RAM OOM
         on large IMPACT slides (>25k patches):
 
-        1. ``get_alibi`` → GPU float16 via torch.cdist
+        1. ``get_alibi`` → GPU float32 via torch.cdist
            Eliminates ~82 GB CPU RAM peak for N=30k patches.
         2. ``forward_features`` → uses expand() instead of repeat()
            Avoids a 22 GB copy of the bias tensor for N=30k.
@@ -323,10 +330,10 @@ class TitanSlideEncoderModel(TorchModel):
         # Apply monkey-patches to the vision encoder
         if getattr(self, "_patch_oom", True):
             vision_enc = self.obj.vision_encoder
-            vision_enc.get_alibi = types.MethodType(_titan_get_alibi_gpu_float16, vision_enc)
+            vision_enc.get_alibi = types.MethodType(_titan_get_alibi_gpu, vision_enc)
             vision_enc.forward_features = types.MethodType(_titan_forward_features_efficient, vision_enc)
             logger.debug(
-                "TITAN: applied GPU float16 get_alibi + expand-based forward_features monkey-patches"
+                "TITAN: applied GPU float32 get_alibi + expand-based forward_features monkey-patches"
             )
         else:
             logger.debug("TITAN: patch_oom=False, running with unpatched upstream code")

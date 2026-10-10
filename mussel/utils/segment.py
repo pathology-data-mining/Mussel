@@ -6,7 +6,7 @@ import os
 import warnings
 from dataclasses import dataclass
 from pathlib import Path
-from typing import List, Optional
+from typing import List, Optional, Sequence
 
 import cv2
 import numpy as np
@@ -987,6 +987,100 @@ def segment_tissue(
 
         Returns None if no tissue contours are found or if slide dimensions are too large.
     """
+    results = segment_tissue_multi(
+        slide_path=slide_path,
+        slide_id=slide_id,
+        seg_level=seg_level,
+        segment_threshold=segment_threshold,
+        segment_max_value=segment_max_value,
+        median_blur_ksize=median_blur_ksize,
+        morphology_ex_kernel=morphology_ex_kernel,
+        use_otsu=use_otsu,
+        tissue_area_threshold=tissue_area_threshold,
+        hole_area_threshold=hole_area_threshold,
+        max_num_holes=max_num_holes,
+        patch_sizes=[patch_size],
+        mpp=mpp,
+        step_size=step_size,
+        ref_patch_size=ref_patch_size,
+        exclude_ids=exclude_ids,
+        keep_ids=keep_ids,
+        output_h5_paths=[output_h5_path],
+        overlap=overlap,
+        min_tissue_proportion=min_tissue_proportion,
+        remove_artifacts=remove_artifacts,
+        remove_penmarks=remove_penmarks,
+        artifact_remover_fn=artifact_remover_fn,
+        seg_model=seg_model,
+        slide_mpp_override=slide_mpp_override,
+        neural_segmenter=neural_segmenter,
+        max_tiles=max_tiles,
+        max_tiles_strategy=max_tiles_strategy,
+        max_tiles_seed=max_tiles_seed,
+        selection_mode=selection_mode,
+        max_candidate_tiles=max_candidate_tiles,
+    )
+    return results.get(int(patch_size))
+
+
+def segment_tissue_multi(
+    slide_path: str,
+    slide_id: Optional[str] = None,
+    seg_level: int = -1,
+    segment_threshold: int = _SEGMENT_THRESHOLD_DEFAULT,
+    segment_max_value: int = 255,
+    median_blur_ksize: int = _MEDIAN_BLUR_DEFAULT,
+    morphology_ex_kernel: int = 0,
+    use_otsu: bool = False,
+    tissue_area_threshold: int = 100,
+    hole_area_threshold: int = 16,
+    max_num_holes: int = 10,
+    patch_sizes: Sequence[int] = (256,),
+    mpp: float = 0.5,
+    step_size: Optional[int] = None,
+    ref_patch_size: int = 512,
+    exclude_ids: Optional[List[int]] = None,
+    keep_ids: Optional[List[int]] = None,
+    output_h5_paths: Optional[Sequence[Optional[str]]] = None,
+    overlap: int = 0,
+    min_tissue_proportion: float = 0.0,
+    remove_artifacts: bool = False,
+    remove_penmarks: bool = False,
+    artifact_remover_fn=None,  # Optional callable: (img, mask, mpp) -> mask
+    seg_model: str = "classic",  # "classic" (HSV + manual threshold), "otsu" (HSV + Otsu threshold), or "neural" (DeepLabV3)
+    slide_mpp_override: Optional[float] = None,
+    neural_segmenter=None,
+    max_tiles: Optional[int] = None,
+    max_tiles_strategy: str = "random",
+    max_tiles_seed: int = 42,
+    selection_mode: str = "full_mask",
+    max_candidate_tiles: Optional[int] = None,
+):
+    """Segment tissue once and tile it at one or more patch sizes.
+
+    The tissue mask (thumbnail read, segmentation backend, morphological
+    closing, artifact removal) does not depend on the patch size and is
+    computed once. Contour filtering (whose area thresholds are expressed in
+    patches), the tile grid, ``min_tissue_proportion`` and ``max_tiles`` are
+    then applied separately for each size, so each size's output is identical
+    to calling :func:`segment_tissue` with that size alone. This lets models
+    with different recommended tile sizes share one (possibly neural)
+    segmentation per slide. Exception: ``selection_mode="bounded_neural"`` has
+    no full-slide mask; its neural tile validation runs once per size.
+
+    Args:
+        patch_sizes: Tile sizes in pixels at ``mpp``; must be distinct.
+        output_h5_paths: Optional HDF5 output path per size (same order as
+            ``patch_sizes``; ``None`` entries are not written).
+        step_size: Step size in pixels at ``mpp``; only allowed with a single
+            patch size (use ``overlap`` for several sizes).
+        **others: As for :func:`segment_tissue`.
+
+    Returns:
+        dict mapping each patch size to :func:`segment_tissue`'s 4-tuple
+        ``(polygon, grid, coords, attrs)``, or to None when no tissue tiles
+        were produced at that size.
+    """
     wsi = _wsi_open_slide(slide_path)
 
     try:
@@ -1098,34 +1192,57 @@ def segment_tissue(
                     width, height
                 )
             )
-            return None
+            return {int(p): None for p in patch_sizes}
 
         if seg_model == "neural" and selection_mode != "bounded_neural":
             seg_level_ds = level_downsamples[seg_level][0]
             seg_level_mpp = slide_mpp * seg_level_ds
             _validate_neural_seg_mpp(seg_level_mpp, seg_level)
 
-        if step_size is None:
-            if overlap < 0:
-                raise ValueError(f"overlap must be non-negative, got {overlap}")
-            if overlap > 0:
-                step_size = patch_size - overlap
-                if step_size <= 0:
-                    raise ValueError(
-                        f"overlap ({overlap}) must be less than patch_size ({patch_size})"
-                    )
-            else:
-                step_size = patch_size
-        elif overlap > 0:
+        patch_sizes = [int(p) for p in patch_sizes]
+        if not patch_sizes:
+            raise ValueError("patch_sizes must contain at least one size")
+        if len(set(patch_sizes)) != len(patch_sizes):
+            raise ValueError(f"patch_sizes must be distinct, got {patch_sizes}")
+        if output_h5_paths is None:
+            output_h5_paths = [None] * len(patch_sizes)
+        output_h5_paths = list(output_h5_paths)
+        if len(output_h5_paths) != len(patch_sizes):
             raise ValueError(
-                f"Cannot specify both step_size ({step_size}) and overlap ({overlap}). "
-                "Use overlap to derive step_size automatically, or pass step_size directly."
+                f"output_h5_paths ({len(output_h5_paths)}) must match patch_sizes ({len(patch_sizes)})"
+            )
+        if step_size is not None and len(patch_sizes) > 1:
+            raise ValueError(
+                "step_size applies to a single patch size; use overlap with several patch_sizes"
             )
 
-        native_step_size = get_native_size(step_size, mpp, slide_mpp)
-        native_patch_size = get_native_size(patch_size, mpp, slide_mpp)
-        logger.info(f"native_step_size: {native_step_size}")
-        logger.info(f"native_patch_size: {native_patch_size}")
+        native_sizes = {}  # patch_size -> (native_patch_size, native_step_size)
+        for patch_size in patch_sizes:
+            size_step = step_size
+            if size_step is None:
+                if overlap < 0:
+                    raise ValueError(f"overlap must be non-negative, got {overlap}")
+                if overlap > 0:
+                    size_step = patch_size - overlap
+                    if size_step <= 0:
+                        raise ValueError(
+                            f"overlap ({overlap}) must be less than patch_size ({patch_size})"
+                        )
+                else:
+                    size_step = patch_size
+            elif overlap > 0:
+                raise ValueError(
+                    f"Cannot specify both step_size ({size_step}) and overlap ({overlap}). "
+                    "Use overlap to derive step_size automatically, or pass step_size directly."
+                )
+
+            native_step_size = get_native_size(size_step, mpp, slide_mpp)
+            native_patch_size = get_native_size(patch_size, mpp, slide_mpp)
+            logger.info(
+                f"patch_size {patch_size}: native_patch_size {native_patch_size}, "
+                f"native_step_size {native_step_size}"
+            )
+            native_sizes[patch_size] = (native_patch_size, native_step_size)
 
         img = np.array(
             wsi.read_region((0, 0), seg_level, wsi.level_dimensions[seg_level])
@@ -1153,62 +1270,68 @@ def segment_tissue(
                     raise ValueError(
                         "Artifact removal is not supported with bounded neural selection"
                     )
-                bounded = _bounded_neural_tessellation(
-                    wsi=wsi,
-                    proposal_img=img,
-                    slide_mpp=slide_mpp,
-                    level_downsamples=level_downsamples,
-                    native_patch_size=native_patch_size,
-                    native_step_size=native_step_size,
-                    patch_size=patch_size,
-                    mpp=mpp,
-                    min_tissue_proportion=min_tissue_proportion,
-                    max_tiles=max_tiles,
-                    max_candidate_tiles=max_candidate_tiles,
-                    max_tiles_strategy=max_tiles_strategy,
-                    max_tiles_seed=max_tiles_seed,
-                    morphology_ex_kernel=morphology_ex_kernel,
-                    neural_segmenter=neural_segmenter,
-                )
-                if bounded is None:
-                    return None
-                polygon, grid, coords, bounded_attrs = bounded
-                attrs = {
-                    "seg_level": seg_level,
-                    "segment_threshold": segment_threshold,
-                    "segment_max_value": segment_max_value,
-                    "median_blur_ksize": median_blur_ksize,
-                    "morphology_ex_kernel": morphology_ex_kernel,
-                    "tissue_area_threshold": tissue_area_threshold,
-                    "hole_area_threshold": hole_area_threshold,
-                    "max_num_holes": max_num_holes,
-                    "ref_patch_size": ref_patch_size,
-                    "patch_size": native_patch_size,
-                    "step_size": native_step_size,
-                    "patch_size_to_resize_to_for_desired_mpp": patch_size,
-                    "patch_level": 0,
-                    "mpp": mpp,
-                    "native_mpp": slide_mpp,
-                    "mpp_is_fallback": mpp_is_fallback,
-                    "level_dim": wsi.level_dimensions[0],
-                    "name": slide_id,
-                    "overlap": overlap,
-                    "min_tissue_proportion": min_tissue_proportion,
-                    "seg_model": seg_model,
-                    "max_tiles": max_tiles,
-                    "max_tiles_strategy": max_tiles_strategy,
-                    "max_tiles_seed": max_tiles_seed,
-                    **bounded_attrs,
-                }
-                if output_h5_path:
-                    save_hdf5(
-                        output_h5_path,
-                        {"coords": np.array(coords, dtype=np.int64)},
-                        {"coords": attrs},
-                        mode="w",
+                results = {}
+                for patch_size, output_h5_path in zip(patch_sizes, output_h5_paths):
+                    native_patch_size, native_step_size = native_sizes[patch_size]
+                    bounded = _bounded_neural_tessellation(
+                        wsi=wsi,
+                        proposal_img=img,
+                        slide_mpp=slide_mpp,
+                        level_downsamples=level_downsamples,
+                        native_patch_size=native_patch_size,
+                        native_step_size=native_step_size,
+                        patch_size=patch_size,
+                        mpp=mpp,
+                        min_tissue_proportion=min_tissue_proportion,
+                        max_tiles=max_tiles,
+                        max_candidate_tiles=max_candidate_tiles,
+                        max_tiles_strategy=max_tiles_strategy,
+                        max_tiles_seed=max_tiles_seed,
+                        morphology_ex_kernel=morphology_ex_kernel,
+                        neural_segmenter=neural_segmenter,
                     )
-                    logger.info(f"Writing to {output_h5_path}")
-                return polygon, grid, coords, attrs
+                    if bounded is None:
+                        results[patch_size] = None
+                        continue
+                    polygon, grid, coords, bounded_attrs = bounded
+                    attrs = {
+                        "seg_level": seg_level,
+                        "segment_threshold": segment_threshold,
+                        "segment_max_value": segment_max_value,
+                        "median_blur_ksize": median_blur_ksize,
+                        "morphology_ex_kernel": morphology_ex_kernel,
+                        "tissue_area_threshold": tissue_area_threshold,
+                        "hole_area_threshold": hole_area_threshold,
+                        "max_num_holes": max_num_holes,
+                        "ref_patch_size": ref_patch_size,
+                        "patch_size": native_patch_size,
+                        "step_size": native_step_size,
+                        "patch_size_to_resize_to_for_desired_mpp": patch_size,
+                        "patch_level": 0,
+                        "mpp": mpp,
+                        "native_mpp": slide_mpp,
+                        "mpp_is_fallback": mpp_is_fallback,
+                        "level_dim": wsi.level_dimensions[0],
+                        "name": slide_id,
+                        "overlap": overlap,
+                        "min_tissue_proportion": min_tissue_proportion,
+                        "seg_model": seg_model,
+                        "max_tiles": max_tiles,
+                        "max_tiles_strategy": max_tiles_strategy,
+                        "max_tiles_seed": max_tiles_seed,
+                        **bounded_attrs,
+                    }
+                    if output_h5_path:
+                        save_hdf5(
+                            output_h5_path,
+                            {"coords": np.array(coords, dtype=np.int64)},
+                            {"coords": attrs},
+                            mode="w",
+                        )
+                        logger.info(f"Writing to {output_h5_path}")
+                    results[patch_size] = (polygon, grid, coords, attrs)
+
+                return results
 
             # The img is read at seg_level. Compute its actual MPP so that
             # NeuralTissueSegmenter can rescale to the model's 1 µm/px target.
@@ -1336,139 +1459,146 @@ def segment_tissue(
                 "artifact removal."
             )
 
-        scale = level_downsamples[seg_level]
-        # tissue_area_threshold / hole_area_threshold are in units of requested patches.
-        # Convert to seg-level pixel area using the native patch size (derived from
-        # patch_size and mpp) rather than the legacy ref_patch_size.  This makes the
-        # threshold truly scale-independent: the same threshold value produces the same
-        # minimum-tissue-size in µm² regardless of which pyramid level is used for
-        # segmentation.
-        native_patch_area = native_patch_size**2
-        seg_patch_area = int(native_patch_area / (scale[0] * scale[1]))
-        tissue_area_threshold *= seg_patch_area
-        hole_area_threshold *= seg_patch_area
+        def _tile_at(patch_size, output_h5_path):
+            native_patch_size, native_step_size = native_sizes[patch_size]
+            scale = level_downsamples[seg_level]
+            # tissue_area_threshold / hole_area_threshold are in units of requested patches.
+            # Convert to seg-level pixel area using the native patch size (derived from
+            # patch_size and mpp) rather than the legacy ref_patch_size.  This makes the
+            # threshold truly scale-independent: the same threshold value produces the same
+            # minimum-tissue-size in µm² regardless of which pyramid level is used for
+            # segmentation.
+            native_patch_area = native_patch_size**2
+            seg_patch_area = int(native_patch_area / (scale[0] * scale[1]))
+            tissue_area_px = tissue_area_threshold * seg_patch_area
+            hole_area_px = hole_area_threshold * seg_patch_area
 
-        # Find and filter contours
-        contours, hierarchy = cv2.findContours(
-            tissue_mask, cv2.RETR_CCOMP, cv2.CHAIN_APPROX_NONE
-        )  # Find contours
-        if contours is None or hierarchy is None:
-            logger.warning(
-                "No contours found for slide %s (tissue mask may be empty after artifact removal or segmentation).",
-                slide_id,
-            )
-            return None
-        hierarchy = np.squeeze(hierarchy, axis=(0,))[:, 2:]
-        foreground_contours, hole_contours = _filter_contours(
-            contours,
-            hierarchy,
-            tissue_area_threshold,
-            hole_area_threshold,
-            max_num_holes,
-        )  # Necessary for filtering out artifacts
-
-        contours_tissue = scale_contour_dim(foreground_contours, scale)
-        holes_tissue = scale_holes_dim(hole_contours, scale)
-
-        # exclude_ids = [0,7,9]
-        if len(keep_ids) > 0:
-            contour_ids = set(keep_ids) - set(exclude_ids)
-        else:
-            contour_ids = set(np.arange(len(contours_tissue))) - set(exclude_ids)
-
-        contours_tissue = [contours_tissue[i] for i in contour_ids]
-        holes_tissue = [holes_tissue[i] for i in contour_ids]
-
-        logger.info(f"Creating patches for: {slide_id} ...")
-        if contours_tissue is None or len(contours_tissue) == 0:
-            logger.info("0 contours found")
-            return None
-
-        n_contours = len(contours_tissue)
-        logger.info(f"Total number of contours: {n_contours}")
-
-        polygon = contours_to_polygon(contours_tissue, holes_tissue)
-        grid = partition(polygon, native_step_size, native_patch_size)
-        coords = [g.exterior.coords[0] for g in grid]
-        logger.info(f"Total number of patches: {len(coords)}")
-
-        if min_tissue_proportion > 0.0:
-            prepared_polygon = prep(polygon)
-            filtered = [
-                (g, c)
-                for g, c in zip(grid, coords)
-                if prepared_polygon.intersects(g)
-                and prepared_polygon.intersection(g).area / g.area
-                >= min_tissue_proportion
-            ]
-            if filtered:
-                grid, coords = zip(*filtered)
-                grid, coords = list(grid), list(coords)
-            else:
-                grid, coords = [], []
-            logger.info(
-                f"After min_tissue_proportion={min_tissue_proportion:.2f} filter: "
-                f"{len(coords)} patches remaining"
-            )
-
-        # Apply the output budget after all tissue and per-tile filtering so
-        # that the budget is spent only on valid tiles. Sorting the sampled
-        # indices preserves partition order for stable downstream output.
-        if max_tiles is not None and len(coords) > max_tiles:
-            if max_tiles_strategy == "random":
-                selected = np.sort(
-                    np.random.default_rng(max_tiles_seed).choice(
-                        len(coords), size=max_tiles, replace=False
-                    )
+            # Find and filter contours
+            contours, hierarchy = cv2.findContours(
+                tissue_mask, cv2.RETR_CCOMP, cv2.CHAIN_APPROX_NONE
+            )  # Find contours
+            if contours is None or hierarchy is None:
+                logger.warning(
+                    "No contours found for slide %s (tissue mask may be empty after artifact removal or segmentation).",
+                    slide_id,
                 )
+                return None
+            hierarchy = np.squeeze(hierarchy, axis=(0,))[:, 2:]
+            foreground_contours, hole_contours = _filter_contours(
+                contours,
+                hierarchy,
+                tissue_area_px,
+                hole_area_px,
+                max_num_holes,
+            )  # Necessary for filtering out artifacts
+
+            contours_tissue = scale_contour_dim(foreground_contours, scale)
+            holes_tissue = scale_holes_dim(hole_contours, scale)
+
+            # exclude_ids = [0,7,9]
+            if len(keep_ids) > 0:
+                contour_ids = set(keep_ids) - set(exclude_ids)
             else:
-                selected = np.arange(max_tiles)
-            grid = [grid[i] for i in selected]
-            coords = [coords[i] for i in selected]
-            logger.info(
-                "After max_tiles=%d (%s) filter: %d patches remaining",
-                max_tiles,
-                max_tiles_strategy,
-                len(coords),
-            )
+                contour_ids = set(np.arange(len(contours_tissue))) - set(exclude_ids)
 
-        attrs = {
-            "seg_level": seg_level,
-            "segment_threshold": segment_threshold,
-            "segment_max_value": segment_max_value,
-            "median_blur_ksize": median_blur_ksize,
-            "morphology_ex_kernel": morphology_ex_kernel,
-            "tissue_area_threshold": tissue_area_threshold,
-            "hole_area_threshold": hole_area_threshold,
-            "max_num_holes": max_num_holes,
-            "ref_patch_size": ref_patch_size,
-            "patch_size": native_patch_size,
-            "step_size": native_step_size,
-            "patch_size_to_resize_to_for_desired_mpp": patch_size,
-            "patch_level": 0,
-            "mpp": mpp,
-            "native_mpp": slide_mpp,
-            "mpp_is_fallback": mpp_is_fallback,
-            "level_dim": wsi.level_dimensions[0],
-            "name": slide_id,
-            "overlap": overlap,
-            "min_tissue_proportion": min_tissue_proportion,
-            "seg_model": seg_model,
-            "max_tiles": -1 if max_tiles is None else max_tiles,
-            "max_tiles_strategy": max_tiles_strategy,
-            "max_tiles_seed": max_tiles_seed,
-            "selection_mode": selection_mode,
-            "max_candidate_tiles": (
-                -1 if max_candidate_tiles is None else max_candidate_tiles
-            ),
+            contours_tissue = [contours_tissue[i] for i in contour_ids]
+            holes_tissue = [holes_tissue[i] for i in contour_ids]
+
+            logger.info(f"Creating patches for: {slide_id} ...")
+            if contours_tissue is None or len(contours_tissue) == 0:
+                logger.info("0 contours found")
+                return None
+
+            n_contours = len(contours_tissue)
+            logger.info(f"Total number of contours: {n_contours}")
+
+            polygon = contours_to_polygon(contours_tissue, holes_tissue)
+            grid = partition(polygon, native_step_size, native_patch_size)
+            coords = [g.exterior.coords[0] for g in grid]
+            logger.info(f"Total number of patches: {len(coords)}")
+
+            if min_tissue_proportion > 0.0:
+                prepared_polygon = prep(polygon)
+                filtered = [
+                    (g, c)
+                    for g, c in zip(grid, coords)
+                    if prepared_polygon.intersects(g)
+                    and prepared_polygon.intersection(g).area / g.area
+                    >= min_tissue_proportion
+                ]
+                if filtered:
+                    grid, coords = zip(*filtered)
+                    grid, coords = list(grid), list(coords)
+                else:
+                    grid, coords = [], []
+                logger.info(
+                    f"After min_tissue_proportion={min_tissue_proportion:.2f} filter: "
+                    f"{len(coords)} patches remaining"
+                )
+
+            # Apply the output budget after all tissue and per-tile filtering so
+            # that the budget is spent only on valid tiles. Sorting the sampled
+            # indices preserves partition order for stable downstream output.
+            if max_tiles is not None and len(coords) > max_tiles:
+                if max_tiles_strategy == "random":
+                    selected = np.sort(
+                        np.random.default_rng(max_tiles_seed).choice(
+                            len(coords), size=max_tiles, replace=False
+                        )
+                    )
+                else:
+                    selected = np.arange(max_tiles)
+                grid = [grid[i] for i in selected]
+                coords = [coords[i] for i in selected]
+                logger.info(
+                    "After max_tiles=%d (%s) filter: %d patches remaining",
+                    max_tiles,
+                    max_tiles_strategy,
+                    len(coords),
+                )
+
+            attrs = {
+                "seg_level": seg_level,
+                "segment_threshold": segment_threshold,
+                "segment_max_value": segment_max_value,
+                "median_blur_ksize": median_blur_ksize,
+                "morphology_ex_kernel": morphology_ex_kernel,
+                "tissue_area_threshold": tissue_area_px,
+                "hole_area_threshold": hole_area_px,
+                "max_num_holes": max_num_holes,
+                "ref_patch_size": ref_patch_size,
+                "patch_size": native_patch_size,
+                "step_size": native_step_size,
+                "patch_size_to_resize_to_for_desired_mpp": patch_size,
+                "patch_level": 0,
+                "mpp": mpp,
+                "native_mpp": slide_mpp,
+                "mpp_is_fallback": mpp_is_fallback,
+                "level_dim": wsi.level_dimensions[0],
+                "name": slide_id,
+                "overlap": overlap,
+                "min_tissue_proportion": min_tissue_proportion,
+                "seg_model": seg_model,
+                "max_tiles": -1 if max_tiles is None else max_tiles,
+                "max_tiles_strategy": max_tiles_strategy,
+                "max_tiles_seed": max_tiles_seed,
+                "selection_mode": selection_mode,
+                "max_candidate_tiles": (
+                    -1 if max_candidate_tiles is None else max_candidate_tiles
+                ),
+            }
+            if output_h5_path:
+                asset_dict = {"coords": np.array(coords, dtype=np.int64)}
+                attr_dict = {"coords": attrs}
+                save_hdf5(output_h5_path, asset_dict, attr_dict, mode="w")
+                logger.info(f"Writing to {output_h5_path}")
+
+            return polygon, grid, coords, attrs
+
+        return {
+            patch_size: _tile_at(patch_size, output_h5_path)
+            for patch_size, output_h5_path in zip(patch_sizes, output_h5_paths)
         }
-        if output_h5_path:
-            asset_dict = {"coords": np.array(coords, dtype=np.int64)}
-            attr_dict = {"coords": attrs}
-            save_hdf5(output_h5_path, asset_dict, attr_dict, mode="w")
-            logger.info(f"Writing to {output_h5_path}")
-
-        return polygon, grid, coords, attrs
     finally:
         wsi.close()
 

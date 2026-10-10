@@ -21,7 +21,8 @@ from mussel.utils.artifact_removal import (
     EXCLUDE_PENMARKS_ONLY,
     GrandQCArtifactRemover,
 )
-from mussel.utils.segment import draw_slide_mask, save_patches_png, segment_tissue
+from mussel.utils.segment import (draw_slide_mask, save_patches_png,
+                                  segment_tissue_multi)
 
 
 @dataclass
@@ -44,6 +45,10 @@ class NeuralSegConfig:
 class SegConfig:
     """
     patch_size (int): Tile size in pixels at the resolution set by ``mpp``.
+    patch_sizes (Optional[List[int]]): Tile at several sizes from one tissue segmentation
+        (e.g. ``[224, 512]`` for models with different recommended tile sizes). Overrides
+        ``patch_size``. Output paths must contain the ``{patch_size}`` placeholder; each
+        size's tiles are identical to tessellating that size alone.
     step_size (int): Step size in pixels between tile origins. Defaults to ``patch_size`` (no overlap).
         Overridden by ``overlap`` if set.
     overlap (int): Tile overlap in absolute pixels (0 = no overlap).
@@ -112,6 +117,7 @@ class SegConfig:
     DEFAULT_PATCH_SIZE: ClassVar[int] = 256
 
     patch_size: int = 256
+    patch_sizes: Optional[List[int]] = None  # several sizes from one segmentation
     step_size: Optional[int] = None  # if None, defaults to patch_size
     mpp: float = 0.5
     seg_level: int = -1
@@ -352,6 +358,7 @@ Key options (use Hydra override syntax, e.g. seg_config.mpp=0.25):
   seg_config          Preset segmentation profile: default | biopsy | resection | tcga | stain
   seg_config.mpp      Target resolution in µm/px (default 0.5 ≈ 20×; 0.25 ≈ 40×)
   seg_config.patch_size  Tile size in pixels at the target MPP (default 256)
+  seg_config.patch_sizes Several tile sizes from one segmentation; paths need {patch_size}
   seg_config.seg_model   Segmentation backend: classic | otsu | neural
   seg_config.max_tiles   Optional cap on output tiles after tissue filtering
   neural_config.*        Neural model/runtime controls (used with seg_model=neural)
@@ -359,6 +366,8 @@ Key options (use Hydra override syntax, e.g. seg_config.mpp=0.25):
 Example:
   tessellate slide_path=slide.svs output_h5_path=out.h5 seg_config=biopsy
   tessellate 'slide_paths=[a.svs,b.svs]' output_dir=tiles seg_config=biopsy
+  tessellate slide_path=slide.svs 'output_h5_path="tiles_{patch_size}/slide.patch.h5"' \\
+      'seg_config.patch_sizes=[224,512]'
 """
 
 parameter_doc = f"""
@@ -432,6 +441,27 @@ def _slide_id_for_path(slide_path: str, slide_id: Optional[str] = None) -> str:
     return slide_id if slide_id else Path(slide_path).stem
 
 
+PATCH_SIZE_PLACEHOLDER = "{patch_size}"
+
+
+def _patch_sizes(seg_cfg: dict) -> list[int]:
+    """Tile sizes requested by seg_config: ``patch_sizes`` if set, else ``[patch_size]``."""
+    sizes = seg_cfg.get("patch_sizes")
+    return [int(p) for p in sizes] if sizes else [int(seg_cfg["patch_size"])]
+
+
+def _path_for_size(path: Optional[str], size: int, multi: bool) -> Optional[str]:
+    """Expand the ``{patch_size}`` placeholder; required when tiling several sizes."""
+    if path is None:
+        return None
+    if multi and PATCH_SIZE_PLACEHOLDER not in str(path):
+        raise ValueError(
+            f"Output path {path!r} must contain {PATCH_SIZE_PLACEHOLDER} when "
+            "seg_config.patch_sizes lists several sizes."
+        )
+    return str(path).replace(PATCH_SIZE_PLACEHOLDER, str(size))
+
+
 def _run_tessellation(
     *,
     slide_path: str,
@@ -440,23 +470,33 @@ def _run_tessellation(
     artifact_remover_fn: "Optional[GrandQCArtifactRemover]",
     slide_id: Optional[str] = None,
     neural_segmenter: Optional[Any] = None,
-) -> tuple[Any, Any, np.ndarray] | None:
-    # Strip config-only keys that are not segment_tissue() parameters.
+) -> dict[int, tuple[Any, Any, np.ndarray] | None]:
+    """Segment once and tile at every requested size.
+
+    Returns a dict mapping each patch size to ``(polygon, grid, coords)``, or
+    None for a size that produced no tiles.
+    """
+    sizes = _patch_sizes(seg_cfg)
+    multi = len(sizes) > 1
+    # Strip config-only keys that are not segment_tissue_multi() parameters.
     call_seg_cfg = dict(seg_cfg)
     call_seg_cfg.pop("artifact_exclude_classes", None)
+    call_seg_cfg.pop("patch_size", None)
+    call_seg_cfg.pop("patch_sizes", None)
     if neural_segmenter is not None:
         call_seg_cfg["neural_segmenter"] = neural_segmenter
-    values = segment_tissue(
+    results = segment_tissue_multi(
         slide_path=slide_path,
         slide_id=slide_id,
-        output_h5_path=output_h5_path,
+        patch_sizes=sizes,
+        output_h5_paths=[_path_for_size(output_h5_path, size, multi) for size in sizes],
         artifact_remover_fn=artifact_remover_fn,
         **call_seg_cfg,
     )
-    if not values:
-        return None
-    polygon, grid, coords, _ = values
-    return polygon, grid, coords
+    return {
+        size: (values[0], values[1], values[2]) if values else None
+        for size, values in results.items()
+    }
 
 
 def _resolve_batch_outputs(cfg: TessellateConfig) -> list[tuple[str, str, str]]:
@@ -492,8 +532,10 @@ def _resolve_batch_outputs(cfg: TessellateConfig) -> list[tuple[str, str, str]]:
             )
     else:
         output_dir = Path(cfg.output_dir)
+        multi = cfg.seg_config.get("patch_sizes") if hasattr(cfg.seg_config, "get") else None
+        name = "{slide_id}.{patch_size}px.patch.h5" if multi and len(multi) > 1 else "{slide_id}.patch.h5"
         output_h5_paths = [
-            str(output_dir / f"{slide_id}.patch.h5") for slide_id in slide_ids
+            str(output_dir / name.replace("{slide_id}", str(slide_id))) for slide_id in slide_ids
         ]
 
     duplicate_outputs = sorted(
@@ -585,13 +627,21 @@ def _run_batch(
     neural_segmenter = _build_neural_segmenter(seg_cfg, neural_config=neural_config)
     failures: list[tuple[str, str, str, str]] = []
     items = _resolve_batch_outputs(cfg)
+    sizes = _patch_sizes(seg_cfg)
+
+    def size_paths(template: str) -> list[tuple[int, str]]:
+        return [(size, _path_for_size(template, size, len(sizes) > 1)) for size in sizes]
+
+    for _, _, template in items:
+        size_paths(template)  # validate placeholders before any work
     logger.info("Batch tessellating %d slide(s)", len(items))
 
     for i, (slide_path, slide_id, output_h5_path) in enumerate(items, start=1):
         try:
-            Path(output_h5_path).parent.mkdir(parents=True, exist_ok=True)
+            for _, path in size_paths(output_h5_path):
+                Path(path).parent.mkdir(parents=True, exist_ok=True)
             logger.info("Tessellating slide %d/%d: %s", i, len(items), slide_id)
-            result = _run_tessellation(
+            results = _run_tessellation(
                 slide_path=slide_path,
                 slide_id=slide_id,
                 output_h5_path=output_h5_path,
@@ -599,14 +649,23 @@ def _run_batch(
                 artifact_remover_fn=artifact_remover_fn,
                 neural_segmenter=neural_segmenter,
             )
-            if result is None or not Path(output_h5_path).exists():
+            written = [
+                size for size, path in size_paths(output_h5_path)
+                if results.get(size) is not None and Path(path).exists()
+            ]
+            if not written:
                 raise RuntimeError(f"tessellation produced no patch H5 for {slide_id}")
+            missing = sorted(set(sizes) - set(written))
+            if missing:
+                # e.g. a tiny fragment that fills no tile at a larger size
+                logger.warning("%s: no tiles at patch size(s) %s", slide_id, missing)
         except Exception as exc:
             failures.append((slide_id, slide_path, output_h5_path, str(exc)))
-            try:
-                Path(output_h5_path).unlink(missing_ok=True)
-            except Exception:
-                pass
+            for _, path in size_paths(output_h5_path):
+                try:
+                    Path(path).unlink(missing_ok=True)
+                except Exception:
+                    pass
             logger.exception("Failed to tessellate %s", slide_id)
             if not cfg.continue_on_error:
                 break
@@ -653,21 +712,31 @@ def main(
     if cfg.slide_path is None or cfg.output_h5_path is None:
         raise ValueError("Single-slide mode requires slide_path and output_h5_path.")
 
+    sizes = _patch_sizes(seg_cfg)
+    multi = len(sizes) > 1
+    # Validate every output path before segmenting.
+    for path in (cfg.output_h5_path, cfg.output_grid_mask_path, cfg.output_png_dir):
+        _path_for_size(path, sizes[0], multi)
+
     artifact_remover_fn = _build_artifact_remover(seg_cfg)
     neural_segmenter = _build_neural_segmenter(
         seg_cfg, neural_config=neural_cfg
     )
-    if values := _run_tessellation(
+    results = _run_tessellation(
         slide_path=cfg.slide_path,
         slide_id=cfg.slide_id,
         output_h5_path=cfg.output_h5_path,
         seg_cfg=seg_cfg,
         artifact_remover_fn=artifact_remover_fn,
         neural_segmenter=neural_segmenter,
-    ):
-        polygon, grid, coords = values
-    else:
+    )
+    tiled = [(size, values) for size, values in results.items() if values]
+    if not tiled:
         return
+
+    # The tissue mask overlay and thumbnail don't depend on tile size: draw them
+    # once (first size's contours). Grid masks and PNG tiles are per size.
+    polygon = tiled[0][1][0]
 
     if cfg.output_mask_path:
         mask = draw_slide_mask(
@@ -677,28 +746,30 @@ def main(
         )
         mask.save(cfg.output_mask_path)
 
-    if cfg.output_grid_mask_path:
-        grid_mask = draw_slide_mask(
-            cfg.slide_path,
-            grid,
-            **OmegaConf.to_container(cfg.vis_config),
-        )
-        grid_mask.save(cfg.output_grid_mask_path)
+    for size, (_, grid, coords) in tiled:
+        if cfg.output_grid_mask_path:
+            grid_mask = draw_slide_mask(
+                cfg.slide_path,
+                grid,
+                **OmegaConf.to_container(cfg.vis_config),
+            )
+            grid_mask.save(_path_for_size(cfg.output_grid_mask_path, size, multi))
 
-    if cfg.output_png_dir:
-        logger.info(f"saving patches to {cfg.output_png_dir}")
-        save_patches_png(
-            cfg.slide_path,
-            coords,
-            save_dir=cfg.output_png_dir,
-            num_workers=cfg.num_workers,
-            mpp=cfg.seg_config.mpp,
-            patch_size=cfg.seg_config.patch_size,
-            filter_black_white=cfg.png_config.filter_black_white,
-            white_threshold=cfg.png_config.white_threshold,
-            black_threshold=cfg.png_config.black_threshold,
-            slide_mpp_override=cfg.seg_config.slide_mpp_override,
-        )
+        if cfg.output_png_dir:
+            png_dir = _path_for_size(cfg.output_png_dir, size, multi)
+            logger.info(f"saving patches to {png_dir}")
+            save_patches_png(
+                cfg.slide_path,
+                coords,
+                save_dir=png_dir,
+                num_workers=cfg.num_workers,
+                mpp=cfg.seg_config.mpp,
+                patch_size=size,
+                filter_black_white=cfg.png_config.filter_black_white,
+                white_threshold=cfg.png_config.white_threshold,
+                black_threshold=cfg.png_config.black_threshold,
+                slide_mpp_override=cfg.seg_config.slide_mpp_override,
+            )
 
     if cfg.output_thumbnail_path:
         with tiffslide.TiffSlide(cfg.slide_path) as wsi:

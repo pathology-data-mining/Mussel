@@ -68,6 +68,18 @@ def test_tessellate(tmp_path, num_workers):
         ), "y + patch_size exceeds slide height"
 
 
+def _as_multi(fake_single):
+    """Adapt a one-size fake of segment_tissue to segment_tissue_multi's signature."""
+
+    def fake_multi(*, patch_sizes, output_h5_paths, **kwargs):
+        return {
+            size: fake_single(output_h5_path=path, **kwargs)
+            for size, path in zip(patch_sizes, output_h5_paths)
+        }
+
+    return fake_multi
+
+
 def test_tessellate_batch_writes_patch_h5_outputs(tmp_path):
     slide_paths = ["slide_a.svs", "slide_b.svs"]
     output_dir = tmp_path / "tiles"
@@ -84,7 +96,8 @@ def test_tessellate_batch_writes_patch_h5_outputs(tmp_path):
         return MagicMock(), MagicMock(), np.array([[0, 0]]), None
 
     with patch(
-        "mussel.cli.tessellate.segment_tissue", side_effect=fake_segment_tissue
+        "mussel.cli.tessellate.segment_tissue_multi",
+        side_effect=_as_multi(fake_segment_tissue),
     ) as mock_segment:
         mussel.cli.tessellate.main(OmegaConf.create(cfg))
 
@@ -106,7 +119,10 @@ def test_tessellate_batch_can_use_explicit_output_h5_paths(tmp_path):
         Path(output_h5_path).write_text("patch h5")
         return MagicMock(), MagicMock(), np.array([[0, 0]]), None
 
-    with patch("mussel.cli.tessellate.segment_tissue", side_effect=fake_segment_tissue):
+    with patch(
+        "mussel.cli.tessellate.segment_tissue_multi",
+        side_effect=_as_multi(fake_segment_tissue),
+    ):
         mussel.cli.tessellate.main(OmegaConf.create(cfg))
 
     assert out_a.exists()
@@ -132,7 +148,8 @@ def test_tessellate_batch_reuses_neural_segmenter(tmp_path):
         return_value=shared_segmenter,
     ) as mock_segmenter_cls:
         with patch(
-            "mussel.cli.tessellate.segment_tissue", side_effect=fake_segment_tissue
+            "mussel.cli.tessellate.segment_tissue_multi",
+            side_effect=_as_multi(fake_segment_tissue),
         ) as mock_segment:
             mussel.cli.tessellate.main(OmegaConf.create(cfg))
 
@@ -179,7 +196,8 @@ def test_tessellate_batch_fails_on_first_slide_failure(tmp_path):
         return MagicMock(), MagicMock(), np.array([[0, 0]]), None
 
     with patch(
-        "mussel.cli.tessellate.segment_tissue", side_effect=fake_segment_tissue
+        "mussel.cli.tessellate.segment_tissue_multi",
+        side_effect=_as_multi(fake_segment_tissue),
     ) as mock_segment:
         with pytest.raises(RuntimeError, match="1 of 2"):
             mussel.cli.tessellate.main(OmegaConf.create(cfg))
@@ -208,7 +226,8 @@ def test_tessellate_batch_continue_on_error_writes_failures_tsv(tmp_path):
         return MagicMock(), MagicMock(), np.array([[0, 0]]), None
 
     with patch(
-        "mussel.cli.tessellate.segment_tissue", side_effect=fake_segment_tissue
+        "mussel.cli.tessellate.segment_tissue_multi",
+        side_effect=_as_multi(fake_segment_tissue),
     ) as mock_segment:
         mussel.cli.tessellate.main(OmegaConf.create(cfg))
 
@@ -231,7 +250,7 @@ def test_tessellate_batch_continue_on_error_fails_when_all_slides_fail(tmp_path)
     )
 
     with patch(
-        "mussel.cli.tessellate.segment_tissue", side_effect=RuntimeError("boom")
+        "mussel.cli.tessellate.segment_tissue_multi", side_effect=RuntimeError("boom")
     ) as mock_segment:
         with pytest.raises(RuntimeError, match="2 of 2"):
             mussel.cli.tessellate.main(OmegaConf.create(cfg))

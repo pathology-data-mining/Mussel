@@ -97,6 +97,10 @@ class ExtractFeaturesConfig:
             range as float32, less mantissa precision than float16). Note: when
             using aggregation_method="model", reduced-precision features are fed
             to the slide encoder, which may affect aggregation quality.
+        tile_size_check (str): What to do when the tiles in a patch H5 don't match the
+            model's recommended tile size (MODEL_PATCH_SIZES) or MPP (MODEL_TARGET_MPP):
+            "warn" (default), "error" or "off". Checks the patch encoder and, with
+            aggregation_method=model, the slide encoder (e.g. TITAN_SLIDE needs 512 px at 0.5 µm/px).
     """
 
     # Single mode parameters
@@ -133,6 +137,7 @@ class ExtractFeaturesConfig:
     num_workers: int = 16
     is_test_run: bool = False
     embedding_precision: str = "float32"
+    tile_size_check: str = "warn"
 
     def __post_init__(self):
         if isinstance(self.model_kwargs, DictConfig):
@@ -241,6 +246,7 @@ def _main_single(cfg: ExtractFeaturesConfig):
         model_kwargs=cfg.model_kwargs,
         slide_model_kwargs=cfg.slide_model_kwargs,
         embedding_precision=cfg.embedding_precision,
+        tile_size_check=cfg.tile_size_check,
     )
 
 
@@ -310,6 +316,7 @@ def _main_batch(cfg: ExtractFeaturesConfig):
             is_test_run=cfg.is_test_run,
             embedding_precision=cfg.embedding_precision,
             model_kwargs=cfg.model_kwargs,
+            tile_size_check=cfg.tile_size_check,
         )
 
         # Aggregate to slide level using batch processing
@@ -329,6 +336,7 @@ def _main_batch(cfg: ExtractFeaturesConfig):
             gpu_device_ids=cfg.gpu_device_ids,
             slide_batch_size=cfg.slide_batch_size,
             slide_model_kwargs=cfg.slide_model_kwargs,
+            tile_size_check=cfg.tile_size_check,
         )
 
         # Defense-in-depth: verify at least one output file was created.
@@ -360,6 +368,7 @@ def _main_batch(cfg: ExtractFeaturesConfig):
             is_test_run=cfg.is_test_run,
             embedding_precision=cfg.embedding_precision,
             model_kwargs=cfg.model_kwargs,
+            tile_size_check=cfg.tile_size_check,
         )
 
         # Save as PT format for consistency
