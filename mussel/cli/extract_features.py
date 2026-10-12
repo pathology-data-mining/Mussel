@@ -144,7 +144,8 @@ class ExtractFeaturesConfig:
     shared_loader: bool = True
     # Batch mode, aggregation_method=identity: several patch models in one pass over
     # the tiles (models with identical preprocessing share each decoded batch).
-    # Outputs go to output_dir/<model code>/<slide_id>.<suffix>.
+    # Outputs go to output_dir/<model code>/<slide_id>.<suffix>. Set the dicts with
+    # ++ (struct mode), e.g. '++model_precisions={hoptimus1:bfloat16,optimus:bfloat16}'.
     model_types: Optional[List[ModelType]] = None
     model_precisions: Dict[str, str] = field(default_factory=dict)  # model code -> embedding precision
     model_paths: Dict[str, str] = field(default_factory=dict)  # model code -> weights path
