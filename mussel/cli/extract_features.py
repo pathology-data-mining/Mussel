@@ -101,6 +101,8 @@ class ExtractFeaturesConfig:
             model's recommended tile size (MODEL_PATCH_SIZES) or MPP (MODEL_TARGET_MPP):
             "warn" (default), "error" or "off". Checks the patch encoder and, with
             aggregation_method=model, the slide encoder (e.g. TITAN_SLIDE needs 512 px at 0.5 µm/px).
+        shared_loader (bool): Batch mode: one DataLoader worker pool for all slides
+            (default) instead of one per slide, saving ~10 s of worker start-up per slide.
     """
 
     # Single mode parameters
@@ -138,6 +140,7 @@ class ExtractFeaturesConfig:
     is_test_run: bool = False
     embedding_precision: str = "float32"
     tile_size_check: str = "warn"
+    shared_loader: bool = True
 
     def __post_init__(self):
         if isinstance(self.model_kwargs, DictConfig):
@@ -317,6 +320,7 @@ def _main_batch(cfg: ExtractFeaturesConfig):
             embedding_precision=cfg.embedding_precision,
             model_kwargs=cfg.model_kwargs,
             tile_size_check=cfg.tile_size_check,
+            shared_loader=cfg.shared_loader,
         )
 
         # Aggregate to slide level using batch processing
@@ -369,6 +373,7 @@ def _main_batch(cfg: ExtractFeaturesConfig):
             embedding_precision=cfg.embedding_precision,
             model_kwargs=cfg.model_kwargs,
             tile_size_check=cfg.tile_size_check,
+            shared_loader=cfg.shared_loader,
         )
 
         # Save as PT format for consistency
