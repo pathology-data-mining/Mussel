@@ -84,6 +84,9 @@ _PATCH_ENCODER_DIM: dict[ModelType, int] = {
     ModelType.LUNIT_VITS16: 384,  # Lunit DINO ViT-S/16
     ModelType.OPENMIDNIGHT: 1536,  # DINOv2 ViT-G/14
     ModelType.GENBIO_PATHFM: 4608,  # 3 channels × 1536
+    # Text-aligned patch encoders
+    ModelType.MUSK: 1024,  # BEiT-3 CLS + vision head (384px)
+    ModelType.KEEP: 768,  # ViT-L/16 + projection head
 }
 
 # Per-slide-encoder override for the INPUT patch feature dimension, for a slide
@@ -123,6 +126,7 @@ def _skip_on_load_failure(fn):
                     "no module named 'tensorflow",
                     "no module named 'fastattn",
                     "no module named 'gigapath",
+                    "no module named 'musk",
                 ]
             ):
                 pytest.skip(f"Model unavailable: {exc}")
