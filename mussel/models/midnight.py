@@ -7,7 +7,7 @@ import torch
 from torchvision import transforms
 from transformers import AutoModel
 
-from mussel.models.base import IMAGENET_MEAN, IMAGENET_STD, TorchModel
+from mussel.models.base import TorchModel
 from mussel.models.model_factory import ModelType, register_model
 
 logger = logging.getLogger(__name__)
@@ -18,8 +18,11 @@ class Midnight12kModel(TorchModel):
     """Midnight-12k (kaiko-ai/midnight) — DINOv2 ViT-g/14 trained on 12k pathology slides.
 
     Loaded via ``transformers.AutoModel`` (no timm preprocessor_config available).
-    Input size: 518×518, ImageNet normalisation.
-    Output: CLS token, dim=1536.
+    As on the kaiko-ai/midnight model card: 224×224 input normalised with mean and
+    std 0.5 ("Our models are trained on 224x224 images normalized with a mean of
+    (0.5, 0.5, 0.5) and a standard deviation of (0.5, 0.5, 0.5)"), and the
+    classification embedding is the CLS token concatenated with the mean of the
+    patch tokens, dim=3072.
     """
 
     def __init__(
@@ -42,16 +45,13 @@ class Midnight12kModel(TorchModel):
         super().__init__(model_path, model_obj, use_gpu, gpu_device_id)
 
     def get_preprocessing_fun(self) -> Callable:
-        """518×518 resize + ImageNet normalisation (DINOv2 ViT-g/14 native input size)."""
+        """224×224 resize/crop, mean/std 0.5 normalisation (model card)."""
         return transforms.Compose(
             [
-                transforms.Resize(518),
-                transforms.CenterCrop(518),
+                transforms.Resize(224),
+                transforms.CenterCrop(224),
                 transforms.ToTensor(),
-                transforms.Normalize(
-                    mean=IMAGENET_MEAN,
-                    std=IMAGENET_STD,
-                ),
+                transforms.Normalize(mean=(0.5, 0.5, 0.5), std=(0.5, 0.5, 0.5)),
             ]
         )
 
@@ -60,4 +60,6 @@ class Midnight12kModel(TorchModel):
         return torch.float16 if self.device.type == "cuda" else torch.bfloat16
 
     def _forward(self, x: torch.Tensor) -> torch.Tensor:
-        return self.obj(pixel_values=x).last_hidden_state[:, 0]
+        # CLS token + mean of the patch tokens (the card's extract_classification_embedding).
+        tokens = self.obj(pixel_values=x).last_hidden_state
+        return torch.cat([tokens[:, 0], tokens[:, 1:].mean(1)], dim=-1)
