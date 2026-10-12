@@ -13,7 +13,8 @@ import torch
 from torchvision import transforms
 
 from mussel.models import ModelType
-from mussel.utils.feature_extract import _PerSlideBatches, extract_patch_features_batch
+from mussel.utils.feature_extract import (_OneSlideOpenConcat, _PerSlideBatches,
+                                          extract_patch_features_batch)
 
 _TESTDATA = Path(__file__).parent.parent.parent / "testdata"
 _SLIDE = str(_TESTDATA / "948176.svs")
@@ -84,3 +85,45 @@ def test_per_slide_batches_never_mix_slides():
     s = _PerSlideBatches([5, 1, 7, 0, 3], batch_size=3)
     assert list(s) == [[0, 1, 2], [3, 4], [5], [6, 7, 8], [9, 10, 11], [12], [13, 14, 15]]
     assert s.per_slide() == [2, 1, 3, 0, 1] and len(s) == 7
+
+
+def test_test_run_reads_only_three_batches_per_slide():
+    s = _PerSlideBatches([10, 2, 30], batch_size=3, max_batches_per_slide=3)
+    assert s.per_slide() == [3, 1, 3]
+    assert list(s) == [[0, 1, 2], [3, 4, 5], [6, 7, 8], [10, 11], [12, 13, 14], [15, 16, 17], [18, 19, 20]]
+
+
+class _FakeSlide:
+    def __init__(self, log):
+        self.log = log
+
+    def close(self):
+        self.log.append("close")
+
+
+class _FakeDataset(torch.utils.data.Dataset):
+    """WholeSlideImageH5Dataset's worker_init / wsi contract."""
+
+    def __init__(self, name, n, log):
+        self.name, self.n, self.log, self.wsi = name, n, log, None
+
+    def __len__(self):
+        return self.n
+
+    def worker_init(self, *args):
+        self.log.append(f"open {self.name}")
+        self.wsi = _FakeSlide(self.log)
+
+    def __getitem__(self, i):
+        assert self.wsi is not None, "read before the slide was opened"
+        return self.name, i
+
+
+def test_one_slide_open_at_a_time():
+    log = []
+    datasets = [_FakeDataset(n, k, log) for n, k in (("a", 4), ("b", 1), ("c", 3))]
+    concat = _OneSlideOpenConcat(datasets)
+    got = [concat[i] for b in _PerSlideBatches([4, 1, 3], 2) for i in b]
+    assert got == [("a", 0), ("a", 1), ("a", 2), ("a", 3), ("b", 0), ("c", 0), ("c", 1), ("c", 2)]
+    assert log == ["open a", "close", "open b", "close", "open c"]
+    assert [d.wsi is not None for d in datasets] == [False, False, True]

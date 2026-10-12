@@ -1276,35 +1276,60 @@ class _PerSlideBatches:
     """Batch sampler over a ConcatDataset of slides that never mixes slides.
 
     Yields each slide's indices in order, in chunks of ``batch_size`` with a
-    short last chunk: the same batches a per-slide DataLoader makes.
+    short last chunk: the same batches a per-slide DataLoader makes. With
+    ``max_batches_per_slide`` (``is_test_run``: 3) only that many batches of
+    each slide are yielded, so the workers never read the rest.
     """
 
-    def __init__(self, lengths: List[int], batch_size: int):
+    def __init__(self, lengths: List[int], batch_size: int, max_batches_per_slide: Optional[int] = None):
         self.lengths, self.batch_size = list(lengths), int(batch_size)
+        self.max_batches = max_batches_per_slide
 
     def per_slide(self) -> List[int]:
-        return [-(-n // self.batch_size) for n in self.lengths]
+        n = [-(-length // self.batch_size) for length in self.lengths]
+        return [min(k, self.max_batches) for k in n] if self.max_batches is not None else n
 
     def __iter__(self):
         start = 0
-        for n in self.lengths:
-            for b in range(start, start + n, self.batch_size):
-                yield list(range(b, min(b + self.batch_size, start + n)))
-            start += n
+        for length, n_batches in zip(self.lengths, self.per_slide()):
+            for k in range(n_batches):
+                b = start + k * self.batch_size
+                yield list(range(b, min(b + self.batch_size, start + length)))
+            start += length
 
     def __len__(self):
         return sum(self.per_slide())
 
 
-class _InitAllSlides:
-    """worker_init_fn that opens every slide of a ConcatDataset in each worker."""
+class _OneSlideOpenConcat(ConcatDataset):
+    """ConcatDataset of WholeSlideImageH5Datasets keeping one slide open per worker.
+
+    Each worker opens a slide when it first reads from it and closes the slide
+    it read before. _PerSlideBatches hands out batches slide by slide, so a
+    worker switches at most once per slide and holds one open slide at a time,
+    as with per-slide DataLoaders (opening every slide in every worker would
+    hold workers x slides handles and tile caches).
+    """
 
     def __init__(self, datasets):
-        self.datasets = datasets
+        super().__init__(datasets)
+        self._open = None
 
-    def __call__(self, *args):
-        for ds in self.datasets:
-            ds.worker_init(*args)
+    def __getitem__(self, idx):
+        import bisect
+
+        di = bisect.bisect_right(self.cumulative_sizes, idx)
+        if di != self._open:
+            if self._open is not None:
+                prev = self.datasets[self._open]
+                close = getattr(prev.wsi, "close", None)
+                if close is not None:
+                    close()
+                prev.wsi = None
+            self.datasets[di].worker_init()
+            self._open = di
+        sample_idx = idx - (self.cumulative_sizes[di - 1] if di > 0 else 0)
+        return self.datasets[di][sample_idx]
 
 
 def extract_patch_features_batch(
@@ -1418,33 +1443,31 @@ def extract_patch_features_batch(
             )
             for patch_h5_path, slide_path in zip(patch_h5_paths, slide_paths)
         ]
-        sampler = _PerSlideBatches([len(ds) for ds in datasets], batch_size)
+        # is_test_run: process_dataset stops after 3 batches of a slide, so only
+        # those are read.
+        sampler = _PerSlideBatches([len(ds) for ds in datasets], batch_size,
+                                   max_batches_per_slide=3 if is_test_run else None)
         loader = DataLoader(
-            ConcatDataset(datasets),
+            _OneSlideOpenConcat(datasets),
             batch_sampler=sampler,
             num_workers=num_workers,
             pin_memory=pin_memory,
             collate_fn=collate_features,
-            worker_init_fn=_InitAllSlides(datasets),
             prefetch_factor=4,
             multiprocessing_context="spawn",
         )
         batches = iter(loader)
         for i, (ds, n_batches) in enumerate(zip(datasets, sampler.per_slide())):
             logger.info(f"Processing slide {i+1}/{num_slides}: {slide_paths[i]}")
-            # is_test_run stops a slide after 3 batches; drain the rest so the
-            # next slide starts at its own first batch.
-            slide_batches = itertools.islice(batches, n_batches)
             process_dataset(
                 ds,
-                slide_batches,
+                itertools.islice(batches, n_batches),
                 model_fun=model_fun,
                 patch_h5_path=patch_h5_paths[i],
                 output_h5_path=output_h5_paths[i],
                 is_test_run=is_test_run,
                 feature_dtype=feature_dtype,
             )
-            collections.deque(slide_batches, maxlen=0)
             logger.info(f"Patch-level features saved to {output_h5_paths[i]}")
         del batches, loader
 
