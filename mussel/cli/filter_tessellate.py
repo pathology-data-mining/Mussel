@@ -190,9 +190,9 @@ def _main(cfg: FilterTessellateConfig, temp_dir, base_path):
     )
     # Strip config-only keys that are not segment_tissue() parameters.
     seg_cfg.pop("artifact_exclude_classes", None)
-    if seg_cfg.pop("patch_sizes", None):
+    if seg_cfg.pop("patch_sizes", None) or seg_cfg.pop("patch_mpps", None):
         raise ValueError(
-            "seg_config.patch_sizes (several tile sizes) is only supported by tessellate; "
+            "seg_config.patch_sizes / patch_mpps (several tile sets) are only supported by tessellate; "
             "filter_tessellate tiles at seg_config.patch_size."
         )
 

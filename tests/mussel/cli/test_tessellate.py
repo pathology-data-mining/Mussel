@@ -71,10 +71,12 @@ def test_tessellate(tmp_path, num_workers):
 def _as_multi(fake_single):
     """Adapt a one-size fake of segment_tissue to segment_tissue_multi's signature."""
 
-    def fake_multi(*, patch_sizes, output_h5_paths, **kwargs):
+    def fake_multi(*, patch_sizes, output_h5_paths, patch_mpps=None, **kwargs):
+        # Like segment_tissue_multi: keyed by (size, mpp) when given patch_mpps.
+        mpps = patch_mpps or [None] * len(patch_sizes)
         return {
-            size: fake_single(output_h5_path=path, **kwargs)
-            for size, path in zip(patch_sizes, output_h5_paths)
+            ((size, float(m)) if patch_mpps is not None else size): fake_single(output_h5_path=path, **kwargs)
+            for size, m, path in zip(patch_sizes, mpps, output_h5_paths)
         }
 
     return fake_multi

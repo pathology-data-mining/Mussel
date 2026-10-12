@@ -49,6 +49,11 @@ class SegConfig:
         (e.g. ``[224, 512]`` for models with different recommended tile sizes). Overrides
         ``patch_size``. Output paths must contain the ``{patch_size}`` placeholder; each
         size's tiles are identical to tessellating that size alone.
+    patch_mpps (Optional[List[float]]): Resolution (µm/px) for each entry of ``patch_sizes``,
+        when tile sets need different resolutions (e.g. ``patch_sizes=[224,256]``,
+        ``patch_mpps=[0.5,1.0]``); ``mpp`` is used for all sizes otherwise. Output paths
+        must then tell the tile sets apart, e.g. with ``{patch_size}px_{mpp}mpp``
+        (``{mpp}`` expands as e.g. ``0.5``, ``1``, ``0.25``).
     step_size (int): Step size in pixels between tile origins. Defaults to ``patch_size`` (no overlap).
         Overridden by ``overlap`` if set.
     overlap (int): Tile overlap in absolute pixels (0 = no overlap).
@@ -120,6 +125,7 @@ class SegConfig:
 
     patch_size: int = 256
     patch_sizes: Optional[List[int]] = None  # several sizes from one segmentation
+    patch_mpps: Optional[List[float]] = None  # per-size resolution (default: mpp for all)
     step_size: Optional[int] = None  # if None, defaults to patch_size
     mpp: float = DEFAULT_MPP
     seg_level: int = -1
@@ -361,6 +367,7 @@ Key options (use Hydra override syntax, e.g. seg_config.mpp=0.25):
   seg_config.mpp      Target resolution in µm/px (default 0.5 ≈ 20×; 0.25 ≈ 40×)
   seg_config.patch_size  Tile size in pixels at the target MPP (default 256)
   seg_config.patch_sizes Several tile sizes from one segmentation; paths need {patch_size}
+  seg_config.patch_mpps  Per-size resolution (µm/px); paths then need {mpp} too
   seg_config.seg_model   Segmentation backend: classic | otsu | neural
   seg_config.max_tiles   Optional cap on output tiles after tissue filtering
   neural_config.*        Neural model/runtime controls (used with seg_model=neural)
@@ -444,6 +451,9 @@ def _slide_id_for_path(slide_path: str, slide_id: Optional[str] = None) -> str:
 
 
 PATCH_SIZE_PLACEHOLDER = "{patch_size}"
+MPP_PLACEHOLDER = "{mpp}"
+
+TileSpec = tuple  # (patch_size, mpp)
 
 
 def _patch_sizes(seg_cfg: dict) -> list[int]:
@@ -452,16 +462,49 @@ def _patch_sizes(seg_cfg: dict) -> list[int]:
     return [int(p) for p in sizes] if sizes else [int(seg_cfg["patch_size"])]
 
 
-def _path_for_size(path: Optional[str], size: int, multi: bool) -> Optional[str]:
-    """Expand the ``{patch_size}`` placeholder; required when tiling several sizes."""
+def _tile_specs(seg_cfg: dict) -> list[TileSpec]:
+    """(patch_size, mpp) for each requested tile set: ``patch_mpps`` per size, else ``mpp``."""
+    sizes = _patch_sizes(seg_cfg)
+    mpps = seg_cfg.get("patch_mpps")
+    if not mpps:
+        return [(size, float(seg_cfg["mpp"])) for size in sizes]
+    if not seg_cfg.get("patch_sizes"):
+        raise ValueError("seg_config.patch_mpps needs seg_config.patch_sizes (one mpp per size).")
+    if len(mpps) != len(sizes):
+        raise ValueError(
+            f"seg_config.patch_mpps ({len(mpps)}) must match seg_config.patch_sizes ({len(sizes)})."
+        )
+    specs = [(size, float(m)) for size, m in zip(sizes, mpps)]
+    if len(set(specs)) != len(specs):
+        raise ValueError(f"seg_config.patch_sizes/patch_mpps pairs must be distinct, got {specs}")
+    return specs
+
+
+def _path_for_spec(path: Optional[str], spec: TileSpec, specs: list[TileSpec]) -> Optional[str]:
+    """Expand ``{patch_size}`` and ``{mpp}`` in an output path for one tile set.
+
+    With several tile sets the path must contain a placeholder, and the
+    expanded paths must differ between tile sets.
+    """
     if path is None:
         return None
-    if multi and PATCH_SIZE_PLACEHOLDER not in str(path):
-        raise ValueError(
-            f"Output path {path!r} must contain {PATCH_SIZE_PLACEHOLDER} when "
-            "seg_config.patch_sizes lists several sizes."
-        )
-    return str(path).replace(PATCH_SIZE_PLACEHOLDER, str(size))
+    path = str(path)
+
+    def expand(s):
+        return path.replace(PATCH_SIZE_PLACEHOLDER, str(s[0])).replace(MPP_PLACEHOLDER, f"{s[1]:g}")
+
+    if len(specs) > 1:
+        if PATCH_SIZE_PLACEHOLDER not in path and MPP_PLACEHOLDER not in path:
+            raise ValueError(
+                f"Output path {path!r} must contain {PATCH_SIZE_PLACEHOLDER} when "
+                "seg_config.patch_sizes lists several sizes."
+            )
+        if len({expand(s) for s in specs}) != len(specs):
+            raise ValueError(
+                f"Output path {path!r} doesn't tell the tile sets {specs} apart; "
+                f"add {MPP_PLACEHOLDER} (seg_config.patch_mpps gives sizes different resolutions)."
+            )
+    return expand(spec)
 
 
 def _run_tessellation(
@@ -475,29 +518,30 @@ def _run_tessellation(
 ) -> dict[int, tuple[Any, Any, np.ndarray] | None]:
     """Segment once and tile at every requested size.
 
-    Returns a dict mapping each patch size to ``(polygon, grid, coords)``, or
-    None for a size that produced no tiles.
+    Returns a dict mapping each tile set ``(patch_size, mpp)`` to
+    ``(polygon, grid, coords)``, or None for a tile set that produced no tiles.
     """
-    sizes = _patch_sizes(seg_cfg)
-    multi = len(sizes) > 1
+    specs = _tile_specs(seg_cfg)
     # Strip config-only keys that are not segment_tissue_multi() parameters.
     call_seg_cfg = dict(seg_cfg)
     call_seg_cfg.pop("artifact_exclude_classes", None)
     call_seg_cfg.pop("patch_size", None)
     call_seg_cfg.pop("patch_sizes", None)
+    call_seg_cfg.pop("patch_mpps", None)
     if neural_segmenter is not None:
         call_seg_cfg["neural_segmenter"] = neural_segmenter
     results = segment_tissue_multi(
         slide_path=slide_path,
         slide_id=slide_id,
-        patch_sizes=sizes,
-        output_h5_paths=[_path_for_size(output_h5_path, size, multi) for size in sizes],
+        patch_sizes=[size for size, _ in specs],
+        patch_mpps=[m for _, m in specs],
+        output_h5_paths=[_path_for_spec(output_h5_path, spec, specs) for spec in specs],
         artifact_remover_fn=artifact_remover_fn,
         **call_seg_cfg,
     )
     return {
-        size: (values[0], values[1], values[2]) if values else None
-        for size, values in results.items()
+        spec: (values[0], values[1], values[2]) if values else None
+        for spec, values in results.items()
     }
 
 
@@ -535,7 +579,11 @@ def _resolve_batch_outputs(cfg: TessellateConfig) -> list[tuple[str, str, str]]:
     else:
         output_dir = Path(cfg.output_dir)
         multi = cfg.seg_config.get("patch_sizes") if hasattr(cfg.seg_config, "get") else None
-        name = "{slide_id}.{patch_size}px.patch.h5" if multi and len(multi) > 1 else "{slide_id}.patch.h5"
+        per_mpp = cfg.seg_config.get("patch_mpps") if hasattr(cfg.seg_config, "get") else None
+        if multi and len(multi) > 1:
+            name = "{slide_id}.{patch_size}px" + ("_{mpp}mpp" if per_mpp and len(set(per_mpp)) > 1 else "") + ".patch.h5"
+        else:
+            name = "{slide_id}.patch.h5"
         output_h5_paths = [
             str(output_dir / name.replace("{slide_id}", str(slide_id))) for slide_id in slide_ids
         ]
@@ -629,10 +677,10 @@ def _run_batch(
     neural_segmenter = _build_neural_segmenter(seg_cfg, neural_config=neural_config)
     failures: list[tuple[str, str, str, str]] = []
     items = _resolve_batch_outputs(cfg)
-    sizes = _patch_sizes(seg_cfg)
+    specs = _tile_specs(seg_cfg)
 
-    def size_paths(template: str) -> list[tuple[int, str]]:
-        return [(size, _path_for_size(template, size, len(sizes) > 1)) for size in sizes]
+    def size_paths(template: str) -> list[tuple[TileSpec, str]]:
+        return [(spec, _path_for_spec(template, spec, specs)) for spec in specs]
 
     for _, _, template in items:
         size_paths(template)  # validate placeholders before any work
@@ -652,15 +700,15 @@ def _run_batch(
                 neural_segmenter=neural_segmenter,
             )
             written = [
-                size for size, path in size_paths(output_h5_path)
-                if results.get(size) is not None and Path(path).exists()
+                spec for spec, path in size_paths(output_h5_path)
+                if results.get(spec) is not None and Path(path).exists()
             ]
             if not written:
                 raise RuntimeError(f"tessellation produced no patch H5 for {slide_id}")
-            missing = sorted(set(sizes) - set(written))
+            missing = sorted(set(specs) - set(written))
             if missing:
                 # e.g. a tiny fragment that fills no tile at a larger size
-                logger.warning("%s: no tiles at patch size(s) %s", slide_id, missing)
+                logger.warning("%s: no tiles for tile set(s) (size, mpp) %s", slide_id, missing)
         except Exception as exc:
             failures.append((slide_id, slide_path, output_h5_path, str(exc)))
             for _, path in size_paths(output_h5_path):
@@ -714,11 +762,10 @@ def main(
     if cfg.slide_path is None or cfg.output_h5_path is None:
         raise ValueError("Single-slide mode requires slide_path and output_h5_path.")
 
-    sizes = _patch_sizes(seg_cfg)
-    multi = len(sizes) > 1
+    specs = _tile_specs(seg_cfg)
     # Validate every output path before segmenting.
     for path in (cfg.output_h5_path, cfg.output_grid_mask_path, cfg.output_png_dir):
-        _path_for_size(path, sizes[0], multi)
+        _path_for_spec(path, specs[0], specs)
 
     artifact_remover_fn = _build_artifact_remover(seg_cfg)
     neural_segmenter = _build_neural_segmenter(
@@ -732,7 +779,7 @@ def main(
         artifact_remover_fn=artifact_remover_fn,
         neural_segmenter=neural_segmenter,
     )
-    tiled = [(size, values) for size, values in results.items() if values]
+    tiled = [(spec, values) for spec, values in results.items() if values]
     if not tiled:
         return
 
@@ -748,24 +795,25 @@ def main(
         )
         mask.save(cfg.output_mask_path)
 
-    for size, (_, grid, coords) in tiled:
+    for spec, (_, grid, coords) in tiled:
+        size, spec_mpp = spec
         if cfg.output_grid_mask_path:
             grid_mask = draw_slide_mask(
                 cfg.slide_path,
                 grid,
                 **OmegaConf.to_container(cfg.vis_config),
             )
-            grid_mask.save(_path_for_size(cfg.output_grid_mask_path, size, multi))
+            grid_mask.save(_path_for_spec(cfg.output_grid_mask_path, spec, specs))
 
         if cfg.output_png_dir:
-            png_dir = _path_for_size(cfg.output_png_dir, size, multi)
+            png_dir = _path_for_spec(cfg.output_png_dir, spec, specs)
             logger.info(f"saving patches to {png_dir}")
             save_patches_png(
                 cfg.slide_path,
                 coords,
                 save_dir=png_dir,
                 num_workers=cfg.num_workers,
-                mpp=cfg.seg_config.mpp,
+                mpp=spec_mpp,
                 patch_size=size,
                 filter_black_white=cfg.png_config.filter_black_white,
                 white_threshold=cfg.png_config.white_threshold,

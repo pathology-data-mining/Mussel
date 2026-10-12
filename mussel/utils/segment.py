@@ -1037,6 +1037,7 @@ def segment_tissue_multi(
     max_num_holes: int = 10,
     patch_sizes: Sequence[int] = (256,),
     mpp: float = 0.5,
+    patch_mpps: Optional[Sequence[float]] = None,
     step_size: Optional[int] = None,
     ref_patch_size: int = 512,
     exclude_ids: Optional[List[int]] = None,
@@ -1056,7 +1057,7 @@ def segment_tissue_multi(
     selection_mode: str = "full_mask",
     max_candidate_tiles: Optional[int] = None,
 ):
-    """Segment tissue once and tile it at one or more patch sizes.
+    """Segment tissue once and tile it at one or more patch sizes (and resolutions).
 
     The tissue mask (thumbnail read, segmentation backend, morphological
     closing, artifact removal) does not depend on the patch size and is
@@ -1068,8 +1069,16 @@ def segment_tissue_multi(
     segmentation per slide. Exception: ``selection_mode="bounded_neural"`` has
     no full-slide mask; its neural tile validation runs once per size.
 
+    The mask doesn't depend on the tiles' resolution either, so with
+    ``patch_mpps`` each tile set can also be read at its own resolution (e.g.
+    224 px at 0.5 µm/px for H-optimus-1 and 256 px at 1.0 µm/px for CHIEF).
+
     Args:
-        patch_sizes: Tile sizes in pixels at ``mpp``; must be distinct.
+        patch_sizes: Tile sizes in pixels, at ``mpp`` or at the matching
+            ``patch_mpps`` entry; must be distinct unless ``patch_mpps`` is given.
+        patch_mpps: Optional resolution (µm/px) per entry of ``patch_sizes``.
+            The (size, mpp) pairs must be distinct, and results are then keyed
+            by ``(size, mpp)`` instead of by size.
         output_h5_paths: Optional HDF5 output path per size (same order as
             ``patch_sizes``; ``None`` entries are not written).
         step_size: Step size in pixels at ``mpp``; only allowed with a single
@@ -1077,10 +1086,29 @@ def segment_tissue_multi(
         **others: As for :func:`segment_tissue`.
 
     Returns:
-        dict mapping each patch size to :func:`segment_tissue`'s 4-tuple
-        ``(polygon, grid, coords, attrs)``, or to None when no tissue tiles
-        were produced at that size.
+        dict mapping each patch size (or ``(size, mpp)`` with ``patch_mpps``) to
+        :func:`segment_tissue`'s 4-tuple ``(polygon, grid, coords, attrs)``, or
+        to None when no tissue tiles were produced at that size.
     """
+    patch_sizes = [int(p) for p in patch_sizes]
+    if not patch_sizes:
+        raise ValueError("patch_sizes must contain at least one size")
+    if patch_mpps is None:
+        if len(set(patch_sizes)) != len(patch_sizes):
+            raise ValueError(f"patch_sizes must be distinct, got {patch_sizes}")
+        specs = [(size, float(mpp)) for size in patch_sizes]
+    else:
+        if len(patch_mpps) != len(patch_sizes):
+            raise ValueError(
+                f"patch_mpps ({len(patch_mpps)}) must match patch_sizes ({len(patch_sizes)})"
+            )
+        specs = [(size, float(m)) for size, m in zip(patch_sizes, patch_mpps)]
+        if len(set(specs)) != len(specs):
+            raise ValueError(f"(patch_sizes, patch_mpps) pairs must be distinct, got {specs}")
+
+    def _key(spec):
+        return spec if patch_mpps is not None else spec[0]
+
     wsi = _wsi_open_slide(slide_path)
 
     try:
@@ -1192,18 +1220,13 @@ def segment_tissue_multi(
                     width, height
                 )
             )
-            return {int(p): None for p in patch_sizes}
+            return {_key(spec): None for spec in specs}
 
         if seg_model == "neural" and selection_mode != "bounded_neural":
             seg_level_ds = level_downsamples[seg_level][0]
             seg_level_mpp = slide_mpp * seg_level_ds
             _validate_neural_seg_mpp(seg_level_mpp, seg_level)
 
-        patch_sizes = [int(p) for p in patch_sizes]
-        if not patch_sizes:
-            raise ValueError("patch_sizes must contain at least one size")
-        if len(set(patch_sizes)) != len(patch_sizes):
-            raise ValueError(f"patch_sizes must be distinct, got {patch_sizes}")
         if output_h5_paths is None:
             output_h5_paths = [None] * len(patch_sizes)
         output_h5_paths = list(output_h5_paths)
@@ -1216,8 +1239,8 @@ def segment_tissue_multi(
                 "step_size applies to a single patch size; use overlap with several patch_sizes"
             )
 
-        native_sizes = {}  # patch_size -> (native_patch_size, native_step_size)
-        for patch_size in patch_sizes:
+        native_sizes = {}  # (patch_size, mpp) -> (native_patch_size, native_step_size)
+        for patch_size, spec_mpp in specs:
             size_step = step_size
             if size_step is None:
                 if overlap < 0:
@@ -1236,13 +1259,13 @@ def segment_tissue_multi(
                     "Use overlap to derive step_size automatically, or pass step_size directly."
                 )
 
-            native_step_size = get_native_size(size_step, mpp, slide_mpp)
-            native_patch_size = get_native_size(patch_size, mpp, slide_mpp)
+            native_step_size = get_native_size(size_step, spec_mpp, slide_mpp)
+            native_patch_size = get_native_size(patch_size, spec_mpp, slide_mpp)
             logger.info(
-                f"patch_size {patch_size}: native_patch_size {native_patch_size}, "
-                f"native_step_size {native_step_size}"
+                f"patch_size {patch_size} at {spec_mpp:g} µm/px: native_patch_size "
+                f"{native_patch_size}, native_step_size {native_step_size}"
             )
-            native_sizes[patch_size] = (native_patch_size, native_step_size)
+            native_sizes[(patch_size, spec_mpp)] = (native_patch_size, native_step_size)
 
         img = np.array(
             wsi.read_region((0, 0), seg_level, wsi.level_dimensions[seg_level])
@@ -1271,8 +1294,8 @@ def segment_tissue_multi(
                         "Artifact removal is not supported with bounded neural selection"
                     )
                 results = {}
-                for patch_size, output_h5_path in zip(patch_sizes, output_h5_paths):
-                    native_patch_size, native_step_size = native_sizes[patch_size]
+                for (patch_size, spec_mpp), output_h5_path in zip(specs, output_h5_paths):
+                    native_patch_size, native_step_size = native_sizes[(patch_size, spec_mpp)]
                     bounded = _bounded_neural_tessellation(
                         wsi=wsi,
                         proposal_img=img,
@@ -1281,7 +1304,7 @@ def segment_tissue_multi(
                         native_patch_size=native_patch_size,
                         native_step_size=native_step_size,
                         patch_size=patch_size,
-                        mpp=mpp,
+                        mpp=spec_mpp,
                         min_tissue_proportion=min_tissue_proportion,
                         max_tiles=max_tiles,
                         max_candidate_tiles=max_candidate_tiles,
@@ -1291,7 +1314,7 @@ def segment_tissue_multi(
                         neural_segmenter=neural_segmenter,
                     )
                     if bounded is None:
-                        results[patch_size] = None
+                        results[_key((patch_size, spec_mpp))] = None
                         continue
                     polygon, grid, coords, bounded_attrs = bounded
                     attrs = {
@@ -1308,7 +1331,7 @@ def segment_tissue_multi(
                         "step_size": native_step_size,
                         "patch_size_to_resize_to_for_desired_mpp": patch_size,
                         "patch_level": 0,
-                        "mpp": mpp,
+                        "mpp": spec_mpp,
                         "native_mpp": slide_mpp,
                         "mpp_is_fallback": mpp_is_fallback,
                         "level_dim": wsi.level_dimensions[0],
@@ -1329,7 +1352,7 @@ def segment_tissue_multi(
                             mode="w",
                         )
                         logger.info(f"Writing to {output_h5_path}")
-                    results[patch_size] = (polygon, grid, coords, attrs)
+                    results[_key((patch_size, spec_mpp))] = (polygon, grid, coords, attrs)
 
                 return results
 
@@ -1459,8 +1482,9 @@ def segment_tissue_multi(
                 "artifact removal."
             )
 
-        def _tile_at(patch_size, output_h5_path):
-            native_patch_size, native_step_size = native_sizes[patch_size]
+        def _tile_at(spec, output_h5_path):
+            patch_size, spec_mpp = spec
+            native_patch_size, native_step_size = native_sizes[spec]
             scale = level_downsamples[seg_level]
             # tissue_area_threshold / hole_area_threshold are in units of requested patches.
             # Convert to seg-level pixel area using the native patch size (derived from
@@ -1571,7 +1595,7 @@ def segment_tissue_multi(
                 "step_size": native_step_size,
                 "patch_size_to_resize_to_for_desired_mpp": patch_size,
                 "patch_level": 0,
-                "mpp": mpp,
+                "mpp": spec_mpp,
                 "native_mpp": slide_mpp,
                 "mpp_is_fallback": mpp_is_fallback,
                 "level_dim": wsi.level_dimensions[0],
@@ -1596,8 +1620,8 @@ def segment_tissue_multi(
             return polygon, grid, coords, attrs
 
         return {
-            patch_size: _tile_at(patch_size, output_h5_path)
-            for patch_size, output_h5_path in zip(patch_sizes, output_h5_paths)
+            _key(spec): _tile_at(spec, output_h5_path)
+            for spec, output_h5_path in zip(specs, output_h5_paths)
         }
     finally:
         wsi.close()
