@@ -24,6 +24,7 @@ from mussel.utils import (
     save_hdf5,
     save_torch_tensor,
 )
+from mussel.utils import timings
 from mussel.utils.artifact_removal import GrandQCArtifactRemover
 from mussel.utils.segment import draw_slide_mask, save_patches_png, segment_tissue
 
@@ -103,14 +104,19 @@ def _tessellate_and_filter(
             "tessellate_extract_features tiles at seg_config.patch_size."
         )
 
-    if values := segment_tissue(
-        slide_path=slide_path,
-        slide_id=slide_id,
-        output_h5_path=tessellate_h5_path,
-        artifact_remover_fn=artifact_remover_fn,
-        neural_segmenter=neural_segmenter,
-        **seg_cfg,
-    ):
+    tile_set = {"patch_size": seg_cfg.get("patch_size"), "mpp": seg_cfg.get("mpp")}
+    with timings.stage("tessellate", slide=slide_path, tile_sets=[tile_set]) as record:
+        values = segment_tissue(
+            slide_path=slide_path,
+            slide_id=slide_id,
+            output_h5_path=tessellate_h5_path,
+            artifact_remover_fn=artifact_remover_fn,
+            neural_segmenter=neural_segmenter,
+            **seg_cfg,
+        )
+        if record is not None:
+            record["tiles"] = {f"{tile_set['patch_size']}px_{tile_set['mpp']:g}mpp": len(values[2]) if values else 0}
+    if values:
         polygon, grid, coords, _ = values
     else:
         logger.error(f"Tessellation failed for {slide_path}")
