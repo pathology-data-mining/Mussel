@@ -27,6 +27,7 @@ from mussel.models import (SLIDE_ENCODER_COMPATIBILITY, ModelType,
                            get_required_patch_encoder,
                            validate_slide_encoder_compatibility)
 
+from . import timings
 from .file import save_hdf5, save_torch_tensor
 from .gpu import resolve_gpu_device_id
 from .ml import collate_features
@@ -37,6 +38,10 @@ from .timer import timed
 logger = logging.getLogger(__name__)
 
 _VALID_PRECISIONS = ("float32", "float16", "bfloat16")
+
+
+def _model_name(model_type) -> str:
+    return getattr(model_type, "name", str(model_type))
 
 
 def _numpy_to_torch(arr: np.ndarray, dtype: Optional[np.dtype] = None) -> torch.Tensor:
@@ -276,7 +281,8 @@ class H5DatasetProcessor(DatasetProcessor):
         all_coords = []
 
         for count, (batch, coords) in enumerate(
-            tqdm(loader, desc="Extracting features")
+            tqdm(timings.timed_iter(loader), desc="Extracting features",
+                 total=len(loader) if hasattr(loader, "__len__") else None)
         ):
             if is_test_run and count > 2:
                 break
@@ -288,14 +294,17 @@ class H5DatasetProcessor(DatasetProcessor):
                 )
                 continue
 
-            features = model_fun(batch).numpy()
+            with timings.counting("model_s"):
+                features = model_fun(batch).numpy()
             if feature_dtype is not None:
                 features = features.astype(feature_dtype)
             all_features.append(features)
             all_coords.append(coords)
 
             asset_dict = {"features": features, "coords": coords}
-            save_hdf5(output_h5_path, asset_dict, attr_h5_path=patch_h5_path, mode=mode)
+            with timings.counting("write_s"):
+                save_hdf5(output_h5_path, asset_dict, attr_h5_path=patch_h5_path, mode=mode)
+            timings.add(batches=1, tiles_done=len(features))
             mode = "a"
 
         # Concatenate all results
@@ -1201,9 +1210,10 @@ def extract_patch_features(
     model_factory = get_model_factory(model_type)
     if model_factory is None:
         raise ValueError("model not recognized")
-    model = model_factory.get_model(
-        model_path, use_gpu, gpu_device_id, **(model_kwargs or {})
-    )
+    with timings.stage("model_load", model=_model_name(model_type)):
+        model = model_factory.get_model(
+            model_path, use_gpu, gpu_device_id, **(model_kwargs or {})
+        )
     if model_save_path is not None:
         Path(model_save_path).parent.mkdir(parents=True, exist_ok=True)
         logger.info(f"saving model to {model_save_path}")
@@ -1261,15 +1271,17 @@ def extract_patch_features(
     else:
         raise ValueError("Either patch_path or patch_h5_path must be provided")
 
-    process_dataset(
-        dataset,
-        loader,
-        model_fun=model.get_model_fun(),
-        patch_h5_path=patch_h5_path,
-        output_h5_path=output_h5_path,
-        is_test_run=is_test_run,
-        feature_dtype=feature_dtype,
-    )
+    with timings.stage("patch_features", model=_model_name(model_type),
+                       slide=slide_path or patch_path, tiles=len(dataset)):
+        process_dataset(
+            dataset,
+            loader,
+            model_fun=model.get_model_fun(),
+            patch_h5_path=patch_h5_path,
+            output_h5_path=output_h5_path,
+            is_test_run=is_test_run,
+            feature_dtype=feature_dtype,
+        )
 
     logger.info(f"Patch-level features saved to {output_h5_path}")
     return output_h5_path
@@ -1457,17 +1469,20 @@ def _write_patch_batches(batches, model_funs, feature_dtypes, patch_h5_path, out
     H5's attributes included.
     """
     mode = "w"
-    for count, (batch, coords) in enumerate(tqdm(batches, desc="Extracting features")):
+    for count, (batch, coords) in enumerate(tqdm(timings.timed_iter(batches), desc="Extracting features")):
         if is_test_run and count > 2:
             break
         if batch.numel() == 0:
             logger.warning(f"Skipping empty batch {count} (all tiles failed to load)")
             continue
         for model_fun, dtype, out in zip(model_funs, feature_dtypes, output_h5_paths):
-            features = model_fun(batch).numpy()
+            with timings.counting("model_s"):
+                features = model_fun(batch).numpy()
             if dtype is not None:
                 features = features.astype(dtype)
-            save_hdf5(out, {"features": features, "coords": coords}, attr_h5_path=patch_h5_path, mode=mode)
+            with timings.counting("write_s"):
+                save_hdf5(out, {"features": features, "coords": coords}, attr_h5_path=patch_h5_path, mode=mode)
+        timings.add(batches=1, tiles_done=len(coords))
         mode = "a"
 
 
@@ -1588,8 +1603,9 @@ def extract_patch_features_batch_multi(
         if model_path is None and model_dir is not None:
             model_path = get_model_path_from_dir(model_dir, model_type)
         logger.info(f"Loading model {model_type} (once for all slides)" + (f" from {model_path}" if model_path else ""))
-        return factory.get_model(model_path, use_gpu, gpu_device_id,
-                                 **((model_kwargs or {}).get(model_type) or {}))
+        with timings.stage("model_load", model=_model_name(model_type)):
+            return factory.get_model(model_path, use_gpu, gpu_device_id,
+                                     **((model_kwargs or {}).get(model_type) or {}))
 
     # Group by identical preprocessing, keeping only the first group's models loaded.
     loaded, groups, first_key = {}, {}, None
@@ -1623,7 +1639,13 @@ def extract_patch_features_batch_multi(
                 logger.info(f"Processing slide {i+1}/{num_slides} for {','.join(m.name for m in group)}: "
                             f"{slide_paths[i]}")
                 outputs = [output_h5_paths[m][i] for m in group]
-                _write_patch_batches(slide_batches, funs, dtypes, patch_h5_paths[i], outputs, is_test_run)
+                n_tiles = None
+                if timings.enabled():
+                    with h5py.File(patch_h5_paths[i], "r") as f:
+                        n_tiles = len(f["coords"])
+                with timings.stage("patch_features", model=",".join(_model_name(m) for m in group),
+                                   slide=slide_paths[i], slide_index=i, tiles=n_tiles):
+                    _write_patch_batches(slide_batches, funs, dtypes, patch_h5_paths[i], outputs, is_test_run)
                 logger.info(f"Patch-level features saved to {', '.join(outputs)}")
         finally:
             per_slide.close()  # shuts this group's worker pool down
@@ -1833,9 +1855,10 @@ def aggregate_slide_features_batch(
     model_factory = get_model_factory(model_type)
     if model_factory is None:
         raise ValueError(f"Slide model type {model_type} not recognized")
-    model = model_factory.get_model(
-        model_path, use_gpu, gpu_device_id, **(slide_model_kwargs or {})
-    )
+    with timings.stage("model_load", model=_model_name(model_type)):
+        model = model_factory.get_model(
+            model_path, use_gpu, gpu_device_id, **(slide_model_kwargs or {})
+        )
     model_fun = model.get_model_fun()
 
     successful_slides = []
@@ -1918,11 +1941,13 @@ def aggregate_slide_features_batch(
 
                         features_tensor = _numpy_to_torch(features).unsqueeze(0)
                         coords_tensor = torch.from_numpy(coords).long().unsqueeze(0)
-                        agg_features = (
-                            model_fun(features_tensor, coords_tensor, patch_size)
-                            .cpu()
-                            .numpy()
-                        )
+                        with timings.stage("slide_encode", model=_model_name(model_type),
+                                           slide=slide_name, tiles=int(features.shape[0])):
+                            agg_features = (
+                                model_fun(features_tensor, coords_tensor, patch_size)
+                                .cpu()
+                                .numpy()
+                            )
                         aggregated_batch.append(agg_features)
                         successful_slides.append(slide_name)
                     except Exception as e:
@@ -1951,9 +1976,11 @@ def aggregate_slide_features_batch(
                         coords_tensor = torch.from_numpy(coords).unsqueeze(
                             0
                         )  # (1, N, 2)
-                        agg_features = (
-                            model_fun(features_tensor, coords_tensor).cpu().numpy()
-                        )
+                        with timings.stage("slide_encode", model=_model_name(model_type),
+                                           slide=slide_name, tiles=int(features.shape[0])):
+                            agg_features = (
+                                model_fun(features_tensor, coords_tensor).cpu().numpy()
+                            )
                         aggregated_batch.append(agg_features)
                         successful_slides.append(slide_name)
                     except Exception as e:
@@ -1973,7 +2000,9 @@ def aggregate_slide_features_batch(
                     features_batch = torch.cat(features_list, dim=0)
 
                     # Process entire batch at once for maximum efficiency
-                    aggregated_batch_tensor = model_fun(features_batch).cpu().numpy()
+                    with timings.stage("slide_encode", model=_model_name(model_type),
+                                       slides=batch_slide_names, tiles=int(sum(len(f) for f in batch_features))):
+                        aggregated_batch_tensor = model_fun(features_batch).cpu().numpy()
                     aggregated_batch = [
                         aggregated_batch_tensor[i : i + 1]
                         for i in range(len(batch_features))

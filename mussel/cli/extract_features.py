@@ -24,6 +24,7 @@ from mussel.utils import (
     get_slide_ids_from_paths,
     resolve_remote_paths,
     save_features,
+    timings,
 )
 from mussel.utils.feature_extract import (_numpy_to_torch,
                                           extract_patch_features_batch_multi)
@@ -104,6 +105,8 @@ class ExtractFeaturesConfig:
             aggregation_method=model, the slide encoder (e.g. TITAN_SLIDE needs 512 px at 0.5 µm/px).
         shared_loader (bool): Batch mode: one DataLoader worker pool for all slides
             (default) instead of one per slide, saving ~10 s of worker start-up per slide.
+        timings_path (Optional[str]): Append per-stage timings (model load, each slide's
+            tiles/features, ...) to this file as JSON lines; see :mod:`mussel.utils.timings`.
     """
 
     # Single mode parameters
@@ -142,6 +145,7 @@ class ExtractFeaturesConfig:
     embedding_precision: str = "float32"
     tile_size_check: str = "warn"
     shared_loader: bool = True
+    timings_path: Optional[str] = None
     # Batch mode, aggregation_method=identity: several patch models in one pass over
     # the tiles (models with identical preprocessing share each decoded batch).
     # Outputs go to output_dir/<model code>/<slide_id>.<suffix>. Set the dicts with
@@ -219,12 +223,13 @@ def main(cfg: ExtractFeaturesConfig):
     # Detect mode based on configuration
     batch_mode = cfg.slide_paths is not None
 
-    if batch_mode:
-        logger.info("Running in batch mode (multiple slides)")
-        _main_batch(cfg)
-    else:
-        logger.info("Running in single-slide mode")
-        _main_single(cfg)
+    with timings.recording(cfg.get("timings_path")):
+        if batch_mode:
+            logger.info("Running in batch mode (multiple slides)")
+            _main_batch(cfg)
+        else:
+            logger.info("Running in single-slide mode")
+            _main_single(cfg)
 
 
 @resolve_remote_paths()
