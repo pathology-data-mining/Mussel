@@ -145,8 +145,10 @@ MODEL_PATCH_SIZES = {
     ModelType.LUNIT_VITS16: 224,
     ModelType.OPENMIDNIGHT: 224,
     ModelType.GENBIO_PATHFM: 224,
+    # MUSK: no tile size given (pretrained on 10x/20x/40x fields of view); 384 is its input size.
     ModelType.MUSK: 384,
-    ModelType.KEEP: 224,
+    # KEEP: "256×256 tiles ... at 20× magnification" (Zhou et al. 2024, arXiv 2412.13126).
+    ModelType.KEEP: 256,
     # ABMIL slide encoder: encoder-agnostic; default matches common patch encoders
     ModelType.ABMIL_SLIDE: 256,
 }
@@ -201,7 +203,7 @@ def get_default_patch_size(model_type: ModelType) -> int:
 # one (20x = 0.5, 10x = 1.0, 40x = 0.25 µm/px). Models not listed here are not
 # checked for MPP: they were trained on several magnifications with no inference
 # resolution recommended (Virchow2, Kaiko, Lunit, Midnight, Path Foundation,
-# GenBio-PathFM, QuiltNet), or their authors state none (CTransPath on its own,
+# GenBio-PathFM, QuiltNet, MUSK), or their authors state none (CTransPath on its own,
 # CONCH v1, OpenMidnight, Hibou-L, ResNet-50, ABMIL).
 MODEL_TARGET_MPP = {
     # TITAN: CONCH v1.5 features of non-overlapping 512x512 px patches at 20x
@@ -233,6 +235,8 @@ MODEL_TARGET_MPP = {
     ModelType.MADELEINE_SLIDE: 1.0,
     # GPFM: ~512 px tiles at 40x (card).
     ModelType.GPFM: 0.25,
+    # KEEP: 256 px tiles at 20x (paper, following CONCH).
+    ModelType.KEEP: 0.5,
 }
 
 TILE_SIZE_CHECK_MODES = ("warn", "error", "off")

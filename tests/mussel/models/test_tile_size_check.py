@@ -118,14 +118,14 @@ AUTHOR_SPECS = {
     ModelType.VIRCHOW: (224, 0.5), ModelType.PRISM_SLIDE: (224, 0.5),
     ModelType.PHIKON: (224, 0.5), ModelType.PHIKON_V2: (224, 0.5),
     ModelType.CHIEF_SLIDE: (256, 1.0), ModelType.MADELEINE_SLIDE: (256, 1.0),
-    ModelType.GPFM: (512, 0.25),
+    ModelType.GPFM: (512, 0.25), ModelType.KEEP: (256, 0.5),
 }
 # Trained on several magnifications, or no resolution stated: size only.
 NO_TARGET_MPP = [ModelType.VIRCHOW2, ModelType.KAIKO_VITS8, ModelType.KAIKO_VITS16, ModelType.KAIKO_VITB8,
                  ModelType.KAIKO_VITB16, ModelType.KAIKO_VITL14, ModelType.LUNIT_VITS8, ModelType.LUNIT_VITS16,
                  ModelType.MIDNIGHT12K, ModelType.OPENMIDNIGHT, ModelType.GOOGLEPATH, ModelType.GENBIO_PATHFM,
                  ModelType.CLIP, ModelType.HIBOU_L, ModelType.CTRANSPATH, ModelType.CONCH_V1,
-                 ModelType.RESNET50, ModelType.ABMIL_SLIDE]
+                 ModelType.MUSK, ModelType.RESNET50, ModelType.ABMIL_SLIDE]
 
 
 @pytest.mark.parametrize("model", list(AUTHOR_SPECS))
