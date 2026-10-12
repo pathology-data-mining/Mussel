@@ -41,8 +41,10 @@ class TestCheckTileSize:
         attrs = {**TITAN_OK, "mpp": 0.25}
         with pytest.raises(ValueError, match="0.25 µm/px, recommended 0.5"):
             check_tile_size(ModelType.TITAN_SLIDE, attrs, "error")
-        # No target MPP recorded for H-optimus-1: only its size is checked.
-        assert check_tile_size(ModelType.HOPTIMUS1, {**REEF_224, "mpp": 0.25}, "error") is None
+        with pytest.raises(ValueError, match="0.25 µm/px, recommended 0.5"):
+            check_tile_size(ModelType.HOPTIMUS1, {**REEF_224, "mpp": 0.25}, "error")
+        # Virchow2 was trained on several magnifications: only its size is checked.
+        assert check_tile_size(ModelType.VIRCHOW2, {**REEF_224, "mpp": 0.25}, "error") is None
 
     def test_off_and_missing_attrs_skip(self):
         assert check_tile_size(ModelType.TITAN_SLIDE, REEF_224, "off") is None
@@ -105,3 +107,43 @@ def test_export_lists_every_model():
     assert len(data["patch_sizes"]) == len(MODEL_PATCH_SIZES)
     assert data["patch_sizes"]["titan_slide"] == 512
     assert data["target_mpp"]["titan_slide"] == 0.5
+
+
+# Tile size and resolution the authors specify (model cards / papers; sources in model_factory.py).
+AUTHOR_SPECS = {
+    ModelType.TITAN_SLIDE: (512, 0.5), ModelType.CONCH1_5: (512, 0.5), ModelType.FEATHER_SLIDE: (512, 0.5),
+    ModelType.OPTIMUS: (224, 0.5), ModelType.HOPTIMUS1: (224, 0.5), ModelType.H0MINI: (224, 0.5),
+    ModelType.UNI: (256, 0.5), ModelType.UNI2H: (256, 0.5),
+    ModelType.GIGAPATH: (256, 0.5), ModelType.GIGAPATH_SLIDE: (256, 0.5),
+    ModelType.VIRCHOW: (224, 0.5), ModelType.PRISM_SLIDE: (224, 0.5),
+    ModelType.PHIKON: (224, 0.5), ModelType.PHIKON_V2: (224, 0.5),
+    ModelType.CHIEF_SLIDE: (256, 1.0), ModelType.MADELEINE_SLIDE: (256, 1.0),
+    ModelType.GPFM: (512, 0.25),
+}
+# Trained on several magnifications, or no resolution stated: size only.
+NO_TARGET_MPP = [ModelType.VIRCHOW2, ModelType.KAIKO_VITS8, ModelType.KAIKO_VITS16, ModelType.KAIKO_VITB8,
+                 ModelType.KAIKO_VITB16, ModelType.KAIKO_VITL14, ModelType.LUNIT_VITS8, ModelType.LUNIT_VITS16,
+                 ModelType.MIDNIGHT12K, ModelType.OPENMIDNIGHT, ModelType.GOOGLEPATH, ModelType.GENBIO_PATHFM,
+                 ModelType.CLIP, ModelType.HIBOU_L, ModelType.CTRANSPATH, ModelType.CONCH_V1,
+                 ModelType.RESNET50, ModelType.ABMIL_SLIDE]
+
+
+@pytest.mark.parametrize("model", list(AUTHOR_SPECS))
+def test_author_specified_tiles(model):
+    from mussel.models import MODEL_TARGET_MPP
+    assert (MODEL_PATCH_SIZES[model], MODEL_TARGET_MPP[model]) == AUTHOR_SPECS[model]
+
+
+def test_every_model_is_classified():
+    from mussel.models import MODEL_TARGET_MPP
+    assert set(MODEL_TARGET_MPP) == set(AUTHOR_SPECS)
+    assert set(AUTHOR_SPECS) | set(NO_TARGET_MPP) == set(ModelType)
+    assert set(MODEL_PATCH_SIZES) == set(ModelType)
+
+
+def test_slide_encoders_match_their_patch_encoders_resolution():
+    """A slide encoder's features come from tiles read at its own target MPP."""
+    from mussel.models import MODEL_TARGET_MPP, SLIDE_ENCODER_COMPATIBILITY
+    for slide, patch_enc in SLIDE_ENCODER_COMPATIBILITY.items():
+        if patch_enc in MODEL_TARGET_MPP:
+            assert MODEL_TARGET_MPP[slide] == MODEL_TARGET_MPP[patch_enc], slide

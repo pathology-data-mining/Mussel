@@ -56,6 +56,38 @@ def test_explicit_patch_size_preserved():
     assert cfg.seg_config.patch_size == 384
 
 
+def _tiles_chosen_by_main(seg_config=None, **overrides):
+    """seg_config.patch_size / mpp after main()'s model-based defaults (no slide is read)."""
+    seen = {}
+
+    def capture(cfg):
+        seen["tiles"] = (cfg.seg_config.patch_size, cfg.seg_config.mpp)
+
+    cfg = OmegaConf.create(TessellateExtractFeaturesConfig(
+        **_TEF_REQUIRED, seg_config=seg_config or SegConfig(), **overrides))
+    with patch("mussel.cli.tessellate_extract_features._main_single", side_effect=capture), \
+            patch("mussel.cli.tessellate_extract_features._main_single_multi_model", side_effect=capture):
+        main(cfg)
+    return seen["tiles"]
+
+
+@pytest.mark.parametrize(
+    "overrides,expected",
+    [
+        (dict(model_type=ModelType.HOPTIMUS1), (224, 0.5)),
+        (dict(model_type=ModelType.GPFM), (512, 0.25)),
+        # A slide encoder's tiles win over its patch encoder's (CTransPath alone: 224 px, no target MPP).
+        (dict(model_type=ModelType.CTRANSPATH, slide_model_type=ModelType.CHIEF_SLIDE), (256, 1.0)),
+        (dict(model_type=ModelType.CONCH_V1, slide_model_type=ModelType.MADELEINE_SLIDE), (256, 1.0)),
+        (dict(model_type=ModelType.CONCH1_5, slide_model_type=ModelType.TITAN_SLIDE), (512, 0.5)),
+        # Values other than the defaults are kept (an explicit 256 px / 0.5 µm/px looks like the default).
+        (dict(model_type=ModelType.GPFM, seg_config=SegConfig(patch_size=384, mpp=0.75)), (384, 0.75)),
+    ],
+)
+def test_main_tiles_at_the_models_size_and_mpp(overrides, expected):
+    assert _tiles_chosen_by_main(**overrides) == expected
+
+
 def test_neural_segmenter_use_gpu_false_forces_cpu():
     seg_cfg = {"seg_model": "neural"}
 

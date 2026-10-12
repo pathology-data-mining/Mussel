@@ -115,11 +115,13 @@ class SegConfig:
 
     # Default patch size constant - used to detect when automatic patch size selection should apply
     DEFAULT_PATCH_SIZE: ClassVar[int] = 256
+    # Default MPP - used to detect when the model's target MPP should apply
+    DEFAULT_MPP: ClassVar[float] = 0.5
 
     patch_size: int = 256
     patch_sizes: Optional[List[int]] = None  # several sizes from one segmentation
     step_size: Optional[int] = None  # if None, defaults to patch_size
-    mpp: float = 0.5
+    mpp: float = DEFAULT_MPP
     seg_level: int = -1
     segment_threshold: int = 20
     segment_max_value: int = 255
