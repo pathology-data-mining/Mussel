@@ -1591,6 +1591,7 @@ def extract_patch_features_batch_multi(
     slide_paths,
     output_h5_paths,
     model_paths=None,
+    model_dir=None,
     batch_size=64,
     use_gpu=True,
     gpu_device_id=None,
@@ -1616,6 +1617,8 @@ def extract_patch_features_batch_multi(
         slide_paths: Whole slide image per slide.
         output_h5_paths: ``{ModelType: [output H5 per slide]}``; the keys are the models to run.
         model_paths: Optional ``{ModelType: weights path}``.
+        model_dir: Optional directory of pre-downloaded models, used (as in
+            :func:`extract_patch_features_batch`) for models without a path in ``model_paths``.
         embedding_precision: One precision for all models, or ``{ModelType: precision}``
             ("float32" for models not listed).
         model_kwargs: Optional ``{ModelType: kwargs}`` for the model constructors.
@@ -1644,9 +1647,12 @@ def extract_patch_features_batch_multi(
         factory = get_model_factory(model_type)
         if factory is None:
             raise ValueError(f"model not recognized: {model_type}")
-        logger.info(f"Loading model {model_type} (once for all slides)")
+        model_path = (model_paths or {}).get(model_type)
+        if model_path is None and model_dir is not None:
+            model_path = get_model_path_from_dir(model_dir, model_type)
+        logger.info(f"Loading model {model_type} (once for all slides)" + (f" from {model_path}" if model_path else ""))
         models[model_type] = factory.get_model(
-            (model_paths or {}).get(model_type), use_gpu, gpu_device_id,
+            model_path, use_gpu, gpu_device_id,
             **((model_kwargs or {}).get(model_type) or {}),
         )
         preprocessing = models[model_type].get_preprocessing_fun()
@@ -1664,17 +1670,19 @@ def extract_patch_features_batch_multi(
             )
             for patch_h5_path, slide_path in zip(patch_h5_paths, slide_paths)
         ]
+        # is_test_run: only the 3 batches per slide that are used are read.
+        max_batches = 3 if is_test_run else None
         if num_workers > 0:
-            sampler = _PerSlideBatches([len(ds) for ds in datasets], batch_size)
+            sampler = _PerSlideBatches([len(ds) for ds in datasets], batch_size, max_batches)
             loader = DataLoader(
-                ConcatDataset(datasets), batch_sampler=sampler, num_workers=num_workers,
-                pin_memory=pin_memory, collate_fn=collate_features,
-                worker_init_fn=_InitAllSlides(datasets), prefetch_factor=4,
+                _OneSlideOpenConcat(datasets), batch_sampler=sampler, num_workers=num_workers,
+                pin_memory=pin_memory, collate_fn=collate_features, prefetch_factor=4,
                 multiprocessing_context="spawn",
             )
             batches = iter(loader)
             per_slide = [itertools.islice(batches, n) for n in sampler.per_slide()]
         else:
+            loader = batches = None
             per_slide = [
                 _make_dataloader(ds, batch_size=batch_size, num_workers=0, pin_memory=pin_memory,
                                  collate_fn=collate_features)
@@ -1683,11 +1691,10 @@ def extract_patch_features_batch_multi(
         for i, slide_batches in enumerate(per_slide):
             logger.info(f"Processing slide {i+1}/{num_slides} for {','.join(m.name for m in group)}: "
                         f"{slide_paths[i]}")
-            slide_batches = iter(slide_batches)
             _write_patch_batches(slide_batches, funs, dtypes, patch_h5_paths[i],
                                  [output_h5_paths[m][i] for m in group], is_test_run)
-            collections.deque(slide_batches, maxlen=0)  # is_test_run: skip to the next slide
-        del funs, per_slide
+        # Shut this group's worker pool down before the next group starts its own.
+        del funs, per_slide, batches, loader
 
     del models
     if use_gpu and torch.cuda.is_available():

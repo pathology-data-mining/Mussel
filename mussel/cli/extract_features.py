@@ -404,6 +404,9 @@ def _main_batch_multi(cfg: ExtractFeaturesConfig, output_dir: Path, slide_ids: L
     """Batch mode with several patch models in one pass (see ``model_types``)."""
     if cfg.aggregation_method != "identity":
         raise ValueError("model_types (several patch models in one pass) requires aggregation_method=identity")
+    if cfg.model_path:
+        raise ValueError("model_path names one model's weights; with model_types use model_paths={code: path} "
+                         "(or model_dir for a directory of pre-downloaded models)")
     model_types = [ModelType[m] if isinstance(m, str) else m for m in cfg.model_types]
     by_code = {m.code: m for m in model_types}
     unknown = (set(cfg.model_precisions) | set(cfg.model_paths)) - set(by_code)
@@ -418,6 +421,7 @@ def _main_batch_multi(cfg: ExtractFeaturesConfig, output_dir: Path, slide_ids: L
         slide_paths=cfg.slide_paths,
         output_h5_paths=out_h5,
         model_paths={by_code[c]: p for c, p in cfg.model_paths.items()},
+        model_dir=cfg.model_dir,
         batch_size=cfg.batch_size,
         use_gpu=cfg.use_gpu,
         gpu_device_id=cfg.gpu_device_id,

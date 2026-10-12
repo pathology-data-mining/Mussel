@@ -137,3 +137,30 @@ def test_cli_rejects_unknown_precision_model(tmp_path):
                                     model_precisions={"uni": "float16"})
     with pytest.raises(ValueError, match="not in model_types"):
         cli._main_batch(cfg)
+
+
+def test_model_dir_and_model_paths_resolve_weights(tmp_path):
+    h5s = _slides(tmp_path)
+    seen = {}
+
+    class _Recording(_FakeFactory):
+        def get_model(self, model_path, *args, **kwargs):
+            seen[self.model_type] = model_path
+            return _FakeModel(self.model_type)
+
+    outs = {m: [str(tmp_path / f"{m.code}_{i}.h5") for i in range(2)] for m in (ModelType.HOPTIMUS1, ModelType.OPTIMUS)}
+    with patch.object(fe, "get_model_factory", side_effect=lambda m: _Recording(m)), \
+            patch.object(fe, "get_model_path_from_dir", side_effect=lambda d, m: f"{d}/{m.code}.bin"):
+        fe.extract_patch_features_batch_multi(h5s, [_SLIDE] * 2, outs, model_dir="/models",
+                                              model_paths={ModelType.OPTIMUS: "/explicit/optimus.pth"},
+                                              batch_size=7, use_gpu=False, num_workers=0, pin_memory=False,
+                                              tile_size_check="off")
+    assert seen == {ModelType.HOPTIMUS1: "/models/hoptimus1.bin", ModelType.OPTIMUS: "/explicit/optimus.pth"}
+
+
+def test_cli_rejects_single_model_path_with_model_types(tmp_path):
+    cfg = cli.ExtractFeaturesConfig(patch_h5_paths=[_H5], slide_paths=[_SLIDE], slide_ids=["A"],
+                                    output_dir=str(tmp_path), model_types=[ModelType.HOPTIMUS1, ModelType.OPTIMUS],
+                                    model_path="/models/one.pth")
+    with pytest.raises(ValueError, match="model_paths"):
+        cli._main_batch(cfg)
