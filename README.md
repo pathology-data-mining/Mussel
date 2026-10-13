@@ -145,7 +145,7 @@ And the following slide encoders (aggregate patch features into a single slide e
 | TITAN | `TITAN_SLIDE` | `CONCH1_5` | 🔒 gated | [MahmoodLab/TITAN](https://huggingface.co/MahmoodLab/TITAN) |
 | PRISM | `PRISM_SLIDE` | `VIRCHOW` | 🔒 gated | [paige-ai/Prism](https://huggingface.co/paige-ai/Prism) |
 | FEATHER | `FEATHER_SLIDE` | `CONCH1_5` | 🔒 gated | [MahmoodLab/abmil.base.conch_v15.pc108-24k](https://huggingface.co/MahmoodLab/abmil.base.conch_v15.pc108-24k) |
-| MADELEINE | `MADELEINE_SLIDE` | `CLIP` | 🔒 gated | [MahmoodLab/madeleine](https://huggingface.co/MahmoodLab/madeleine) |
+| MADELEINE | `MADELEINE_SLIDE` | `CONCH_V1` | 🔒 gated | [MahmoodLab/madeleine](https://huggingface.co/MahmoodLab/madeleine) |
 | CHIEF | `CHIEF_SLIDE` | `CTRANSPATH` | ⬇ access req. | [hms-dbmi/CHIEF](https://github.com/hms-dbmi/CHIEF) |
 
 **🔒 Gated models** require signing an access agreement on the HuggingFace model page and setting your token:

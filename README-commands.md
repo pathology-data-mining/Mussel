@@ -291,7 +291,7 @@ The following models are currently supported,
 | TITAN          | TITAN_SLIDE     | CONCH1_5 | 🔒 gated |
 | PRISM          | PRISM_SLIDE     | VIRCHOW  | 🔒 gated |
 | FEATHER        | FEATHER_SLIDE   | CONCH1_5 | 🔒 gated |
-| MADELEINE      | MADELEINE_SLIDE | CONCH1_5 | 🔒 gated |
+| MADELEINE      | MADELEINE_SLIDE | CONCH_V1 | 🔒 gated |
 | CHIEF          | CHIEF_SLIDE     | CTRANSPATH | local ckpt |
 
 `model_kwargs={...}` forwards extra constructor arguments to patch encoders, and

@@ -89,14 +89,10 @@ _PATCH_ENCODER_DIM: dict[ModelType, int] = {
     ModelType.KEEP: 768,  # ViT-L/16 + projection head
 }
 
-# Per-slide-encoder override for the INPUT patch feature dimension.
-# Used when a slide encoder was trained on a different patch encoder than the
-# one listed in SLIDE_ENCODER_COMPATIBILITY (e.g. MADELEINE was trained on
-# CONCH v1.0 at 512-dim, but SLIDE_ENCODER_COMPATIBILITY maps it to CONCH1_5
-# which now outputs 768-dim).
-_SLIDE_ENCODER_INPUT_DIM: dict[ModelType, int] = {
-    ModelType.MADELEINE_SLIDE: 512,  # trained on CONCH v1.0 (512-dim), not CONCH1.5 (768-dim)
-}
+# Per-slide-encoder override for the INPUT patch feature dimension, for a slide
+# encoder trained on features of another dimension than its listed patch
+# encoder's (none at present: MADELEINE now maps to CONCH v1.0, 512-dim).
+_SLIDE_ENCODER_INPUT_DIM: dict[ModelType, int] = {}
 
 
 def _skip_on_load_failure(fn):
@@ -241,8 +237,7 @@ def test_slide_encoder_aggregates_features(tmp_path, slide_model_type, use_gpu):
     - Output can be saved and reloaded as a torch tensor.
     """
     required_patch_enc = get_required_patch_encoder(slide_model_type)
-    # Use per-slide-encoder input dim override if available (e.g. MADELEINE was trained
-    # on CONCH v1.0 at 512-dim, not the current CONCH1.5 at 768-dim).
+    # Use the per-slide-encoder input dim override if there is one.
     patch_dim = _SLIDE_ENCODER_INPUT_DIM.get(
         slide_model_type
     ) or _PATCH_ENCODER_DIM.get(required_patch_enc)

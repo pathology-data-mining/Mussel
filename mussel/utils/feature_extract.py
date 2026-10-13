@@ -19,7 +19,7 @@ from tqdm import tqdm
 # fmt: off
 from mussel.datasets import (FlatImageDataset, WholeSlideImageH5Dataset,
                              WholeSlideImageTileCoordDataset)
-from mussel.models import (ModelType, get_default_patch_size,
+from mussel.models import (ModelType, check_tile_size,
                            get_model_factory, get_required_patch_encoder,
                            validate_slide_encoder_compatibility)
 
@@ -756,6 +756,44 @@ def resolve_patch_encoder(model_type: Optional, slide_model_type: Optional):
     return model_type
 
 
+def _read_coords_attrs(h5_path) -> dict:
+    """``coords`` dataset attributes of a patch / patch-features H5 ({} if absent)."""
+    try:
+        with h5py.File(h5_path, "r") as f:
+            return dict(f["coords"].attrs) if "coords" in f else {}
+    except (OSError, KeyError):
+        return {}
+
+
+def _titan_patch_size_lv0(patch_size, tile_attrs: Optional[dict] = None) -> int:
+    """TITAN's ``patch_size_lv0``: spacing of adjacent tiles at level 0.
+
+    Tessellation records it as the ``patch_size`` attribute. Without it, derive
+    it from the tile size at the target MPP and the slide's native MPP; there is
+    no safe default (a 512 px tile at 20x spans 512 level-0 px on a 20x slide
+    but 1024 on a 40x slide).
+    """
+    if patch_size is not None:
+        return int(patch_size)
+    attrs = tile_attrs or {}
+    px, mpp, native = (
+        attrs.get("patch_size_to_resize_to_for_desired_mpp"),
+        attrs.get("mpp"),
+        attrs.get("native_mpp"),
+    )
+    if px is not None and mpp is not None and native:
+        lv0 = int(round(float(px) * float(mpp) / float(native)))
+        logger.warning(
+            f"patch_size (level 0) not recorded; derived {lv0} from "
+            f"{int(px)} px at {float(mpp):g} µm/px on a {float(native):g} µm/px slide"
+        )
+        return lv0
+    raise ValueError(
+        "TITAN_SLIDE needs the level-0 tile spacing (coords attribute 'patch_size'), "
+        "or patch_size_to_resize_to_for_desired_mpp, mpp and native_mpp to derive it."
+    )
+
+
 def _apply_slide_aggregation(
     features: np.ndarray,
     aggregation_method: str = "identity",
@@ -768,6 +806,7 @@ def _apply_slide_aggregation(
     patch_size: Optional[int] = None,
     slide_model=None,
     slide_model_kwargs: Optional[dict] = None,
+    tile_attrs: Optional[dict] = None,
 ) -> np.ndarray:
     """Apply slide-level aggregation to patch features.
 
@@ -784,12 +823,15 @@ def _apply_slide_aggregation(
         gpu_device_ids: List of GPU device IDs for multi-GPU.
         coords: Optional numpy array of patch coordinates (required for some slide encoders like GIGAPATH_SLIDE, TITAN_SLIDE).
         patch_size: Optional patch size at level 0 (required for TITAN_SLIDE).
-            If not provided, will be extracted from h5 file 'coords' attributes or default to 256.
+            If not provided, it is derived from ``tile_attrs``; TITAN_SLIDE raises
+            if neither is available.
         slide_model: Optional pre-loaded slide encoder model instance. If provided,
             slide_model_type and slide_model_path are ignored.
         slide_model_kwargs: Extra keyword arguments forwarded to the slide model
             constructor when loading the model. For TITAN_SLIDE, patch_oom=True is
             the default OOM fix; set {"patch_oom": False} to disable it.
+        tile_attrs: ``coords`` attributes of the tiles the features came from,
+            used to derive TITAN's level-0 tile spacing when ``patch_size`` is missing.
 
     Returns:
         Numpy array of aggregated features.
@@ -854,13 +896,7 @@ def _apply_slide_aggregation(
                     # TITAN requires features, coords, and patch_size
                     if coords is None:
                         raise ValueError("TITAN_SLIDE requires coordinates")
-                    if patch_size is None:
-                        # Get the default patch size for the required patch encoder
-                        patch_encoder = get_required_patch_encoder(slide_model_type)
-                        patch_size = get_default_patch_size(patch_encoder)
-                        logger.warning(
-                            f"patch_size not provided, using default for {patch_encoder}: {patch_size}"
-                        )
+                    patch_size = _titan_patch_size_lv0(patch_size, tile_attrs)
                     coords_tensor = (
                         torch.from_numpy(coords).long().unsqueeze(0)
                     )  # Add batch dimension and convert to int64
@@ -938,6 +974,7 @@ def get_features(
     slide_model=None,
     model_kwargs: Optional[dict] = None,
     slide_model_kwargs: Optional[dict] = None,
+    tile_size_check: str = "warn",
 ) -> tuple[np.ndarray, np.ndarray]:
     """Extract features from whole slide image tiles.
 
@@ -971,6 +1008,9 @@ def get_features(
         slide_model_kwargs: Extra keyword arguments forwarded to the slide model
             constructor. For TITAN_SLIDE, patch_oom=True is the default OOM fix;
             set {"patch_oom": False} to disable it.
+        tile_size_check: What to do when tiles don't match the model's recommended
+            tile size / MPP (see :func:`mussel.models.check_tile_size`):
+            ``"warn"`` (default), ``"error"`` or ``"off"``.
 
     Returns:
         Tuple of (features array, labels array).
@@ -1019,6 +1059,11 @@ def get_features(
                 )
                 model_type = required_patch_encoder
         validate_slide_encoder_compatibility(model_type, slide_model_type)
+
+    slide_name = Path(slide_path).stem if slide_path else ""
+    check_tile_size(model_type, attrs, tile_size_check, context=slide_name)
+    if use_slide_encoder and aggregation_method == "model" and slide_model_type is not None:
+        check_tile_size(slide_model_type, attrs, tile_size_check, context=slide_name)
 
     # Load patch encoder from disk, or use the pre-loaded instance.
     if model is None:
@@ -1080,6 +1125,7 @@ def get_features(
             patch_size=patch_size,
             slide_model=slide_model,
             slide_model_kwargs=slide_model_kwargs,
+            tile_attrs=attrs,
         )
 
     return features, labels
@@ -1103,6 +1149,7 @@ def extract_patch_features(
     is_test_run: bool = False,
     embedding_precision: str = "float32",
     model_kwargs: Optional[dict] = None,
+    tile_size_check: str = "warn",
 ) -> str:
     """Extract patch-level features from whole slide image (Step 1: Patch Encoding).
 
@@ -1129,10 +1176,16 @@ def extract_patch_features(
         embedding_precision: Numeric precision for saved patch embeddings.
             "float32" (default) preserves full model precision; "float16" halves
             storage size; "bfloat16" uses brain-float format.
+        tile_size_check: What to do when tiles don't match the model's recommended
+            tile size / MPP (see :func:`mussel.models.check_tile_size`):
+            ``"warn"`` (default), ``"error"`` or ``"off"``.
 
     Returns:
         Path to the output HDF5 file containing patch-level features.
     """
+    if patch_h5_path:
+        check_tile_size(model_type, _read_coords_attrs(patch_h5_path), tile_size_check,
+                        context=Path(patch_h5_path).name)
     gpu_device_id = resolve_gpu_device_id(gpu_device_id, gpu_device_ids)
 
     logger.info("Step 1: Extracting patch-level features")
@@ -1234,6 +1287,7 @@ def extract_patch_features_batch(
     is_test_run=False,
     embedding_precision="float32",
     model_kwargs=None,
+    tile_size_check="warn",
 ):
     """Extract patch-level features from multiple slides in batch mode.
 
@@ -1262,6 +1316,9 @@ def extract_patch_features_batch(
         embedding_precision: Numeric precision for saved patch embeddings.
             "float32" (default) preserves full model precision; "float16" halves
             storage size; "bfloat16" uses brain-float format.
+        tile_size_check: What to do when tiles don't match the model's recommended
+            tile size / MPP (see :func:`mussel.models.check_tile_size`):
+            ``"warn"`` (default), ``"error"`` or ``"off"``.
 
     Returns:
         List of paths to output HDF5 files containing patch-level features.
@@ -1280,6 +1337,11 @@ def extract_patch_features_batch(
 
     num_slides = len(patch_h5_paths)
     logger.info(f"Batch extracting patch-level features for {num_slides} slides")
+
+    # Check every slide's tiles before loading the model, so "error" fails fast.
+    for patch_h5_path in patch_h5_paths:
+        check_tile_size(model_type, _read_coords_attrs(patch_h5_path), tile_size_check,
+                        context=Path(patch_h5_path).name)
 
     gpu_device_id = resolve_gpu_device_id(gpu_device_id, gpu_device_ids)
 
@@ -1371,6 +1433,7 @@ def aggregate_slide_features_batch(
     max_slide_patches=None,
     embedding_precision="float32",
     slide_model_kwargs=None,
+    tile_size_check="warn",
 ):
     """Aggregate patch-level features to slide-level for multiple slides (Step 2: Batch Slide Encoding).
 
@@ -1407,6 +1470,9 @@ def aggregate_slide_features_batch(
         embedding_precision: Numeric precision for saved slide embeddings ("float32",
             "float16", or "bfloat16"). Default "float32". Applied to the aggregated
             output before saving; input patch features are always read as-is.
+        tile_size_check: What to do when the slide encoder's tiles don't match its
+            recommended tile size / MPP (see :func:`mussel.models.check_tile_size`):
+            ``"warn"`` (default), ``"error"`` or ``"off"``. Only for ``aggregation_method="model"``.
 
     Returns:
         Tuple of (output_h5_paths, output_pt_paths) if saving.
@@ -1416,6 +1482,12 @@ def aggregate_slide_features_batch(
     )
 
     num_slides = len(patch_features_h5_paths)
+
+    # Check every slide's tiles before loading the slide encoder, so "error" fails fast.
+    if aggregation_method == "model" and model_type is not None:
+        for h5_path in patch_features_h5_paths:
+            check_tile_size(model_type, _read_coords_attrs(h5_path), tile_size_check,
+                            context=Path(h5_path).name)
 
     # For non-model aggregation methods, process each slide directly
     # without loading a model
@@ -1560,6 +1632,7 @@ def aggregate_slide_features_batch(
         batch_features = []
         batch_coords = []
         batch_patch_sizes = []
+        batch_tile_attrs = []
         batch_slide_names = []
 
         for i in batch_indices:
@@ -1567,13 +1640,13 @@ def aggregate_slide_features_batch(
                 features = file["features"][:]
                 coords = file["coords"][:] if "coords" in file else None
 
-                patch_size = None
-                if "coords" in file and "patch_size" in file["coords"].attrs:
-                    patch_size = file["coords"].attrs["patch_size"]
+                tile_attrs = dict(file["coords"].attrs) if "coords" in file else {}
+                patch_size = tile_attrs.get("patch_size")
 
                 batch_features.append(features)
                 batch_coords.append(coords)
                 batch_patch_sizes.append(patch_size)
+                batch_tile_attrs.append(tile_attrs)
                 batch_slide_names.append(Path(patch_features_h5_paths[i]).stem)
 
         # Process batch based on model type requirements
@@ -1596,11 +1669,9 @@ def aggregate_slide_features_batch(
                     try:
                         if coords is None:
                             raise ValueError("TITAN_SLIDE requires coordinates")
-                        if patch_size is None:
-                            patch_size = 256
-                            logger.warning(
-                                f"patch_size not provided, using default: {patch_size}"
-                            )
+                        patch_size = _titan_patch_size_lv0(
+                            patch_size, batch_tile_attrs[slide_idx]
+                        )
 
                         # Subsample patches if slide exceeds max_slide_patches.
                         # TITAN's alibi attention is O(N²) — large slides (>~8k patches)
@@ -1773,6 +1844,7 @@ def aggregate_slide_features(
     gpu_device_ids: Optional[List[int]] = None,
     embedding_precision: str = "float32",
     slide_model_kwargs: Optional[dict] = None,
+    tile_size_check: str = "warn",
 ) -> Union[tuple[Optional[str], Optional[str]], np.ndarray]:
     """Aggregate patch-level features to slide-level (Step 2: Slide Encoding).
 
@@ -1800,11 +1872,18 @@ def aggregate_slide_features(
         slide_model_kwargs: Extra keyword arguments forwarded to the slide model
             constructor. For TITAN_SLIDE, patch_oom=True is the default OOM fix;
             set {"patch_oom": False} to disable it.
+        tile_size_check: What to do when the slide encoder's tiles don't match its
+            recommended tile size / MPP (see :func:`mussel.models.check_tile_size`):
+            ``"warn"`` (default), ``"error"`` or ``"off"``. Only for ``aggregation_method="model"``.
 
     Returns:
         Tuple of (output_h5_path, output_pt_path) if saving, otherwise features tensor.
     """
     logger.info("Step 2: Aggregating patch features to slide level")
+    tile_attrs = _read_coords_attrs(patch_features_h5_path)
+    if aggregation_method == "model" and model_type is not None:
+        check_tile_size(model_type, tile_attrs, tile_size_check,
+                        context=Path(patch_features_h5_path).name)
 
     with h5py.File(patch_features_h5_path, "r") as file:
         features = file["features"][:]
@@ -1831,6 +1910,7 @@ def aggregate_slide_features(
             coords=coords,
             patch_size=patch_size,
             slide_model_kwargs=slide_model_kwargs,
+            tile_attrs=tile_attrs,
         )
 
         feature_dtype = _parse_feature_dtype(embedding_precision)
@@ -1884,6 +1964,7 @@ def save_features(
     embedding_precision: str = "float32",
     model_kwargs: Optional[dict] = None,
     slide_model_kwargs: Optional[dict] = None,
+    tile_size_check: str = "warn",
 ) -> tuple[str, Optional[str]]:
     """Extract features from whole slide image and save to HDF5 and PyTorch formats.
 
@@ -1978,6 +2059,7 @@ def save_features(
             is_test_run=is_test_run,
             embedding_precision="float32",
             model_kwargs=model_kwargs,
+            tile_size_check=tile_size_check,
         )
 
         # Step 2: Aggregate to slide level — apply embedding_precision to final output
@@ -1993,9 +2075,13 @@ def save_features(
             gpu_device_ids=gpu_device_ids,
             embedding_precision=embedding_precision,
             slide_model_kwargs=slide_model_kwargs,
+            tile_size_check=tile_size_check,
         )
     else:
         # Single-step process (backward compatible)
+        if patch_h5_path:
+            check_tile_size(model_type, _read_coords_attrs(patch_h5_path), tile_size_check,
+                            context=Path(patch_h5_path).name)
         gpu_device_id = resolve_gpu_device_id(gpu_device_id, gpu_device_ids)
 
         logger.info("loading model checkpoint")

@@ -42,10 +42,11 @@ def test_get_default_patch_size():
         ModelType.HOPTIMUS1,
         ModelType.H0MINI,
         ModelType.MIDNIGHT12K,
-        ModelType.GPFM,
         ModelType.HIBOU_L,
     ):
         assert get_default_patch_size(mt) == 224, f"{mt}: expected 224"
+    # GPFM: ~512 px tiles at 40x, resized to 224 by the model (model card).
+    assert get_default_patch_size(ModelType.GPFM) == 512
 
 
 def test_get_default_patch_size_invalid():
@@ -111,10 +112,10 @@ def test_new_slide_encoders_compatibility():
     assert SLIDE_ENCODER_COMPATIBILITY[ModelType.PRISM_SLIDE] == ModelType.VIRCHOW
     assert SLIDE_ENCODER_COMPATIBILITY[ModelType.FEATHER_SLIDE] == ModelType.CONCH1_5
     assert SLIDE_ENCODER_COMPATIBILITY[ModelType.CHIEF_SLIDE] == ModelType.CTRANSPATH
-    assert SLIDE_ENCODER_COMPATIBILITY[ModelType.MADELEINE_SLIDE] == ModelType.CLIP
+    assert SLIDE_ENCODER_COMPATIBILITY[ModelType.MADELEINE_SLIDE] == ModelType.CONCH_V1
 
     assert get_required_patch_encoder(ModelType.PRISM_SLIDE) == ModelType.VIRCHOW
-    assert get_required_patch_encoder(ModelType.MADELEINE_SLIDE) == ModelType.CLIP
+    assert get_required_patch_encoder(ModelType.MADELEINE_SLIDE) == ModelType.CONCH_V1
 
 
 def test_chief_slide_raises_on_invalid_checkpoint():

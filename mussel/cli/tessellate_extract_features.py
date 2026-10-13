@@ -36,7 +36,8 @@ from mussel.cli.tessellate_extract_features_common import (
     process_slide_tessellation_and_filtering,
     process_slide_tessellation_only,
 )
-from mussel.models import ModelType, get_default_patch_size, get_required_patch_encoder
+from mussel.models import (MODEL_TARGET_MPP, ModelType, get_default_patch_size,
+                           get_required_patch_encoder)
 from mussel.utils import (
     aggregate_slide_features_batch,
     ensure_directory_exists,
@@ -443,29 +444,39 @@ def main(
     elif isinstance(cfg.slide_model_type, ListConfig):
         cfg.slide_model_type = [ModelType[name] for name in cfg.slide_model_type]
 
-    if cfg.seg_config.patch_size == SegConfig.DEFAULT_PATCH_SIZE:
-        try:
-            # Use model_type if set, otherwise fall back to prefilter_model_type
-            model_for_patch_size = (
-                cfg.model_type
-                if cfg.model_type is not None
-                else cfg.prefilter_model_type
-            )
-            # Skip auto-setting when model_type is a list (multi-model mode);
-            # patch size cannot be inferred from multiple models unambiguously.
-            if isinstance(model_for_patch_size, (list, ListConfig)):
-                pass
-            else:
-                recommended_patch_size = get_default_patch_size(model_for_patch_size)
+    # Tiles at the model's recommended size and MPP unless set explicitly. A slide
+    # encoder's spec wins: its features must come from the tiles it was trained on
+    # (e.g. CHIEF: CTransPath features of 256 px tiles at 1.0 µm/px).
+    model_for_tiles = (
+        cfg.slide_model_type
+        if cfg.slide_model_type is not None
+        and not isinstance(cfg.slide_model_type, (list, ListConfig))
+        else cfg.model_type
+        if cfg.model_type is not None
+        else cfg.prefilter_model_type
+    )
+    # Skip auto-setting when model_type is a list (multi-model mode);
+    # tiles cannot be inferred from multiple models unambiguously.
+    if isinstance(model_for_tiles, ModelType):
+        if cfg.seg_config.patch_size == SegConfig.DEFAULT_PATCH_SIZE:
+            try:
+                recommended_patch_size = get_default_patch_size(model_for_tiles)
                 if recommended_patch_size != SegConfig.DEFAULT_PATCH_SIZE:
                     logger.info(
                         f"Setting seg_config.patch_size={recommended_patch_size} based on "
-                        f"model_type={model_for_patch_size.name} (recommended default for this model)"
+                        f"model_type={model_for_tiles.name} (recommended default for this model)"
                     )
                     cfg.seg_config.patch_size = recommended_patch_size
-        except (ValueError, AttributeError):
-            # Model not in mapping or other issue, keep default
-            pass
+            except ValueError:
+                # Model not in mapping, keep default
+                pass
+        target_mpp = MODEL_TARGET_MPP.get(model_for_tiles)
+        if cfg.seg_config.mpp == SegConfig.DEFAULT_MPP and target_mpp not in (None, SegConfig.DEFAULT_MPP):
+            logger.info(
+                f"Setting seg_config.mpp={target_mpp} based on "
+                f"model_type={model_for_tiles.name} (its authors' resolution)"
+            )
+            cfg.seg_config.mpp = target_mpp
 
     # Detect mode based on configuration
     batch_mode = cfg.slide_paths is not None
