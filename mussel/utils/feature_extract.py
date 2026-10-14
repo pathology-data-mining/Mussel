@@ -1,3 +1,4 @@
+import bisect
 import collections
 import gc
 import itertools
@@ -1316,8 +1317,6 @@ class _OneSlideOpenConcat(ConcatDataset):
         self._open = None
 
     def __getitem__(self, idx):
-        import bisect
-
         di = bisect.bisect_right(self.cumulative_sizes, idx)
         if di != self._open:
             if self._open is not None:

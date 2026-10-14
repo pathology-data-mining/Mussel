@@ -127,3 +127,44 @@ def test_one_slide_open_at_a_time():
     assert got == [("a", 0), ("a", 1), ("a", 2), ("a", 3), ("b", 0), ("c", 0), ("c", 1), ("c", 2)]
     assert log == ["open a", "close", "open b", "close", "open c"]
     assert [d.wsi is not None for d in datasets] == [False, False, True]
+
+
+def _write_tiles(path, coords, attrs):
+    with h5py.File(path, "w") as f:
+        ds = f.create_dataset("coords", data=coords)
+        for k, v in attrs.items():
+            ds.attrs[k] = v
+    return str(path)
+
+
+def _tiles(tmp_path):
+    with h5py.File(_H5) as f:
+        coords, attrs = f["coords"][:], dict(f["coords"].attrs)
+    return (_write_tiles(tmp_path / "a.patch.h5", coords[:30], attrs),
+            _write_tiles(tmp_path / "empty.patch.h5", coords[:0], attrs),
+            _write_tiles(tmp_path / "c.patch.h5", coords[30:52], attrs))
+
+
+@pytest.mark.parametrize("shared_loader", [True, False])
+def test_slide_without_tiles_keeps_later_slides_aligned(tmp_path, shared_loader):
+    """A zero-tile slide gets no output, and the next slide still gets its own tiles."""
+    a, empty, c = _tiles(tmp_path)
+    outs = _run(tmp_path, [a, empty, c], f"z{shared_loader}", shared_loader=shared_loader)
+    assert not Path(outs[1]).exists()
+    for out, src in ((outs[0], a), (outs[2], c)):
+        _, coords, _ = _read(out)
+        np.testing.assert_array_equal(coords, h5py.File(src)["coords"][:])
+
+
+@pytest.mark.parametrize("shared_loader", [True, False])
+def test_unopenable_slide_fails_at_that_slide(tmp_path, shared_loader):
+    """A slide that can't be opened raises while it is processed; earlier slides are written."""
+    a, _, c = _tiles(tmp_path)
+    outs = [str(tmp_path / f"u{shared_loader}_{i}.h5") for i in range(3)]
+    with patch("mussel.utils.feature_extract.get_model_factory", return_value=_FakeFactory()):
+        with pytest.raises(Exception):
+            extract_patch_features_batch([a, c, a], [_SLIDE, str(tmp_path / "missing.svs"), _SLIDE], outs,
+                                         model_type=ModelType.HOPTIMUS1, batch_size=7, use_gpu=False,
+                                         num_workers=2, pin_memory=False, tile_size_check="off",
+                                         shared_loader=shared_loader)
+    assert [Path(o).exists() for o in outs] == [True, False, False]
