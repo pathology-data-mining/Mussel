@@ -294,6 +294,16 @@ class H5DatasetProcessor(DatasetProcessor):
             save_hdf5(output_h5_path, asset_dict, attr_h5_path=patch_h5_path, mode=mode)
             mode = "a"
 
+        # Tiles that failed to load (WholeSlideImageH5Dataset returns None for them)
+        # are dropped by collate_features: say so, since the output then has fewer
+        # rows than the patch H5.
+        n_rows = sum(len(f) for f in all_features)
+        if not is_test_run and n_rows < len(dataset):
+            logger.warning(
+                f"{output_h5_path}: {len(dataset) - n_rows} of {len(dataset)} tiles failed to load "
+                f"and were skipped; the features have {n_rows} rows"
+            )
+
         # Concatenate all results
         empty_dtype = feature_dtype if feature_dtype is not None else np.float32
         features = (
