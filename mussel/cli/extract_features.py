@@ -146,6 +146,7 @@ class ExtractFeaturesConfig:
     # the tiles (models with identical preprocessing share each decoded batch).
     # Outputs go to output_dir/<model code>/<slide_id>.<suffix>. Set the dicts with
     # ++ (struct mode), e.g. '++model_precisions={hoptimus1:bfloat16,optimus:bfloat16}'.
+    # Patch encoders only. model_kwargs, if set, is passed to every model in model_types.
     model_types: Optional[List[ModelType]] = None
     model_precisions: Dict[str, str] = field(default_factory=dict)  # model code -> embedding precision
     model_paths: Dict[str, str] = field(default_factory=dict)  # model code -> weights path
@@ -393,11 +394,21 @@ def _main_batch(cfg: ExtractFeaturesConfig):
 
         # Save as PT format for consistency
         for output_h5, output_pt in zip(output_h5_paths, output_pt_paths):
+            if not _has_output(output_h5):
+                continue
             with h5py.File(output_h5, "r") as f:
                 features = _numpy_to_torch(f["features"][:])
                 torch.save(features, output_pt)
 
     logger.info(f"Batch processing complete. Output saved to {output_dir}")
+
+
+def _has_output(h5_path: str) -> bool:
+    """False (with a warning) for a slide whose extraction wrote nothing, e.g. no tiles."""
+    if os.path.isfile(h5_path):
+        return True
+    logger.warning(f"No features written to {h5_path} (slide without tiles?); skipping its .pt")
+    return False
 
 
 def _main_batch_multi(cfg: ExtractFeaturesConfig, output_dir: Path, slide_ids: List[str]):
@@ -435,6 +446,8 @@ def _main_batch_multi(cfg: ExtractFeaturesConfig, output_dir: Path, slide_ids: L
     )
     for m in model_types:
         for sid, h5 in zip(slide_ids, out_h5[m]):
+            if not _has_output(h5):
+                continue
             with h5py.File(h5, "r") as f:
                 torch.save(_numpy_to_torch(f["features"][:]), output_dir / m.code / f"{sid}.{cfg.output_pt_suffix}")
     logger.info(f"Batch processing complete for {len(model_types)} models. Output saved to {output_dir}")
