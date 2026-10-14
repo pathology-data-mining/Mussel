@@ -203,3 +203,88 @@ def test_tessellate_cli_timings_path(tmp_path):
     assert [r["slide"] for r in records[1:]] == ["a.svs", "b.svs"]
     assert records[1]["tile_sets"] == [{"patch_size": 224, "mpp": 0.5}, {"patch_size": 256, "mpp": 1.0}]
     assert records[1]["tiles"] == {"224px_0.5mpp": 9, "256px_1mpp": 2}
+
+
+class _LazySegmenter:
+    """NeuralTissueSegmenter's lazy-load contract: weights load on first use."""
+
+    def __init__(self):
+        self.loaded_at = None
+
+    def _ensure_model_loaded(self):
+        if self.loaded_at is None:
+            import time
+            time.sleep(0.05)
+            self.loaded_at = time.time()
+
+
+def _fake_multi(*, patch_sizes, patch_mpps, output_h5_paths, **kwargs):
+    for p in output_h5_paths:
+        Path(p).write_text("patch h5")
+    return {(s, float(m)): (MagicMock(), MagicMock(), np.zeros((3, 2))) for s, m in zip(patch_sizes, patch_mpps)}
+
+
+@pytest.mark.parametrize("record", [True, False])
+def test_segmentation_model_load_is_timed_in_model_load(tmp_path, record):
+    seg = _LazySegmenter()
+    out = tmp_path / "t.jsonl"
+    cfg = TessellateConfig(slide_paths=["a.svs"], slide_ids=["A"], output_dir=str(tmp_path / "tiles"),
+                           seg_config=SegConfig(segment_threshold=0), timings_path=str(out) if record else None)
+    with patch.object(tessellate_cli, "_build_neural_segmenter", return_value=seg), \
+            patch.object(tessellate_cli, "segment_tissue_multi", side_effect=_fake_multi):
+        tessellate_cli.main(OmegaConf.create(cfg))
+    if not record:
+        assert seg.loaded_at is None  # stays lazy without timings
+        return
+    load = next(r for r in _records(out) if r["stage"] == "model_load")
+    assert load["start"] <= seg.loaded_at <= load["end"] and load["seconds"] >= 0.05
+
+
+def test_one_step_records_segmentation_load_and_wraps_main(tmp_path):
+    import mussel.cli.tessellate_extract_features as tef
+
+    seg = _LazySegmenter()
+    out = tmp_path / "t.jsonl"
+    cfg = MagicMock(use_gpu=False, gpu_device_id=None, gpu_device_ids=None,
+                    seg_config=OmegaConf.create({"seg_model": "neural"}), neural_config=tef.NeuralSegConfig())
+    with patch.object(tef, "_build_neural_segmenter", return_value=seg), \
+            patch.object(tef, "_build_artifact_remover", return_value=None), timings.recording(str(out)):
+        tef._build_segmentation_runtime(cfg)
+    (load,) = _records(out)
+    assert load["stage"] == "model_load" and load["start"] <= seg.loaded_at <= load["end"]
+
+    seen = {}
+    with patch.object(tef, "_main", side_effect=lambda c: seen.setdefault("enabled", timings.enabled())):
+        tef.main(OmegaConf.create({"timings_path": str(tmp_path / "m.jsonl")}))
+    assert seen["enabled"] is True and not timings.enabled()
+
+
+def test_failed_slide_encoding_is_recorded_and_the_batch_continues(tmp_path):
+    h5s, n_tiles = _slides(tmp_path)
+    feats = []
+    for i, h5 in enumerate(h5s):
+        p = tmp_path / f"f{i}.h5"
+        with h5py.File(h5) as src, h5py.File(p, "w") as f:
+            ds = f.create_dataset("coords", data=src["coords"][:])
+            for k, v in src["coords"].attrs.items():
+                ds.attrs[k] = v
+            f.create_dataset("features", data=np.ones((len(src["coords"]), 4), dtype=np.float32))
+        feats.append(str(p))
+
+    def encode(f, c, s):
+        if f.shape[1] == n_tiles[1]:
+            raise RuntimeError("CUDA out of memory")
+        return f.mean(1)
+
+    model = MagicMock()
+    model.get_model_fun.return_value = encode
+    factory = MagicMock()
+    factory.get_model.return_value = model
+    out = tmp_path / "t.jsonl"
+    pts = [str(tmp_path / f"{i}.pt") for i in range(2)]
+    with patch.object(fe, "get_model_factory", return_value=factory), timings.recording(str(out)):
+        fe.aggregate_slide_features_batch(feats, output_pt_paths=pts, aggregation_method="model",
+                                          model_type=ModelType.TITAN_SLIDE, use_gpu=False, tile_size_check="off")
+    enc = [r for r in _records(out) if r["stage"] == "slide_encode"]
+    assert [r.get("error") for r in enc] == [None, "RuntimeError"]
+    assert Path(pts[0]).exists() and not Path(pts[1]).exists()

@@ -30,6 +30,7 @@ from mussel.cli.tessellate import (
     VisConfig,
     _build_artifact_remover,
     _build_neural_segmenter,
+    _load_segmentation_models_now,
 )
 from mussel.cli.tessellate_extract_features_common import (
     create_visualizations,
@@ -77,14 +78,16 @@ def _build_segmentation_runtime(cfg: "TessellateExtractFeaturesConfig"):
         if OmegaConf.is_config(neural_cfg_obj)
         else vars(neural_cfg_obj)
     )
-    artifact_remover_fn = _build_artifact_remover(seg_cfg)
-    neural_segmenter = _build_neural_segmenter(
-        seg_cfg,
-        cfg.use_gpu,
-        gpu_device_id=cfg.gpu_device_id,
-        gpu_device_ids=cfg.gpu_device_ids,
-        neural_config=neural_cfg,
-    )
+    with timings.stage("model_load", model="segmentation"):
+        artifact_remover_fn = _build_artifact_remover(seg_cfg)
+        neural_segmenter = _build_neural_segmenter(
+            seg_cfg,
+            cfg.use_gpu,
+            gpu_device_id=cfg.gpu_device_id,
+            gpu_device_ids=cfg.gpu_device_ids,
+            neural_config=neural_cfg,
+        )
+        _load_segmentation_models_now(artifact_remover_fn, neural_segmenter)
     return artifact_remover_fn, neural_segmenter
 
 
