@@ -164,3 +164,119 @@ def test_cli_rejects_single_model_path_with_model_types(tmp_path):
                                     model_path="/models/one.pth")
     with pytest.raises(ValueError, match="model_paths"):
         cli._main_batch(cfg)
+
+
+# ── review fixes: grouping key, slide encoders, one group in memory, slides without tiles ──
+
+
+def test_preprocessing_key_groups_only_provably_identical_transforms():
+    key = fe._preprocessing_key
+    resize = lambda: transforms.Compose([transforms.Resize(16), transforms.ToTensor()])  # noqa: E731
+    assert key(resize()) == key(resize())  # standard transforms: equal parameters, equal key
+    assert key(_PRE_A) != key(_PRE_B)
+    # Lambda's repr is "Lambda()" whatever it wraps: never grouped.
+    la = transforms.Compose([transforms.ToTensor(), transforms.Lambda(lambda x: x)])
+    lb = transforms.Compose([transforms.ToTensor(), transforms.Lambda(lambda x: -x)])
+    assert repr(la) == repr(lb) and key(la) != key(lb)
+    custom = lambda img: img  # noqa: E731
+    assert key(custom) != key(lambda img: img)
+    assert key(None) == key(None) == "default"
+
+
+def test_models_differing_only_in_a_lambda_get_separate_passes(tmp_path):
+    h5s = _slides(tmp_path)
+    pre = {ModelType.HOPTIMUS1: transforms.Compose([transforms.Resize(16), transforms.ToTensor(),
+                                                    transforms.Lambda(lambda x: x)]),
+           ModelType.OPTIMUS: transforms.Compose([transforms.Resize(16), transforms.ToTensor(),
+                                                  transforms.Lambda(lambda x: 1 - x)])}
+
+    class _M(_FakeModel):
+        def __init__(self, m):
+            self.pre, self.scale = pre[m], 1.0
+
+    class _F(_FakeFactory):
+        def get_model(self, *a, **k):
+            return _M(self.model_type)
+
+    outs = {m: [str(tmp_path / f"{m.code}_{i}.h5") for i in range(2)] for m in pre}
+    with patch.object(fe, "get_model_factory", side_effect=lambda m: _F(m)):
+        fe.extract_patch_features_batch_multi(h5s, [_SLIDE] * 2, outs, batch_size=7, use_gpu=False,
+                                              num_workers=0, pin_memory=False, tile_size_check="off")
+    a, b = _read(outs[ModelType.HOPTIMUS1][0])[0], _read(outs[ModelType.OPTIMUS][0])[0]
+    # Each model got its own preprocessing: 1 - x shifts the channel means.
+    assert not np.allclose(a, b)
+
+
+@pytest.mark.parametrize("slide_encoder", [ModelType.TITAN_SLIDE, ModelType.ABMIL_SLIDE])
+def test_slide_encoders_are_rejected(tmp_path, slide_encoder):
+    h5s = _slides(tmp_path)
+    outs = {m: [str(tmp_path / f"{m.code}_{i}.h5") for i in range(2)] for m in (ModelType.HOPTIMUS1, slide_encoder)}
+    with pytest.raises(ValueError, match="slide encoders"):
+        fe.extract_patch_features_batch_multi(h5s, [_SLIDE] * 2, outs, use_gpu=False, num_workers=0,
+                                              tile_size_check="off")
+
+
+def test_only_one_groups_models_are_alive_at_a_time(tmp_path):
+    """Models of other groups are released, and reloaded when their group runs."""
+    import gc
+    import weakref
+
+    h5s = _slides(tmp_path)
+    alive, loads, seen = weakref.WeakSet(), [], []
+
+    class _Tracked(_FakeModel):
+        def get_model_fun(self):
+            inner, me = super().get_model_fun(), self.model_type
+
+            def fun(x):
+                gc.collect()
+                seen.append((me, sorted(m.model_type.name for m in alive)))
+                return inner(x)
+            return fun
+
+    class _F(_FakeFactory):
+        def get_model(self, *a, **k):
+            loads.append(self.model_type)
+            m = _Tracked(self.model_type)
+            m.model_type = self.model_type
+            alive.add(m)
+            return m
+
+    outs = {m: [str(tmp_path / f"{m.code}_{i}.h5") for i in range(2)] for m in _SPEC}
+    with patch.object(fe, "get_model_factory", side_effect=lambda m: _F(m)):
+        fe.extract_patch_features_batch_multi(h5s, [_SLIDE] * 2, outs, batch_size=7, use_gpu=False,
+                                              num_workers=0, pin_memory=False, tile_size_check="off")
+    by_model = {}
+    for me, live in seen:
+        by_model.setdefault(me, set()).add(tuple(live))
+    # H-optimus-0/1 share a pass with UNI released; UNI runs alone after they are released.
+    assert by_model[ModelType.HOPTIMUS1] == by_model[ModelType.OPTIMUS] == {("HOPTIMUS1", "OPTIMUS")}
+    assert by_model[ModelType.UNI] == {("UNI",)}
+    assert sorted(m.name for m in loads) == ["HOPTIMUS1", "OPTIMUS", "UNI", "UNI"]  # UNI reloaded once
+
+
+@pytest.mark.parametrize("multi", [True, False])
+def test_cli_slide_without_tiles_does_not_abort_the_batch(tmp_path, multi, caplog):
+    import logging
+
+    with h5py.File(_H5) as f:
+        coords, attrs = f["coords"][:], dict(f["coords"].attrs)
+    paths = []
+    for name, c in (("A", coords[:20]), ("E", coords[:0]), ("C", coords[20:35])):
+        p = tmp_path / f"{name}.patch.h5"
+        with h5py.File(p, "w") as f:
+            ds = f.create_dataset("coords", data=c)
+            for k, v in attrs.items():
+                ds.attrs[k] = v
+        paths.append(str(p))
+    extra = (dict(model_types=[ModelType.HOPTIMUS1, ModelType.OPTIMUS]) if multi
+             else dict(model_type=ModelType.HOPTIMUS1))
+    cfg = OmegaConf.structured(cli.ExtractFeaturesConfig(
+        patch_h5_paths=paths, slide_paths=[_SLIDE] * 3, slide_ids=["A", "E", "C"], output_dir=str(tmp_path / "out"),
+        batch_size=7, use_gpu=False, num_workers=0, tile_size_check="off", **extra))
+    with patch.object(fe, "get_model_factory", side_effect=_factory), caplog.at_level(logging.WARNING):
+        cli._main_batch(OmegaConf.to_object(cfg))
+    out = tmp_path / "out" / ("hoptimus1" if multi else "")
+    assert (out / "A.features.pt").exists() and (out / "C.features.pt").exists()
+    assert not (out / "E.features.pt").exists()
+    assert "No features written" in caplog.text
