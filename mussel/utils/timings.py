@@ -19,6 +19,15 @@ PyTorch allocated on the GPU during the stage.
 
 When no file is set every call here is a no-op, and :func:`timed_iter`
 returns its iterable unchanged.
+
+Caveats while recording:
+
+- GPU peaks: each stage calls ``torch.cuda.reset_peak_memory_stats()``, which is
+  process-wide, so other code reading ``torch.cuda.max_memory_allocated()``
+  sees peaks since the last stage started, not since its own reset. Only the
+  current CUDA device is measured (multi-GPU runs under-report).
+- Threads: the stage stack is module state; record from one thread only.
+  DataLoader worker processes import this module afresh and record nothing.
 """
 from __future__ import annotations
 

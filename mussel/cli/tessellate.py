@@ -610,6 +610,22 @@ def _resolve_batch_outputs(cfg: TessellateConfig) -> list[tuple[str, str, str]]:
     return list(zip(slide_paths, slide_ids, output_h5_paths))
 
 
+def _load_segmentation_models_now(artifact_remover_fn, neural_segmenter) -> None:
+    """Load the segmentation models' weights now, while timings are recorded.
+
+    NeuralTissueSegmenter and GrandQCArtifactRemover load their weights lazily,
+    on the first slide; without this the "model_load" stage would read ~0 s and
+    the load would be counted in the first slide's tessellation. Without
+    timings, loading stays lazy.
+    """
+    if not timings.enabled():
+        return
+    if neural_segmenter is not None and hasattr(neural_segmenter, "_ensure_model_loaded"):
+        neural_segmenter._ensure_model_loaded()
+    if getattr(artifact_remover_fn, "_model", "absent") is None and hasattr(artifact_remover_fn, "_load_model"):
+        artifact_remover_fn._load_model()
+
+
 def _build_neural_segmenter(
     seg_cfg: dict,
     use_gpu: Optional[bool] = None,
@@ -684,6 +700,7 @@ def _run_batch(
     with timings.stage("model_load", model="segmentation"):
         artifact_remover_fn = _build_artifact_remover(seg_cfg)
         neural_segmenter = _build_neural_segmenter(seg_cfg, neural_config=neural_config)
+        _load_segmentation_models_now(artifact_remover_fn, neural_segmenter)
     failures: list[tuple[str, str, str, str]] = []
     items = _resolve_batch_outputs(cfg)
     specs = _tile_specs(seg_cfg)
@@ -786,6 +803,7 @@ def _main(cfg: TessellateConfig) -> None:
         neural_segmenter = _build_neural_segmenter(
             seg_cfg, neural_config=neural_cfg
         )
+        _load_segmentation_models_now(artifact_remover_fn, neural_segmenter)
     results = _run_tessellation(
         slide_path=cfg.slide_path,
         slide_id=cfg.slide_id,
