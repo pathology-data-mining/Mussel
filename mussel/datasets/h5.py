@@ -107,6 +107,13 @@ class WholeSlideImageH5Dataset(Dataset):
         else:
             idx = idx_
 
+        if self.wsi is None:
+            # Without this, read_region's AttributeError would be caught below and
+            # every tile silently skipped.
+            raise RuntimeError(
+                f"{self.slide_path} is not open: with init_wsi_in_worker=True, call "
+                "worker_init() in each DataLoader worker before reading tiles"
+            )
         with h5py.File(self.h5_path, "r") as hdf5_file:
             coord = hdf5_file["coords"][idx]
             try:
