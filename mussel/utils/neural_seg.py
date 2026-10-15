@@ -282,6 +282,10 @@ class NeuralTissueSegmenter:
             masks.append((output_mask * 255).astype(np.uint8))
         return masks
 
+    def load(self) -> None:
+        """Load the weights now; otherwise they load on the first inference call."""
+        self._ensure_model_loaded()
+
     def release(self) -> None:
         """Release model weights and CUDA allocations held by this segmenter.
 

@@ -207,6 +207,11 @@ class GrandQCArtifactRemover:
         except ImportError:
             return "cpu"
 
+    def load(self) -> None:
+        """Load the weights now; otherwise they load on the first call."""
+        if self._model is None:
+            self._load_model()
+
     def _load_model(self) -> None:
         try:
             import segmentation_models_pytorch as smp

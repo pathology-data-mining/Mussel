@@ -9,7 +9,6 @@ import numpy as np
 import pytest
 import torch
 from omegaconf import OmegaConf
-from torchvision import transforms
 
 import mussel.cli.extract_features as extract_cli
 import mussel.cli.tessellate as tessellate_cli
@@ -18,9 +17,6 @@ from mussel.models import ModelType
 from mussel.utils import feature_extract as fe
 from mussel.utils import timings
 
-_TESTDATA = Path(__file__).parent.parent.parent / "testdata"
-_SLIDE = str(_TESTDATA / "948176.svs")
-_H5 = str(_TESTDATA / "948176.patch.h5")
 _BATCH = 7
 
 
@@ -70,38 +66,9 @@ def test_recording_appends(tmp_path):
     assert len(_records(out)) == 2
 
 
-class _FakeModel:
-    def __init__(self, scale=1.0):
-        self.scale = scale
-
-    def get_preprocessing_fun(self):
-        return transforms.Compose([transforms.Resize(16), transforms.ToTensor()])
-
-    def get_model_fun(self):
-        scale = self.scale
-        return lambda x: x.mean((2, 3)) * scale
-
-
-class _FakeFactory:
-    def __init__(self, model_type=None):
-        self.scale = 2.0 if model_type == ModelType.OPTIMUS else 1.0
-
-    def get_model(self, *args, **kwargs):
-        return _FakeModel(self.scale)
-
-
-def _slides(tmp_path):
-    with h5py.File(_H5) as f:
-        coords, attrs = f["coords"][:], dict(f["coords"].attrs)
-    paths = []
-    for name, c in (("a", coords[:50]), ("b", coords[::-1][:23])):
-        p = tmp_path / f"{name}.patch.h5"
-        with h5py.File(p, "w") as f:
-            ds = f.create_dataset("coords", data=c)
-            for k, v in attrs.items():
-                ds.attrs[k] = v
-        paths.append(str(p))
-    return paths, [50, 23]
+def _slides(fakes, tmp_path):
+    return [fakes.write_tiles(tmp_path / "a.patch.h5", fakes.coords[:50]),
+            fakes.write_tiles(tmp_path / "b.patch.h5", fakes.coords[::-1][:23])], [50, 23]
 
 
 def _check_patch_records(records, model, n_tiles):
@@ -117,36 +84,36 @@ def _check_patch_records(records, model, n_tiles):
 
 
 @pytest.mark.parametrize("shared_loader, num_workers", [(True, 2), (False, 2), (False, 0)])
-def test_patch_features_batch_records_each_slide(tmp_path, shared_loader, num_workers):
-    h5s, n_tiles = _slides(tmp_path)
+def test_patch_features_batch_records_each_slide(fakes, tmp_path, shared_loader, num_workers):
+    h5s, n_tiles = _slides(fakes, tmp_path)
     plain = [str(tmp_path / f"plain_{i}.h5") for i in range(2)]
     timed = [str(tmp_path / f"timed_{i}.h5") for i in range(2)]
     out = tmp_path / "t.jsonl"
     common = dict(model_type=ModelType.HOPTIMUS1, batch_size=_BATCH, use_gpu=False, num_workers=num_workers,
                   pin_memory=False, tile_size_check="off", shared_loader=shared_loader)
-    with patch.object(fe, "get_model_factory", return_value=_FakeFactory()):
-        fe.extract_patch_features_batch(h5s, [_SLIDE] * 2, plain, **common)
+    with patch.object(fe, "get_model_factory", side_effect=fakes.factories()):
+        fe.extract_patch_features_batch(h5s, [fakes.slide] * 2, plain, **common)
         with timings.recording(str(out)):
-            fe.extract_patch_features_batch(h5s, [_SLIDE] * 2, timed, **common)
+            fe.extract_patch_features_batch(h5s, [fakes.slide] * 2, timed, **common)
     _check_patch_records(_records(out), "HOPTIMUS1", n_tiles)
     for a, b in zip(plain, timed):  # recording doesn't change the output
         with h5py.File(a) as fa, h5py.File(b) as fb:
             np.testing.assert_array_equal(fa["features"][:], fb["features"][:])
 
 
-def test_multi_model_pass_records_each_slide(tmp_path):
-    h5s, n_tiles = _slides(tmp_path)
+def test_multi_model_pass_records_each_slide(fakes, tmp_path):
+    h5s, n_tiles = _slides(fakes, tmp_path)
     models = [ModelType.HOPTIMUS1, ModelType.OPTIMUS]
     outs = {m: [str(tmp_path / f"{m.code}_{i}.h5") for i in range(2)] for m in models}
     out = tmp_path / "t.jsonl"
-    with patch.object(fe, "get_model_factory", side_effect=_FakeFactory), timings.recording(str(out)):
-        fe.extract_patch_features_batch_multi(h5s, [_SLIDE] * 2, outs, batch_size=_BATCH, use_gpu=False,
+    with patch.object(fe, "get_model_factory", side_effect=fakes.factories()), timings.recording(str(out)):
+        fe.extract_patch_features_batch_multi(h5s, [fakes.slide] * 2, outs, batch_size=_BATCH, use_gpu=False,
                                               num_workers=2, pin_memory=False, tile_size_check="off")
     _check_patch_records(_records(out), "HOPTIMUS1,OPTIMUS", n_tiles)
 
 
-def test_slide_encoder_records_each_slide(tmp_path):
-    h5s, n_tiles = _slides(tmp_path)
+def test_slide_encoder_records_each_slide(fakes, tmp_path):
+    h5s, n_tiles = _slides(fakes, tmp_path)
     feats = []
     for i, h5 in enumerate(h5s):
         p = tmp_path / f"f{i}.h5"
@@ -171,14 +138,14 @@ def test_slide_encoder_records_each_slide(tmp_path):
     assert all(r["model"] == "TITAN_SLIDE" for r in records)
 
 
-def test_extract_features_cli_timings_path(tmp_path):
-    h5s, n_tiles = _slides(tmp_path)
+def test_extract_features_cli_timings_path(fakes, tmp_path):
+    h5s, n_tiles = _slides(fakes, tmp_path)
     out = tmp_path / "t.jsonl"
     cfg = OmegaConf.structured(extract_cli.ExtractFeaturesConfig(
-        patch_h5_paths=h5s, slide_paths=[_SLIDE] * 2, slide_ids=["A", "B"], output_dir=str(tmp_path / "out"),
+        patch_h5_paths=h5s, slide_paths=[fakes.slide] * 2, slide_ids=["A", "B"], output_dir=str(tmp_path / "out"),
         model_type=ModelType.HOPTIMUS1, batch_size=_BATCH, use_gpu=False, num_workers=0,
         tile_size_check="off", timings_path=str(out)))
-    with patch.object(fe, "get_model_factory", return_value=_FakeFactory()):
+    with patch.object(fe, "get_model_factory", side_effect=fakes.factories()):
         extract_cli.main(cfg)
     _check_patch_records(_records(out), "HOPTIMUS1", n_tiles)
 
@@ -211,7 +178,7 @@ class _LazySegmenter:
     def __init__(self):
         self.loaded_at = None
 
-    def _ensure_model_loaded(self):
+    def load(self):
         if self.loaded_at is None:
             import time
             time.sleep(0.05)
@@ -259,8 +226,8 @@ def test_one_step_records_segmentation_load_and_wraps_main(tmp_path):
     assert seen["enabled"] is True and not timings.enabled()
 
 
-def test_failed_slide_encoding_is_recorded_and_the_batch_continues(tmp_path):
-    h5s, n_tiles = _slides(tmp_path)
+def test_failed_slide_encoding_is_recorded_and_the_batch_continues(fakes, tmp_path):
+    h5s, n_tiles = _slides(fakes, tmp_path)
     feats = []
     for i, h5 in enumerate(h5s):
         p = tmp_path / f"f{i}.h5"
@@ -288,3 +255,29 @@ def test_failed_slide_encoding_is_recorded_and_the_batch_continues(tmp_path):
     enc = [r for r in _records(out) if r["stage"] == "slide_encode"]
     assert [r.get("error") for r in enc] == [None, "RuntimeError"]
     assert Path(pts[0]).exists() and not Path(pts[1]).exists()
+
+
+def test_gpu_peak_is_reset_for_outermost_stages_only(tmp_path):
+    class FakeCuda:
+        def __init__(self):
+            self.resets, self.peak = 0, 0
+
+        def reset_peak_memory_stats(self):
+            self.resets += 1
+            self.peak = 0
+
+        def max_memory_allocated(self):
+            return self.peak
+
+    cuda = FakeCuda()
+    out = tmp_path / "t.jsonl"
+    with patch.object(timings, "_cuda", return_value=cuda), timings.recording(str(out)):
+        with timings.stage("outer"):
+            cuda.peak = 3 * 2**20
+            with timings.stage("inner"):
+                cuda.peak = 5 * 2**20
+        with timings.stage("next"):
+            cuda.peak = 2 * 2**20
+    inner, outer, nxt = _records(out)
+    assert cuda.resets == 2  # outer and next; not inner
+    assert (inner["gpu_mem_peak_mib"], outer["gpu_mem_peak_mib"], nxt["gpu_mem_peak_mib"]) == (5.0, 5.0, 2.0)

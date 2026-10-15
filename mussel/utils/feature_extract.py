@@ -44,6 +44,15 @@ def _model_name(model_type) -> str:
     return getattr(model_type, "name", str(model_type))
 
 
+def _load_model(model_type, model_path, use_gpu, gpu_device_id, model_kwargs=None):
+    """Load a Mussel model through its factory, timed as a ``model_load`` stage."""
+    factory = get_model_factory(model_type)
+    if factory is None:
+        raise ValueError(f"model not recognized: {model_type}")
+    with timings.stage("model_load", model=_model_name(model_type)):
+        return factory.get_model(model_path, use_gpu, gpu_device_id, **(model_kwargs or {}))
+
+
 def _numpy_to_torch(arr: np.ndarray, dtype: Optional[np.dtype] = None) -> torch.Tensor:
     """Convert a numpy feature array to a torch tensor.
 
@@ -921,12 +930,8 @@ def _apply_slide_aggregation(
             logger.info("using pre-loaded slide model")
             model_fun = slide_model.get_model_fun()
         else:
-            model_factory = get_model_factory(slide_model_type)
-            if model_factory is None:
-                raise ValueError(f"Slide model type {slide_model_type} not recognized")
-            slide_model = model_factory.get_model(
-                slide_model_path, use_gpu, gpu_device_id, **(slide_model_kwargs or {})
-            )
+            slide_model = _load_model(slide_model_type, slide_model_path, use_gpu, gpu_device_id,
+                                      slide_model_kwargs)
             model_fun = slide_model.get_model_fun()
 
         # Convert features to tensor (handles bfloat16/V2 correctly) and apply model
@@ -1113,12 +1118,7 @@ def get_features(
     # Load patch encoder from disk, or use the pre-loaded instance.
     if model is None:
         logger.info("loading model checkpoint")
-        model_factory = get_model_factory(model_type)
-        if model_factory is None:
-            raise ValueError("model not recognized")
-        model = model_factory.get_model(
-            model_path, use_gpu, gpu_device_id, **(model_kwargs or {})
-        )
+        model = _load_model(model_type, model_path, use_gpu, gpu_device_id, model_kwargs)
     else:
         logger.info("using pre-loaded model")
     preprocessing = model.get_preprocessing_fun()
@@ -1239,13 +1239,7 @@ def extract_patch_features(
 
     feature_dtype = _parse_feature_dtype(embedding_precision)
 
-    model_factory = get_model_factory(model_type)
-    if model_factory is None:
-        raise ValueError("model not recognized")
-    with timings.stage("model_load", model=_model_name(model_type)):
-        model = model_factory.get_model(
-            model_path, use_gpu, gpu_device_id, **(model_kwargs or {})
-        )
+    model = _load_model(model_type, model_path, use_gpu, gpu_device_id, model_kwargs)
     if model_save_path is not None:
         Path(model_save_path).parent.mkdir(parents=True, exist_ok=True)
         logger.info(f"saving model to {model_save_path}")
@@ -1653,16 +1647,11 @@ def extract_patch_features_batch_multi(
     gpu_device_id = resolve_gpu_device_id(gpu_device_id, gpu_device_ids)
 
     def load(model_type):
-        factory = get_model_factory(model_type)
-        if factory is None:
-            raise ValueError(f"model not recognized: {model_type}")
         model_path = (model_paths or {}).get(model_type)
         if model_path is None and model_dir is not None:
             model_path = get_model_path_from_dir(model_dir, model_type)
         logger.info(f"Loading model {model_type} (once for all slides)" + (f" from {model_path}" if model_path else ""))
-        with timings.stage("model_load", model=_model_name(model_type)):
-            return factory.get_model(model_path, use_gpu, gpu_device_id,
-                                     **((model_kwargs or {}).get(model_type) or {}))
+        return _load_model(model_type, model_path, use_gpu, gpu_device_id, (model_kwargs or {}).get(model_type))
 
     # Group by identical preprocessing, keeping only the first group's models loaded.
     loaded, groups, first_key = {}, {}, None
@@ -1909,13 +1898,7 @@ def aggregate_slide_features_batch(
     logger.info(
         f"Using slide_batch_size={slide_batch_size} for slide model {model_type}"
     )
-    model_factory = get_model_factory(model_type)
-    if model_factory is None:
-        raise ValueError(f"Slide model type {model_type} not recognized")
-    with timings.stage("model_load", model=_model_name(model_type)):
-        model = model_factory.get_model(
-            model_path, use_gpu, gpu_device_id, **(slide_model_kwargs or {})
-        )
+    model = _load_model(model_type, model_path, use_gpu, gpu_device_id, slide_model_kwargs)
     model_fun = model.get_model_fun()
 
     successful_slides = []
@@ -2394,12 +2377,7 @@ def save_features(
 
         feature_dtype = _parse_feature_dtype(embedding_precision)
 
-        model_factory = get_model_factory(model_type)
-        if model_factory is None:
-            raise ValueError("model not recognized")
-        model = model_factory.get_model(
-            model_path, use_gpu, gpu_device_id, **(model_kwargs or {})
-        )
+        model = _load_model(model_type, model_path, use_gpu, gpu_device_id, model_kwargs)
         if model_save_path is not None:
             Path(model_save_path).parent.mkdir(parents=True, exist_ok=True)
             logger.info(f"saving model to {model_save_path}")
