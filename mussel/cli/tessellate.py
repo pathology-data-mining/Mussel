@@ -620,10 +620,9 @@ def _load_segmentation_models_now(artifact_remover_fn, neural_segmenter) -> None
     """
     if not timings.enabled():
         return
-    if neural_segmenter is not None and hasattr(neural_segmenter, "_ensure_model_loaded"):
-        neural_segmenter._ensure_model_loaded()
-    if getattr(artifact_remover_fn, "_model", "absent") is None and hasattr(artifact_remover_fn, "_load_model"):
-        artifact_remover_fn._load_model()
+    for model in (neural_segmenter, artifact_remover_fn):
+        if model is not None and hasattr(model, "load"):
+            model.load()
 
 
 def _build_neural_segmenter(

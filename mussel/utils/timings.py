@@ -15,16 +15,18 @@ Counters such as ``load_wait_s`` (time blocked waiting for the next batch from
 the DataLoader) and ``model_s`` (forward pass, including the copy back to the
 CPU) are summed over the stage; ``tiles_done`` counts the tiles that went
 through the model (fewer than ``tiles`` in a test run). ``gpu_mem_peak_mib`` is the peak memory
-PyTorch allocated on the GPU during the stage.
+PyTorch allocated on the GPU during the stage. Stages may nest (counters go to the
+innermost), but the peak is reset only when the outermost stage starts, so a
+nested stage reports the peak since its outermost stage began.
 
 When no file is set every call here is a no-op, and :func:`timed_iter`
 returns its iterable unchanged.
 
 Caveats while recording:
 
-- GPU peaks: each stage calls ``torch.cuda.reset_peak_memory_stats()``, which is
-  process-wide, so other code reading ``torch.cuda.max_memory_allocated()``
-  sees peaks since the last stage started, not since its own reset. Only the
+- GPU peaks: each outermost stage calls ``torch.cuda.reset_peak_memory_stats()``,
+  which is process-wide, so other code reading ``torch.cuda.max_memory_allocated()``
+  sees peaks since that stage started, not since its own reset. Only the
   current CUDA device is measured (multi-GPU runs under-report).
 - Threads: the stage stack is module state; record from one thread only.
   DataLoader worker processes import this module afresh and record nothing.
@@ -80,11 +82,8 @@ def stage(name: str, **fields):
         yield None
         return
     cuda = _cuda()
-    if cuda is not None:
-        # The enclosing stage keeps its own peak so far; this stage measures from here.
-        if _stack:
-            _stack[-1]["_peak"] = max(_stack[-1].get("_peak", 0), cuda.max_memory_allocated())
-        cuda.reset_peak_memory_stats()
+    if cuda is not None and not _stack:
+        cuda.reset_peak_memory_stats()  # only for the outermost stage; see the module docstring
     record = {"stage": name, **fields, "start": time.time()}
     _stack.append(record)
     try:
@@ -96,13 +95,9 @@ def stage(name: str, **fields):
         _stack.pop()
         record["end"] = time.time()
         record["seconds"] = round(record["end"] - record["start"], 3)
-        peak = record.pop("_peak", 0)
         cuda = _cuda()
         if cuda is not None:
-            peak = max(peak, cuda.max_memory_allocated())
-            record["gpu_mem_peak_mib"] = round(peak / 2**20, 1)
-            if _stack:
-                _stack[-1]["_peak"] = max(_stack[-1].get("_peak", 0), peak)
+            record["gpu_mem_peak_mib"] = round(cuda.max_memory_allocated() / 2**20, 1)
         for key, value in record.items():
             if key.endswith("_s") and isinstance(value, float):
                 record[key] = round(value, 3)
