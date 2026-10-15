@@ -25,7 +25,8 @@ from mussel.utils import (
     resolve_remote_paths,
     save_features,
 )
-from mussel.utils.feature_extract import _numpy_to_torch
+from mussel.utils.feature_extract import (_numpy_to_torch,
+                                          extract_patch_features_batch_multi)
 from mussel.utils.file import save_hdf5, save_torch_tensor
 from mussel.utils.ml import collate_features
 
@@ -141,12 +142,23 @@ class ExtractFeaturesConfig:
     embedding_precision: str = "float32"
     tile_size_check: str = "warn"
     shared_loader: bool = True
+    # Batch mode, aggregation_method=identity: several patch models in one pass over
+    # the tiles (models with identical preprocessing share each decoded batch).
+    # Outputs go to output_dir/<model code>/<slide_id>.<suffix>. Set the dicts with
+    # ++ (struct mode), e.g. '++model_precisions={hoptimus1:bfloat16,optimus:bfloat16}'.
+    # Patch encoders only. model_kwargs, if set, is passed to every model in model_types.
+    model_types: Optional[List[ModelType]] = None
+    model_precisions: Dict[str, str] = field(default_factory=dict)  # model code -> embedding precision
+    model_paths: Dict[str, str] = field(default_factory=dict)  # model code -> weights path
 
     def __post_init__(self):
         if isinstance(self.model_kwargs, DictConfig):
             self.model_kwargs = dict(self.model_kwargs)
         if isinstance(self.slide_model_kwargs, DictConfig):
             self.slide_model_kwargs = dict(self.slide_model_kwargs)
+        for name in ("model_precisions", "model_paths"):
+            if isinstance(getattr(self, name), DictConfig):
+                setattr(self, name, dict(getattr(self, name)))
 
 
 desc_doc = """== ${hydra.help.app_name} ==
@@ -289,6 +301,10 @@ def _main_batch(cfg: ExtractFeaturesConfig):
         str(output_dir / f"{slide_id}.{cfg.output_pt_suffix}") for slide_id in slide_ids
     ]
 
+    if cfg.model_types:
+        _main_batch_multi(cfg, output_dir, slide_ids)
+        return
+
     # Check if we need two-step processing
     use_two_step = cfg.aggregation_method != "identity"
 
@@ -377,12 +393,57 @@ def _main_batch(cfg: ExtractFeaturesConfig):
         )
 
         # Save as PT format for consistency
-        for output_h5, output_pt in zip(output_h5_paths, output_pt_paths):
-            with h5py.File(output_h5, "r") as f:
-                features = _numpy_to_torch(f["features"][:])
-                torch.save(features, output_pt)
+        _write_pts(output_h5_paths, output_pt_paths)
 
     logger.info(f"Batch processing complete. Output saved to {output_dir}")
+
+
+def _write_pts(h5_paths, pt_paths) -> None:
+    """Save each features .h5 as a .pt; a slide whose extraction wrote nothing (e.g. no tiles) is skipped."""
+    for h5_path, pt_path in zip(h5_paths, pt_paths):
+        if not os.path.isfile(h5_path):
+            logger.warning(f"No features written to {h5_path} (slide without tiles?); skipping its .pt")
+            continue
+        with h5py.File(h5_path, "r") as f:
+            torch.save(_numpy_to_torch(f["features"][:]), pt_path)
+
+
+def _main_batch_multi(cfg: ExtractFeaturesConfig, output_dir: Path, slide_ids: List[str]):
+    """Batch mode with several patch models in one pass (see ``model_types``)."""
+    if cfg.aggregation_method != "identity":
+        raise ValueError("model_types (several patch models in one pass) requires aggregation_method=identity")
+    if cfg.model_path:
+        raise ValueError("model_path names one model's weights; with model_types use model_paths={code: path} "
+                         "(or model_dir for a directory of pre-downloaded models)")
+    model_types = [ModelType[m] if isinstance(m, str) else m for m in cfg.model_types]
+    by_code = {m.code: m for m in model_types}
+    unknown = (set(cfg.model_precisions) | set(cfg.model_paths)) - set(by_code)
+    if unknown:
+        raise ValueError(f"model_precisions/model_paths name models not in model_types: {sorted(unknown)}")
+    out_h5 = {m: [str(output_dir / m.code / f"{sid}.{cfg.output_h5_suffix}") for sid in slide_ids]
+              for m in model_types}
+    for m in model_types:
+        ensure_directory_exists(output_dir / m.code)
+    extract_patch_features_batch_multi(
+        patch_h5_paths=cfg.patch_h5_paths,
+        slide_paths=cfg.slide_paths,
+        output_h5_paths=out_h5,
+        model_paths={by_code[c]: p for c, p in cfg.model_paths.items()},
+        model_dir=cfg.model_dir,
+        batch_size=cfg.batch_size,
+        use_gpu=cfg.use_gpu,
+        gpu_device_id=cfg.gpu_device_id,
+        gpu_device_ids=cfg.gpu_device_ids,
+        num_workers=cfg.num_workers,
+        pin_memory=True,
+        is_test_run=cfg.is_test_run,
+        embedding_precision={m: cfg.model_precisions.get(m.code, cfg.embedding_precision) for m in model_types},
+        model_kwargs={m: cfg.model_kwargs for m in model_types} if cfg.model_kwargs else None,
+        tile_size_check=cfg.tile_size_check,
+    )
+    for m in model_types:
+        _write_pts(out_h5[m], [output_dir / m.code / f"{sid}.{cfg.output_pt_suffix}" for sid in slide_ids])
+    logger.info(f"Batch processing complete for {len(model_types)} models. Output saved to {output_dir}")
 
 
 if __name__ == "__main__":
