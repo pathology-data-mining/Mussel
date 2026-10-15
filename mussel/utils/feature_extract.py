@@ -1418,13 +1418,13 @@ def extract_patch_features_batch(
             slide, which saves ~10 s per slide; batches are identical to the
             per-slide loaders'. False restores the per-slide DataLoaders.
 
+    This is :func:`extract_patch_features_batch_multi` with a single model.
+
     Returns:
         List of paths to output HDF5 files containing patch-level features.
     """
-    # Validate inputs
     if not patch_h5_paths:
         return []
-
     if not (len(patch_h5_paths) == len(slide_paths) == len(output_h5_paths)):
         raise ValueError(
             f"Input lists must have the same length: "
@@ -1432,136 +1432,25 @@ def extract_patch_features_batch(
             f"slide_paths={len(slide_paths)}, "
             f"output_h5_paths={len(output_h5_paths)}"
         )
-
-    num_slides = len(patch_h5_paths)
-    logger.info(f"Batch extracting patch-level features for {num_slides} slides")
-
-    # Check every slide's tiles before loading the model, so "error" fails fast.
-    for patch_h5_path in patch_h5_paths:
-        check_tile_size(model_type, _read_coords_attrs(patch_h5_path), tile_size_check,
-                        context=Path(patch_h5_path).name)
-
-    gpu_device_id = resolve_gpu_device_id(gpu_device_id, gpu_device_ids)
-
-    feature_dtype = _parse_feature_dtype(embedding_precision)
-
-    # Resolve model_path from model_dir if provided
-    if model_path is None and model_dir is not None:
-        model_path = get_model_path_from_dir(model_dir, model_type)
-        if model_path:
-            logger.info(f"Using model from model_dir: {model_path}")
-
-    # Load the model once for all slides
-    logger.info("Loading model checkpoint (once for all slides)")
-    logger.info(f"Using batch_size={batch_size} for model {model_type}")
-    model_factory = get_model_factory(model_type)
-    if model_factory is None:
-        raise ValueError("model not recognized")
-    model = model_factory.get_model(
-        model_path, use_gpu, gpu_device_id, **(model_kwargs or {})
+    logger.info(f"Batch extracting patch-level features for {len(patch_h5_paths)} slides")
+    extract_patch_features_batch_multi(
+        patch_h5_paths,
+        slide_paths,
+        {model_type: list(output_h5_paths)},
+        model_paths={model_type: model_path} if model_path else None,
+        model_dir=model_dir,
+        batch_size=batch_size,
+        use_gpu=use_gpu,
+        gpu_device_id=gpu_device_id,
+        gpu_device_ids=gpu_device_ids,
+        num_workers=num_workers,
+        pin_memory=pin_memory,
+        is_test_run=is_test_run,
+        embedding_precision=embedding_precision,
+        model_kwargs={model_type: model_kwargs} if model_kwargs else None,
+        tile_size_check=tile_size_check,
+        shared_loader=shared_loader,
     )
-    preprocessing = model.get_preprocessing_fun()
-    model_fun = model.get_model_fun()
-
-    if shared_loader and num_workers > 0:
-        # A patch H5 that can't be read stops the run at its slide, as with the
-        # per-slide loaders: the slides before it are still processed.
-        datasets, dataset_error = [], None
-        for patch_h5_path, slide_path in zip(patch_h5_paths, slide_paths):
-            try:
-                datasets.append(WholeSlideImageH5Dataset(
-                    h5_path=patch_h5_path,
-                    slide_path=slide_path,
-                    preprocess=preprocessing,
-                    use_imagenet_rgb_dist=preprocessing is None,
-                    init_wsi_in_worker=True,
-                ))
-            except Exception as e:
-                dataset_error = e
-                break
-        if datasets:
-            # is_test_run: process_dataset stops after 3 batches of a slide, so only
-            # those are read.
-            sampler = _PerSlideBatches([len(ds) for ds in datasets], batch_size,
-                                       max_batches_per_slide=3 if is_test_run else None)
-            loader = DataLoader(
-                _OneSlideOpenConcat(datasets),
-                batch_sampler=sampler,
-                num_workers=num_workers,
-                pin_memory=pin_memory,
-                collate_fn=collate_features,
-                prefetch_factor=4,
-                multiprocessing_context="spawn",
-            )
-            batches = iter(loader)
-            for i, (ds, n_batches) in enumerate(zip(datasets, sampler.per_slide())):
-                logger.info(f"Processing slide {i+1}/{num_slides}: {slide_paths[i]}")
-                process_dataset(
-                    ds,
-                    itertools.islice(batches, n_batches),
-                    model_fun=model_fun,
-                    patch_h5_path=patch_h5_paths[i],
-                    output_h5_path=output_h5_paths[i],
-                    is_test_run=is_test_run,
-                    feature_dtype=feature_dtype,
-                )
-                logger.info(f"Patch-level features saved to {output_h5_paths[i]}")
-            del batches, loader
-        if dataset_error is not None:
-            i = len(datasets)
-            logger.error(f"Processing slide {i+1}/{num_slides}: can't read {patch_h5_paths[i]}")
-            raise dataset_error
-
-    else:
-        # One DataLoader per slide
-        for i, (patch_h5_path, slide_path, output_h5_path) in enumerate(
-            zip(patch_h5_paths, slide_paths, output_h5_paths)
-        ):
-            logger.info(f"Processing slide {i+1}/{num_slides}: {slide_path}")
-
-            # Create dataset and loader for this slide
-            dataset = WholeSlideImageH5Dataset(
-                h5_path=patch_h5_path,
-                slide_path=slide_path,
-                preprocess=preprocessing,
-                use_imagenet_rgb_dist=preprocessing is None,
-                init_wsi_in_worker=num_workers > 0,
-            )
-
-            loader = _make_dataloader(
-                dataset=dataset,
-                batch_size=batch_size,
-                num_workers=num_workers,
-                pin_memory=pin_memory,
-                collate_fn=collate_features,
-                worker_init_fn=dataset.worker_init if num_workers > 0 else None,
-                shuffle=False,
-                persistent_workers=num_workers > 0,
-                prefetch_factor=4 if num_workers > 0 else None,
-            )
-
-            # Process this slide's tiles
-            process_dataset(
-                dataset,
-                loader,
-                model_fun=model_fun,
-                patch_h5_path=patch_h5_path,
-                output_h5_path=output_h5_path,
-                is_test_run=is_test_run,
-                feature_dtype=feature_dtype,
-            )
-
-            logger.info(f"Patch-level features saved to {output_h5_path}")
-
-    # Clean up model to free GPU/CPU memory
-    del model
-    del model_fun
-    if use_gpu and torch.cuda.is_available():
-        torch.cuda.empty_cache()
-    gc.collect()
-    logger.info("Model cleaned up, memory freed")
-
-    logger.info(f"Batch extraction complete for {num_slides} slides")
     return output_h5_paths
 
 
@@ -1614,6 +1503,53 @@ def _write_patch_batches(batches, model_funs, feature_dtypes, patch_h5_path, out
         mode = "a"
 
 
+def _per_slide_batches(patch_h5_paths, slide_paths, preprocessing, batch_size, num_workers,
+                       pin_memory, is_test_run, shared_loader):
+    """Each slide's batches in turn: yields one iterable of batches per slide.
+
+    With workers and ``shared_loader``, one DataLoader (one worker pool) serves
+    every slide: _PerSlideBatches never mixes slides and _OneSlideOpenConcat
+    keeps one slide open per worker; in test runs only the 3 batches per slide
+    that are used are read. Otherwise each slide gets its own DataLoader, built
+    when its turn comes, so one slide is open at a time.
+    """
+    def dataset(patch_h5_path, slide_path, open_in_worker):
+        return WholeSlideImageH5Dataset(
+            h5_path=patch_h5_path, slide_path=slide_path, preprocess=preprocessing,
+            use_imagenet_rgb_dist=preprocessing is None, init_wsi_in_worker=open_in_worker,
+        )
+
+    if shared_loader and num_workers > 0:
+        # A patch H5 that can't be read raises at its slide, as with per-slide
+        # loaders: the slides before it are still yielded.
+        datasets, dataset_error = [], None
+        for h5, slide in zip(patch_h5_paths, slide_paths):
+            try:
+                datasets.append(dataset(h5, slide, True))
+            except Exception as e:
+                dataset_error = e
+                break
+        if datasets:
+            sampler = _PerSlideBatches([len(ds) for ds in datasets], batch_size, 3 if is_test_run else None)
+            batches = iter(DataLoader(
+                _OneSlideOpenConcat(datasets), batch_sampler=sampler, num_workers=num_workers,
+                pin_memory=pin_memory, collate_fn=collate_features, prefetch_factor=4,
+                multiprocessing_context="spawn",
+            ))
+            for n_batches in sampler.per_slide():
+                yield itertools.islice(batches, n_batches)
+        if dataset_error is not None:
+            raise dataset_error
+        return
+    for h5, slide in zip(patch_h5_paths, slide_paths):
+        ds = dataset(h5, slide, num_workers > 0)
+        yield _make_dataloader(
+            ds, batch_size=batch_size, num_workers=num_workers, pin_memory=pin_memory,
+            collate_fn=collate_features, worker_init_fn=ds.worker_init if num_workers > 0 else None,
+            persistent_workers=num_workers > 0, prefetch_factor=4 if num_workers > 0 else None,
+        )
+
+
 def _free_gpu_memory(use_gpu: bool) -> None:
     gc.collect()
     if use_gpu and torch.cuda.is_available():
@@ -1637,6 +1573,7 @@ def extract_patch_features_batch_multi(
     embedding_precision="float32",
     model_kwargs=None,
     tile_size_check="warn",
+    shared_loader=True,
 ):
     """Patch features for several models with one read of each slide's tiles.
 
@@ -1722,44 +1659,19 @@ def extract_patch_features_batch_multi(
         preprocessing = loaded[group[0]].get_preprocessing_fun()
         funs = [loaded[m].get_model_fun() for m in group]
         dtypes = [_parse_feature_dtype(precisions.get(m, "float32")) for m in group]
-        # is_test_run: only the 3 batches per slide that are used are read.
-        max_batches = 3 if is_test_run else None
-        if num_workers > 0:
-            datasets = [
-                WholeSlideImageH5Dataset(
-                    h5_path=patch_h5_path, slide_path=slide_path, preprocess=preprocessing,
-                    use_imagenet_rgb_dist=preprocessing is None, init_wsi_in_worker=True,
-                )
-                for patch_h5_path, slide_path in zip(patch_h5_paths, slide_paths)
-            ]
-            sampler = _PerSlideBatches([len(ds) for ds in datasets], batch_size, max_batches)
-            loader = DataLoader(
-                _OneSlideOpenConcat(datasets), batch_sampler=sampler, num_workers=num_workers,
-                pin_memory=pin_memory, collate_fn=collate_features, prefetch_factor=4,
-                multiprocessing_context="spawn",
-            )
-            batches = iter(loader)
-            per_slide = (itertools.islice(batches, n) for n in sampler.per_slide())
-        else:
-            loader = batches = datasets = sampler = None
-            # One slide open at a time: each dataset opens its slide when built.
-            per_slide = (
-                _make_dataloader(
-                    WholeSlideImageH5Dataset(
-                        h5_path=patch_h5_path, slide_path=slide_path, preprocess=preprocessing,
-                        use_imagenet_rgb_dist=preprocessing is None, init_wsi_in_worker=False,
-                    ),
-                    batch_size=batch_size, num_workers=0, pin_memory=pin_memory, collate_fn=collate_features,
-                )
-                for patch_h5_path, slide_path in zip(patch_h5_paths, slide_paths)
-            )
-        for i, slide_batches in enumerate(per_slide):
-            logger.info(f"Processing slide {i+1}/{num_slides} for {','.join(m.name for m in group)}: "
-                        f"{slide_paths[i]}")
-            _write_patch_batches(slide_batches, funs, dtypes, patch_h5_paths[i],
-                                 [output_h5_paths[m][i] for m in group], is_test_run)
-        # Shut this group's worker pool down and free its models before the next group.
-        del funs, per_slide, batches, loader, datasets, sampler, preprocessing
+        per_slide = _per_slide_batches(patch_h5_paths, slide_paths, preprocessing, batch_size, num_workers,
+                                       pin_memory, is_test_run, shared_loader)
+        try:
+            for i, slide_batches in enumerate(per_slide):
+                logger.info(f"Processing slide {i+1}/{num_slides} for {','.join(m.name for m in group)}: "
+                            f"{slide_paths[i]}")
+                outputs = [output_h5_paths[m][i] for m in group]
+                _write_patch_batches(slide_batches, funs, dtypes, patch_h5_paths[i], outputs, is_test_run)
+                logger.info(f"Patch-level features saved to {', '.join(outputs)}")
+        finally:
+            per_slide.close()  # shuts this group's worker pool down
+        # Free this group's models before the next group's are loaded.
+        del funs, per_slide, preprocessing
         for m in group:
             loaded.pop(m, None)
         _free_gpu_memory(use_gpu)

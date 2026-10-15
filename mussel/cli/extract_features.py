@@ -393,22 +393,19 @@ def _main_batch(cfg: ExtractFeaturesConfig):
         )
 
         # Save as PT format for consistency
-        for output_h5, output_pt in zip(output_h5_paths, output_pt_paths):
-            if not _has_output(output_h5):
-                continue
-            with h5py.File(output_h5, "r") as f:
-                features = _numpy_to_torch(f["features"][:])
-                torch.save(features, output_pt)
+        _write_pts(output_h5_paths, output_pt_paths)
 
     logger.info(f"Batch processing complete. Output saved to {output_dir}")
 
 
-def _has_output(h5_path: str) -> bool:
-    """False (with a warning) for a slide whose extraction wrote nothing, e.g. no tiles."""
-    if os.path.isfile(h5_path):
-        return True
-    logger.warning(f"No features written to {h5_path} (slide without tiles?); skipping its .pt")
-    return False
+def _write_pts(h5_paths, pt_paths) -> None:
+    """Save each features .h5 as a .pt; a slide whose extraction wrote nothing (e.g. no tiles) is skipped."""
+    for h5_path, pt_path in zip(h5_paths, pt_paths):
+        if not os.path.isfile(h5_path):
+            logger.warning(f"No features written to {h5_path} (slide without tiles?); skipping its .pt")
+            continue
+        with h5py.File(h5_path, "r") as f:
+            torch.save(_numpy_to_torch(f["features"][:]), pt_path)
 
 
 def _main_batch_multi(cfg: ExtractFeaturesConfig, output_dir: Path, slide_ids: List[str]):
@@ -445,11 +442,7 @@ def _main_batch_multi(cfg: ExtractFeaturesConfig, output_dir: Path, slide_ids: L
         tile_size_check=cfg.tile_size_check,
     )
     for m in model_types:
-        for sid, h5 in zip(slide_ids, out_h5[m]):
-            if not _has_output(h5):
-                continue
-            with h5py.File(h5, "r") as f:
-                torch.save(_numpy_to_torch(f["features"][:]), output_dir / m.code / f"{sid}.{cfg.output_pt_suffix}")
+        _write_pts(out_h5[m], [output_dir / m.code / f"{sid}.{cfg.output_pt_suffix}" for sid in slide_ids])
     logger.info(f"Batch processing complete for {len(model_types)} models. Output saved to {output_dir}")
 
 
