@@ -1327,8 +1327,7 @@ class _OneSlideOpenConcat(ConcatDataset):
                 prev.wsi = None
             self.datasets[di].worker_init()
             self._open = di
-        sample_idx = idx - (self.cumulative_sizes[di - 1] if di > 0 else 0)
-        return self.datasets[di][sample_idx]
+        return super().__getitem__(idx)
 
 
 def extract_patch_features_batch(
@@ -1430,8 +1429,7 @@ def extract_patch_features_batch(
     preprocessing = model.get_preprocessing_fun()
     model_fun = model.get_model_fun()
 
-    use_shared_loader = shared_loader and num_workers > 0 and num_slides > 1
-    if use_shared_loader:
+    if shared_loader and num_workers > 0:
         datasets = [
             WholeSlideImageH5Dataset(
                 h5_path=patch_h5_path,
