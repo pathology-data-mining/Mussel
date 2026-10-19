@@ -70,7 +70,7 @@ _PATCH_ENCODER_DIM: dict[ModelType, int] = {
     ModelType.PHIKON_V2: 1024,  # DINOv2 ViT-L/14
     ModelType.HOPTIMUS1: 1536,
     ModelType.H0MINI: 768,
-    ModelType.MIDNIGHT12K: 1536,  # DINOv2 ViT-g/14
+    ModelType.MIDNIGHT12K: 3072,  # DINOv2 ViT-g/14: CLS + mean patch token (2 × 1536)
     ModelType.GPFM: 1024,  # ViT-L/14 (embed_dim=1024, num_classes=0)
     ModelType.HIBOU_L: 1024,
     # Round 2: new patch encoders

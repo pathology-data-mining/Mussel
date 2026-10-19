@@ -223,6 +223,27 @@ class TestTimmBasedPreprocessing:
         assert callable(prep)
         assert isinstance(prep, Compose)
 
+    def test_midnight12k_matches_model_card(self):
+        """224 px, mean/std 0.5, and CLS + mean patch token (kaiko-ai/midnight card)."""
+        from PIL import Image
+        from torchvision.transforms import Normalize
+
+        m = _make_model(Midnight12kModel, MagicMock())
+        prep = m.get_preprocessing_fun()
+        (norm,) = [t for t in prep.transforms if isinstance(t, Normalize)]
+        assert tuple(norm.mean) == (0.5, 0.5, 0.5) and tuple(norm.std) == (0.5, 0.5, 0.5)
+        x = prep(Image.new("RGB", (300, 260), (255, 0, 0)))  # resize shorter edge, center-crop
+        assert x.shape == (3, 224, 224)
+        assert torch.allclose(x[0], torch.ones(224, 224)) and torch.allclose(x[1], -torch.ones(224, 224))
+
+        tokens = torch.randn(2, 1 + 16 * 16, 1536)
+        m.obj = MagicMock(return_value=MagicMock(last_hidden_state=tokens))
+        out = m._forward(torch.zeros(2, 3, 224, 224))
+        assert out.shape == (2, 3072)
+        assert torch.equal(out[:, :1536], tokens[:, 0])
+        assert torch.allclose(out[:, 1536:], tokens[:, 1:].mean(1))
+        assert m.get_model_fun()(torch.zeros(2, 3, 224, 224)).shape == (2, 3072)
+
     def test_gpfm_preprocessing(self):
         self._assert_prep_callable(GPFMModel, module_path="mussel.models.gpfm")
 
@@ -339,11 +360,10 @@ def test_standard_patch_encoder_model_fun(cls_name, embed_dim):
     [
         ("PhikonModel", 768),
         ("PhikonV2Model", 1024),
-        ("Midnight12kModel", 1536),
     ],
 )
 def test_transformers_patch_encoder_model_fun(cls_name, embed_dim):
-    """PhikonModel / Midnight12kModel return last_hidden_state[:, 0] (CLS token)."""
+    """PhikonModel returns last_hidden_state[:, 0] (CLS token); Midnight: see test_midnight12k_matches_model_card."""
     cls = _MODEL_CLASSES[cls_name]
     batch_size = 2
     n_tokens = 197  # 14x14 patches + CLS
