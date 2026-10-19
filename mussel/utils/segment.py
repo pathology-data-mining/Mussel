@@ -404,7 +404,9 @@ def grid_bounds(geometry: shapely.Geometry, step_size: int, patch_size: int,
     on another GPU) adds or removes edge tiles instead of shifting every tile.
     Every lattice tile overlapping the bounding box is a candidate, including
     the last row and column, except tiles that would cross the slide's border
-    (``slide_size``: level-0 width, height).
+    (``slide_size``: level-0 width, height). The final partial tile at the
+    slide's far edges is therefore not tiled; bounded-neural selection
+    (``_axis_origins``) instead adds an off-lattice tile flush with each far edge.
     """
     minx, miny, maxx, maxy = geometry.bounds
     width, height = slide_size if slide_size is not None else (None, None)
@@ -1341,6 +1343,9 @@ def segment_tissue_multi(
                         "step_size": native_step_size,
                         "patch_size_to_resize_to_for_desired_mpp": patch_size,
                         "patch_level": 0,
+                        # Slide-origin lattice plus, per axis, a tile flush with the
+                        # far edge when the lattice stops short of it (_axis_origins).
+                        "grid_anchor": "slide_origin+far_edge",
                         "mpp": spec_mpp,
                         "native_mpp": slide_mpp,
                         "mpp_is_fallback": mpp_is_fallback,

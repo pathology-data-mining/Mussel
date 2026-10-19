@@ -1395,6 +1395,7 @@ class TestBoundedNeuralSelection:
         assert len(coords) == 3
         assert len(grid) == 3
         assert attrs["selection_mode"] == "bounded_neural"
+        assert attrs["grid_anchor"] == "slide_origin+far_edge"
         assert attrs["candidate_tiles_evaluated"] <= 8
         segmenter.segment_patches.assert_called()
 
