@@ -17,7 +17,10 @@ class ClassEmbeddingConfig:
     classes (List[str]): List of class names for which to compute embeddings.
     output_pt_path (str): Path to save the computed class embeddings in PyTorch format.
     model_path (Optional[str]): Path to the model weights, if applicable.
-    model_type (ModelType): Type of model to use for computing embeddings.
+    model_type (ModelType): Type of model to use for computing embeddings: CLIP
+        (open_clip text tower) or KEEP (BERT text tower; L2-normalised embeddings
+        comparable with KEEP tile features, or with features mapped into KEEP's
+        space by an adapter, see annotate's adapter_path).
     """
 
     classes: List[str] = MISSING
@@ -48,6 +51,12 @@ cs.store(name="class_embedding_config", node=ClassEmbeddingConfig)
 @hydra.main(config_path=".", config_name="class_embedding_config", version_base=None)
 def main(cfg: ClassEmbeddingConfig):
     """Generate class embeddings for zero-shot tissue classification."""
+    if cfg.model_type == ModelType.KEEP:
+        from mussel.models.keep import KeepTextEncoder
+
+        class_emb = KeepTextEncoder(cfg.model_path).encode(list(cfg.classes))
+        torch.save(class_emb, cfg.output_pt_path)
+        return
     if cfg.model_path is None:
         cfg.model_path = cfg.model_type.path
     model, _, _ = open_clip.create_model_and_transforms(cfg.model_path)

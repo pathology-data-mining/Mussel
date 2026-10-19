@@ -45,3 +45,36 @@ def test_create_class_embeddings(tmp_path, monkeypatch):
     assert output_pt_path.exists()
     class_emb = torch.load(output_pt_path, weights_only=True)
     assert class_emb.shape == (len(annotation_classes), 4)
+
+
+def test_create_class_embeddings_keep(tmp_path, monkeypatch):
+    """model_type=KEEP encodes the classes with KEEP's text tower."""
+    import mussel.models.keep
+    from mussel.models.model_factory import ModelType
+
+    seen = {}
+
+    class FakeKeepText:
+        def __init__(self, model_path):
+            seen["model_path"] = model_path
+
+        def encode(self, texts):
+            seen["texts"] = texts
+            return torch.nn.functional.normalize(
+                torch.arange(len(texts) * 4, dtype=torch.float32).view(-1, 4) + 1,
+                dim=-1,
+            )
+
+    monkeypatch.setattr(mussel.models.keep, "KeepTextEncoder", FakeKeepText)
+    out = tmp_path / "keep.pt"
+    mussel.cli.create_class_embeddings.main(
+        ClassEmbeddingConfig(
+            classes=["tumor", "stroma", "fat"],
+            output_pt_path=str(out),
+            model_type=ModelType.KEEP,
+            model_path="/models/keep",
+        )
+    )
+    emb = torch.load(out, weights_only=True)
+    assert seen == {"model_path": "/models/keep", "texts": ["tumor", "stroma", "fat"]}
+    assert emb.shape == (3, 4)
