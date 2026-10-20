@@ -65,6 +65,25 @@ Use `output_h5_paths=[a.patch.h5,b.patch.h5]` instead of `output_dir` for explic
 per-slide destinations. Batch mode writes patch H5 outputs only; thumbnail, mask,
 grid-mask, and tile PNG outputs are supported only in single-slide mode.
 
+#### Tile grid
+
+Tile origins (the level-0 top-left corners stored in the patch HDF5's `coords`) lie on a
+grid anchored at the slide's origin: multiples of `step_size` native pixels from (0, 0).
+Every grid tile that touches the tissue is a candidate, and no tile extends past the
+slide's border, so the final partial tile at the slide's right and bottom edges is not
+tiled. Because the grid doesn't depend on where the tissue outline starts, a slightly
+different mask (for example, neural segmentation on another GPU) only adds or removes
+tiles at the tissue's edge; the other tiles keep their coordinates.
+
+`selection_mode=bounded_neural` uses the same grid, plus a tile flush with each far edge
+of the slide. The `coords` dataset's `grid_anchor` attribute records which applies:
+`slide_origin` (full mask) or `slide_origin+far_edge` (bounded neural).
+
+Patch HDF5s without a `grid_anchor` attribute come from earlier Mussel versions, which
+anchored the grid at the corner of the tissue's bounding box and skipped its last row
+and column. Their tile coordinates differ from current ones, so don't mix the two in one
+dataset.
+
 #### Supported slide formats
 
 Mussel uses [tiffslide](https://github.com/Bayer-Group/tiffslide)

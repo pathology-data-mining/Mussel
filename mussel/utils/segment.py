@@ -381,37 +381,49 @@ def contours_to_polygon(foreground_contours, hole_contours=None) -> MultiPolygon
     return polygon
 
 
-def grid_bounds(geometry: shapely.Geometry, step_size: int, patch_size: int):
+def _lattice_origins(lo: float, hi: float, step_size: int, patch_size: int,
+                     limit: Optional[int] = None) -> range:
+    """Lattice origins (multiples of ``step_size`` from 0) whose tile overlaps [lo, hi).
+
+    With ``limit`` (the slide's size along this axis), tiles must end inside the slide.
     """
-    Create grid encompassing geometry
+    first = max(0, (math.floor((lo - patch_size) / step_size) + 1) * step_size)
+    stop = math.ceil(hi)
+    if limit is not None:
+        stop = min(stop, int(limit) - patch_size + 1)
+    return range(int(first), int(stop), int(step_size))
+
+
+def grid_bounds(geometry: shapely.Geometry, step_size: int, patch_size: int,
+                slide_size: Optional[tuple] = None):
+    """Candidate tiles covering ``geometry``'s bounding box.
+
+    Tile origins lie on a lattice anchored at the slide origin (multiples of
+    ``step_size`` from (0, 0)), so they don't depend on where the tissue outline
+    starts: a pixel more or less of tissue at an edge (e.g. neural segmentation
+    on another GPU) adds or removes edge tiles instead of shifting every tile.
+    Every lattice tile overlapping the bounding box is a candidate, including
+    the last row and column, except tiles that would cross the slide's border
+    (``slide_size``: level-0 width, height). The final partial tile at the
+    slide's far edges is therefore not tiled; bounded-neural selection
+    (``_axis_origins``) instead adds an off-lattice tile flush with each far edge.
     """
     minx, miny, maxx, maxy = geometry.bounds
-    grid_x_coords = np.arange(minx, maxx, step=step_size)
-    grid_y_coords = np.arange(miny, maxy, step=step_size)
-    grid = []
-    for i in range(len(grid_x_coords) - 1):
-        for j in range(len(grid_y_coords) - 1):
-            poly_ij = Polygon(
-                [
-                    [grid_x_coords[i], grid_y_coords[j]],
-                    [grid_x_coords[i], grid_y_coords[j] + patch_size],
-                    [grid_x_coords[i] + patch_size, grid_y_coords[j] + patch_size],
-                    [grid_x_coords[i] + patch_size, grid_y_coords[j]],
-                ]
-            )
-            grid.append(poly_ij)
-    return grid
+    width, height = slide_size if slide_size is not None else (None, None)
+    xs = _lattice_origins(minx, maxx, step_size, patch_size, width)
+    ys = _lattice_origins(miny, maxy, step_size, patch_size, height)
+    return [
+        Polygon([[x, y], [x, y + patch_size], [x + patch_size, y + patch_size], [x + patch_size, y]])
+        for x in xs
+        for y in ys
+    ]
 
 
-def partition(geometry: shapely.Geometry, step_size: int, patch_size: int):
-    """
-    Partition geometry into a grid
-    """
+def partition(geometry: shapely.Geometry, step_size: int, patch_size: int,
+              slide_size: Optional[tuple] = None):
+    """Tiles of the slide-origin lattice (see :func:`grid_bounds`) that intersect ``geometry``."""
     prepared_geom = prep(geometry)
-    grid = list(
-        filter(prepared_geom.intersects, grid_bounds(geometry, step_size, patch_size))
-    )
-    return grid
+    return [g for g in grid_bounds(geometry, step_size, patch_size, slide_size) if prepared_geom.intersects(g)]
 
 
 def scale_contour_dim(contours, scale):
@@ -1331,6 +1343,9 @@ def segment_tissue_multi(
                         "step_size": native_step_size,
                         "patch_size_to_resize_to_for_desired_mpp": patch_size,
                         "patch_level": 0,
+                        # Slide-origin lattice plus, per axis, a tile flush with the
+                        # far edge when the lattice stops short of it (_axis_origins).
+                        "grid_anchor": "slide_origin+far_edge",
                         "mpp": spec_mpp,
                         "native_mpp": slide_mpp,
                         "mpp_is_fallback": mpp_is_fallback,
@@ -1537,7 +1552,7 @@ def segment_tissue_multi(
             logger.info(f"Total number of contours: {n_contours}")
 
             polygon = contours_to_polygon(contours_tissue, holes_tissue)
-            grid = partition(polygon, native_step_size, native_patch_size)
+            grid = partition(polygon, native_step_size, native_patch_size, wsi.level_dimensions[0])
             coords = [g.exterior.coords[0] for g in grid]
             logger.info(f"Total number of patches: {len(coords)}")
 
@@ -1595,6 +1610,7 @@ def segment_tissue_multi(
                 "step_size": native_step_size,
                 "patch_size_to_resize_to_for_desired_mpp": patch_size,
                 "patch_level": 0,
+                "grid_anchor": "slide_origin",
                 "mpp": spec_mpp,
                 "native_mpp": slide_mpp,
                 "mpp_is_fallback": mpp_is_fallback,
