@@ -156,6 +156,29 @@ def write_top_k(
     return path
 
 
+def check_inputs(classes, class_emb, slide_emb, class_embedding_pt_path) -> None:
+    """Fail clearly instead of mislabelling scores or failing deep inside cosine_similarity."""
+    if len(classes) != len(class_emb):
+        raise ValueError(
+            f"{len(classes)} classes given but {class_embedding_pt_path} has {len(class_emb)} embeddings"
+        )
+    sidecar = f"{class_embedding_pt_path}.classes.json"  # written by create_class_embeddings
+    if os.path.exists(sidecar):
+        with open(sidecar) as f:
+            expected = json.load(f)["classes"]
+        if list(classes) != expected:
+            raise ValueError(
+                f"classes {list(classes)} do not match {class_embedding_pt_path}, which was made "
+                f"for {expected} (same names, same order)"
+            )
+    if slide_emb.shape[-1] != class_emb.shape[-1]:
+        raise ValueError(
+            f"features are {slide_emb.shape[-1]}-dim but the class embeddings are "
+            f"{class_emb.shape[-1]}-dim: use features from the class embeddings' model, or pass "
+            "adapter_path to map them into its space"
+        )
+
+
 desc_doc = """== ${hydra.help.app_name} ==
 This script performs zero-shot classification on specified classes.
 """
@@ -186,6 +209,7 @@ def main(cfg: AnnotateConfig):
         from mussel.models.feature_adapter import FeatureAdapter
 
         slide_emb = FeatureAdapter.load(cfg.adapter_path).apply(slide_emb)
+    check_inputs(list(cfg.classes), class_emb, slide_emb, cfg.class_embedding_pt_path)
 
     # zero-shot classification
     cos_sim = torch.nn.functional.cosine_similarity(

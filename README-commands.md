@@ -10,8 +10,8 @@ slides, and generating feature embeddings with pathology foundation models.
 * `tessellate` - tiling and foreground detection of whole-slide images
 * `tessellate_extract_features` - combined tiling + feature extraction pipeline; supports batch processing from a directory
 * `extract_features` - extract features from whole slide images (WSI) using a foundation model.
-* `create_class_embeddings` - generate tissue-type embeddings for classifying tiles
-* `annotate` - annotate tiles with tissue-types
+* `create_class_embeddings` - text embeddings for tissue types or free-text prompts (QuiltNet or KEEP)
+* `annotate` - score tiles against those embeddings: zero-shot tissue types, and text-to-tile search with `top_k`
 * `cache_tiles` - save tile information in an efficient form for training
 * `export_tiles` - export tiles as individual .png files using an HDF5 tile-coordinate manifest.
 * `filter_features` - filter features using a classifier model
@@ -418,18 +418,42 @@ also available on this command; see the [`tessellate` section](#tessellate) abov
 
 ### `annotate`
 
-You can generate embeddings for different tissue types, using the QuiltNet OpenClip model, and
-use these to annotate a set of tiles for which you have OpenClip embeddings. 
+`annotate` scores every tile of a slide against a set of class embeddings (cosine similarity
+between tile features and text embeddings) and writes a CSV with one column per class. The
+class embeddings come from [`create_class_embeddings`](#create_class_embeddings), and the tile
+features must be in the same model's embedding space:
 
-The `tests/testdata/` folder includes some embeddings generated for the following tissue
-types,
+| Text model (`create_class_embeddings model_type=`) | Tile features (`features_pt_path`) |
+|---|---|
+| `CLIP` (QuiltNet, 512-dim) | `extract_features model_type=CLIP` |
+| `KEEP` (768-dim) | `extract_features model_type=KEEP`, or another encoder's features mapped into KEEP's space with `adapter_path` |
+
+Options:
+
+| Parameter | Default | Description |
+|---|---|---|
+| `features_pt_path` | required | Tile features (`.pt`, one row per tile, in the tile file's order). |
+| `class_embedding_pt_path` | required | Class embeddings from `create_class_embeddings`. |
+| `classes` | required | The class names, in the order given to `create_class_embeddings`. `annotate` checks them against `<class_embedding_pt_path>.classes.json`, which `create_class_embeddings` writes. |
+| `output_csv_path` | required | Per-tile scores, one column per class. |
+| `adapter_path` | `null` | Feature adapter checkpoint applied to the features first (see [Text-to-tile search on stored features](#text-to-tile-search-on-stored-features)). |
+| `top_k` | `null` | Also write the `k` best tiles per class to `<output_csv_path stem>.top<k>.csv`: class, rank, tile index, score, and the tile's level-0 `x`, `y` when `patch_path` is set. |
+| `interrogate` | `false` | Write an HTML report with tile images. With `top_k`, it shows each class's `k` best tiles, best first, with their scores. Otherwise it shows every tile under its best-scoring class. |
+| `slide_path`, `patch_path`, `interrogation_report_path` | `null` | The slide, its tile file (the one the features were extracted from) and the report path, for `interrogate` and for coordinates in the top-k CSV. |
+
+The examples below use QuiltNet embeddings for the test slide.
+
+`tests/testdata/class_embedding.pt` holds QuiltNet embeddings for these tissue types, in this
+order:
 
 * "carcinoma in situ"
-* "invasive carcinoma with lymphocytes"
-* "tumor infiltrating lymphocytes"
-* "lymphocytes"
-* "carcinoma in situ with lymphocytes"
-* "tumor-associated stroma with lymphocytes"
+* "invasive carcinoma"
+* "collagenous stroma"
+* "adipose"
+* "vessel"
+* "necrosis"
+* "invasive adenocarcinoma"
+* "sarcoma"
 
 You can apply these to the sample slide with the command
 
@@ -443,8 +467,16 @@ annotate \
 
 ### `create_class_embeddings`
 
-You can also define your own classes with OpenClip! Any natural language works, and no training
-is required.  For example,
+Define your own classes or search prompts in natural language; no training is required.
+
+| Parameter | Default | Description |
+|---|---|---|
+| `classes` | required | The texts to embed, one row each, in this order. |
+| `output_pt_path` | required | Class embeddings (`.pt`). A `<output_pt_path>.classes.json` with the class list and model is written beside it. |
+| `model_type` | `CLIP` | `CLIP`: QuiltNet's text tower (open_clip). `KEEP`: KEEP's BERT text tower, L2-normalised 768-dim embeddings. Other models are rejected. |
+| `model_path` | model default | `CLIP`: an open_clip model reference. `KEEP`: `hf-hub:Astaxanthin/KEEP` (default) or a local directory with `model.safetensors`, `config.json` and `vocab.txt`. |
+
+For example, with QuiltNet:
 
 ```bash
 create_class_embeddings \
@@ -459,6 +491,36 @@ annotate \
 ```
 
 <img src="docs/example-interrog.png" width="600px" />
+
+#### Text-to-tile search on stored features
+
+KEEP's text tower lets free-text prompts score tiles. Tiles that were only ever featurized
+with an encoder that has no text tower (e.g. H-optimus-1) can still be searched: a *feature
+adapter* maps their features into KEEP's space first. An adapter is a small network (ridge or
+2-layer MLP) trained to predict KEEP's tile embeddings from the other encoder's features of
+the same tiles. `mussel/models/feature_adapter.py` documents its checkpoint format.
+
+```bash
+# 1. Prompts -> KEEP text embeddings
+create_class_embeddings model_type=KEEP \
+    classes='["colorectal adenocarcinoma epithelium","tumor-infiltrating lymphocytes","necrosis","smooth muscle"]' \
+    output_pt_path=prompts.keep.pt
+
+# 2. Stored H-optimus-1 features -> KEEP space (adapter) -> best 12 tiles per prompt, with a report
+annotate features_pt_path=SLIDE.features.pt class_embedding_pt_path=prompts.keep.pt \
+    classes='["colorectal adenocarcinoma epithelium","tumor-infiltrating lymphocytes","necrosis","smooth muscle"]' \
+    adapter_path=hoptimus1_to_keep_mlp.pt top_k=12 output_csv_path=SLIDE.scores.csv \
+    interrogate=true slide_path=SLIDE.svs patch_path=SLIDE.patch.h5 interrogation_report_path=SLIDE.html
+```
+
+How well this works, measured for an H-optimus-1 → KEEP adapter trained on MSK tiles
+(224 px at 0.5 µm/px):
+
+- **In domain it matches or beats real KEEP.** On CRC-VAL-HE-7K zero-shot classification (9 tissue types, balanced accuracy): adapter 0.91, real KEEP 0.87. On slide-level OncoTree zero-shot: 0.47 vs 0.45.
+- **It doesn't transfer to other domains.** On BACH (breast microscopy): 0.41 vs KEEP's 0.80. Use real KEEP features there.
+- **Prompts written for H&E mislead on IHC.** For example, "mucin" retrieves DAB-stained (brown) epithelium on an IHC slide. Filter to H&E slides first.
+- **Top-k always returns tiles,** even for tissue the slide doesn't contain. Compare a prompt's scores with other prompts' scores, or set a threshold, before treating a hit as present.
+- **Prompt wording matters.** The accuracies above average several templates and synonyms per class. A single bare prompt scores lower.
 
 ### `cache_tiles`
 

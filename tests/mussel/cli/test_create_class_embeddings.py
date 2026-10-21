@@ -78,3 +78,34 @@ def test_create_class_embeddings_keep(tmp_path, monkeypatch):
     emb = torch.load(out, weights_only=True)
     assert seen == {"model_path": "/models/keep", "texts": ["tumor", "stroma", "fat"]}
     assert emb.shape == (3, 4)
+
+
+def test_create_class_embeddings_writes_the_class_list_beside_the_embeddings(tmp_path, monkeypatch):
+    import json
+
+    import mussel.models.keep
+    from mussel.models.model_factory import ModelType
+
+    class FakeKeepText:
+        def __init__(self, model_path):
+            pass
+
+        def encode(self, texts):
+            return torch.ones(len(texts), 4)
+
+    monkeypatch.setattr(mussel.models.keep, "KeepTextEncoder", FakeKeepText)
+    out = tmp_path / "keep.pt"
+    mussel.cli.create_class_embeddings.main(ClassEmbeddingConfig(
+        classes=["tumor", "stroma"], output_pt_path=str(out), model_type=ModelType.KEEP))
+    assert json.loads((tmp_path / "keep.pt.classes.json").read_text()) == {
+        "classes": ["tumor", "stroma"], "model_type": "KEEP"}
+
+
+def test_create_class_embeddings_rejects_models_without_a_supported_text_tower(tmp_path):
+    import pytest
+
+    from mussel.models.model_factory import ModelType
+
+    with pytest.raises(ValueError, match="CLIP or KEEP"):
+        mussel.cli.create_class_embeddings.main(ClassEmbeddingConfig(
+            classes=["tumor"], output_pt_path=str(tmp_path / "x.pt"), model_type=ModelType.MUSK))

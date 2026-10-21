@@ -1,3 +1,4 @@
+import json
 from dataclasses import dataclass
 from typing import List, Optional
 
@@ -51,11 +52,16 @@ cs.store(name="class_embedding_config", node=ClassEmbeddingConfig)
 @hydra.main(config_path=".", config_name="class_embedding_config", version_base=None)
 def main(cfg: ClassEmbeddingConfig):
     """Generate class embeddings for zero-shot tissue classification."""
+    if cfg.model_type not in (ModelType.CLIP, ModelType.KEEP):
+        raise ValueError(
+            f"create_class_embeddings supports model_type CLIP or KEEP, not {cfg.model_type.name}"
+        )
     if cfg.model_type == ModelType.KEEP:
         from mussel.models.keep import KeepTextEncoder
 
         class_emb = KeepTextEncoder(cfg.model_path).encode(list(cfg.classes))
         torch.save(class_emb, cfg.output_pt_path)
+        _write_classes_sidecar(cfg)
         return
     if cfg.model_path is None:
         cfg.model_path = cfg.model_type.path
@@ -72,6 +78,18 @@ def main(cfg: ClassEmbeddingConfig):
     embs = [x[1] for x in embs]
     class_emb = torch.stack(embs).squeeze(1)
     torch.save(class_emb, cfg.output_pt_path)
+    _write_classes_sidecar(cfg)
+
+
+def classes_sidecar_path(class_embedding_pt_path) -> str:
+    """``<embeddings>.classes.json``: the class names, in row order, and the text model."""
+    return f"{class_embedding_pt_path}.classes.json"
+
+
+def _write_classes_sidecar(cfg: ClassEmbeddingConfig) -> None:
+    # annotate checks its classes list against this, so a reordered list can't mislabel scores.
+    with open(classes_sidecar_path(cfg.output_pt_path), "w") as f:
+        json.dump({"classes": list(cfg.classes), "model_type": cfg.model_type.name}, f, indent=1)
 
 
 if __name__ == "__main__":

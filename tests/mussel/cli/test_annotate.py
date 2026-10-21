@@ -115,3 +115,37 @@ def test_annotate_adapter_and_top_k(tmp_path, test_data_path):
     assert html.count("<figure") == 3 * len(classes) and html.count("<h2>") == len(
         classes
     )
+
+
+def _annotate_cfg(tmp_path, test_data_path, classes, emb_path):
+    return AnnotateConfig(features_pt_path=os.path.join(test_data_path, "948176.features.pt"),
+                          class_embedding_pt_path=str(emb_path), classes=classes,
+                          output_csv_path=str(tmp_path / "s.csv"))
+
+
+def test_annotate_rejects_classes_that_do_not_match_the_embeddings(tmp_path, test_data_path):
+    import json
+
+    import pytest
+    import torch
+
+    emb = torch.load(os.path.join(test_data_path, "class_embedding.pt"), weights_only=True)
+    names = [f"c{i}" for i in range(len(emb))]
+    p = tmp_path / "e.pt"
+    torch.save(emb, p)
+    (tmp_path / "e.pt.classes.json").write_text(json.dumps({"classes": names, "model_type": "CLIP"}))
+    with pytest.raises(ValueError, match="same order"):
+        mussel.cli.annotate.main(_annotate_cfg(tmp_path, test_data_path, names[::-1], p))
+    with pytest.raises(ValueError, match="classes given"):
+        mussel.cli.annotate.main(_annotate_cfg(tmp_path, test_data_path, names[:-1], p))
+    mussel.cli.annotate.main(_annotate_cfg(tmp_path, test_data_path, names, p))  # matching list works
+
+
+def test_annotate_rejects_features_of_another_width(tmp_path, test_data_path):
+    import pytest
+    import torch
+
+    p = tmp_path / "keep.pt"
+    torch.save(torch.nn.functional.normalize(torch.randn(3, 768), dim=-1), p)  # e.g. KEEP prompts
+    with pytest.raises(ValueError, match="adapter_path"):
+        mussel.cli.annotate.main(_annotate_cfg(tmp_path, test_data_path, ["a", "b", "c"], p))
