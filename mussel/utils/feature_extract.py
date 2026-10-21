@@ -215,12 +215,34 @@ class TileCoordProcessor(DatasetProcessor):
             if is_test_run and count > 2:
                 break
 
+            # Skip empty batches (all tiles failed to load)
+            if batch.numel() == 0:
+                logger.warning(
+                    f"Skipping empty batch {count} (all tiles failed to load)"
+                )
+                continue
+
             features = model_fun(batch)
             all_features.append(features.numpy())
             all_labels.append(labels)
 
-        features = np.concatenate(all_features, axis=0)
-        labels = np.concatenate(all_labels, axis=0)
+        # Tiles that failed to load (WholeSlideImageTileCoordDataset returns None for
+        # them) are dropped by collate_features: say so, since the result then has
+        # fewer rows than tiles.
+        n_rows = sum(len(f) for f in all_features)
+        if not is_test_run and n_rows < len(dataset):
+            logger.warning(
+                f"{dataset.slide_path}: {len(dataset) - n_rows} of {len(dataset)} tiles "
+                f"failed to load and were skipped; the features have {n_rows} rows"
+            )
+
+        empty_dtype = feature_dtype if feature_dtype is not None else np.float32
+        features = (
+            np.concatenate(all_features, axis=0)
+            if all_features
+            else np.array([], dtype=empty_dtype)
+        )
+        labels = np.concatenate(all_labels, axis=0) if all_labels else np.array([])
 
         if feature_dtype is not None:
             features = features.astype(feature_dtype)
@@ -293,6 +315,16 @@ class H5DatasetProcessor(DatasetProcessor):
             asset_dict = {"features": features, "coords": coords}
             save_hdf5(output_h5_path, asset_dict, attr_h5_path=patch_h5_path, mode=mode)
             mode = "a"
+
+        # Tiles that failed to load (WholeSlideImageH5Dataset returns None for them)
+        # are dropped by collate_features: say so, since the output then has fewer
+        # rows than the patch H5.
+        n_rows = sum(len(f) for f in all_features)
+        if not is_test_run and n_rows < len(dataset):
+            logger.warning(
+                f"{output_h5_path}: {len(dataset) - n_rows} of {len(dataset)} tiles failed to load "
+                f"and were skipped; the features have {n_rows} rows"
+            )
 
         # Concatenate all results
         empty_dtype = feature_dtype if feature_dtype is not None else np.float32
