@@ -518,6 +518,7 @@ How well this works, measured for an H-optimus-1 → KEEP adapter trained on MSK
 
 - **In domain it matches or beats real KEEP.** On CRC-VAL-HE-7K zero-shot classification (9 tissue types, balanced accuracy): adapter 0.91, real KEEP 0.87. On slide-level OncoTree zero-shot: 0.47 vs 0.45.
 - **It doesn't transfer to other domains.** On BACH (breast microscopy): 0.41 vs KEEP's 0.80. Use real KEEP features there.
+- **Its tile rankings only partly agree with real KEEP's.** On 10 reef v2 slides with 9 tissue prompts, the MLP adapter's 12 best tiles per prompt overlap real KEEP's by 29% on average. The rank correlation of all tile scores is 0.72, and both pick the same best prompt for 75% of tiles; the ridge adapter agrees less (23%, 0.65). Treat adapter search as an approximation of KEEP search, and extract real KEEP features where the exact ranking matters.
 - **Prompts written for H&E mislead on IHC.** For example, "mucin" retrieves DAB-stained (brown) epithelium on an IHC slide. Filter to H&E slides first.
 - **Top-k always returns tiles,** even for tissue the slide doesn't contain. Compare a prompt's scores with other prompts' scores, or set a threshold, before treating a hit as present.
 - **Prompt wording matters.** The accuracies above average several templates and synonyms per class. A single bare prompt scores lower.

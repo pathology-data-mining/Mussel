@@ -18,7 +18,14 @@ def test_create_class_embeddings(tmp_path, monkeypatch):
     output_pt_path = tmp_path / "test.pt"
 
     class FakeModel:
+        training = True  # open_clip returns models in training mode (dropout active)
+
+        def train(self, mode=True):
+            self.training = mode
+            return self
+
         def encode_text(self, text):
+            assert not self.training, "class embeddings must be computed in eval mode"
             return torch.arange(4, dtype=torch.float32).unsqueeze(0) + text.float()
 
     def fake_create_model_and_transforms(model_path):

@@ -66,6 +66,9 @@ def main(cfg: ClassEmbeddingConfig):
     if cfg.model_path is None:
         cfg.model_path = cfg.model_type.path
     model, _, _ = open_clip.create_model_and_transforms(cfg.model_path)
+    # open_clip returns the model in training mode: without this, dropout makes the same
+    # class text embed differently on every run (cosine ~0.987 for QuiltNet).
+    model.train(False)
     tokenizer = open_clip.get_tokenizer(cfg.model_path)
 
     embs = []
