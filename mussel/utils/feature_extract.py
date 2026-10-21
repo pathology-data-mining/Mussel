@@ -1458,13 +1458,15 @@ def extract_patch_features_batch(
 _SLIDE_ENCODERS = frozenset(SLIDE_ENCODER_COMPATIBILITY) | {ModelType.ABMIL_SLIDE}
 
 
-def _preprocessing_key(preprocessing) -> str:
+def _preprocessing_key(preprocessing, model_type) -> str:
     """Key under which models share one decode: equal keys mean identical preprocessing.
 
     A torchvision Compose of standard transforms is keyed by its repr, which
     lists every parameter. Anything else (custom callables, Lambda, whose repr
     is just "Lambda()" whatever it wraps) gets a key of its own, so it is
-    never grouped with another model by mistake.
+    never grouped with another model by mistake. That key is the model's type,
+    not ``id(preprocessing)``: the transform is freed before the next model is
+    loaded, and the next model's transform could reuse its address.
     """
     if preprocessing is None:
         return "default"
@@ -1478,7 +1480,7 @@ def _preprocessing_key(preprocessing) -> str:
         for t in preprocessing.transforms
     ):
         return repr(preprocessing)
-    return f"unique:{id(preprocessing)}"
+    return f"unique:{model_type.name}"
 
 
 def _write_patch_batches(batches, model_funs, feature_dtypes, patch_h5_path, output_h5_paths, is_test_run):
@@ -1639,7 +1641,7 @@ def extract_patch_features_batch_multi(
     for model_type in model_types:
         model = load(model_type)
         preprocessing = model.get_preprocessing_fun()
-        key = _preprocessing_key(preprocessing)
+        key = _preprocessing_key(preprocessing, model_type)
         groups.setdefault(key, []).append(model_type)
         first_key = first_key or key
         if key == first_key:

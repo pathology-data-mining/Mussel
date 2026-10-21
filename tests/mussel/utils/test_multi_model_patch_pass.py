@@ -131,17 +131,44 @@ def test_cli_rejects_single_model_path_with_model_types(fakes, tmp_path):
 
 
 def test_preprocessing_key_groups_only_provably_identical_transforms():
+    a, b = ModelType.HOPTIMUS1, ModelType.OPTIMUS
     key = fe._preprocessing_key
     resize = lambda: transforms.Compose([transforms.Resize(16), transforms.ToTensor()])  # noqa: E731
-    assert key(resize()) == key(resize())  # standard transforms: equal parameters, equal key
-    assert key(_PRE_A) != key(_PRE_B)
+    assert key(resize(), a) == key(resize(), b)  # standard transforms: equal parameters, equal key
+    assert key(_PRE_A, a) != key(_PRE_B, b)
     # Lambda's repr is "Lambda()" whatever it wraps: never grouped.
     la = transforms.Compose([transforms.ToTensor(), transforms.Lambda(lambda x: x)])
     lb = transforms.Compose([transforms.ToTensor(), transforms.Lambda(lambda x: -x)])
-    assert repr(la) == repr(lb) and key(la) != key(lb)
+    assert repr(la) == repr(lb) and key(la, a) != key(lb, b)
     custom = lambda img: img  # noqa: E731
-    assert key(custom) != key(lambda img: img)
-    assert key(None) == key(None) == "default"
+    assert key(custom, a) != key(lambda img: img, b)
+    assert key(None, a) == key(None, b) == "default"
+
+
+def test_freed_custom_transforms_are_not_grouped_when_their_address_is_reused(fakes, tmp_path):
+    """Each model's custom transform is freed before the next model loads, so the
+    next one can land at the same address; the models must still get separate passes."""
+    class Custom:  # not a torchvision Compose: no provable equality
+        def __init__(self, sign):
+            self.sign, self.to_tensor = sign, transforms.Compose([transforms.Resize(16), transforms.ToTensor()])
+
+        def __call__(self, img):
+            x = self.to_tensor(img)
+            return x if self.sign > 0 else 1 - x
+
+    class FreshCustom(fakes.FakeModel):
+        def get_preprocessing_fun(self):  # a new object per call, like timm's create_transform
+            return Custom(1 if self.model_type == ModelType.HOPTIMUS1 else -1)
+
+    outs = _outs(tmp_path, (ModelType.HOPTIMUS1, ModelType.OPTIMUS))
+    # Every object at one address: the worst case of address reuse, made deterministic.
+    with patch.object(fe, "get_model_factory", side_effect=fakes.factories(model_cls=FreshCustom)), \
+            patch.object(fe, "id", create=True, side_effect=lambda o: 1):
+        fe.extract_patch_features_batch_multi(
+            _slides(fakes, tmp_path), [fakes.slide] * 2, outs,
+            batch_size=7, use_gpu=False, num_workers=0, pin_memory=False, tile_size_check="off")
+    a, b = fakes.read(outs[ModelType.HOPTIMUS1][0])[0], fakes.read(outs[ModelType.OPTIMUS][0])[0]
+    assert not np.allclose(a, b)  # OPTIMUS got its own (1 - x) preprocessing
 
 
 def test_models_differing_only_in_a_lambda_get_separate_passes(fakes, tmp_path):
@@ -207,3 +234,25 @@ def test_cli_slide_without_tiles_does_not_abort_the_batch(fakes, tmp_path, multi
     assert (out / "A.features.pt").exists() and (out / "C.features.pt").exists()
     assert not (out / "E.features.pt").exists()
     assert "No features written" in caplog.text
+
+
+@pytest.mark.parametrize("multi", [True, False])
+def test_cli_fails_when_no_slide_writes_features(fakes, tmp_path, multi):
+    paths = [fakes.write_tiles(tmp_path / f"{n}.patch.h5", fakes.coords[:0]) for n in ("E1", "E2")]
+    extra = (dict(model_types=[ModelType.HOPTIMUS1, ModelType.OPTIMUS]) if multi
+             else dict(model_type=ModelType.HOPTIMUS1))
+    cfg = OmegaConf.structured(cli.ExtractFeaturesConfig(
+        patch_h5_paths=paths, slide_paths=[fakes.slide] * 2, slide_ids=["E1", "E2"], output_dir=str(tmp_path / "out"),
+        batch_size=7, use_gpu=False, num_workers=0, tile_size_check="off", **extra))
+    with patch.object(fe, "get_model_factory", side_effect=fakes.factories(_SPEC)):
+        with pytest.raises(RuntimeError, match="no output files"):
+            cli._main_batch(OmegaConf.to_object(cfg))
+
+
+def test_cli_model_types_passes_shared_loader(fakes, tmp_path):
+    cfg = OmegaConf.structured(cli.ExtractFeaturesConfig(
+        patch_h5_paths=[fakes.h5], slide_paths=[fakes.slide], slide_ids=["A"], output_dir=str(tmp_path / "out"),
+        model_types=[ModelType.HOPTIMUS1, ModelType.OPTIMUS], shared_loader=False, use_gpu=False))
+    with patch.object(cli, "extract_patch_features_batch_multi") as run, patch.object(cli, "_write_pts"):
+        cli._main_batch(OmegaConf.to_object(cfg))
+    assert run.call_args.kwargs["shared_loader"] is False
