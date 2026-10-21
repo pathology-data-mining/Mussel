@@ -498,7 +498,9 @@ KEEP's text tower lets free-text prompts score tiles. Tiles that were only ever 
 with an encoder that has no text tower (e.g. H-optimus-1) can still be searched: a *feature
 adapter* maps their features into KEEP's space first. An adapter is a small network (ridge or
 2-layer MLP) trained to predict KEEP's tile embeddings from the other encoder's features of
-the same tiles. `mussel/models/feature_adapter.py` documents its checkpoint format.
+the same tiles. Mussel doesn't ship adapter checkpoints: train one for your encoder and data
+(pairs of its features and KEEP's features for the same tiles), and save it in the checkpoint
+format documented in `mussel/models/feature_adapter.py`.
 
 ```bash
 # 1. Prompts -> KEEP text embeddings
@@ -509,7 +511,7 @@ create_class_embeddings model_type=KEEP \
 # 2. Stored H-optimus-1 features -> KEEP space (adapter) -> best 12 tiles per prompt, with a report
 annotate features_pt_path=SLIDE.features.pt class_embedding_pt_path=prompts.keep.pt \
     classes='["colorectal adenocarcinoma epithelium","tumor-infiltrating lymphocytes","necrosis","smooth muscle"]' \
-    adapter_path=hoptimus1_to_keep_mlp.pt top_k=12 output_csv_path=SLIDE.scores.csv \
+    adapter_path=YOUR_HOPTIMUS1_TO_KEEP_ADAPTER.pt top_k=12 output_csv_path=SLIDE.scores.csv \
     interrogate=true slide_path=SLIDE.svs patch_path=SLIDE.patch.h5 interrogation_report_path=SLIDE.html
 ```
 
