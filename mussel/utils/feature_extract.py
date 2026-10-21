@@ -1430,43 +1430,53 @@ def extract_patch_features_batch(
     model_fun = model.get_model_fun()
 
     if shared_loader and num_workers > 0:
-        datasets = [
-            WholeSlideImageH5Dataset(
-                h5_path=patch_h5_path,
-                slide_path=slide_path,
-                preprocess=preprocessing,
-                use_imagenet_rgb_dist=preprocessing is None,
-                init_wsi_in_worker=True,
+        # A patch H5 that can't be read stops the run at its slide, as with the
+        # per-slide loaders: the slides before it are still processed.
+        datasets, dataset_error = [], None
+        for patch_h5_path, slide_path in zip(patch_h5_paths, slide_paths):
+            try:
+                datasets.append(WholeSlideImageH5Dataset(
+                    h5_path=patch_h5_path,
+                    slide_path=slide_path,
+                    preprocess=preprocessing,
+                    use_imagenet_rgb_dist=preprocessing is None,
+                    init_wsi_in_worker=True,
+                ))
+            except Exception as e:
+                dataset_error = e
+                break
+        if datasets:
+            # is_test_run: process_dataset stops after 3 batches of a slide, so only
+            # those are read.
+            sampler = _PerSlideBatches([len(ds) for ds in datasets], batch_size,
+                                       max_batches_per_slide=3 if is_test_run else None)
+            loader = DataLoader(
+                _OneSlideOpenConcat(datasets),
+                batch_sampler=sampler,
+                num_workers=num_workers,
+                pin_memory=pin_memory,
+                collate_fn=collate_features,
+                prefetch_factor=4,
+                multiprocessing_context="spawn",
             )
-            for patch_h5_path, slide_path in zip(patch_h5_paths, slide_paths)
-        ]
-        # is_test_run: process_dataset stops after 3 batches of a slide, so only
-        # those are read.
-        sampler = _PerSlideBatches([len(ds) for ds in datasets], batch_size,
-                                   max_batches_per_slide=3 if is_test_run else None)
-        loader = DataLoader(
-            _OneSlideOpenConcat(datasets),
-            batch_sampler=sampler,
-            num_workers=num_workers,
-            pin_memory=pin_memory,
-            collate_fn=collate_features,
-            prefetch_factor=4,
-            multiprocessing_context="spawn",
-        )
-        batches = iter(loader)
-        for i, (ds, n_batches) in enumerate(zip(datasets, sampler.per_slide())):
-            logger.info(f"Processing slide {i+1}/{num_slides}: {slide_paths[i]}")
-            process_dataset(
-                ds,
-                itertools.islice(batches, n_batches),
-                model_fun=model_fun,
-                patch_h5_path=patch_h5_paths[i],
-                output_h5_path=output_h5_paths[i],
-                is_test_run=is_test_run,
-                feature_dtype=feature_dtype,
-            )
-            logger.info(f"Patch-level features saved to {output_h5_paths[i]}")
-        del batches, loader
+            batches = iter(loader)
+            for i, (ds, n_batches) in enumerate(zip(datasets, sampler.per_slide())):
+                logger.info(f"Processing slide {i+1}/{num_slides}: {slide_paths[i]}")
+                process_dataset(
+                    ds,
+                    itertools.islice(batches, n_batches),
+                    model_fun=model_fun,
+                    patch_h5_path=patch_h5_paths[i],
+                    output_h5_path=output_h5_paths[i],
+                    is_test_run=is_test_run,
+                    feature_dtype=feature_dtype,
+                )
+                logger.info(f"Patch-level features saved to {output_h5_paths[i]}")
+            del batches, loader
+        if dataset_error is not None:
+            i = len(datasets)
+            logger.error(f"Processing slide {i+1}/{num_slides}: can't read {patch_h5_paths[i]}")
+            raise dataset_error
 
     else:
         # One DataLoader per slide

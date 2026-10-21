@@ -168,3 +168,18 @@ def test_unopenable_slide_fails_at_that_slide(tmp_path, shared_loader):
                                          num_workers=2, pin_memory=False, tile_size_check="off",
                                          shared_loader=shared_loader)
     assert [Path(o).exists() for o in outs] == [True, False, False]
+
+
+@pytest.mark.parametrize("shared_loader", [True, False])
+def test_unreadable_patch_h5_fails_at_that_slide(tmp_path, shared_loader):
+    """A patch H5 that can't be read raises at its slide; earlier slides are written."""
+    a, _, c = _tiles(tmp_path)
+    outs = [str(tmp_path / f"h{shared_loader}_{i}.h5") for i in range(3)]
+    with patch("mussel.utils.feature_extract.get_model_factory", return_value=_FakeFactory()), \
+            patch("mussel.utils.feature_extract.check_tile_size"):
+        with pytest.raises(Exception):
+            extract_patch_features_batch([a, str(tmp_path / "missing.patch.h5"), c], [_SLIDE] * 3, outs,
+                                         model_type=ModelType.HOPTIMUS1, batch_size=7, use_gpu=False,
+                                         num_workers=2, pin_memory=False, tile_size_check="off",
+                                         shared_loader=shared_loader)
+    assert [Path(o).exists() for o in outs] == [True, False, False]
