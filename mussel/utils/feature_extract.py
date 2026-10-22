@@ -1488,9 +1488,9 @@ def _write_patch_batches(batches, model_funs, feature_dtypes, patch_h5_path, out
 
     Each model's output file gets exactly what process_dataset would write for
     that model alone: one append per non-empty batch, coords and the patch
-    H5's attributes included.
+    H5's attributes included, and the same warning when tiles failed to load.
     """
-    mode = "w"
+    mode, n_rows = "w", 0
     for count, (batch, coords) in enumerate(tqdm(batches, desc="Extracting features")):
         if is_test_run and count > 2:
             break
@@ -1503,6 +1503,18 @@ def _write_patch_batches(batches, model_funs, feature_dtypes, patch_h5_path, out
                 features = features.astype(dtype)
             save_hdf5(out, {"features": features, "coords": coords}, attr_h5_path=patch_h5_path, mode=mode)
         mode = "a"
+        n_rows += len(coords)
+
+    # Tiles that failed to load are dropped by collate_features: say so, since the
+    # outputs then have fewer rows than the patch H5.
+    if not is_test_run:
+        with h5py.File(patch_h5_path, "r") as f:
+            n_tiles = len(f["coords"])
+        if n_rows < n_tiles:
+            logger.warning(
+                f"{', '.join(map(str, output_h5_paths))}: {n_tiles - n_rows} of {n_tiles} tiles failed to load "
+                f"and were skipped; the features have {n_rows} rows"
+            )
 
 
 def _per_slide_batches(patch_h5_paths, slide_paths, preprocessing, batch_size, num_workers,
