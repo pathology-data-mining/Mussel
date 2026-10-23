@@ -102,6 +102,10 @@ def _skip_on_load_failure(fn):
     def wrapper(*args, **kwargs):
         try:
             return fn(*args, **kwargs)
+        except AssertionError:
+            # A failed check is never a load failure. Its message can still match
+            # the keywords below: arrays printed by np.allclose contain "401", "403".
+            raise
         except Exception as exc:
             msg = str(exc).lower()
             # HF gated model, missing file, network issues, or dynamic module download failures → skip
@@ -133,6 +137,73 @@ def _skip_on_load_failure(fn):
             raise  # unexpected error → real failure
 
     return wrapper
+
+
+def test_skip_on_load_failure_does_not_skip_failed_assertions():
+    """A snapshot mismatch whose printed arrays contain "401" must fail, not skip."""
+
+    @_skip_on_load_failure
+    def mismatch():
+        features, golden = np.array([[0.4013, 0.2]]), np.array([[0.9, 0.9]])
+        assert np.allclose(features, golden), "features differ from snapshot"
+
+    try:
+        with pytest.raises(AssertionError):
+            mismatch()
+    except pytest.skip.Exception:
+        pytest.fail("a failed assertion was reported as a skip")
+
+    @_skip_on_load_failure
+    def gated():
+        raise OSError("403 Client Error: access to model is restricted")
+
+    with pytest.raises(pytest.skip.Exception):
+        gated()
+
+
+def test_snapshot_check_tolerates_tf32_noise_but_not_real_changes():
+    rng = np.random.default_rng(0)
+    golden = rng.normal(size=(48, 768)).astype(np.float32)
+    # TF32-sized noise (~7e-4 of the largest element), as seen on CONCH v1.5 and KEEP.
+    noisy = golden + rng.normal(scale=7e-4 * np.abs(golden).max() / 3, size=golden.shape)
+    _assert_matches_snapshot(noisy, golden, "noise")
+    for changed in (golden + rng.normal(scale=0.05, size=golden.shape),  # e.g. new preprocessing
+                    golden * 1.01,  # same direction, rescaled
+                    golden[:, :384]):  # new embedding width
+        with pytest.raises(AssertionError):
+            _assert_matches_snapshot(changed, golden, "changed")
+    # A slide encoder's single (dim,) embedding is one vector, not dim scalars.
+    slide = golden[0]
+    _assert_matches_snapshot(noisy[0], slide, "noise")
+    with pytest.raises(AssertionError):
+        _assert_matches_snapshot(slide + rng.normal(scale=0.05, size=slide.shape), slide, "changed")
+
+
+# Snapshot tolerance. GPU features under TF32 (which mussel.models.base enables)
+# shift by up to ~1e-3 relative with the GPU type and with what the process ran
+# before (CONCH v1.5 matches its snapshot only as the first GPU test), so an
+# element-wise allclose fails on noise. Per-row cosine and norm ignore that
+# (seen: cosine >= 0.999999) and still catch weight or preprocessing changes.
+_SNAPSHOT_MIN_COSINE = 0.9999
+_SNAPSHOT_MAX_NORM_RATIO_DIFF = 1e-3
+
+
+def _assert_matches_snapshot(features, golden, message):
+    """Each embedding in ``features`` points the same way as, and is as long as, the snapshot's.
+
+    The last axis is the embedding: (tiles, dim) is one embedding per tile, and a
+    slide encoder's (dim,) is a single embedding.
+    """
+    assert features.shape == golden.shape, f"{message}: shape {features.shape} != snapshot {golden.shape}"
+    x = np.asarray(features, dtype=np.float64).reshape(-1, features.shape[-1])
+    g = np.asarray(golden, dtype=np.float64).reshape(-1, golden.shape[-1])
+    nx, ng = np.linalg.norm(x, axis=1), np.linalg.norm(g, axis=1)
+    cosine = (x * g).sum(1) / np.maximum(nx * ng, 1e-12)
+    norm_ratio_diff = np.abs(nx / np.maximum(ng, 1e-12) - 1)
+    assert cosine.min() >= _SNAPSHOT_MIN_COSINE and norm_ratio_diff.max() <= _SNAPSHOT_MAX_NORM_RATIO_DIFF, (
+        f"{message}: min cosine {cosine.min():.6f} (>= {_SNAPSHOT_MIN_COSINE}), "
+        f"max |norm ratio - 1| {norm_ratio_diff.max():.2e} (<= {_SNAPSHOT_MAX_NORM_RATIO_DIFF})"
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -437,7 +508,7 @@ def test_patch_encoder_matches_snapshot(
 
     On first run (or with ``--update-snapshots``) the current output is saved
     to ``tests/testdata/snapshots/<MODEL>.npy`` and the test is skipped.
-    On subsequent runs the saved snapshot is compared with ``np.allclose``.
+    On subsequent runs the saved snapshot is compared with :func:`_assert_matches_snapshot`.
 
     Generate / refresh snapshots::
 
@@ -472,13 +543,9 @@ def test_patch_encoder_matches_snapshot(
                 )
             return
 
-        golden = np.load(snapshot_path)
-        assert (
-            features.shape == golden.shape
-        ), f"{model_type.name}: shape {features.shape} != snapshot {golden.shape}"
-        assert np.allclose(features, golden, rtol=1e-3, atol=1e-4), (
-            f"{model_type.name}: features differ from snapshot "
-            "(model weights or preprocessing changed?)"
+        _assert_matches_snapshot(
+            features, np.load(snapshot_path),
+            f"{model_type.name}: features differ from snapshot (model weights or preprocessing changed?)",
         )
 
     run()
@@ -495,7 +562,7 @@ def test_slide_encoder_matches_snapshot(
 
     On first run (or with ``--update-snapshots``) the current output is saved
     to ``tests/testdata/snapshots/<MODEL>.npy`` and the test is skipped.
-    On subsequent runs the saved snapshot is compared with ``np.allclose``.
+    On subsequent runs the saved snapshot is compared with :func:`_assert_matches_snapshot`.
 
     Generate / refresh snapshots::
 
@@ -549,13 +616,10 @@ def test_slide_encoder_matches_snapshot(
             )
         return
 
-    golden = np.load(snapshot_path)
-    assert (
-        result.shape == golden.shape
-    ), f"{slide_model_type.name}: shape {result.shape} != snapshot {golden.shape}"
-    assert np.allclose(result, golden, rtol=1e-3, atol=1e-4), (
+    _assert_matches_snapshot(
+        result, np.load(snapshot_path),
         f"{slide_model_type.name}: embedding differs from snapshot "
-        "(model weights, attention backend, or preprocessing changed?)"
+        "(model weights, attention backend, or preprocessing changed?)",
     )
 
 
