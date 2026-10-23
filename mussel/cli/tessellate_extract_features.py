@@ -30,6 +30,7 @@ from mussel.cli.tessellate import (
     VisConfig,
     _build_artifact_remover,
     _build_neural_segmenter,
+    _load_segmentation_models_now,
 )
 from mussel.cli.tessellate_extract_features_common import (
     create_visualizations,
@@ -54,6 +55,7 @@ from mussel.utils import (
     safe_path_join,
     save_torch_tensor,
 )
+from mussel.utils import timings
 from mussel.utils.artifact_removal import (
     EXCLUDE_ALL_ARTIFACTS,
     EXCLUDE_PENMARKS_ONLY,
@@ -76,14 +78,16 @@ def _build_segmentation_runtime(cfg: "TessellateExtractFeaturesConfig"):
         if OmegaConf.is_config(neural_cfg_obj)
         else vars(neural_cfg_obj)
     )
-    artifact_remover_fn = _build_artifact_remover(seg_cfg)
-    neural_segmenter = _build_neural_segmenter(
-        seg_cfg,
-        cfg.use_gpu,
-        gpu_device_id=cfg.gpu_device_id,
-        gpu_device_ids=cfg.gpu_device_ids,
-        neural_config=neural_cfg,
-    )
+    with timings.stage("model_load", model="segmentation"):
+        artifact_remover_fn = _build_artifact_remover(seg_cfg)
+        neural_segmenter = _build_neural_segmenter(
+            seg_cfg,
+            cfg.use_gpu,
+            gpu_device_id=cfg.gpu_device_id,
+            gpu_device_ids=cfg.gpu_device_ids,
+            neural_config=neural_cfg,
+        )
+        _load_segmentation_models_now(artifact_remover_fn, neural_segmenter)
     return artifact_remover_fn, neural_segmenter
 
 
@@ -206,6 +210,8 @@ class TessellateExtractFeaturesConfig:
         gpu_device_ids (Optional[List[int]]): List of GPU device IDs to use, if applicable.
         keep_intermediate_files (bool): Whether to keep intermediate files (tessellation and pre-filter features).
         save_features_to_h5 (bool): Whether to save the post-filtering features to HDF5.
+        timings_path (Optional[str]): Append per-stage timings (tessellation, model load, each
+            slide's features, ...) to this file as JSON lines; see :mod:`mussel.utils.timings`.
     """
 
     defaults: List[Any] = field(default_factory=lambda: defaults)
@@ -259,6 +265,7 @@ class TessellateExtractFeaturesConfig:
     gpu_device_id: Optional[int] = None
     gpu_device_ids: Optional[List[int]] = None
     keep_intermediate_files: bool = False
+    timings_path: Optional[str] = None
     save_features_to_h5: bool = (
         True  # Save final features to .h5 files; if False, only .pt files are saved (but tile_h5 is kept for patch encoders)
     )
@@ -405,6 +412,11 @@ def main(
     cfg: TessellateExtractFeaturesConfig,
 ):
     """Tessellate and extract features from one or more slides, optionally with filtering."""
+    with timings.recording(cfg.get("timings_path")):
+        _main(cfg)
+
+
+def _main(cfg: TessellateExtractFeaturesConfig) -> None:
     # Set multiprocessing start method to avoid permission issues in containers
     try:
         multiprocessing.set_start_method("spawn", force=True)

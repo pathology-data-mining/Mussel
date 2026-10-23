@@ -16,6 +16,7 @@ from omegaconf import MISSING, OmegaConf
 
 logger = logging.getLogger(__name__)
 
+from mussel.utils import timings
 from mussel.utils.artifact_removal import (
     EXCLUDE_ALL_ARTIFACTS,
     EXCLUDE_PENMARKS_ONLY,
@@ -329,6 +330,8 @@ class TessellateConfig:
     vis_config (VisConfig): Visualization appearance parameters for mask overlays (see below).
     png_config (PngConfig): Filtering parameters applied when saving PNG tiles (see below).
     num_workers (int): Number of parallel workers used when saving PNG tiles.
+    timings_path (Optional[str]): Append per-stage timings (model load, each slide's
+        tiles/features, ...) to this file as JSON lines; see :mod:`mussel.utils.timings`.
     """
 
     defaults: List[Any] = field(default_factory=lambda: defaults)
@@ -347,6 +350,7 @@ class TessellateConfig:
     output_thumbnail_path: Optional[str] = None
     thumbnail_size: tuple = (1024, 1024)
     num_workers: int = 4
+    timings_path: Optional[str] = None
     seg_config: SegConfig = MISSING
     neural_config: NeuralSegConfig = field(default_factory=NeuralSegConfig)
     vis_config: VisConfig = field(default_factory=VisConfig)
@@ -530,15 +534,19 @@ def _run_tessellation(
     call_seg_cfg.pop("patch_mpps", None)
     if neural_segmenter is not None:
         call_seg_cfg["neural_segmenter"] = neural_segmenter
-    results = segment_tissue_multi(
-        slide_path=slide_path,
-        slide_id=slide_id,
-        patch_sizes=[size for size, _ in specs],
-        patch_mpps=[m for _, m in specs],
-        output_h5_paths=[_path_for_spec(output_h5_path, spec, specs) for spec in specs],
-        artifact_remover_fn=artifact_remover_fn,
-        **call_seg_cfg,
-    )
+    with timings.stage("tessellate", slide=slide_path,
+                       tile_sets=[{"patch_size": size, "mpp": m} for size, m in specs]) as record:
+        results = segment_tissue_multi(
+            slide_path=slide_path,
+            slide_id=slide_id,
+            patch_sizes=[size for size, _ in specs],
+            patch_mpps=[m for _, m in specs],
+            output_h5_paths=[_path_for_spec(output_h5_path, spec, specs) for spec in specs],
+            artifact_remover_fn=artifact_remover_fn,
+            **call_seg_cfg,
+        )
+        if record is not None:
+            record["tiles"] = {f"{size}px_{m:g}mpp": len(v[2]) if v else 0 for (size, m), v in results.items()}
     return {
         spec: (values[0], values[1], values[2]) if values else None
         for spec, values in results.items()
@@ -600,6 +608,21 @@ def _resolve_batch_outputs(cfg: TessellateConfig) -> list[tuple[str, str, str]]:
         )
 
     return list(zip(slide_paths, slide_ids, output_h5_paths))
+
+
+def _load_segmentation_models_now(artifact_remover_fn, neural_segmenter) -> None:
+    """Load the segmentation models' weights now, while timings are recorded.
+
+    NeuralTissueSegmenter and GrandQCArtifactRemover load their weights lazily,
+    on the first slide; without this the "model_load" stage would read ~0 s and
+    the load would be counted in the first slide's tessellation. Without
+    timings, loading stays lazy.
+    """
+    if not timings.enabled():
+        return
+    for model in (neural_segmenter, artifact_remover_fn):
+        if model is not None and hasattr(model, "load"):
+            model.load()
 
 
 def _build_neural_segmenter(
@@ -673,8 +696,10 @@ def _run_batch(
             "and thumbnail outputs are not supported."
         )
 
-    artifact_remover_fn = _build_artifact_remover(seg_cfg)
-    neural_segmenter = _build_neural_segmenter(seg_cfg, neural_config=neural_config)
+    with timings.stage("model_load", model="segmentation"):
+        artifact_remover_fn = _build_artifact_remover(seg_cfg)
+        neural_segmenter = _build_neural_segmenter(seg_cfg, neural_config=neural_config)
+        _load_segmentation_models_now(artifact_remover_fn, neural_segmenter)
     failures: list[tuple[str, str, str, str]] = []
     items = _resolve_batch_outputs(cfg)
     specs = _tile_specs(seg_cfg)
@@ -744,6 +769,11 @@ def main(
     cfg: TessellateConfig,
 ):
     """Tile a whole slide image and perform tissue segmentation."""
+    with timings.recording(cfg.get("timings_path")):
+        _main(cfg)
+
+
+def _main(cfg: TessellateConfig) -> None:
     seg_cfg = OmegaConf.to_container(cfg.seg_config, resolve=True)
     neural_cfg_obj = getattr(cfg, "neural_config", NeuralSegConfig())
     neural_cfg = (
@@ -767,10 +797,12 @@ def main(
     for path in (cfg.output_h5_path, cfg.output_grid_mask_path, cfg.output_png_dir):
         _path_for_spec(path, specs[0], specs)
 
-    artifact_remover_fn = _build_artifact_remover(seg_cfg)
-    neural_segmenter = _build_neural_segmenter(
-        seg_cfg, neural_config=neural_cfg
-    )
+    with timings.stage("model_load", model="segmentation"):
+        artifact_remover_fn = _build_artifact_remover(seg_cfg)
+        neural_segmenter = _build_neural_segmenter(
+            seg_cfg, neural_config=neural_cfg
+        )
+        _load_segmentation_models_now(artifact_remover_fn, neural_segmenter)
     results = _run_tessellation(
         slide_path=cfg.slide_path,
         slide_id=cfg.slide_id,
@@ -808,18 +840,19 @@ def main(
         if cfg.output_png_dir:
             png_dir = _path_for_spec(cfg.output_png_dir, spec, specs)
             logger.info(f"saving patches to {png_dir}")
-            save_patches_png(
-                cfg.slide_path,
-                coords,
-                save_dir=png_dir,
-                num_workers=cfg.num_workers,
-                mpp=spec_mpp,
-                patch_size=size,
-                filter_black_white=cfg.png_config.filter_black_white,
-                white_threshold=cfg.png_config.white_threshold,
-                black_threshold=cfg.png_config.black_threshold,
-                slide_mpp_override=cfg.seg_config.slide_mpp_override,
-            )
+            with timings.stage("png_tiles", slide=cfg.slide_path, patch_size=size, mpp=spec_mpp, tiles=len(coords)):
+                save_patches_png(
+                    cfg.slide_path,
+                    coords,
+                    save_dir=png_dir,
+                    num_workers=cfg.num_workers,
+                    mpp=spec_mpp,
+                    patch_size=size,
+                    filter_black_white=cfg.png_config.filter_black_white,
+                    white_threshold=cfg.png_config.white_threshold,
+                    black_threshold=cfg.png_config.black_threshold,
+                    slide_mpp_override=cfg.seg_config.slide_mpp_override,
+                )
 
     if cfg.output_thumbnail_path:
         with tiffslide.TiffSlide(cfg.slide_path) as wsi:
