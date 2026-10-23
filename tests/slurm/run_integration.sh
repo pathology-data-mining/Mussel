@@ -16,7 +16,7 @@
 #SBATCH --cpus-per-task=4
 #SBATCH --mem=32G
 #SBATCH --time=0:45:00
-#SBATCH --array=0-48
+#SBATCH --array=0-53
 #SBATCH --output=/gpfs/cdsi_ess/home/limr/logs/slurm/test_integration_%A_%a.out
 
 set -euo pipefail
@@ -35,12 +35,12 @@ TESTS=(
     "tests/mussel/models/test_encoder_integration.py::test_patch_encoder_extracts_features[GOOGLEPATH]"
     "tests/mussel/models/test_encoder_integration.py::test_patch_encoder_extracts_features[CONCH1_5]"
     "tests/mussel/models/test_encoder_integration.py::test_patch_encoder_extracts_features[VIRCHOW2]"
-    "tests/mussel/models/test_encoder_integration.py::test_patch_encoder_extracts_features[UNI2]"
+    "tests/mussel/models/test_encoder_integration.py::test_patch_encoder_extracts_features[UNI2H]"
     "tests/mussel/models/test_encoder_integration.py::test_patch_encoder_extracts_features[UNI]"
     "tests/mussel/models/test_encoder_integration.py::test_patch_encoder_extracts_features[PHIKON]"
     "tests/mussel/models/test_encoder_integration.py::test_patch_encoder_extracts_features[PHIKON_V2]"
-    "tests/mussel/models/test_encoder_integration.py::test_patch_encoder_extracts_features[H_OPTIMUS_1]"
-    "tests/mussel/models/test_encoder_integration.py::test_patch_encoder_extracts_features[H0_MINI]"
+    "tests/mussel/models/test_encoder_integration.py::test_patch_encoder_extracts_features[HOPTIMUS1]"
+    "tests/mussel/models/test_encoder_integration.py::test_patch_encoder_extracts_features[H0MINI]"
     "tests/mussel/models/test_encoder_integration.py::test_patch_encoder_extracts_features[MIDNIGHT12K]"
     "tests/mussel/models/test_encoder_integration.py::test_patch_encoder_extracts_features[GPFM]"
     "tests/mussel/models/test_encoder_integration.py::test_patch_encoder_extracts_features[HIBOU_L]"
@@ -55,7 +55,7 @@ TESTS=(
     "tests/mussel/models/test_encoder_integration.py::test_end_to_end_patch_then_slide_encode[VIRCHOW-PRISM_SLIDE]"
     "tests/mussel/models/test_encoder_integration.py::test_end_to_end_patch_then_slide_encode[CTRANSPATH-CHIEF_SLIDE]"
     "tests/mussel/models/test_encoder_integration.py::test_end_to_end_patch_then_slide_encode[CONCH1_5-FEATHER_SLIDE]"
-    "tests/mussel/models/test_encoder_integration.py::test_end_to_end_patch_then_slide_encode[CLIP-MADELEINE_SLIDE]"
+    "tests/mussel/models/test_encoder_integration.py::test_end_to_end_patch_then_slide_encode[CONCH_V1-MADELEINE_SLIDE]"
     # --- fastattn (tasks 30-32) ---
     "tests/mussel/models/test_fastattn_models.py::test_gigapath_patch_encoder_extracts_features"
     "tests/mussel/models/test_fastattn_models.py::test_gigapath_slide_encoder_aggregates_features"
@@ -80,6 +80,12 @@ TESTS=(
     "tests/mussel/models/test_encoder_integration.py::test_patch_encoder_extracts_features[LUNIT_VITS16]"
     "tests/mussel/models/test_encoder_integration.py::test_patch_encoder_extracts_features[OPENMIDNIGHT]"
     "tests/mussel/models/test_encoder_integration.py::test_patch_encoder_extracts_features[GENBIO_PATHFM]"
+    # --- Text-aligned patch encoders and ABMIL (tasks 49-53) ---
+    "tests/mussel/models/test_encoder_integration.py::test_patch_encoder_extracts_features[MUSK]"
+    "tests/mussel/models/test_encoder_integration.py::test_patch_encoder_extracts_features[KEEP]"
+    "tests/mussel/models/test_encoder_integration.py::test_abmil_slide_encoder_aggregates_features[dim512]"
+    "tests/mussel/models/test_encoder_integration.py::test_abmil_slide_encoder_aggregates_features[dim1024]"
+    "tests/mussel/models/test_encoder_integration.py::test_abmil_slide_encoder_via_apply_slide_aggregation"
 )
 
 EXTRAS=(
@@ -101,6 +107,8 @@ EXTRAS=(
     # Round 2 patch encoders (tasks 39-48)
     torch-gpu torch-gpu torch-gpu torch-gpu torch-gpu
     torch-gpu torch-gpu torch-gpu torch-gpu torch-gpu
+    # Text-aligned patch encoders and ABMIL (tasks 49-53)
+    torch-gpu torch-gpu torch-gpu torch-gpu torch-gpu
 )
 
 VENVS=(
@@ -120,6 +128,8 @@ VENVS=(
     ""
     # Round 2 patch encoders (tasks 39-48): use repo .venv
     "" "" "" "" ""  "" "" "" "" ""
+    # Text-aligned patch encoders and ABMIL (tasks 49-53): use repo .venv
+    "" "" "" "" ""
 )
 
 TEST_NODE="${TESTS[$SLURM_ARRAY_TASK_ID]}"
