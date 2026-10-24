@@ -385,3 +385,51 @@ def test_main_batch_single_step_embedding_precision(tmp_path, embedding_precisio
     # Values should survive the round-trip without corruption.
     expected = torch.tensor([[1.5, 2.5, 3.5]], dtype=expected_dtype)
     assert torch.allclose(tensor.float(), expected.float(), atol=1e-2)
+
+
+@pytest.mark.parametrize("max_slide_patches, passed", [(None, None), (0, None), (4096, 4096)])
+def test_main_batch_passes_max_slide_patches_to_aggregation(tmp_path, max_slide_patches, passed):
+    patch_h5 = tmp_path / "slide.patch.h5"
+    slide_svs = tmp_path / "slide.svs"
+    patch_h5.touch()
+    slide_svs.touch()
+    seen = {}
+
+    def _fake_aggregate(**kwargs):
+        seen.update(kwargs)
+        for path in kwargs["output_pt_paths"]:
+            torch.save(torch.zeros(768), path)
+
+    cfg = ExtractFeaturesConfig(
+        patch_h5_paths=[str(patch_h5)], slide_paths=[str(slide_svs)], slide_ids=["slide1"],
+        output_dir=str(tmp_path / "out"), model_type=ModelType.CONCH1_5,
+        slide_model_type=ModelType.TITAN_SLIDE, aggregation_method="model",
+        max_slide_patches=max_slide_patches, use_gpu=False, num_workers=0,
+    )
+    with patch("mussel.cli.extract_features.extract_patch_features_batch"), \
+         patch("mussel.cli.extract_features.aggregate_slide_features_batch", side_effect=_fake_aggregate):
+        mussel.cli.extract_features.main(OmegaConf.create(cfg))
+    assert seen["max_slide_patches"] == passed
+
+
+def test_max_slide_patches_validation():
+    from mussel.cli.extract_features import _max_slide_patches
+
+    def cfg(n, slide_model=ModelType.TITAN_SLIDE):
+        return ExtractFeaturesConfig(model_type=ModelType.CONCH1_5, slide_model_type=slide_model,
+                                     aggregation_method="model", max_slide_patches=n)
+
+    with pytest.raises(ValueError, match="must be positive"):
+        _max_slide_patches(cfg(-1))
+    assert _max_slide_patches(cfg(100, ModelType.GIGAPATH_SLIDE)) is None  # TITAN only; warned
+    assert _max_slide_patches(cfg(100)) == 100
+
+
+def test_max_slide_patches_is_refused_in_single_slide_mode(tmp_path):
+    cfg = ExtractFeaturesConfig(
+        patch_h5_path=str(tmp_path / "s.patch.h5"), slide_path=str(tmp_path / "s.svs"),
+        output_h5_path=str(tmp_path / "s.features.h5"), model_type=ModelType.CONCH1_5,
+        slide_model_type=ModelType.TITAN_SLIDE, aggregation_method="model", max_slide_patches=10,
+    )
+    with pytest.raises(ValueError, match="batch mode"):
+        mussel.cli.extract_features.main(OmegaConf.create(cfg))

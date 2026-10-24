@@ -9,6 +9,7 @@ slides, and generating feature embeddings with pathology foundation models.
 
 * `tessellate` - tiling and foreground detection of whole-slide images
 * `tessellate_extract_features` - combined tiling + feature extraction pipeline; supports batch processing from a directory
+* `derive_tile_grid` - a coarser tile grid from an existing tessellation, e.g. TITAN's 512 px grid from 224 px tiles
 * `extract_features` - extract features from whole slide images (WSI) using a foundation model.
 * `create_class_embeddings` - text embeddings for tissue types or free-text prompts (QuiltNet or KEEP)
 * `annotate` - score tiles against those embeddings: zero-shot tissue types, and text-to-tile search with `top_k`
@@ -261,6 +262,32 @@ tessellate slide_path=slide.svs output_h5_path=out.h5 \
     neural_config.batch_size=16 neural_config.max_inference_tiles=8192
 ```
 
+### `derive_tile_grid`
+
+Build a coarser tile grid from an existing tessellation instead of segmenting the
+slide again: every `patch_size` px cell, aligned to the slide origin, that contains
+the centre of at least one source tile, at the source tiles' resolution. A slide
+encoder that needs larger tiles than the patch encoders it runs alongside then reads
+the same tissue. For example, TITAN's 512 px grid from the 224 px tiles used for
+H-optimus:
+
+```bash
+derive_tile_grid source_h5_path=948176.patch.h5 output_h5_path=948176.512px.patch.h5 patch_size=512
+```
+
+Batch mode takes `source_h5_paths=[...]` and `output_h5_paths=[...]`;
+`skip_missing=true` skips slides whose source file is absent (e.g. failed
+tessellation). The output has the attributes `extract_features` reads
+(`patch_size` at level 0, `patch_size_to_resize_to_for_desired_mpp`, `mpp`,
+`patch_level`) plus `derived_*` provenance. The source must be tiled at level 0 and
+`patch_size` must not be smaller than its tiles.
+
+This differs from tessellating at 512 px (`seg_config.patch_size=512`, or
+`seg_config.patch_sizes=[224,512]`): a cell is kept when it contains a tissue tile's
+centre, not by its own tissue fraction. reef v2's 512 px TITAN embeddings were made
+this way from its 224 px tiles; a separate 512 px tessellation gives different
+embeddings (cosine as low as 0.98 on small slides).
+
 ### `extract_features`
 
 Use a pathology foundation model to calculate feature embeddings for a slide tiled using
@@ -369,6 +396,20 @@ extract_features \
     patch_path=<path to folder w/ tiles in image format (.tif, .png, .jpg, etc.)> \
     output_h5_path=<path to output h5 file> \
     output_pt_path=None
+```
+
+#### Capping tiles for TITAN
+
+TITAN attends over every tile, so its memory grows with the square of the tile
+count. In batch mode with `slide_model_type=TITAN_SLIDE`, `max_slide_patches=N`
+aggregates at most N tiles per slide. A slide with more is cut to a uniform random
+subset, kept in tile order and seeded by its patch-feature file name, so reruns keep
+the same tiles. Patch features are still written for every tile. The default (unset)
+uses every tile.
+
+```bash
+extract_features 'patch_h5_paths=[a.patch.h5]' 'slide_paths=[a.svs]' output_dir=out \
+    model_type=CONCH1_5 slide_model_type=TITAN_SLIDE aggregation_method=model max_slide_patches=4096
 ```
 
 #### Embedding precision
