@@ -102,6 +102,10 @@ def _skip_on_load_failure(fn):
     def wrapper(*args, **kwargs):
         try:
             return fn(*args, **kwargs)
+        except AssertionError:
+            # A failed check is never a load failure. Its message can still match
+            # the keywords below: arrays printed by np.allclose contain "401", "403".
+            raise
         except Exception as exc:
             msg = str(exc).lower()
             # HF gated model, missing file, network issues, or dynamic module download failures → skip
@@ -133,6 +137,96 @@ def _skip_on_load_failure(fn):
             raise  # unexpected error → real failure
 
     return wrapper
+
+
+def test_skip_on_load_failure_does_not_skip_failed_assertions():
+    """A snapshot mismatch whose printed arrays contain "401" must fail, not skip."""
+
+    @_skip_on_load_failure
+    def mismatch():
+        features, golden = np.array([[0.4013, 0.2]]), np.array([[0.9, 0.9]])
+        assert np.allclose(features, golden), "features differ from snapshot"
+
+    try:
+        with pytest.raises(AssertionError):
+            mismatch()
+    except pytest.skip.Exception:
+        pytest.fail("a failed assertion was reported as a skip")
+
+    @_skip_on_load_failure
+    def gated():
+        raise OSError("403 Client Error: access to model is restricted")
+
+    with pytest.raises(pytest.skip.Exception):
+        gated()
+
+
+def test_snapshot_check_tolerates_tf32_noise_but_not_real_changes():
+    rng = np.random.default_rng(0)
+    golden = rng.normal(size=(48, 768)).astype(np.float32)
+    # TF32-sized noise (~7e-4 of the largest element), as seen on CONCH v1.5 and KEEP.
+    noisy = golden + rng.normal(scale=7e-4 * np.abs(golden).max() / 3, size=golden.shape)
+    _assert_matches_snapshot(noisy, golden, "noise")
+    for changed in (golden + rng.normal(scale=0.05, size=golden.shape),  # e.g. new preprocessing
+                    golden * 1.01,  # same direction, rescaled
+                    golden[:, :384]):  # new embedding width
+        with pytest.raises(AssertionError):
+            _assert_matches_snapshot(changed, golden, "changed")
+    # Tiles sharing one dominant component (OPENMIDNIGHT: 99.6% of the energy):
+    # halving the tile-specific part keeps every tile's cosine above 0.9999 and
+    # its norm within 0.1%, but is a real change.
+    shared = 50 * rng.normal(size=768)
+    dominated = shared + golden
+    with pytest.raises(AssertionError):
+        _assert_matches_snapshot(shared + golden / 2, dominated, "changed")
+    _assert_matches_snapshot(dominated + (noisy - golden), dominated, "noise")
+    # A slide encoder's single (dim,) embedding is one vector, not dim scalars.
+    slide = golden[0]
+    _assert_matches_snapshot(noisy[0], slide, "noise")
+    with pytest.raises(AssertionError):
+        _assert_matches_snapshot(slide + rng.normal(scale=0.05, size=slide.shape), slide, "changed")
+
+
+# Snapshot tolerance. GPU features under TF32 (which mussel.models.base enables)
+# shift by up to ~1e-3 relative with the GPU type and with what the process ran
+# before (CONCH v1.5 matches its snapshot only as the first GPU test), so an
+# element-wise allclose fails on noise.
+#
+# With several tiles, each tile's error is measured against the spread of the
+# snapshot's tiles around their mean. Cosine to the raw vectors would not do:
+# OPENMIDNIGHT's tiles share a component holding 99.6% of their energy, so two
+# different tiles already have cosine 0.99999. Worst error seen on an A100 run
+# of every snapshot in order: 1.5e-3 of the spread (KEEP, CONCH v1.5); most
+# models match exactly. A single slide embedding has no spread: cosine instead.
+_SNAPSHOT_MAX_ERROR_OF_SPREAD = 2e-2
+_SNAPSHOT_MIN_COSINE = 0.9999
+_SNAPSHOT_MAX_NORM_RATIO_DIFF = 1e-3
+
+
+def _assert_matches_snapshot(features, golden, message):
+    """``features`` match the snapshot ``golden`` up to GPU numerical noise.
+
+    The last axis is the embedding: (tiles, dim) is one embedding per tile, and a
+    slide encoder's (dim,) is a single embedding.
+    """
+    assert features.shape == golden.shape, f"{message}: shape {features.shape} != snapshot {golden.shape}"
+    x = np.asarray(features, dtype=np.float64).reshape(-1, features.shape[-1])
+    g = np.asarray(golden, dtype=np.float64).reshape(-1, golden.shape[-1])
+    nx, ng = np.linalg.norm(x, axis=1), np.linalg.norm(g, axis=1)
+    norm_ratio_diff = np.abs(nx / np.maximum(ng, 1e-12) - 1).max()
+    assert norm_ratio_diff <= _SNAPSHOT_MAX_NORM_RATIO_DIFF, (
+        f"{message}: max |norm ratio - 1| {norm_ratio_diff:.2e} (<= {_SNAPSHOT_MAX_NORM_RATIO_DIFF})"
+    )
+    if len(g) > 1:
+        # rms distance of a snapshot tile from the mean tile
+        spread = np.sqrt((np.linalg.norm(g - g.mean(0), axis=1) ** 2).mean())
+        error = np.linalg.norm(x - g, axis=1).max() / max(spread, 1e-12)
+        assert error <= _SNAPSHOT_MAX_ERROR_OF_SPREAD, (
+            f"{message}: max |x - snapshot| is {error:.2e} of the tiles' spread (<= {_SNAPSHOT_MAX_ERROR_OF_SPREAD})"
+        )
+    else:
+        cosine = float((x * g).sum() / max(nx[0] * ng[0], 1e-12))
+        assert cosine >= _SNAPSHOT_MIN_COSINE, f"{message}: cosine {cosine:.6f} (>= {_SNAPSHOT_MIN_COSINE})"
 
 
 # ---------------------------------------------------------------------------
@@ -437,7 +531,7 @@ def test_patch_encoder_matches_snapshot(
 
     On first run (or with ``--update-snapshots``) the current output is saved
     to ``tests/testdata/snapshots/<MODEL>.npy`` and the test is skipped.
-    On subsequent runs the saved snapshot is compared with ``np.allclose``.
+    On subsequent runs the saved snapshot is compared with :func:`_assert_matches_snapshot`.
 
     Generate / refresh snapshots::
 
@@ -472,13 +566,9 @@ def test_patch_encoder_matches_snapshot(
                 )
             return
 
-        golden = np.load(snapshot_path)
-        assert (
-            features.shape == golden.shape
-        ), f"{model_type.name}: shape {features.shape} != snapshot {golden.shape}"
-        assert np.allclose(features, golden, rtol=1e-3, atol=1e-4), (
-            f"{model_type.name}: features differ from snapshot "
-            "(model weights or preprocessing changed?)"
+        _assert_matches_snapshot(
+            features, np.load(snapshot_path),
+            f"{model_type.name}: features differ from snapshot (model weights or preprocessing changed?)",
         )
 
     run()
@@ -495,7 +585,7 @@ def test_slide_encoder_matches_snapshot(
 
     On first run (or with ``--update-snapshots``) the current output is saved
     to ``tests/testdata/snapshots/<MODEL>.npy`` and the test is skipped.
-    On subsequent runs the saved snapshot is compared with ``np.allclose``.
+    On subsequent runs the saved snapshot is compared with :func:`_assert_matches_snapshot`.
 
     Generate / refresh snapshots::
 
@@ -549,13 +639,10 @@ def test_slide_encoder_matches_snapshot(
             )
         return
 
-    golden = np.load(snapshot_path)
-    assert (
-        result.shape == golden.shape
-    ), f"{slide_model_type.name}: shape {result.shape} != snapshot {golden.shape}"
-    assert np.allclose(result, golden, rtol=1e-3, atol=1e-4), (
+    _assert_matches_snapshot(
+        result, np.load(snapshot_path),
         f"{slide_model_type.name}: embedding differs from snapshot "
-        "(model weights, attention backend, or preprocessing changed?)"
+        "(model weights, attention backend, or preprocessing changed?)",
     )
 
 
