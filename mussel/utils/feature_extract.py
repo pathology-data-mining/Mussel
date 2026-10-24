@@ -1567,6 +1567,8 @@ def _per_slide_batches(patch_h5_paths, slide_paths, preprocessing, batch_size, n
             # Stop the worker pool now. On an error (here or in the caller) the traceback
             # keeps this frame, and the yielded islices, alive, so the pool would otherwise
             # linger until garbage collection with its workers still running.
+            # _shutdown_workers is PyTorch's private (idempotent) teardown; if it is ever
+            # renamed this degrades to the old behaviour, garbage collection.
             shutdown = getattr(batches, "_shutdown_workers", None)
             if shutdown is not None:
                 shutdown()

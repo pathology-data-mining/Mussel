@@ -19,6 +19,7 @@ from mussel.utils import feature_extract as fe
 from mussel.utils.feature_extract import (_OneSlideOpenConcat, _PerSlideBatches,
                                           extract_patch_features, extract_patch_features_batch)
 
+
 @pytest.fixture(autouse=True)
 def _reap_dataloader_workers():
     """Let no test's DataLoader workers outlive it.
@@ -30,6 +31,9 @@ def _reap_dataloader_workers():
     gc.collect()
     for child in multiprocessing.active_children():
         child.join(timeout=30)
+        if child.is_alive():  # hung: don't let it leak into the next test
+            child.terminate()
+            child.join(timeout=10)
 
 
 _COMMON = dict(model_type=ModelType.HOPTIMUS1, batch_size=7, use_gpu=False, num_workers=2,
