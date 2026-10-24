@@ -172,6 +172,14 @@ def test_snapshot_check_tolerates_tf32_noise_but_not_real_changes():
                     golden[:, :384]):  # new embedding width
         with pytest.raises(AssertionError):
             _assert_matches_snapshot(changed, golden, "changed")
+    # Tiles sharing one dominant component (OPENMIDNIGHT: 99.6% of the energy):
+    # halving the tile-specific part keeps every tile's cosine above 0.9999 and
+    # its norm within 0.1%, but is a real change.
+    shared = 50 * rng.normal(size=768)
+    dominated = shared + golden
+    with pytest.raises(AssertionError):
+        _assert_matches_snapshot(shared + golden / 2, dominated, "changed")
+    _assert_matches_snapshot(dominated + (noisy - golden), dominated, "noise")
     # A slide encoder's single (dim,) embedding is one vector, not dim scalars.
     slide = golden[0]
     _assert_matches_snapshot(noisy[0], slide, "noise")
@@ -182,14 +190,21 @@ def test_snapshot_check_tolerates_tf32_noise_but_not_real_changes():
 # Snapshot tolerance. GPU features under TF32 (which mussel.models.base enables)
 # shift by up to ~1e-3 relative with the GPU type and with what the process ran
 # before (CONCH v1.5 matches its snapshot only as the first GPU test), so an
-# element-wise allclose fails on noise. Per-row cosine and norm ignore that
-# (seen: cosine >= 0.999999) and still catch weight or preprocessing changes.
+# element-wise allclose fails on noise.
+#
+# With several tiles, each tile's error is measured against the spread of the
+# snapshot's tiles around their mean. Cosine to the raw vectors would not do:
+# OPENMIDNIGHT's tiles share a component holding 99.6% of their energy, so two
+# different tiles already have cosine 0.99999. Worst error seen on an A100 run
+# of every snapshot in order: 1.5e-3 of the spread (KEEP, CONCH v1.5); most
+# models match exactly. A single slide embedding has no spread: cosine instead.
+_SNAPSHOT_MAX_ERROR_OF_SPREAD = 2e-2
 _SNAPSHOT_MIN_COSINE = 0.9999
 _SNAPSHOT_MAX_NORM_RATIO_DIFF = 1e-3
 
 
 def _assert_matches_snapshot(features, golden, message):
-    """Each embedding in ``features`` points the same way as, and is as long as, the snapshot's.
+    """``features`` match the snapshot ``golden`` up to GPU numerical noise.
 
     The last axis is the embedding: (tiles, dim) is one embedding per tile, and a
     slide encoder's (dim,) is a single embedding.
@@ -198,12 +213,20 @@ def _assert_matches_snapshot(features, golden, message):
     x = np.asarray(features, dtype=np.float64).reshape(-1, features.shape[-1])
     g = np.asarray(golden, dtype=np.float64).reshape(-1, golden.shape[-1])
     nx, ng = np.linalg.norm(x, axis=1), np.linalg.norm(g, axis=1)
-    cosine = (x * g).sum(1) / np.maximum(nx * ng, 1e-12)
-    norm_ratio_diff = np.abs(nx / np.maximum(ng, 1e-12) - 1)
-    assert cosine.min() >= _SNAPSHOT_MIN_COSINE and norm_ratio_diff.max() <= _SNAPSHOT_MAX_NORM_RATIO_DIFF, (
-        f"{message}: min cosine {cosine.min():.6f} (>= {_SNAPSHOT_MIN_COSINE}), "
-        f"max |norm ratio - 1| {norm_ratio_diff.max():.2e} (<= {_SNAPSHOT_MAX_NORM_RATIO_DIFF})"
+    norm_ratio_diff = np.abs(nx / np.maximum(ng, 1e-12) - 1).max()
+    assert norm_ratio_diff <= _SNAPSHOT_MAX_NORM_RATIO_DIFF, (
+        f"{message}: max |norm ratio - 1| {norm_ratio_diff:.2e} (<= {_SNAPSHOT_MAX_NORM_RATIO_DIFF})"
     )
+    if len(g) > 1:
+        # rms distance of a snapshot tile from the mean tile
+        spread = np.sqrt((np.linalg.norm(g - g.mean(0), axis=1) ** 2).mean())
+        error = np.linalg.norm(x - g, axis=1).max() / max(spread, 1e-12)
+        assert error <= _SNAPSHOT_MAX_ERROR_OF_SPREAD, (
+            f"{message}: max |x - snapshot| is {error:.2e} of the tiles' spread (<= {_SNAPSHOT_MAX_ERROR_OF_SPREAD})"
+        )
+    else:
+        cosine = float((x * g).sum() / max(nx[0] * ng[0], 1e-12))
+        assert cosine >= _SNAPSHOT_MIN_COSINE, f"{message}: cosine {cosine:.6f} (>= {_SNAPSHOT_MIN_COSINE})"
 
 
 # ---------------------------------------------------------------------------
