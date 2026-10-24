@@ -4,6 +4,8 @@ The shared loader must write exactly what the per-slide loaders write, and both
 what the single-slide path (extract_patch_features, process_dataset) writes:
 same rows, same order, same coords and attributes, also with is_test_run.
 """
+import gc
+import multiprocessing
 from pathlib import Path
 from unittest.mock import patch
 
@@ -16,6 +18,23 @@ from mussel.models import ModelType
 from mussel.utils import feature_extract as fe
 from mussel.utils.feature_extract import (_OneSlideOpenConcat, _PerSlideBatches,
                                           extract_patch_features, extract_patch_features_batch)
+
+
+@pytest.fixture(autouse=True)
+def _reap_dataloader_workers():
+    """Let no test's DataLoader workers outlive it.
+
+    Spawned workers still starting when their pool is torn down (an error-path test)
+    compete with the next test's workers on a small CI runner.
+    """
+    yield
+    gc.collect()
+    for child in multiprocessing.active_children():
+        child.join(timeout=30)
+        if child.is_alive():  # hung: don't let it leak into the next test
+            child.terminate()
+            child.join(timeout=10)
+
 
 _COMMON = dict(model_type=ModelType.HOPTIMUS1, batch_size=7, use_gpu=False, num_workers=2,
                pin_memory=False, tile_size_check="off")
@@ -124,7 +143,8 @@ def test_unopenable_slide_fails_at_that_slide(fakes, tmp_path, shared_loader):
     """A slide that can't be opened raises while it is processed; earlier slides are written."""
     a, _, c = _tiles(fakes, tmp_path)
     slides = [fakes.slide, str(tmp_path / "missing.svs"), fakes.slide]
-    with pytest.raises(Exception):
+    # The slide's own error, not e.g. a DataLoader worker that died.
+    with pytest.raises(Exception, match="missing.svs"):
         _run(fakes, tmp_path, [a, c, a], f"u{shared_loader}", slides=slides, shared_loader=shared_loader)
     assert [Path(tmp_path / f"u{shared_loader}_{i}.h5").exists() for i in range(3)] == [True, False, False]
 
@@ -133,7 +153,8 @@ def test_unopenable_slide_fails_at_that_slide(fakes, tmp_path, shared_loader):
 def test_unreadable_patch_h5_fails_at_that_slide(fakes, tmp_path, shared_loader):
     """A patch H5 that can't be read raises at its slide; earlier slides are written."""
     a, _, c = _tiles(fakes, tmp_path)
-    with pytest.raises(Exception):
+    # The patch H5's own error, not e.g. a DataLoader worker that died.
+    with pytest.raises(OSError, match="missing.patch.h5"):
         _run(fakes, tmp_path, [a, str(tmp_path / "missing.patch.h5"), c], f"h{shared_loader}",
              shared_loader=shared_loader)
     assert [Path(tmp_path / f"h{shared_loader}_{i}.h5").exists() for i in range(3)] == [True, False, False]

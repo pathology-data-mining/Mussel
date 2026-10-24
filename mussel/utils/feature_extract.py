@@ -1552,15 +1552,27 @@ def _per_slide_batches(patch_h5_paths, slide_paths, preprocessing, batch_size, n
             except Exception as e:
                 dataset_error = e
                 break
-        if datasets:
-            sampler = _PerSlideBatches([len(ds) for ds in datasets], batch_size, 3 if is_test_run else None)
-            batches = iter(DataLoader(
-                _OneSlideOpenConcat(datasets), batch_sampler=sampler, num_workers=num_workers,
-                pin_memory=pin_memory, collate_fn=collate_features, prefetch_factor=4,
-                multiprocessing_context="spawn",
-            ))
-            for n_batches in sampler.per_slide():
-                yield itertools.islice(batches, n_batches)
+        batches = None
+        try:
+            if datasets:
+                sampler = _PerSlideBatches([len(ds) for ds in datasets], batch_size, 3 if is_test_run else None)
+                batches = iter(DataLoader(
+                    _OneSlideOpenConcat(datasets), batch_sampler=sampler, num_workers=num_workers,
+                    pin_memory=pin_memory, collate_fn=collate_features, prefetch_factor=4,
+                    multiprocessing_context="spawn",
+                ))
+                for n_batches in sampler.per_slide():
+                    yield itertools.islice(batches, n_batches)
+        finally:
+            # Stop the worker pool now. On an error (here or in the caller) the traceback
+            # keeps this frame, and the yielded islices, alive, so the pool would otherwise
+            # linger until garbage collection with its workers still running.
+            # _shutdown_workers is PyTorch's private (idempotent) teardown; if it is ever
+            # renamed this degrades to the old behaviour, garbage collection.
+            shutdown = getattr(batches, "_shutdown_workers", None)
+            if shutdown is not None:
+                shutdown()
+            batches = None
         if dataset_error is not None:
             raise dataset_error
         return
