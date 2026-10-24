@@ -107,6 +107,11 @@ class ExtractFeaturesConfig:
             (default) instead of one per slide, saving ~10 s of worker start-up per slide.
         timings_path (Optional[str]): Append per-stage timings (model load, each slide's
             tiles/features, ...) to this file as JSON lines; see :mod:`mussel.utils.timings`.
+        max_slide_patches (Optional[int]): Batch mode, slide_model_type=TITAN_SLIDE:
+            aggregate at most this many tiles per slide (None or 0, the default: every tile).
+            A slide with more is cut to a uniform random subset seeded by its patch-feature
+            file name, so reruns keep the same tiles. Bounds TITAN's attention, which is
+            quadratic in the number of tiles. Patch features are still written for every tile.
     """
 
     # Single mode parameters
@@ -154,6 +159,7 @@ class ExtractFeaturesConfig:
     model_types: Optional[List[ModelType]] = None
     model_precisions: Dict[str, str] = field(default_factory=dict)  # model code -> embedding precision
     model_paths: Dict[str, str] = field(default_factory=dict)  # model code -> weights path
+    max_slide_patches: Optional[int] = None
 
     def __post_init__(self):
         if isinstance(self.model_kwargs, DictConfig):
@@ -232,6 +238,20 @@ def main(cfg: ExtractFeaturesConfig):
             _main_single(cfg)
 
 
+def _max_slide_patches(cfg: ExtractFeaturesConfig) -> Optional[int]:
+    """The TITAN tile cap to aggregate with: None for no cap (unset or 0)."""
+    n = cfg.max_slide_patches
+    if n is None or n == 0:
+        return None
+    if n < 0:
+        raise ValueError(f"max_slide_patches must be positive (or 0 / unset for every tile), got {n}")
+    if cfg.slide_model_type != ModelType.TITAN_SLIDE:
+        logger.warning("max_slide_patches applies to TITAN_SLIDE only; ignored for slide_model_type=%s",
+                       cfg.slide_model_type)
+        return None
+    return n
+
+
 @resolve_remote_paths()
 def _main_single(cfg: ExtractFeaturesConfig):
     """Process a single slide."""
@@ -244,6 +264,8 @@ def _main_single(cfg: ExtractFeaturesConfig):
             "Single-slide mode requires patch_h5_path, slide_path, and output_h5_path to be specified"
         )
 
+    if cfg.max_slide_patches:
+        raise ValueError("max_slide_patches is supported in batch mode (patch_h5_paths / slide_paths) only")
     save_features(
         slide_path=cfg.slide_path,
         gpu_device_id=cfg.gpu_device_id,
@@ -277,6 +299,7 @@ def _main_batch(cfg: ExtractFeaturesConfig):
         raise ValueError(
             "Batch mode requires patch_h5_paths, slide_paths, and output_dir to be specified"
         )
+    max_slide_patches = _max_slide_patches(cfg)
 
     # Create output directory
     output_dir = Path(cfg.output_dir)
@@ -362,6 +385,7 @@ def _main_batch(cfg: ExtractFeaturesConfig):
             slide_batch_size=cfg.slide_batch_size,
             slide_model_kwargs=cfg.slide_model_kwargs,
             tile_size_check=cfg.tile_size_check,
+            max_slide_patches=max_slide_patches,
         )
 
         # Defense-in-depth: verify at least one output file was created.
