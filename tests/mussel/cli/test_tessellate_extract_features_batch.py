@@ -13,6 +13,12 @@ from mussel.cli.tessellate_extract_features import (
     TessellateExtractFeaturesConfig, main)
 from mussel.models import ModelType
 
+# The batch integration tests check orchestration (two slides, filtering, output
+# layout), not throughput: a seeded random 300 tiles per slide keeps them in
+# seconds of GPU time. The whole test slide (segment_threshold=0) took 15 min
+# for the filtering test on a P40, CPU-bound on tile decoding.
+_MAX_TILES = 300
+
 # ---------------------------------------------------------------------------
 # Shared mock helpers
 # ---------------------------------------------------------------------------
@@ -74,7 +80,7 @@ def test_tessellate_extract_features_batch_basic(
     slide_paths = [slide_path, slide_path]
     output_dir = str(tmp_path / "batch_output")
 
-    seg_config = SegConfig(segment_threshold=0)
+    seg_config = SegConfig(segment_threshold=0, max_tiles=_MAX_TILES)
     cfg = TessellateExtractFeaturesConfig(
         slide_paths=slide_paths,
         slide_ids=["slide1", "slide2"],
@@ -139,7 +145,7 @@ def test_tessellate_extract_features_batch_with_filtering(
     classifier_pkl = classifier_pkl_path
     output_dir = str(tmp_path / "batch_output")
 
-    seg_config = SegConfig(segment_threshold=0)
+    seg_config = SegConfig(segment_threshold=0, max_tiles=_MAX_TILES)
     cfg = TessellateExtractFeaturesConfig(
         slide_paths=slide_paths,
         slide_ids=["slide1", "slide2"],
@@ -188,7 +194,7 @@ def test_tessellate_extract_features_batch_with_model_aggregation(
     slide_paths = [slide_path, slide_path]
     output_dir = str(tmp_path / "batch_output")
 
-    seg_config = SegConfig(segment_threshold=0)
+    seg_config = SegConfig(segment_threshold=0, max_tiles=_MAX_TILES)
     cfg = TessellateExtractFeaturesConfig(
         slide_paths=slide_paths,
         slide_ids=["slide1", "slide2"],
