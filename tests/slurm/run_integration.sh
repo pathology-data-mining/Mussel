@@ -1,6 +1,8 @@
 #!/bin/bash
-# SLURM job array: one task per model integration test.
-# Covers torch-gpu, fastattn, and tensorflow extras in a single array.
+# SLURM job array: one task per integration test (or test function / file).
+# Covers torch-gpu, fastattn, and tensorflow extras in a single array: model
+# integration, snapshot regression and determinism tests, and the CLI
+# integration tests.
 #
 # One-time setup (output dir must exist before submitting):
 #   mkdir -p ~/logs/slurm
@@ -16,7 +18,7 @@
 #SBATCH --cpus-per-task=4
 #SBATCH --mem=32G
 #SBATCH --time=0:45:00
-#SBATCH --array=0-53
+#SBATCH --array=0-62
 #SBATCH --output=/gpfs/cdsi_ess/home/limr/logs/slurm/test_integration_%A_%a.out
 
 set -euo pipefail
@@ -86,6 +88,17 @@ TESTS=(
     "tests/mussel/models/test_encoder_integration.py::test_abmil_slide_encoder_aggregates_features[dim512]"
     "tests/mussel/models/test_encoder_integration.py::test_abmil_slide_encoder_aggregates_features[dim1024]"
     "tests/mussel/models/test_encoder_integration.py::test_abmil_slide_encoder_via_apply_slide_aggregation"
+    # --- Snapshot regression and determinism, every model in one task (tasks 54-56) ---
+    "tests/mussel/models/test_encoder_integration.py::test_patch_encoder_matches_snapshot"
+    "tests/mussel/models/test_encoder_integration.py::test_slide_encoder_matches_snapshot"
+    "tests/mussel/models/test_encoder_integration.py::test_patch_encoder_is_deterministic"
+    # --- CLI integration tests, one file per task (tasks 57-62) ---
+    "tests/mussel/cli/test_extract_features.py"
+    "tests/mussel/cli/test_tessellate_extract_features.py"
+    "tests/mussel/cli/test_tessellate_extract_features_batch.py"
+    "tests/mussel/cli/test_cache_tiles.py"
+    "tests/mussel/cli/test_filter_tessellate.py"
+    "tests/mussel/cli/test_text_search_integration.py"
 )
 
 EXTRAS=(
@@ -109,6 +122,10 @@ EXTRAS=(
     torch-gpu torch-gpu torch-gpu torch-gpu torch-gpu
     # Text-aligned patch encoders and ABMIL (tasks 49-53)
     torch-gpu torch-gpu torch-gpu torch-gpu torch-gpu
+    # Snapshots and determinism (tasks 54-56)
+    torch-gpu torch-gpu torch-gpu
+    # CLI integration (tasks 57-62)
+    torch-gpu torch-gpu torch-gpu torch-gpu torch-gpu torch-gpu
 )
 
 VENVS=(
@@ -130,6 +147,10 @@ VENVS=(
     "" "" "" "" ""  "" "" "" "" ""
     # Text-aligned patch encoders and ABMIL (tasks 49-53): use repo .venv
     "" "" "" "" ""
+    # Snapshots and determinism (tasks 54-56): use repo .venv
+    "" "" ""
+    # CLI integration (tasks 57-62): use repo .venv
+    "" "" "" "" "" ""
 )
 
 TEST_NODE="${TESTS[$SLURM_ARRAY_TASK_ID]}"
@@ -171,7 +192,10 @@ uv sync "${SYNC_ARGS[@]}"
 
 echo ""
 echo "--- Running: ${TEST_NODE} ---"
+# -m integration: pyproject's addopts deselect integration tests (-m "not
+# integration"), even when named by node ID; without this every task ran nothing.
 uv run pytest "$TEST_NODE" \
+    -m integration \
     --use-gpu \
     -v \
     --tb=short \

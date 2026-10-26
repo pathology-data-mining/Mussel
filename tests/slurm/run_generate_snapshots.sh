@@ -1,5 +1,5 @@
 #!/bin/bash
-# SLURM job: generate golden snapshot .npy files for all patch encoders.
+# SLURM job: generate golden snapshot .npy files for all patch and slide encoders.
 #
 # Run this ONCE to populate tests/testdata/snapshots/ before running
 # snapshot regression tests. Snapshots are committed to the repo so
@@ -40,7 +40,8 @@ uv sync --extra torch-gpu
 echo ""
 echo "--- Generating snapshots (torch-gpu models) ---"
 uv run pytest tests/mussel/models/test_encoder_integration.py \
-    -k "test_patch_encoder_matches_snapshot" \
+    -m integration \
+    -k "matches_snapshot" \
     --use-gpu \
     --update-snapshots \
     -v \
