@@ -46,3 +46,28 @@ def test_cache_tiles(tmp_path, test_data_path, num_workers):
         img, _ = dataset[expected[k]]
         # __getitem__ returns a (1, C, H, W) tile; collate_features concatenates them.
         torch.testing.assert_close(tiles[k : k + 1], img, msg=f"cached tile {k} is not tile {expected[k]}")
+
+
+def test_cache_tiles_without_workers(tmp_path, test_data_path):
+    """num_workers=0 opens the slide in the main process (no worker_init runs there).
+
+    "vessel" is the top class of 5 annotated tiles, so this is quick enough for CI.
+    """
+    cfg = CacheTilesConfig(
+        limit_to_class=["vessel"],
+        num_workers=0,
+        patch_h5_path=os.path.join(test_data_path, "948176.patch.h5"),
+        slide_path=os.path.join(test_data_path, "948176.svs"),
+        annotation_csv_path=os.path.join(test_data_path, "948176.annotation.csv"),
+        output_indices_json_path=tmp_path / "indices.json",
+        output_pt_path=tmp_path / "tiles.pt",
+    )
+    mussel.cli.cache_tiles.main(cfg)
+
+    indices = json.loads((tmp_path / "indices.json").read_text())
+    tiles = torch.load(tmp_path / "tiles.pt", weights_only=True)
+    assert len(indices) == 5 and tiles.shape[0] == 5
+    dataset = WholeSlideImageH5Dataset(h5_path=cfg.patch_h5_path, slide_path=cfg.slide_path,
+                                       use_imagenet_rgb_dist=True, init_wsi_in_worker=False)
+    for k, idx in enumerate(indices):
+        torch.testing.assert_close(tiles[k : k + 1], dataset[idx][0], msg=f"cached tile {k} is not tile {idx}")

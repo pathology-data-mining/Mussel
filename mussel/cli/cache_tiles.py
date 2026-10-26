@@ -79,11 +79,13 @@ def main(cfg: CacheTilesConfig):
         indices = annot[annot["class"].isin(cfg.limit_to_class)].index.tolist()
         logger.info(f"limiting to class {cfg.limit_to_class} with {len(indices)} tiles")
 
+    # Without workers, worker_init never runs, so the slide must be opened here.
     dataset = WholeSlideImageH5Dataset(
         h5_path=cfg.patch_h5_path,
         slide_path=cfg.slide_path,
         use_imagenet_rgb_dist=True,
         limit_to_indices=indices if cfg.limit_to_class else None,
+        init_wsi_in_worker=cfg.num_workers > 0,
     )
     kwargs = {
         "num_workers": cfg.num_workers,
