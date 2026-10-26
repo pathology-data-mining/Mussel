@@ -2,10 +2,13 @@ import os
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
+import h5py
+import numpy as np
 import pytest
+import torch
 from omegaconf import OmegaConf
 
-from mussel.cli.filter_tessellate import FilterTessellateConfig
+from mussel.cli.filter_tessellate import FilterTessellateConfig, main
 from mussel.cli.tessellate import NeuralSegConfig, SegConfig, StainSegConfig
 from mussel.models import ModelType
 
@@ -92,8 +95,6 @@ def test_filter_tessellate_forwards_reusable_neural_segmenter(tmp_path):
     shared_segmenter.release.assert_called_once()
 
 
-@pytest.mark.slow
-@pytest.mark.integration
 def test_filter_tessellate_config_construction(
     tmp_path, test_data_path, classifier_pkl_path, use_gpu, num_workers
 ):
@@ -125,8 +126,6 @@ def test_filter_tessellate_config_construction(
     assert cfg.model_type == ModelType.RESNET50
 
 
-@pytest.mark.slow
-@pytest.mark.integration
 def test_filter_tessellate_config_with_intermediate_files(
     tmp_path, test_data_path, classifier_pkl_path, use_gpu, num_workers
 ):
@@ -155,3 +154,49 @@ def test_filter_tessellate_config_with_intermediate_files(
     # Verify config was constructed correctly
     assert cfg.keep_intermediate_files is True
     assert cfg.save_features_to_h5 is True
+
+
+def _filter_tessellate(output_dir, test_data_path, use_gpu, num_workers, classifier_pkl, threshold):
+    """filter_tessellate on 300 random tiles of the test slide; return (features, coords) it kept."""
+    os.makedirs(output_dir, exist_ok=True)
+    cfg = FilterTessellateConfig(
+        slide_path=os.path.join(test_data_path, "948176.svs"),
+        output_h5_path=os.path.join(output_dir, "filtered.h5"),
+        output_pt_path=os.path.join(output_dir, "filtered.pt"),
+        classifier_pkl=classifier_pkl,
+        classifier_threshold=threshold,
+        model_type=ModelType.RESNET50,
+        seg_config=SegConfig(segment_threshold=0, max_tiles=300),
+        num_workers=num_workers,
+        batch_size=32,
+        use_gpu=use_gpu,
+        save_features_to_h5=True,
+    )
+    main(OmegaConf.create(cfg))
+    with h5py.File(cfg.output_h5_path, "r") as f:
+        features, coords = f["features"][:], f["coords"][:]
+    pt = torch.load(cfg.output_pt_path, weights_only=True)
+    np.testing.assert_allclose(pt.float().numpy(), features, rtol=1e-6, err_msg=".pt differs from .h5")
+    return features, coords
+
+
+@pytest.mark.slow
+@pytest.mark.integration
+@pytest.mark.timeout(600)
+def test_filter_tessellate_keeps_exactly_the_passing_tiles(
+    tmp_path, test_data_path, classifier_pkl_path, use_gpu, num_workers, cut_classifier
+):
+    """filter_tessellate writes exactly the tiles the classifier passes, with their features."""
+    # Threshold 0: every tile passes, so this run gives every tile's features.
+    all_feats, all_coords = _filter_tessellate(str(tmp_path / "all"), test_data_path, use_gpu, num_workers,
+                                               classifier_pkl_path, threshold=0.0)
+    assert all_feats.shape == (300, 1024)
+    classifier_pkl, keep = cut_classifier(all_feats)
+    kept = keep(all_feats)
+
+    feats, coords = _filter_tessellate(str(tmp_path / "filtered"), test_data_path, use_gpu, num_workers,
+                                       classifier_pkl, threshold=0.5)
+    np.testing.assert_array_equal(coords, all_coords[kept], err_msg="wrong tiles kept")
+    assert feats.shape == (kept.sum(), 1024)
+    err = np.linalg.norm(feats - all_feats[kept], axis=1) / np.linalg.norm(all_feats[kept], axis=1)
+    assert err.max() <= 1e-2, f"kept tiles' features differ by up to {err.max():.2e} of the row norm"

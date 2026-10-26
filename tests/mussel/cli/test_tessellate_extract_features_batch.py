@@ -164,47 +164,23 @@ def _run_batch(output_dir, test_data_path, use_gpu, num_workers, classifier_pkl=
 @pytest.mark.slow
 @pytest.mark.integration
 def test_tessellate_extract_features_batch_with_filtering(
-    tmp_path, test_data_path, use_gpu, num_workers
+    tmp_path, test_data_path, use_gpu, num_workers, cut_classifier
 ):
-    """Batch filtering keeps exactly the tiles the classifier passes.
-
-    A logistic regression that keeps the tiles scoring above a cut is built from
-    an unfiltered run's features, so which tiles must survive is known. The cut
-    sits in the widest gap between scores in the middle half, far from any tile,
-    so GPU noise in the features can't move a tile across it.
-    """
-    import pickle
-
-    from sklearn.linear_model import LogisticRegression
-
+    """Batch filtering keeps exactly the tiles the classifier passes (see ``cut_classifier``)."""
     unfiltered = _run_batch(str(tmp_path / "all"), test_data_path, use_gpu, num_workers)
-    feats, coords = unfiltered["slide1"]
-    direction = feats[0] - feats.mean(0)
-    scores = np.sort(feats @ direction)
-    mid = np.arange(len(scores) // 4, 3 * len(scores) // 4)
-    k = mid[np.argmax(scores[mid + 1] - scores[mid])]
-    cut = (scores[k] + scores[k + 1]) / 2
-    classifier = LogisticRegression()
-    classifier.classes_ = np.array([0, 1])
-    classifier.coef_ = direction[None].astype(np.float64)
-    classifier.intercept_ = np.array([-cut])
-    classifier.n_features_in_ = feats.shape[1]
-    classifier_pkl = tmp_path / "classifier.pkl"
-    classifier_pkl.write_bytes(pickle.dumps(classifier))
+    classifier_pkl, keep = cut_classifier(unfiltered["slide1"][0])
 
     filtered = _run_batch(str(tmp_path / "filtered"), test_data_path, use_gpu, num_workers,
-                          classifier_pkl=str(classifier_pkl), threshold=0.5)
+                          classifier_pkl=classifier_pkl, threshold=0.5)
     for slide_id, (all_feats, all_coords) in unfiltered.items():
-        keep = all_feats @ direction > cut
-        assert 0.25 * len(keep) <= keep.sum() <= 0.75 * len(keep)
+        kept = keep(all_feats)
+        assert 0.25 * len(kept) <= kept.sum() <= 0.75 * len(kept)
         out_feats, out_coords = filtered[slide_id]
-        np.testing.assert_array_equal(out_coords, all_coords[keep], err_msg=f"{slide_id}: wrong tiles kept")
-        assert out_feats.shape == (keep.sum(), 1024), f"{slide_id}: RESNET50 feature dim should be 1024"
+        np.testing.assert_array_equal(out_coords, all_coords[kept], err_msg=f"{slide_id}: wrong tiles kept")
+        assert out_feats.shape == (kept.sum(), 1024), f"{slide_id}: RESNET50 feature dim should be 1024"
         assert np.all(np.isfinite(out_feats)), f"{slide_id}: features contain NaN or Inf after filtering"
 
 
-@pytest.mark.slow
-@pytest.mark.integration
 def test_tessellate_extract_features_batch_with_model_aggregation(
     tmp_path, test_data_path, use_gpu, num_workers
 ):
