@@ -5,6 +5,7 @@ import itertools
 import logging
 import os
 import traceback
+import zlib
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from pathlib import Path
@@ -1718,6 +1719,17 @@ def extract_patch_features_batch_multi(
 
 
 @timed
+def slide_subsample_indices(n_patches: int, max_patches: int, slide_name: str) -> np.ndarray:
+    """Sorted indices of the ``max_patches`` of ``n_patches`` tiles kept for a slide.
+
+    A uniform random subset seeded by the slide's name with a stable hash (CRC-32), so
+    every run keeps the same tiles. Python's ``hash()`` of a string changes between
+    processes (PYTHONHASHSEED) and must not be used here.
+    """
+    rng = np.random.default_rng(zlib.crc32(str(slide_name).encode()))
+    return np.sort(rng.choice(n_patches, max_patches, replace=False))
+
+
 def aggregate_slide_features_batch(
     patch_features_h5_paths,
     output_h5_paths=None,
@@ -1980,13 +1992,8 @@ def aggregate_slide_features_batch(
                                 f"subsampling to {max_slide_patches} for TITAN_SLIDE "
                                 f"(O(N²) attention limit)."
                             )
-                            rng = np.random.default_rng(
-                                seed=abs(hash(slide_name)) % 2**32
-                            )
-                            indices = np.sort(
-                                rng.choice(
-                                    features.shape[0], max_slide_patches, replace=False
-                                )
+                            indices = slide_subsample_indices(
+                                features.shape[0], max_slide_patches, slide_name
                             )
                             features = features[indices]
                             coords = coords[indices]
