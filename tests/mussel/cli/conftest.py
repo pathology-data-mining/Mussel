@@ -26,7 +26,8 @@ def cut_classifier(tmp_path):
     keeps the tiles whose score along a fixed direction is above a cut. It
     returns ``(classifier_pkl_path, keep)``, where ``keep(features)`` is the mask
     of tiles the filter must keep. The cut sits in the widest gap between scores
-    in the middle half, far from any tile, so GPU noise in the features can't
+    in the middle half (over a few candidate directions), and that gap must be at
+    least 0.5% of the score range (checked), so GPU noise in the features can't
     move a tile across it.
 
     It is pickled because ``classifier_pkl`` is read with ``pickle.load``
@@ -38,13 +39,25 @@ def cut_classifier(tmp_path):
     """
     from sklearn.linear_model import LogisticRegression
 
-    def make(features):
-        features = np.asarray(features, dtype=np.float64)
-        direction = features[0] - features.mean(0)
+    def widest_gap(features, direction):
+        """(gap as a fraction of the score range, cut) for the widest gap in the middle half."""
         scores = np.sort(features @ direction)
         mid = np.arange(len(scores) // 4, 3 * len(scores) // 4)
         k = mid[np.argmax(scores[mid + 1] - scores[mid])]
-        cut = (scores[k] + scores[k + 1]) / 2
+        return (scores[k + 1] - scores[k]) / (scores[-1] - scores[0]), (scores[k] + scores[k + 1]) / 2
+
+    def make(features):
+        features = np.asarray(features, dtype=np.float64)
+        # Score along "a tile minus the mean tile", trying the first 20 tiles and
+        # keeping the direction with the widest gap.
+        candidates = [features[i] - features.mean(0) for i in range(min(20, len(features)))]
+        (gap, cut), direction = max(((widest_gap(features, d), d) for d in candidates), key=lambda c: c[0][0])
+        # The second run recomputes the features, so GPU noise moves each score by
+        # up to ~1e-3 of the range (worst seen: 1.5e-3 of the tiles' spread). A tile
+        # within that of the cut could land on either side and the exact-tiles
+        # assertions would flake. The tiles and model are fixed, so this holds or
+        # fails the same way on every run.
+        assert gap >= 5e-3, f"no clear gap for the cut: widest is {gap:.1e} of the score range"
         classifier = LogisticRegression()
         classifier.classes_ = np.array([0, 1])
         classifier.coef_ = direction[None]
