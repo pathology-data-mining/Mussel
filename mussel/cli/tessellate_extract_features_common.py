@@ -44,6 +44,7 @@ def _tessellate_and_filter(
     output_mask_path: Optional[str] = None,
     artifact_remover_fn: Optional[GrandQCArtifactRemover] = None,
     neural_segmenter=None,
+    file_stem: Optional[str] = None,
 ) -> Optional[dict]:
     """Tessellate a slide and optionally extract/filter features for tile selection.
 
@@ -67,6 +68,10 @@ def _tessellate_and_filter(
             slides (weights are loaded only once).  When ``None`` a new instance is
             created from ``cfg.seg_config`` flags, which incurs a model-weight
             download on first use for every slide.
+        file_stem: Name for this slide's intermediate files (default: the slide
+            file's stem). Batch mode passes the slide ID: its slides share one
+            temp directory, and two slides with the same file name would
+            otherwise overwrite each other's tiles.
 
     Returns:
         ``None`` on tessellation failure; otherwise a dict with:
@@ -80,15 +85,16 @@ def _tessellate_and_filter(
           ``use_filtering and skip_second_extraction``, else ``None``.
         - ``original_coords_count`` – number of tiles before filtering.
     """
+    stem = file_stem or Path(slide_path).stem
     # Step 1: Tessellate
     logger.info(f"Tessellating slide: {slide_path}")
     if cfg.keep_intermediate_files:
         tessellate_h5_path = safe_path_join(
-            base_path, f"{Path(slide_path).stem}.tessellate.h5"
+            base_path, f"{stem}.tessellate.h5"
         )
     else:
         tessellate_h5_path = os.path.join(
-            temp_dir, f"{Path(slide_path).stem}.tessellate.h5"
+            temp_dir, f"{stem}.tessellate.h5"
         )
 
     seg_cfg = OmegaConf.to_container(cfg.seg_config)
@@ -141,17 +147,17 @@ def _tessellate_and_filter(
         logger.info(f"Extracting features for filtering: {slide_path}")
         if cfg.keep_intermediate_files:
             prefilter_features_h5_path = safe_path_join(
-                base_path, f"{Path(slide_path).stem}.prefilter_features.h5"
+                base_path, f"{stem}.prefilter_features.h5"
             )
             prefilter_features_pt_path = safe_path_join(
-                base_path, f"{Path(slide_path).stem}.prefilter_features.pt"
+                base_path, f"{stem}.prefilter_features.pt"
             )
         else:
             prefilter_features_h5_path = os.path.join(
-                temp_dir, f"{Path(slide_path).stem}.prefilter_features.h5"
+                temp_dir, f"{stem}.prefilter_features.h5"
             )
             prefilter_features_pt_path = os.path.join(
-                temp_dir, f"{Path(slide_path).stem}.prefilter_features.pt"
+                temp_dir, f"{stem}.prefilter_features.pt"
             )
 
         save_features(
@@ -191,11 +197,11 @@ def _tessellate_and_filter(
         else:
             if cfg.keep_intermediate_files:
                 filtered_coords_h5_path = safe_path_join(
-                    base_path, f"{Path(slide_path).stem}.filtered_coords.h5"
+                    base_path, f"{stem}.filtered_coords.h5"
                 )
             else:
                 filtered_coords_h5_path = os.path.join(
-                    temp_dir, f"{Path(slide_path).stem}.filtered_coords.h5"
+                    temp_dir, f"{stem}.filtered_coords.h5"
                 )
 
             save_hdf5(
@@ -415,6 +421,7 @@ def process_slide_tessellation_only(
         output_mask_path=output_mask_path,
         artifact_remover_fn=artifact_remover_fn,
         neural_segmenter=neural_segmenter,
+        file_stem=slide_id,
     )
     if result is None:
         return None

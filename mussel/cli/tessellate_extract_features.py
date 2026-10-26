@@ -828,6 +828,14 @@ def _main_batch(
     slide_ids = cfg.slide_ids
     if slide_ids is None:
         slide_ids = get_slide_ids_from_paths(cfg.slide_paths)
+    # Outputs and intermediate files are named by slide ID: a duplicate would
+    # overwrite another slide's tiles and features.
+    duplicates = sorted({s for s in slide_ids if list(slide_ids).count(s) > 1})
+    if duplicates:
+        raise ValueError(
+            f"slide IDs must be unique in a batch; duplicated: {duplicates}. Slide IDs default "
+            "to the file name without extension: pass slide_ids for slides with the same name."
+        )
 
     # Phase 1: Tessellate all slides and perform filtering if needed
     logger.info(f"\n=== Phase 1: Tessellating {len(cfg.slide_paths)} slides ===")
