@@ -459,3 +459,74 @@ def test_wsi_dir_conflict_raises(tmp_path):
     cfg2.model_type = "CLIP"
     with pytest.raises(ValueError, match="Cannot specify both wsi_dir and slide_path"):
         main(cfg2)
+
+
+def _two_slides_named_alike(tmp_path, test_data_path):
+    """Two slide paths with the same file name (948176.svs) in different folders."""
+    paths = []
+    for folder in ("a", "b"):
+        (tmp_path / folder).mkdir()
+        link = tmp_path / folder / "948176.svs"
+        link.symlink_to(os.path.join(test_data_path, "948176.svs"))
+        paths.append(str(link))
+    return paths
+
+
+def test_batch_slides_with_the_same_file_name_keep_their_own_tiles(tmp_path, test_data_path):
+    """Each slide's features are extracted at its own tiles, not another slide's.
+
+    The slides share one temp directory for intermediate files; named by file
+    stem, b's tiles overwrote a's, and a was extracted at b's coordinates.
+    """
+    slide_paths = _two_slides_named_alike(tmp_path, test_data_path)
+    own_coords = {slide_paths[0]: np.array([[0, 0]]), slide_paths[1]: np.array([[256, 256], [512, 512]])}
+
+    def segment(slide_path, slide_id, output_h5_path, **kwargs):
+        os.makedirs(os.path.dirname(output_h5_path), exist_ok=True)
+        with h5py.File(output_h5_path, "w") as f:
+            f.create_dataset("coords", data=own_coords[slide_path])
+        return (MagicMock(), MagicMock(), own_coords[slide_path].tolist(), None)
+
+    extracted = {}
+
+    def extract(patch_h5_paths, slide_paths, output_h5_paths, **kwargs):
+        for patch_h5, slide in zip(patch_h5_paths, slide_paths):
+            with h5py.File(patch_h5, "r") as f:
+                extracted[slide] = f["coords"][:]
+        _make_extract_patch_features_batch_mock()(patch_h5_paths, slide_paths, output_h5_paths)
+
+    cfg = TessellateExtractFeaturesConfig(
+        slide_paths=slide_paths, slide_ids=["A", "B"], output_dir=str(tmp_path / "out"),
+        classifier_pkl=None, prefilter_model_type=ModelType.RESNET50,
+        seg_config=SegConfig(segment_threshold=0), num_workers=0, use_gpu=False,
+    )
+    with patch("mussel.cli.tessellate_extract_features_common.segment_tissue", side_effect=segment), \
+            patch("mussel.cli.tessellate_extract_features.extract_patch_features_batch", side_effect=extract):
+        main(OmegaConf.create(cfg))
+    for slide in slide_paths:
+        np.testing.assert_array_equal(extracted[slide], own_coords[slide], err_msg=f"{slide} got another slide's tiles")
+
+
+@pytest.mark.parametrize("model_type", [None, ["RESNET50", "CTRANSPATH"]],  # a list, as Hydra passes it
+                         ids=["single-model", "multi-model"])
+def test_batch_rejects_duplicate_slide_ids(tmp_path, test_data_path, model_type):
+    """Slide IDs default to the file stem; two slides named alike need explicit slide_ids.
+
+    Rejected before any temp directory is made, and also in multi-model batch
+    mode, whose per-model loop logs a model's error and moves on.
+    """
+    cfg = TessellateExtractFeaturesConfig(
+        slide_paths=_two_slides_named_alike(tmp_path, test_data_path), output_dir=str(tmp_path / "out"),
+        classifier_pkl=None, prefilter_model_type=ModelType.RESNET50, model_type=model_type,
+        seg_config=SegConfig(segment_threshold=0), num_workers=0, use_gpu=False,
+    )
+    # Mocked, so the old code (which accepted the duplicates) fails fast instead
+    # of running the pipeline.
+    with patch("mussel.cli.tessellate_extract_features_common.segment_tissue",
+               side_effect=_make_segment_tissue_mock()), \
+            patch("mussel.cli.tessellate_extract_features.extract_patch_features_batch",
+                  side_effect=_make_extract_patch_features_batch_mock()), \
+            patch("mussel.cli.tessellate_extract_features.tempfile.mkdtemp") as mkdtemp:
+        with pytest.raises(ValueError, match="slide IDs must be unique"):
+            main(OmegaConf.create(cfg))
+    mkdtemp.assert_not_called()
