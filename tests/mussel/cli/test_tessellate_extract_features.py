@@ -3,6 +3,7 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import h5py
+import numpy as np
 import pytest
 import torch
 from omegaconf import OmegaConf
@@ -156,82 +157,87 @@ def test_neural_segmenter_use_gpu_true_uses_cuda_device(kwargs, expected_device)
     assert result is MockSegmenter.return_value
 
 
+# The integration tests check the workflow, not throughput: a seeded random 300
+# tiles of the test slide instead of all of them (segment_threshold=0). An
+# explicit 224 px (not the 256 px default, which a model's size overrides) gives
+# every run in a test the same tiles, whichever models it uses.
+_SEG = dict(segment_threshold=0, max_tiles=300, patch_size=224)
+
+
+def _run_single(output_dir, test_data_path, use_gpu, num_workers, **overrides):
+    """Run tessellate_extract_features on the test slide; return (features, coords) of its .h5.
+
+    Also checks the .pt holds the same features as the .h5.
+    """
+    os.makedirs(output_dir, exist_ok=True)
+    output_h5_path = os.path.join(output_dir, "features.h5")
+    output_pt_path = os.path.join(output_dir, "features.pt")
+    cfg = TessellateExtractFeaturesConfig(**{
+        **dict(
+            slide_path=os.path.join(test_data_path, "948176.svs"),
+            output_h5_path=output_h5_path,
+            output_pt_path=output_pt_path,
+            classifier_pkl=None,
+            prefilter_model_type=ModelType.RESNET50,
+            seg_config=SegConfig(**_SEG),
+            num_workers=num_workers,
+            batch_size=32,
+            use_gpu=use_gpu,
+            keep_intermediate_files=False,
+        ),
+        **overrides,
+    })
+    main(OmegaConf.create(cfg))
+    with h5py.File(output_h5_path, "r") as f:
+        features, coords = f["features"][:], f["coords"][:]
+    pt = torch.load(output_pt_path, weights_only=True)
+    np.testing.assert_allclose(pt.float().numpy(), features, rtol=1e-6, err_msg=".pt differs from .h5")
+    return features, coords
+
+
+def _assert_same_features(actual, expected, what):
+    """Same tiles' features from two runs of one model, up to GPU noise (1% of each row's norm)."""
+    assert actual.shape == expected.shape, f"{what}: shape {actual.shape} != {expected.shape}"
+    err = np.linalg.norm(actual - expected, axis=1) / np.maximum(np.linalg.norm(expected, axis=1), 1e-12)
+    assert err.max() <= 1e-2, f"{what}: features differ by up to {err.max():.2e} of the row norm"
+
+
 @pytest.mark.slow
 @pytest.mark.integration
 @pytest.mark.timeout(600)
-def test_tessellate_extract_features(
-    tmp_path, test_data_path, classifier_pkl_path, use_gpu, num_workers
-):
-    """Test the integrated tessellate-extract-features workflow with dual extraction."""
-    slide_path = os.path.join(test_data_path, "948176.svs")
-    classifier_pkl = classifier_pkl_path
-    output_h5_path = os.path.join(tmp_path, "filtered_features.h5")
-    output_pt_path = os.path.join(tmp_path, "filtered_features.pt")
+def test_tessellate_extract_features(tmp_path, test_data_path, use_gpu, num_workers, cut_classifier):
+    """Filtering with the pre-filter model as the final model keeps exactly the passing tiles."""
+    all_feats, all_coords = _run_single(str(tmp_path / "all"), test_data_path, use_gpu, num_workers)
+    classifier_pkl, keep = cut_classifier(all_feats)
+    kept = keep(all_feats)
+    assert 0.25 * len(kept) <= kept.sum() <= 0.75 * len(kept)
 
-    seg_config = SegConfig(segment_threshold=0)
-    cfg = TessellateExtractFeaturesConfig(
-        slide_path=slide_path,
-        output_h5_path=output_h5_path,
-        output_pt_path=output_pt_path,
-        classifier_pkl=classifier_pkl,
-        classifier_threshold=0.75,
-        prefilter_model_type=ModelType.RESNET50,  # Use ResNet50 for pre-filtering
-        model_type=None,  # Will use same model as prefilter
-        seg_config=seg_config,
-        num_workers=num_workers,
-        batch_size=32,
-        use_gpu=use_gpu,
-        keep_intermediate_files=False,
-    )
-
-    main(OmegaConf.create(cfg))
-
-    assert os.path.exists(output_h5_path)
-    assert os.path.exists(output_pt_path)
-
-    # Check that the output files are not empty
-    with h5py.File(output_h5_path, "r") as f:
-        assert "features" in f
-        assert "coords" in f
-        assert f["features"].shape[0] > 0
-        assert f["coords"].shape[0] > 0
-
-    data = torch.load(output_pt_path, weights_only=True)
-    assert data.shape[0] > 0
+    feats, coords = _run_single(str(tmp_path / "filtered"), test_data_path, use_gpu, num_workers,
+                                classifier_pkl=classifier_pkl, classifier_threshold=0.5, model_type=None)
+    np.testing.assert_array_equal(coords, all_coords[kept], err_msg="wrong tiles kept")
+    _assert_same_features(feats, all_feats[kept], "RESNET50 features of the kept tiles")
 
 
 @pytest.mark.slow
 @pytest.mark.integration
 @pytest.mark.timeout(600)
 def test_tessellate_extract_features_with_different_models(
-    tmp_path, test_data_path, classifier_pkl_path, use_gpu, num_workers
+    tmp_path, test_data_path, use_gpu, num_workers, cut_classifier
 ):
-    """Test with different models for pre-filter and post-filter extraction."""
-    slide_path = os.path.join(test_data_path, "948176.svs")
-    classifier_pkl = classifier_pkl_path
-    output_h5_path = os.path.join(tmp_path, "features.h5")
-    output_pt_path = os.path.join(tmp_path, "features.pt")
+    """Filter with ResNet50, extract the kept tiles with a second model (KAIKO ViT-S/16)."""
+    final = ModelType.KAIKO_VITS16
+    resnet_feats, all_coords = _run_single(str(tmp_path / "resnet"), test_data_path, use_gpu, num_workers)
+    final_feats, final_coords = _run_single(str(tmp_path / "final"), test_data_path, use_gpu, num_workers,
+                                            prefilter_model_type=final)
+    np.testing.assert_array_equal(final_coords, all_coords, err_msg="the two models' runs tiled differently")
+    classifier_pkl, keep = cut_classifier(resnet_feats)
+    kept = keep(resnet_feats)
 
-    seg_config = SegConfig(segment_threshold=0)
-    cfg = TessellateExtractFeaturesConfig(
-        slide_path=slide_path,
-        output_h5_path=output_h5_path,
-        output_pt_path=output_pt_path,
-        classifier_pkl=classifier_pkl,
-        classifier_threshold=0.75,
-        prefilter_model_type=ModelType.RESNET50,  # First extraction with ResNet50
-        model_type=ModelType.RESNET50,  # Second extraction also with ResNet50
-        seg_config=seg_config,
-        num_workers=num_workers,
-        batch_size=32,
-        use_gpu=use_gpu,
-        keep_intermediate_files=False,
-    )
-
-    main(OmegaConf.create(cfg))
-
-    assert os.path.exists(output_h5_path)
-    assert os.path.exists(output_pt_path)
+    feats, coords = _run_single(str(tmp_path / "filtered"), test_data_path, use_gpu, num_workers,
+                                classifier_pkl=classifier_pkl, classifier_threshold=0.5,
+                                prefilter_model_type=ModelType.RESNET50, model_type=final)
+    np.testing.assert_array_equal(coords, all_coords[kept], err_msg="wrong tiles kept")
+    _assert_same_features(feats, final_feats[kept], f"{final.name} features of the kept tiles")
 
 
 @pytest.mark.slow
@@ -246,7 +252,7 @@ def test_tessellate_extract_features_with_intermediate_files(
     output_h5_path = os.path.join(tmp_path, "features.h5")
     output_pt_path = os.path.join(tmp_path, "features.pt")
 
-    seg_config = SegConfig(segment_threshold=0)
+    seg_config = SegConfig(**_SEG)
     cfg = TessellateExtractFeaturesConfig(
         slide_path=slide_path,
         output_h5_path=output_h5_path,
@@ -295,7 +301,7 @@ def test_tessellate_extract_features_with_visualizations(
     output_grid_mask_path = os.path.join(tmp_path, "grid.png")
     output_thumbnail_path = os.path.join(tmp_path, "thumbnail.png")
 
-    seg_config = SegConfig(segment_threshold=0)
+    seg_config = SegConfig(**_SEG)
     cfg = TessellateExtractFeaturesConfig(
         slide_path=slide_path,
         output_h5_path=output_h5_path,
@@ -325,47 +331,14 @@ def test_tessellate_extract_features_with_visualizations(
 @pytest.mark.slow
 @pytest.mark.integration
 @pytest.mark.timeout(600)
-def test_tessellate_extract_features_without_filtering(
-    tmp_path, test_data_path, use_gpu, num_workers
-):
-    """Test the workflow without filtering (classifier_pkl=None)."""
-    slide_path = os.path.join(test_data_path, "948176.svs")
-    output_h5_path = os.path.join(tmp_path, "features.h5")
-    output_pt_path = os.path.join(tmp_path, "features.pt")
-
-    seg_config = SegConfig(segment_threshold=0)
-    cfg = TessellateExtractFeaturesConfig(
-        slide_path=slide_path,
-        output_h5_path=output_h5_path,
-        output_pt_path=output_pt_path,
-        classifier_pkl=None,  # No filtering
-        prefilter_model_type=ModelType.RESNET50,
-        seg_config=seg_config,
-        num_workers=num_workers,
-        batch_size=32,
-        use_gpu=use_gpu,
-        keep_intermediate_files=False,
-    )
-
-    main(OmegaConf.create(cfg))
-
-    assert os.path.exists(output_h5_path)
-    assert os.path.exists(output_pt_path)
-
-    # Check that the output files are not empty
-    with h5py.File(output_h5_path, "r") as f:
-        assert "features" in f
-        assert "coords" in f
-        assert f["features"].shape[0] > 0
-        assert f["coords"].shape[0] > 0
-
-    data = torch.load(output_pt_path, weights_only=True)
-    assert data.shape[0] > 0
+def test_tessellate_extract_features_without_filtering(tmp_path, test_data_path, use_gpu, num_workers):
+    """Without a classifier every tessellated tile is extracted, once."""
+    feats, coords = _run_single(str(tmp_path / "out"), test_data_path, use_gpu, num_workers)
+    assert feats.shape == (_SEG["max_tiles"], 1024), "expected one RESNET50 row per tile"
+    assert len(np.unique(coords, axis=0)) == len(coords), "a tile was extracted twice"
+    assert np.all(np.isfinite(feats))
 
 
-@pytest.mark.slow
-@pytest.mark.integration
-@pytest.mark.timeout(600)
 def test_tessellate_extract_features_with_slide_encoder_inference(
     tmp_path, test_data_path, use_gpu, num_workers
 ):
@@ -375,7 +348,7 @@ def test_tessellate_extract_features_with_slide_encoder_inference(
     output_h5_path = os.path.join(tmp_path, "features.h5")
     output_pt_path = os.path.join(tmp_path, "features.pt")
 
-    seg_config = SegConfig(segment_threshold=0)
+    seg_config = SegConfig(**_SEG)
     cfg = TessellateExtractFeaturesConfig(
         slide_path=slide_path,
         output_h5_path=output_h5_path,

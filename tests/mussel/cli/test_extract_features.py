@@ -36,8 +36,21 @@ def test_extract_features(
         use_gpu=use_gpu,
     )
     mussel.cli.extract_features.main(OmegaConf.create(cfg))
-    assert os.path.exists(output_h5_path)
-    assert os.path.exists(output_pt_path)
+
+    # The CLI writes what the library writes for the same tiles and model: one
+    # row per tile of the patch H5, in its order.
+    library_h5 = tmp_path / "library.h5"
+    extract_patch_features(patch_h5_path=patch_h5_path, slide_path=slide_path, output_h5_path=str(library_h5),
+                           model_type=ModelType.RESNET50, use_gpu=use_gpu, num_workers=num_workers)
+    with h5py.File(output_h5_path, "r") as f, h5py.File(library_h5, "r") as g, h5py.File(patch_h5_path, "r") as p:
+        feats, coords = f["features"][:], f["coords"][:]
+        np.testing.assert_array_equal(coords, p["coords"][:], err_msg="not one row per tile of the patch H5")
+        expected = g["features"][:]
+    assert feats.shape == expected.shape
+    err = np.linalg.norm(feats - expected, axis=1) / np.linalg.norm(expected, axis=1)
+    assert err.max() <= 1e-2, f"CLI features differ from the library's by up to {err.max():.2e} of the row norm"
+    pt = torch.load(output_pt_path, weights_only=True)
+    np.testing.assert_allclose(pt.float().numpy(), feats, rtol=1e-6, err_msg=".pt differs from .h5")
 
 
 @pytest.mark.slow
@@ -65,10 +78,16 @@ def test_extract_features_two_step(
     )
     mussel.cli.extract_features.main(OmegaConf.create(cfg))
 
-    # Check that both intermediate and final outputs exist
-    assert os.path.exists(intermediate_h5_path)
-    assert os.path.exists(output_h5_path)
-    assert os.path.exists(output_pt_path)
+    # The slide embedding is the mean of the intermediate patch features, which
+    # have one row per tile.
+    with h5py.File(intermediate_h5_path, "r") as f, h5py.File(patch_h5_path, "r") as p:
+        patch_feats = f["features"][:]
+        assert patch_feats.shape[0] == len(p["coords"])
+    with h5py.File(output_h5_path, "r") as f:
+        slide_feats = f["features"][:]
+    np.testing.assert_allclose(slide_feats.reshape(-1), patch_feats.astype(np.float64).mean(0), rtol=1e-4, atol=1e-6)
+    pt = torch.load(output_pt_path, weights_only=True)
+    np.testing.assert_allclose(pt.float().numpy().reshape(-1), slide_feats.reshape(-1), rtol=1e-6)
 
 
 @pytest.mark.slow
