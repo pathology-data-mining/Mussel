@@ -134,50 +134,73 @@ def test_tessellate_extract_features_batch_basic(
         ), f"{slide_id}: pt shape {pt_feats.shape} != h5 shape {feats.shape}"
 
 
-@pytest.mark.slow
-@pytest.mark.integration
-def test_tessellate_extract_features_batch_with_filtering(
-    tmp_path, test_data_path, classifier_pkl_path, use_gpu, num_workers
-):
-    """Test batch processing with filtering enabled."""
+def _run_batch(output_dir, test_data_path, use_gpu, num_workers, classifier_pkl=None, threshold=0.5):
+    """Two copies of the test slide, RESNET50, the same random tiles; returns {slide_id: (features, coords)}."""
     slide_path = os.path.join(test_data_path, "948176.svs")
-    slide_paths = [slide_path, slide_path]
-    classifier_pkl = classifier_pkl_path
-    output_dir = str(tmp_path / "batch_output")
-
-    seg_config = SegConfig(segment_threshold=0, max_tiles=_MAX_TILES)
     cfg = TessellateExtractFeaturesConfig(
-        slide_paths=slide_paths,
+        slide_paths=[slide_path, slide_path],
         slide_ids=["slide1", "slide2"],
         output_dir=output_dir,
         classifier_pkl=classifier_pkl,
-        classifier_threshold=0.75,
+        classifier_threshold=threshold,
         prefilter_model_type=ModelType.RESNET50,
         model_type=None,  # Will use same as prefilter
-        seg_config=seg_config,
+        seg_config=SegConfig(segment_threshold=0, max_tiles=_MAX_TILES),
         num_workers=num_workers,
         batch_size=32,
         use_gpu=use_gpu,
         keep_intermediate_files=False,
     )
-
     main(OmegaConf.create(cfg))
-
-    # Verify both slides have output with positive patch count
+    out = {}
     for slide_id in ("slide1", "slide2"):
         h5_path = os.path.join(output_dir, "h5", f"{slide_id}.features.h5")
         assert os.path.exists(h5_path), f"missing output for {slide_id}"
         with h5py.File(h5_path, "r") as f:
-            feats = f["features"][:]
-        assert (
-            feats.ndim == 2 and feats.shape[0] > 0
-        ), f"{slide_id}: no patches after filtering"
-        assert (
-            feats.shape[1] == 1024
-        ), f"{slide_id}: RESNET50 feature dim should be 1024"
-        assert np.all(
-            np.isfinite(feats)
-        ), f"{slide_id}: features contain NaN or Inf after filtering"
+            out[slide_id] = f["features"][:], f["coords"][:]
+    return out
+
+
+@pytest.mark.slow
+@pytest.mark.integration
+def test_tessellate_extract_features_batch_with_filtering(
+    tmp_path, test_data_path, use_gpu, num_workers
+):
+    """Batch filtering keeps exactly the tiles the classifier passes.
+
+    A logistic regression that keeps the tiles scoring above a cut is built from
+    an unfiltered run's features, so which tiles must survive is known. The cut
+    sits in the widest gap between scores in the middle half, far from any tile,
+    so GPU noise in the features can't move a tile across it.
+    """
+    import pickle
+
+    from sklearn.linear_model import LogisticRegression
+
+    unfiltered = _run_batch(str(tmp_path / "all"), test_data_path, use_gpu, num_workers)
+    feats, coords = unfiltered["slide1"]
+    direction = feats[0] - feats.mean(0)
+    scores = np.sort(feats @ direction)
+    mid = np.arange(len(scores) // 4, 3 * len(scores) // 4)
+    k = mid[np.argmax(scores[mid + 1] - scores[mid])]
+    cut = (scores[k] + scores[k + 1]) / 2
+    classifier = LogisticRegression()
+    classifier.classes_ = np.array([0, 1])
+    classifier.coef_ = direction[None].astype(np.float64)
+    classifier.intercept_ = np.array([-cut])
+    classifier.n_features_in_ = feats.shape[1]
+    classifier_pkl = tmp_path / "classifier.pkl"
+    classifier_pkl.write_bytes(pickle.dumps(classifier))
+
+    filtered = _run_batch(str(tmp_path / "filtered"), test_data_path, use_gpu, num_workers,
+                          classifier_pkl=str(classifier_pkl), threshold=0.5)
+    for slide_id, (all_feats, all_coords) in unfiltered.items():
+        keep = all_feats @ direction > cut
+        assert 0.25 * len(keep) <= keep.sum() <= 0.75 * len(keep)
+        out_feats, out_coords = filtered[slide_id]
+        np.testing.assert_array_equal(out_coords, all_coords[keep], err_msg=f"{slide_id}: wrong tiles kept")
+        assert out_feats.shape == (keep.sum(), 1024), f"{slide_id}: RESNET50 feature dim should be 1024"
+        assert np.all(np.isfinite(out_feats)), f"{slide_id}: features contain NaN or Inf after filtering"
 
 
 @pytest.mark.slow

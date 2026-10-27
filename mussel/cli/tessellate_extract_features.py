@@ -824,12 +824,6 @@ def _main_batch(
             )
             slide_model_path = cfg.slide_model_type.path
 
-    # Optimization: If filtering is enabled and models are the same, skip second extraction
-    models_are_same = (
-        model_type == cfg.prefilter_model_type and model_path == prefilter_model_path
-    )
-    skip_second_extraction = use_filtering and models_are_same
-
     # Generate slide IDs if not provided
     slide_ids = cfg.slide_ids
     if slide_ids is None:
@@ -854,7 +848,10 @@ def _main_batch(
                     output_dir_str, f"{slide_id}.{cfg.output_mask_suffix}"
                 )
 
-            # Tessellate and filter (but don't extract features yet)
+            # Tessellate and filter (but don't extract features yet). Phase 2 always
+            # extracts from final_coords_h5_path, so it must hold the filtered
+            # coords even when the pre-filter model is the final model: with
+            # skip_second_extraction it is the pre-filter features' H5, every tile.
             result = process_slide_tessellation_only(
                 slide_path=slide_path,
                 slide_id=slide_id,
@@ -864,7 +861,7 @@ def _main_batch(
                 use_filtering=use_filtering,
                 prefilter_model_type=cfg.prefilter_model_type,
                 prefilter_model_path=prefilter_model_path,
-                skip_second_extraction=skip_second_extraction,
+                skip_second_extraction=False,
                 output_mask_path=output_mask_path,
                 artifact_remover_fn=artifact_remover_fn,
                 neural_segmenter=neural_segmenter,
