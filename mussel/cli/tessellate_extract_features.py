@@ -708,6 +708,22 @@ def _main_single(cfg: TessellateExtractFeaturesConfig):
 
 
 @resolve_remote_paths("model_dir", "classifier_pkl", auto_detect=False)
+def _batch_slide_ids(cfg: TessellateExtractFeaturesConfig) -> List[str]:
+    """The batch's slide IDs (default: file names without extension), which must be unique.
+
+    Outputs and intermediate files are named by slide ID: a duplicate would
+    overwrite another slide's tiles and features.
+    """
+    slide_ids = cfg.slide_ids if cfg.slide_ids is not None else get_slide_ids_from_paths(cfg.slide_paths)
+    duplicates = sorted({s for s in slide_ids if list(slide_ids).count(s) > 1})
+    if duplicates:
+        raise ValueError(
+            f"slide IDs must be unique in a batch; duplicated: {duplicates}. Slide IDs default "
+            "to the file name without extension: pass slide_ids for slides with the same name."
+        )
+    return list(slide_ids)
+
+
 def _main_batch(
     cfg: TessellateExtractFeaturesConfig, patch_output_dir: Optional[str] = None
 ):
@@ -725,6 +741,7 @@ def _main_batch(
         raise ValueError(
             "Batch mode requires slide_paths and output_dir to be specified"
         )
+    slide_ids = _batch_slide_ids(cfg)  # before any directory is created
 
     # Create output directory (only for local paths)
     output_dir_str = cfg.output_dir
@@ -823,19 +840,6 @@ def _main_batch(
                 f"No model_dir configured, will download {cfg.slide_model_type.name} from HuggingFace"
             )
             slide_model_path = cfg.slide_model_type.path
-
-    # Generate slide IDs if not provided
-    slide_ids = cfg.slide_ids
-    if slide_ids is None:
-        slide_ids = get_slide_ids_from_paths(cfg.slide_paths)
-    # Outputs and intermediate files are named by slide ID: a duplicate would
-    # overwrite another slide's tiles and features.
-    duplicates = sorted({s for s in slide_ids if list(slide_ids).count(s) > 1})
-    if duplicates:
-        raise ValueError(
-            f"slide IDs must be unique in a batch; duplicated: {duplicates}. Slide IDs default "
-            "to the file name without extension: pass slide_ids for slides with the same name."
-        )
 
     # Phase 1: Tessellate all slides and perform filtering if needed
     logger.info(f"\n=== Phase 1: Tessellating {len(cfg.slide_paths)} slides ===")
@@ -1299,6 +1303,9 @@ def _main_batch_multi_model(cfg: TessellateExtractFeaturesConfig):
     """Process multiple slides with multiple models, optimized by grouping models with same patch size."""
     if cfg.slide_paths is None or cfg.output_dir is None:
         raise ValueError("Batch mode requires slide_paths and output_dir")
+    # Checked here, not only in _main_batch: the loop below logs a model's error
+    # and moves on, so duplicates would end the run "complete" with no outputs.
+    _batch_slide_ids(cfg)
 
     # Normalize model_type and slide_model_type to lists of ModelType enums
     patch_models = []

@@ -507,11 +507,17 @@ def test_batch_slides_with_the_same_file_name_keep_their_own_tiles(tmp_path, tes
         np.testing.assert_array_equal(extracted[slide], own_coords[slide], err_msg=f"{slide} got another slide's tiles")
 
 
-def test_batch_rejects_duplicate_slide_ids(tmp_path, test_data_path):
-    """Slide IDs default to the file stem; two slides named alike need explicit slide_ids."""
+@pytest.mark.parametrize("model_type", [None, ["RESNET50", "CTRANSPATH"]],  # a list, as Hydra passes it
+                         ids=["single-model", "multi-model"])
+def test_batch_rejects_duplicate_slide_ids(tmp_path, test_data_path, model_type):
+    """Slide IDs default to the file stem; two slides named alike need explicit slide_ids.
+
+    Rejected before any temp directory is made, and also in multi-model batch
+    mode, whose per-model loop logs a model's error and moves on.
+    """
     cfg = TessellateExtractFeaturesConfig(
         slide_paths=_two_slides_named_alike(tmp_path, test_data_path), output_dir=str(tmp_path / "out"),
-        classifier_pkl=None, prefilter_model_type=ModelType.RESNET50,
+        classifier_pkl=None, prefilter_model_type=ModelType.RESNET50, model_type=model_type,
         seg_config=SegConfig(segment_threshold=0), num_workers=0, use_gpu=False,
     )
     # Mocked, so the old code (which accepted the duplicates) fails fast instead
@@ -519,6 +525,8 @@ def test_batch_rejects_duplicate_slide_ids(tmp_path, test_data_path):
     with patch("mussel.cli.tessellate_extract_features_common.segment_tissue",
                side_effect=_make_segment_tissue_mock()), \
             patch("mussel.cli.tessellate_extract_features.extract_patch_features_batch",
-                  side_effect=_make_extract_patch_features_batch_mock()):
+                  side_effect=_make_extract_patch_features_batch_mock()), \
+            patch("mussel.cli.tessellate_extract_features.tempfile.mkdtemp") as mkdtemp:
         with pytest.raises(ValueError, match="slide IDs must be unique"):
             main(OmegaConf.create(cfg))
+    mkdtemp.assert_not_called()
