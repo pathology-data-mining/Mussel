@@ -15,6 +15,7 @@ import h5py
 import ml_dtypes
 import numpy as np
 import torch
+from PIL import Image
 from torch.utils.data import ConcatDataset, DataLoader
 from torchvision import transforms as tv_transforms
 from torchvision.datasets import ImageFolder
@@ -269,14 +270,32 @@ class TileCoordProcessor(DatasetProcessor):
         return FeatureExtractionResult(features=features, labels=labels)
 
 
-def _write_empty_features_h5(output_h5_path, patch_h5_path=None, feature_dtype=None, feature_dim=0):
+def _empty_feature_shape(model_fun, dataset) -> tuple:
+    """Per-tile feature shape of ``model_fun`` (e.g. ``(D,)``), from one blank tile.
+
+    Used for a slide with no tiles, so its empty features are ``(0, D)`` like
+    every other slide's. ``dataset`` is the slide's WholeSlideImageH5Dataset (its
+    transform and tile size). Returns ``(0,)`` if the shape can't be determined.
+    """
+    try:
+        size = int(dataset.patch_size)
+        tile = dataset.roi_transforms(Image.new("RGB", (size, size))).unsqueeze(0)
+        return tuple(model_fun(tile).shape[1:])
+    except Exception as e:
+        logger.warning(f"Could not determine the feature dimension for empty features ({e}); "
+                       "writing them as (0, 0)")
+        return (0,)
+
+
+def _write_empty_features_h5(output_h5_path, patch_h5_path=None, feature_dtype=None, feature_shape=(0,)):
     """Write a features H5 for a slide with no tiles written.
 
     The per-batch loops create the output file at the first non-empty batch, so
     a slide with 0 tiles (or whose every tile failed to load) would otherwise
-    have no file at a path the callers then open. ``features`` is (0, feature_dim)
-    and ``coords`` (0, 2) with the patch H5's ``coords`` attributes, so
-    downstream code sees an empty slide instead of a missing file.
+    have no file at a path the callers then open. ``features`` is
+    ``(0, *feature_shape)`` (``(0, D)`` from :func:`_empty_feature_shape`) and
+    ``coords`` (0, 2) with the patch H5's ``coords`` attributes, so downstream
+    code sees an empty slide instead of a missing file.
     """
     coords_dtype = np.int64
     if patch_h5_path is not None:
@@ -285,7 +304,7 @@ def _write_empty_features_h5(output_h5_path, patch_h5_path=None, feature_dtype=N
                 coords_dtype = f["coords"].dtype
     features_dtype = feature_dtype if feature_dtype is not None else np.float32
     asset_dict = {
-        "features": np.empty((0, feature_dim), dtype=features_dtype),
+        "features": np.empty((0, *feature_shape), dtype=features_dtype),
         "coords": np.empty((0, 2), dtype=coords_dtype),
     }
     logger.warning(f"{output_h5_path}: no tile features were extracted; writing empty features")
@@ -363,7 +382,8 @@ class H5DatasetProcessor(DatasetProcessor):
             mode = "a"
 
         if mode == "w":  # no batch written: still leave a (0-row) output
-            _write_empty_features_h5(output_h5_path, patch_h5_path, feature_dtype)
+            _write_empty_features_h5(output_h5_path, patch_h5_path, feature_dtype,
+                                     _empty_feature_shape(model_fun, dataset))
 
         # Tiles that failed to load (WholeSlideImageH5Dataset returns None for them)
         # are dropped by collate_features: say so, since the output then has fewer
@@ -1531,12 +1551,16 @@ def _preprocessing_key(preprocessing, model_type) -> str:
     return f"unique:{model_type.name}"
 
 
-def _write_patch_batches(batches, model_funs, feature_dtypes, patch_h5_path, output_h5_paths, is_test_run):
+def _write_patch_batches(batches, model_funs, feature_dtypes, patch_h5_path, output_h5_paths, is_test_run,
+                         slide_path=None, preprocessing=None):
     """H5DatasetProcessor's per-batch loop, for several models on the same batches.
 
     Each model's output file gets exactly what process_dataset would write for
     that model alone: one append per non-empty batch, coords and the patch
     H5's attributes included, and the same warning when tiles failed to load.
+    ``slide_path`` and ``preprocessing`` (the slide's dataset settings) give
+    the feature dimension of a slide with no tiles; without them its empty
+    features are (0, 0).
     """
     mode, n_rows = "w", 0
     for count, (batch, coords) in enumerate(tqdm(timings.timed_iter(batches), desc="Extracting features")):
@@ -1556,8 +1580,15 @@ def _write_patch_batches(batches, model_funs, feature_dtypes, patch_h5_path, out
         mode = "a"
         n_rows += len(coords)
     if mode == "w":  # no batch written: still leave (0-row) outputs
-        for dtype, out in zip(feature_dtypes, output_h5_paths):
-            _write_empty_features_h5(out, patch_h5_path, dtype)
+        dataset = None
+        if slide_path is not None:
+            dataset = WholeSlideImageH5Dataset(
+                h5_path=patch_h5_path, slide_path=slide_path, preprocess=preprocessing,
+                use_imagenet_rgb_dist=preprocessing is None, init_wsi_in_worker=True,
+            )
+        for model_fun, dtype, out in zip(model_funs, feature_dtypes, output_h5_paths):
+            shape = _empty_feature_shape(model_fun, dataset) if dataset is not None else (0,)
+            _write_empty_features_h5(out, patch_h5_path, dtype, shape)
 
     # Tiles that failed to load are dropped by collate_features: say so, since the
     # outputs then have fewer rows than the patch H5.
@@ -1748,7 +1779,8 @@ def extract_patch_features_batch_multi(
                         n_tiles = len(f["coords"])
                 with timings.stage("patch_features", model=",".join(_model_name(m) for m in group),
                                    slide=slide_paths[i], slide_index=i, tiles=n_tiles):
-                    _write_patch_batches(slide_batches, funs, dtypes, patch_h5_paths[i], outputs, is_test_run)
+                    _write_patch_batches(slide_batches, funs, dtypes, patch_h5_paths[i], outputs, is_test_run,
+                                         slide_paths[i], preprocessing)
                 logger.info(f"Patch-level features saved to {', '.join(outputs)}")
         finally:
             per_slide.close()  # shuts this group's worker pool down
@@ -2626,7 +2658,10 @@ def aggregate_sample_features(
     Returns:
         Ordered dict mapping each unique ``sample_id`` to a
         ``(features, coords)`` tuple of concatenated (and optionally
-        subsampled) arrays.
+        subsampled) arrays.  Slides with no tiles are skipped with a warning.
+
+    Raises:
+        NoTilesError: If every slide of a sample has no tiles.
     """
     if not (len(features_list) == len(coords_list) == len(sample_ids)):
         raise ValueError(
@@ -2668,11 +2703,17 @@ def aggregate_sample_features(
         for i in indices:
             feats = features_list[i]
             coords = coords_list[i]
+            if len(feats) == 0:
+                # A slide with no tiles (its features may be (0, 0)) adds nothing.
+                logger.warning("  sample %s: skipping slide %d, which has no tiles", sample_id, i)
+                continue
             all_features.append(feats)
             all_coords.append(coords)
             slide_sizes.append(len(feats))
             logger.debug("  slide %d: %d tiles", i, len(feats))
 
+        if not all_features:
+            raise NoTilesError(f"sample {sample_id!r}: all {len(indices)} of its slide(s) have no tiles")
         features = np.concatenate(all_features, axis=0)
         coords = np.concatenate(all_coords, axis=0)
 

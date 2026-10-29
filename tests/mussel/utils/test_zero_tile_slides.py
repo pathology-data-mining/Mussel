@@ -19,6 +19,7 @@ from torchvision import transforms
 from mussel.datasets import WholeSlideImageH5Dataset
 from mussel.models import ModelType
 from mussel.utils.feature_extract import (NoTilesError, _write_patch_batches,
+                                          aggregate_sample_features,
                                           aggregate_slide_features,
                                           aggregate_slide_features_batch,
                                           process_dataset, save_features)
@@ -59,9 +60,10 @@ class _FakeFactory:
         return _FakeModel()
 
 
-def _assert_empty_output(path, attrs):
+def _assert_empty_output(path, attrs, feature_shape=(0, 3)):
+    """Empty features keep the model's feature dim (_FakeModel: 3 channels -> D=3)."""
     with h5py.File(path, "r") as f:
-        assert f["features"].shape[0] == 0
+        assert f["features"].shape == feature_shape
         assert f["coords"].shape == (0, 2)
         assert f["coords"].attrs["patch_size"] == attrs["patch_size"]
 
@@ -96,7 +98,8 @@ def test_write_patch_batches_writes_empty_outputs(tmp_path):
     outs = [str(tmp_path / "a.h5"), str(tmp_path / "b.h5")]
     empty_batches = [(torch.empty(0), np.empty((0, 2)))]
     fun = _FakeModel().get_model_fun()
-    _write_patch_batches(empty_batches, [fun, fun], [None, np.float16], patch_h5, outs, False)
+    _write_patch_batches(empty_batches, [fun, fun], [None, np.float16], patch_h5, outs, False,
+                         _SLIDE, _PRE)
     for out in outs:
         _assert_empty_output(out, attrs)
     with h5py.File(outs[1]) as f:
@@ -152,3 +155,19 @@ def test_batch_slide_encoder_records_empty_slide_as_failed(tmp_path, caplog):
     assert not Path(pts[0]).exists()
     assert torch.load(pts[1], weights_only=True).shape == (1, 4)
     assert "empty.patch_features: no tile features to aggregate" in caplog.text
+
+
+def test_sample_aggregation_skips_empty_slides(tmp_path, caplog):
+    """An empty slide's (0, 0) features don't break concatenation with (N, D) slides."""
+    feats = [np.empty((0, 0), np.float32), np.ones((3, 4), np.float32)]
+    coords = [np.empty((0, 2), np.int64), np.zeros((3, 2), np.int64)]
+    with caplog.at_level(logging.WARNING):
+        result = aggregate_sample_features(feats, coords, ["s", "s"])
+    assert result["s"][0].shape == (3, 4)
+    assert result["s"][1].shape == (3, 2)
+    assert "no tiles" in caplog.text
+
+
+def test_sample_aggregation_of_only_empty_slides_is_a_clear_error():
+    with pytest.raises(NoTilesError, match="sample 's'"):
+        aggregate_sample_features([np.empty((0, 0), np.float32)] * 2, [np.empty((0, 2))] * 2, ["s", "s"])
