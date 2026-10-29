@@ -156,6 +156,22 @@ def test_tef_batch_one_slide_failing_extraction_keeps_the_others(tmp_path, aggre
         assert [os.path.basename(p) for p in aggregated] == ["good.patch.h5"]
 
 
+@pytest.mark.parametrize("aggregation_method", ["identity", "mean"])
+def test_tef_batch_slide_without_tiles_is_skipped_not_failed(tmp_path, caplog, aggregation_method):
+    """Extraction writes nothing for a slide without tiles: skipped with a warning, and the run exits 0."""
+    cfg = _batch_cfg(tmp_path, slide_ids=("empty", "good"), aggregation_method=aggregation_method)
+
+    def extract(patch_h5_paths, slide_paths, output_h5_paths, **kwargs):
+        _extract(patch_h5_paths[1:], slide_paths[1:], output_h5_paths[1:])
+
+    _run(cfg, extract=extract, aggregate=fe.aggregate_slide_features_batch)  # no raise
+    out = tmp_path / "out"
+    assert (out / "pt" / "good.features.pt").exists()
+    assert not (out / "pt" / "empty.features.pt").exists()
+    warnings = [r.getMessage() for r in caplog.records if r.levelname == "WARNING"]
+    assert any("1 of 2 slide(s) skipped (no tiles)" in m for m in warnings)
+
+
 def test_tef_multi_model_failure_runs_the_other_models_then_raises(tmp_path):
     cfg = _batch_cfg(tmp_path, model_type=["RESNET50", "CLIP"])
     seen = []

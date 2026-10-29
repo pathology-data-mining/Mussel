@@ -414,6 +414,13 @@ def test_main_batch_passes_max_slide_patches_to_aggregation(tmp_path, max_slide_
     slide_svs.touch()
     seen = {}
 
+    def _fake_extract(**kwargs):
+        # Write features: a slide extraction wrote nothing for has no tiles, and is not aggregated.
+        for path in kwargs["output_h5_paths"]:
+            with h5py.File(path, "w") as f:
+                f.create_dataset("features", data=np.zeros((2, 768), dtype=np.float32))
+                f.create_dataset("coords", data=np.zeros((2, 2), dtype=np.int64))
+
     def _fake_aggregate(**kwargs):
         seen.update(kwargs)
         for path in kwargs["output_pt_paths"]:
@@ -425,7 +432,7 @@ def test_main_batch_passes_max_slide_patches_to_aggregation(tmp_path, max_slide_
         slide_model_type=ModelType.TITAN_SLIDE, aggregation_method="model",
         max_slide_patches=max_slide_patches, use_gpu=False, num_workers=0,
     )
-    with patch("mussel.cli.extract_features.extract_patch_features_batch"), \
+    with patch("mussel.cli.extract_features.extract_patch_features_batch", side_effect=_fake_extract), \
          patch("mussel.cli.extract_features.aggregate_slide_features_batch", side_effect=_fake_aggregate):
         mussel.cli.extract_features.main(OmegaConf.create(cfg))
     assert seen["max_slide_patches"] == passed

@@ -165,12 +165,16 @@ class SlideBatchError(RuntimeError):
     Attributes:
         failures: ``{slide index in the batch: reason}``.
         outputs: What the function returns on success, with ``None`` in place of
-            each failed slide's outputs.
+            each failed (or skipped) slide's outputs.
+        skipped: ``{slide index in the batch: reason}`` of the slides skipped for
+            having no tiles (see :func:`no_tiles_reason`): not failures.
     """
 
-    def __init__(self, stage: str, failures: Dict[int, str], names: Sequence[str], outputs: Any = None):
+    def __init__(self, stage: str, failures: Dict[int, str], names: Sequence[str], outputs: Any = None,
+                 skipped: Optional[Dict[int, str]] = None):
         self.failures = dict(sorted(failures.items()))
         self.outputs = outputs
+        self.skipped = dict(skipped or {})
         listed = "; ".join(f"{names[i]}: {reason}" for i, reason in self.failures.items())
         if len(self.failures) == len(names):
             head = f"All {len(names)} slide(s) failed during {stage}"
@@ -179,14 +183,59 @@ class SlideBatchError(RuntimeError):
         super().__init__(f"{head}. Failed: {listed}. Check logs above for per-slide errors.")
 
 
-def raise_if_slides_failed(failures: Dict[str, str], total: int, what: str = "slide(s)") -> None:
-    """End a CLI run that went on past failed slides: log them and raise, so it exits non-zero.
+def no_tiles_reason(features_h5_path, extracted: bool = False,
+                    error: Optional[BaseException] = None) -> Optional[str]:
+    """Why a slide is to be skipped for having no tiles, or ``None`` if it isn't.
+
+    A slide without tiles (none found, or none of them readable) is a property of
+    the slide, not a pipeline error: batch runs skip it with a warning, and it
+    doesn't make them fail. This is the one place that decides what counts as such.
 
     Args:
-        failures: ``{slide ID (or model name): reason}``; nothing happens if empty.
+        features_h5_path: The slide's patch features H5: one with no rows means no tiles.
+        extracted: The H5 is patch extraction's output, and extraction recorded no
+            failure for the slide: then a missing H5 also means no tiles (extraction
+            writes nothing for a slide without tiles). Otherwise a missing H5 is a failure.
+        error: The error the slide failed with, if any. No error raised today
+            means "no tiles" by itself; one that does is to be recognised here.
+    """
+    if not os.path.isfile(features_h5_path):
+        return "no tiles (patch feature extraction wrote no features)" if extracted else None
+    try:
+        with h5py.File(features_h5_path, "r") as f:
+            n_rows = len(f["coords"]) if "coords" in f else len(f["features"])
+    except Exception:
+        return None  # an unreadable H5 is a failure
+    return "no tiles" if n_rows == 0 else None
+
+
+def skip_slides_without_tiles(features_h5_paths, names: Sequence[str], extracted: bool = False) -> Dict[int, str]:
+    """``{index: reason}`` of the slides without tiles (see :func:`no_tiles_reason`); each is logged as a warning."""
+    skipped = {}
+    for i, path in enumerate(features_h5_paths):
+        reason = no_tiles_reason(path, extracted=extracted)
+        if reason:
+            logger.warning(f"Skipping slide {names[i]}: {reason}")
+            skipped[i] = reason
+    return skipped
+
+
+def raise_if_slides_failed(failures: Dict[str, str], total: int, what: str = "slide(s)",
+                           skipped: Optional[Dict[str, str]] = None) -> None:
+    """End a CLI run that went on past failed slides: log them and raise, so it exits non-zero.
+
+    Slides skipped for having no tiles are logged as warnings, but don't raise.
+
+    Args:
+        failures: ``{slide ID (or model name): reason}``; nothing is raised if empty.
         total: How many were processed in all.
         what: What ``failures`` counts, for the message.
+        skipped: ``{slide ID: reason}`` of the slides skipped for having no tiles.
     """
+    if skipped:
+        logger.warning(f"=== {len(skipped)} of {total} {what} skipped (no tiles) ===")
+        for name, reason in skipped.items():
+            logger.warning(f"  {name}: {reason}")
     if not failures:
         return
     logger.error(f"=== {len(failures)} of {total} {what} failed ===")
@@ -1902,6 +1951,7 @@ def aggregate_slide_features_batch(
     embedding_precision="float32",
     slide_model_kwargs=None,
     tile_size_check="warn",
+    skipped=None,
 ):
     """Aggregate patch-level features to slide-level for multiple slides (Step 2: Batch Slide Encoding).
 
@@ -1941,15 +1991,20 @@ def aggregate_slide_features_batch(
         tile_size_check: What to do when the slide encoder's tiles don't match its
             recommended tile size / MPP (see :func:`mussel.models.check_tile_size`):
             ``"warn"`` (default), ``"error"`` or ``"off"``. Only for ``aggregation_method="model"``.
+        skipped: Optional dict, filled with ``{slide index: reason}`` for each slide
+            skipped for having no tiles (see :func:`no_tiles_reason`): such a slide
+            is logged as a warning, gets no output, and is not a failure.
 
     Returns:
-        Tuple of (output_h5_paths, output_pt_paths) if saving.
+        Tuple of (output_h5_paths, output_pt_paths) if saving, with ``None`` for
+        each skipped slide if any.
 
     Raises:
         SlideBatchError: After every slide was tried, if any failed (an unreadable
             input, an encoder error, a failed save): the other slides' outputs are
             written, and what a failed slide wrote is removed. Its ``outputs`` is
-            ``(output_h5_paths, output_pt_paths)`` with ``None`` for each failed slide.
+            ``(output_h5_paths, output_pt_paths)`` with ``None`` for each failed or
+            skipped slide; its ``skipped`` lists the skipped slides.
     """
     logger.info(
         f"Step 2: Batch aggregating patch features to slide level for {len(patch_features_h5_paths)} slides"
@@ -1958,10 +2013,15 @@ def aggregate_slide_features_batch(
     num_slides = len(patch_features_h5_paths)
     slide_names = [Path(p).stem for p in patch_features_h5_paths]
     failures: Dict[int, str] = {}  # {slide index: reason}
+    if skipped is None:
+        skipped = {}
+    skipped.update(skip_slides_without_tiles(patch_features_h5_paths, slide_names))
 
     # Check every slide's tiles before loading the slide encoder, so "error" fails fast.
     if aggregation_method == "model" and model_type is not None:
         for i, h5_path in enumerate(patch_features_h5_paths):
+            if i in skipped:
+                continue
             try:
                 tile_attrs = _read_coords_attrs(h5_path)
             except Exception as e:
@@ -1972,16 +2032,21 @@ def aggregate_slide_features_batch(
 
     def finish(stage: str):
         """Raise SlideBatchError listing ``failures``, if any; else return the outputs."""
-        if not failures:
+        if skipped:
+            logger.warning(f"Skipped {len(skipped)} slide(s) without tiles: "
+                           + ", ".join(slide_names[i] for i in sorted(skipped)))
+        if not failures and not skipped:
             return output_h5_paths, output_pt_paths
         for i in failures:
             _remove_partial_outputs([output_h5_paths[i] if output_h5_paths else None,
                                      output_pt_paths[i] if output_pt_paths else None])
         left = tuple(
-            [None if i in failures else p for i, p in enumerate(paths)] if paths else paths
+            [None if i in failures or i in skipped else p for i, p in enumerate(paths)] if paths else paths
             for paths in (output_h5_paths, output_pt_paths)
         )
-        raise SlideBatchError(stage, failures, slide_names, left)
+        if not failures:
+            return left
+        raise SlideBatchError(stage, failures, slide_names, left, skipped)
 
     # For non-model aggregation methods, process each slide directly
     # without loading a model
@@ -1996,6 +2061,8 @@ def aggregate_slide_features_batch(
             output_h5 = output_h5_paths[i] if output_h5_paths else None
             output_pt = output_pt_paths[i] if output_pt_paths else None
             slide_name = Path(patch_h5_path).stem
+            if i in skipped:
+                continue
 
             try:
                 with h5py.File(patch_h5_path, "r") as file:
@@ -2053,6 +2120,11 @@ def aggregate_slide_features_batch(
                     successful_slides.append(slide_name)
 
             except Exception as e:
+                reason = no_tiles_reason(patch_h5_path, error=e)
+                if reason:
+                    logger.warning(f"Skipping slide {slide_name}: {reason}")
+                    skipped[i] = reason
+                    continue
                 logger.error(
                     f"Failed to process slide {slide_name} (slide {i+1}/{num_slides}): {str(e)}"
                 )
@@ -2072,7 +2144,7 @@ def aggregate_slide_features_batch(
             logger.warning(f"Failed: {len(failed_slides)} slides")
             logger.warning(f"Failed slides: {', '.join(failed_slides)}")
         else:
-            logger.info(f"\n=== All {num_slides} slides processed successfully ===")
+            logger.info(f"\n=== All {num_slides - len(skipped)} slides with tiles processed successfully ===")
 
         return finish(f"{aggregation_method!r} aggregation")
 
@@ -2122,8 +2194,8 @@ def aggregate_slide_features_batch(
 
             loaded_indices = []
             for i in batch_indices:
-                if i in failures:
-                    continue  # its input could not be read above
+                if i in failures or i in skipped:
+                    continue  # its input could not be read above, or it has no tiles
                 try:
                     with h5py.File(patch_features_h5_paths[i], "r") as file:
                         features = file["features"][:]
@@ -2317,7 +2389,7 @@ def aggregate_slide_features_batch(
         logger.warning(f"Failed: {len(failures)} slides")
         logger.warning(f"Failed slides: {', '.join(slide_names[i] for i in sorted(failures))}")
     else:
-        logger.info(f"\n=== All {num_slides} slides processed successfully ===")
+        logger.info(f"\n=== All {num_slides - len(skipped)} slides with tiles processed successfully ===")
 
     outputs = finish(f"'model' aggregation (model={model_type})")
     logger.info(f"Batch aggregation complete")

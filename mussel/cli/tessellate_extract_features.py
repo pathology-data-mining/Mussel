@@ -63,7 +63,8 @@ from mussel.utils.artifact_removal import (
 )
 from mussel.utils.feature_extract import (SlideBatchError, _numpy_to_torch,
                                           _parse_feature_dtype,
-                                          raise_if_slides_failed)
+                                          raise_if_slides_failed,
+                                          skip_slides_without_tiles)
 from mussel.utils.file import WSI_EXTENSIONS, collect_wsi_paths
 
 # isort: on
@@ -122,6 +123,18 @@ def _record_failed_slides(
     for i, reason in error.failures.items():
         failures[slide_results[i]["slide_id"]] = f"{stage} failed: {reason}"
     return [i for i in range(len(slide_results)) if i not in error.failures]
+
+
+def _skip_slides_without_tiles(
+    slide_results: List[dict], features_h5_paths: List[str], skipped: Dict[str, str]
+) -> List[int]:
+    """Record in ``skipped`` the slides extraction wrote no features for (no tiles); return the others' indices."""
+    no_tiles = skip_slides_without_tiles(
+        features_h5_paths, [r["slide_id"] for r in slide_results], extracted=True
+    )
+    for i, reason in no_tiles.items():
+        skipped[slide_results[i]["slide_id"]] = reason
+    return [i for i in range(len(slide_results)) if i not in no_tiles]
 
 
 defaults = ["_self_", {"seg_config": "default"}]
@@ -867,8 +880,10 @@ def _main_batch(
     artifact_remover_fn, neural_segmenter = _build_segmentation_runtime(cfg)
 
     # {slide ID: reason}. A slide that fails doesn't stop the others; the run
-    # raises at the end, so it exits non-zero.
+    # raises at the end, so it exits non-zero. A slide without tiles is skipped
+    # with a warning, and doesn't fail the run.
     failures: Dict[str, str] = {}
+    skipped: Dict[str, str] = {}
     slide_results = []
     for i, (slide_path, slide_id) in enumerate(zip(cfg.slide_paths, slide_ids)):
         logger.info(f"\nTessellating slide {i + 1}/{len(cfg.slide_paths)}: {slide_id}")
@@ -1003,6 +1018,9 @@ def _main_batch(
                 if temp_dir:
                     shutil.rmtree(temp_dir)
                 raise_if_slides_failed(failures, len(slide_ids))
+        keep = _skip_slides_without_tiles(slide_results, intermediate_h5_paths, skipped)
+        slide_results = [slide_results[i] for i in keep]
+        intermediate_h5_paths = [intermediate_h5_paths[i] for i in keep]
 
         # Add intermediate paths to results and track for feature stripping
         for r, intermediate_h5_path in zip(slide_results, intermediate_h5_paths):
@@ -1153,6 +1171,8 @@ def _main_batch(
             )
             output_pt_paths = [r["output_pt_path"] for r in slide_results]
 
+            agg_skipped: Dict[int, str] = {}
+            aggregated_ids = [r["slide_id"] for r in slide_results]
             try:
                 aggregate_slide_features_batch(
                     patch_features_h5_paths=intermediate_h5_paths,
@@ -1169,11 +1189,14 @@ def _main_batch(
                     max_slide_patches=cfg.max_slide_patches,
                     embedding_precision=_resolve_precision(cfg, cfg.slide_model_type),
                     slide_model_kwargs=cfg.slide_model_kwargs,
+                    skipped=agg_skipped,
                 )
             except SlideBatchError as e:
                 # The other slides' slide features were written.
                 keep = _record_failed_slides(e, slide_results, failures, "slide aggregation")
                 slide_results = [slide_results[i] for i in keep]
+            skipped.update({aggregated_ids[i]: reason for i, reason in agg_skipped.items()})
+            slide_results = [r for r in slide_results if r["slide_id"] not in skipped]
 
         # If save_features_to_h5=false, strip features from all tracked h5 files (keep coords only)
         # This must be done AFTER aggregation since aggregation needs the features
@@ -1263,6 +1286,10 @@ def _main_batch(
             slide_results = [slide_results[i] for i in keep]
             temp_output_h5_paths = [temp_output_h5_paths[i] for i in keep]
             coords_h5_paths = [coords_h5_paths[i] for i in keep]
+        keep = _skip_slides_without_tiles(slide_results, temp_output_h5_paths, skipped)
+        slide_results = [slide_results[i] for i in keep]
+        temp_output_h5_paths = [temp_output_h5_paths[i] for i in keep]
+        coords_h5_paths = [coords_h5_paths[i] for i in keep]
 
         # Save PT files and coords-only H5
         for i, r in enumerate(slide_results):
@@ -1334,7 +1361,7 @@ def _main_batch(
     logger.info(f"\n=== Batch processing complete! ===")
     logger.info(f"Processed {len(slide_results)} of {len(cfg.slide_paths)} slides")
     logger.info(f"Output directory: {cfg.output_dir}")
-    raise_if_slides_failed(failures, len(slide_ids))
+    raise_if_slides_failed(failures, len(slide_ids), skipped=skipped)
 
 
 @resolve_remote_paths("model_dir", "classifier_pkl", auto_detect=False)

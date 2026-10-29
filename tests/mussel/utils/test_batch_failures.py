@@ -172,3 +172,95 @@ def test_extract_features_cli_processes_the_other_slides_then_raises(fakes, tmp_
     assert "G:" not in str(info.value)
     assert (tmp_path / "out" / "G.features.pt").exists()
     assert not (tmp_path / "out" / "B.features.pt").exists()
+
+
+# ── Slides without tiles are skipped with a warning, not failures ─────────────
+
+
+def _cli_cfg(fakes, tmp_path, h5s, slide_ids, **kwargs):
+    return OmegaConf.to_object(OmegaConf.structured(cli.ExtractFeaturesConfig(
+        patch_h5_paths=h5s, slide_paths=[fakes.slide] * len(h5s), slide_ids=slide_ids,
+        output_dir=str(tmp_path / "out"), batch_size=7, use_gpu=False, num_workers=0, tile_size_check="off",
+        **kwargs)))
+
+
+def _slide_encoder_or(real_load):
+    """_load_model for the CLI tests: the fake slide encoder for CHIEF_SLIDE, the real loader otherwise."""
+    def load(model_type, *args, **kwargs):
+        if model_type == ModelType.CHIEF_SLIDE:
+            return _MeanSlideEncoder()
+        return real_load(model_type, *args, **kwargs)
+    return load
+
+
+def _warnings(caplog):
+    return [r.getMessage() for r in caplog.records if r.levelname == "WARNING"]
+
+
+@pytest.mark.parametrize("aggregation_method", ["identity", "mean", "model"])
+def test_extract_features_cli_skips_a_slide_without_tiles(fakes, tmp_path, caplog, aggregation_method):
+    """Extraction writes nothing for a slide without tiles: the two-step modes used to fail it at aggregation."""
+    h5s = [fakes.write_tiles(tmp_path / "Z.patch.h5", fakes.coords[:0]), _two_slides(fakes, tmp_path)[1]]
+    extra = (dict(slide_model_type=ModelType.CHIEF_SLIDE, slide_model_path="x")
+             if aggregation_method == "model" else {})
+    cfg = _cli_cfg(fakes, tmp_path, h5s, ["Z", "G"], model_type=ModelType.UNI,
+                   aggregation_method=aggregation_method, **extra)
+    with patch.object(fe, "get_model_factory", side_effect=fakes.factories()), \
+            patch.object(fe, "_load_model", side_effect=_slide_encoder_or(fe._load_model)):
+        cli._main_batch(cfg)  # no raise: the run exits 0
+    assert (tmp_path / "out" / "G.features.pt").exists()
+    assert not (tmp_path / "out" / "Z.features.pt").exists()
+    warnings = _warnings(caplog)
+    assert any("1 of 2 slide(s) skipped (no tiles)" in m for m in warnings)
+    assert any("Z" in m and "no tiles" in m for m in warnings)
+
+
+def test_extract_features_cli_raises_for_a_failure_but_not_for_a_slide_without_tiles(fakes, tmp_path, caplog):
+    h5s = [str(tmp_path / "missing.patch.h5"), fakes.write_tiles(tmp_path / "Z.patch.h5", fakes.coords[:0]),
+           _two_slides(fakes, tmp_path)[1]]
+    cfg = _cli_cfg(fakes, tmp_path, h5s, ["B", "Z", "G"], model_type=ModelType.UNI, aggregation_method="mean")
+    with patch.object(fe, "get_model_factory", side_effect=fakes.factories()):
+        with pytest.raises(RuntimeError, match="1 of 3 slide.*B: ") as info:
+            cli._main_batch(cfg)
+    assert "Z:" not in str(info.value)
+    assert (tmp_path / "out" / "G.features.pt").exists()
+    assert any("1 of 3 slide(s) skipped (no tiles)" in m for m in _warnings(caplog))
+
+
+@pytest.mark.parametrize("aggregation_method", ["mean", "model"])
+def test_aggregation_skips_a_slide_without_tiles(tmp_path, caplog, aggregation_method):
+    h5s = [_patch_features(tmp_path / "a.h5"), _patch_features(tmp_path / "z.h5", n=0)]
+    pts = [str(tmp_path / "a.pt"), str(tmp_path / "z.pt")]
+    skipped = {}
+    with patch.object(fe, "_load_model", return_value=_MeanSlideEncoder()):
+        result = fe.aggregate_slide_features_batch(
+            h5s, output_pt_paths=pts, aggregation_method=aggregation_method, model_type=ModelType.CHIEF_SLIDE,
+            model_path="x", use_gpu=False, tile_size_check="off", skipped=skipped)
+    assert list(skipped) == [1]
+    assert result == (None, [pts[0], None])
+    assert (tmp_path / "a.pt").exists() and not (tmp_path / "z.pt").exists()
+    assert any("z" in m and "no tiles" in m for m in _warnings(caplog))
+
+
+def test_multi_model_cli_writes_every_successful_slide_model_pair_then_raises(tmp_path):
+    """Model A fails slide 0 and model B slide 1: A's slide 1 and B's slide 0 still get their .pt."""
+    a, b = ModelType.HOPTIMUS1, ModelType.OPTIMUS
+    cfg = OmegaConf.to_object(OmegaConf.structured(cli.ExtractFeaturesConfig(
+        patch_h5_paths=["p0.h5", "p1.h5"], slide_paths=["s0.svs", "s1.svs"], slide_ids=["S0", "S1"],
+        output_dir=str(tmp_path / "out"), model_types=[a, b], use_gpu=False)))
+
+    def extract(patch_h5_paths, slide_paths, output_h5_paths, **kwargs):
+        left = {a: [None, output_h5_paths[a][1]], b: [output_h5_paths[b][0], None]}
+        for paths in left.values():
+            for p in filter(None, paths):
+                _patch_features(p)
+        raise fe.SlideBatchError("patch feature extraction", {0: f"{a.name}: oom", 1: f"{b.name}: oom"},
+                                 slide_paths, left)
+
+    with patch.object(cli, "extract_patch_features_batch_multi", side_effect=extract):
+        with pytest.raises(RuntimeError, match="2 of 4") as info:
+            cli._main_batch(cfg)
+    out = tmp_path / "out"
+    assert (out / a.code / "S1.features.pt").exists() and (out / b.code / "S0.features.pt").exists()
+    assert not (out / a.code / "S0.features.pt").exists() and not (out / b.code / "S1.features.pt").exists()
+    assert f"S0 ({a.code})" in str(info.value) and f"S1 ({b.code})" in str(info.value)
