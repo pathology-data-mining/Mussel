@@ -75,6 +75,7 @@ class GPFMModel(TorchModel):
         GPFM was trained at 224px despite being based on a DINOv2 ViT-L/14 architecture
         (which defaults to 518px). Override input_size to match training.
         """
-        cfg = resolve_data_config(self.obj.pretrained_cfg, model=self.obj)
+        model_obj = self.unwrapped
+        cfg = resolve_data_config(model_obj.pretrained_cfg, model=model_obj)
         cfg["input_size"] = (3, 224, 224)
         return create_transform(**cfg)

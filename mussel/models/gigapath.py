@@ -79,6 +79,8 @@ class GigapathModel(TorchModel):
 
 @register_model(ModelType.GIGAPATH_SLIDE)
 class GigapathSlideEncoderModel(TorchModel):
+    supports_data_parallel = False  # one slide at a time; see TorchModel
+
     def __init__(
         self,
         model_path,
