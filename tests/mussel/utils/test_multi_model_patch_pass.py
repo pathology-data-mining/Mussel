@@ -232,8 +232,9 @@ def test_cli_slide_without_tiles_does_not_abort_the_batch(fakes, tmp_path, multi
         cli._main_batch(OmegaConf.to_object(cfg))
     out = tmp_path / "out" / ("hoptimus1" if multi else "")
     assert (out / "A.features.pt").exists() and (out / "C.features.pt").exists()
-    assert not (out / "E.features.pt").exists()
-    assert "No features written" in caplog.text
+    # The zero-tile slide gets an empty features H5 and .pt, not a missing file.
+    assert torch.load(out / "E.features.pt", weights_only=True).shape[0] == 0
+    assert "has no features" in caplog.text
 
 
 @pytest.mark.parametrize("multi", [True, False])
