@@ -367,6 +367,10 @@ class AnyToTiffConverter:
         self._save_pyvips_tiff(pyvips_img, save_path, mpp, pyvips)
 
     def _save_pyvips_tiff(self, img, save_path: str, mpp: float, pyvips_module) -> None:
+        # libvips' xres/yres are always pixels per millimetre (resunit only sets
+        # the unit written to the TIFF tag; libvips converts), so µm/px -> px/mm
+        # is 1000 / mpp -- the inverse of _detect_mpp_pyvips.
+        px_per_mm = 1000.0 / mpp
         img.tiffsave(
             save_path,
             bigtiff=self.bigtiff,
@@ -376,7 +380,7 @@ class AnyToTiffConverter:
             tile_height=256,
             compression="jpeg",
             resunit=pyvips_module.enums.ForeignTiffResunit.CM,
-            xres=1.0 / (mpp * 1e-4),
-            yres=1.0 / (mpp * 1e-4),
+            xres=px_per_mm,
+            yres=px_per_mm,
         )
         logger.info("Saved pyramidal TIFF → %s", save_path)
