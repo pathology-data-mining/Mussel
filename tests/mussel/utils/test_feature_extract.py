@@ -159,3 +159,70 @@ def test_extract_patch_features_batch_model_reuse():
     # This is a documentation test to highlight the key benefit
     # In production, this translates to significant time savings
     pass
+
+
+def _call_get_features_with_preloaded_model(**kwargs):
+    """Call get_features with a pre-loaded mock model, stubbing out slide I/O."""
+    from mussel.utils.feature_extract import get_features
+
+    mock_model = MagicMock()
+    mock_model.get_preprocessing_fun.return_value = None
+    coords = np.array([[0, 0], [256, 256]])
+    patch_features = np.zeros((2, 8))
+
+    with (
+        patch("mussel.utils.feature_extract.get_model_factory") as mock_factory,
+        patch("mussel.utils.feature_extract.WholeSlideImageTileCoordDataset"),
+        patch("mussel.utils.feature_extract.DataLoader"),
+        patch(
+            "mussel.utils.feature_extract.process_dataset",
+            return_value=(patch_features, np.zeros(2)),
+        ),
+        patch(
+            "mussel.utils.feature_extract._apply_slide_aggregation",
+            return_value=np.zeros((1, 8)),
+        ) as mock_aggregate,
+    ):
+        get_features(
+            coords,
+            "slide.svs",
+            {"patch_size": 256},
+            model=mock_model,
+            use_gpu=False,
+            num_workers=0,
+            **kwargs,
+        )
+    return mock_factory, mock_aggregate
+
+
+def test_get_features_preloaded_model_auto_sets_model_aggregation():
+    """A pre-loaded model must still switch aggregation to the slide encoder."""
+    mock_factory, mock_aggregate = _call_get_features_with_preloaded_model(
+        model_type=ModelType.GIGAPATH,
+        use_slide_encoder=True,
+        slide_model_type=ModelType.GIGAPATH_SLIDE,
+    )
+
+    mock_factory.assert_not_called()
+    assert mock_aggregate.call_args.kwargs["aggregation_method"] == "model"
+
+
+def test_get_features_preloaded_model_validates_slide_encoder_compatibility():
+    """A pre-loaded model whose model_type mismatches the slide encoder is rejected."""
+    with pytest.raises(ValueError, match="requires patch encoder"):
+        _call_get_features_with_preloaded_model(
+            model_type=ModelType.CLIP,
+            use_slide_encoder=True,
+            slide_model_type=ModelType.GIGAPATH_SLIDE,
+        )
+
+
+def test_get_features_model_param_does_not_shift_positional_args():
+    """Adding `model` must not change the position of existing parameters."""
+    import inspect
+
+    from mussel.utils.feature_extract import get_features
+
+    params = list(inspect.signature(get_features).parameters)
+    assert params.index("batch_size") == params.index("model_path") + 1
+    assert params[-1] == "model"
