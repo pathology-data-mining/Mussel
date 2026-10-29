@@ -269,6 +269,29 @@ class TileCoordProcessor(DatasetProcessor):
         return FeatureExtractionResult(features=features, labels=labels)
 
 
+def _write_empty_features_h5(output_h5_path, patch_h5_path=None, feature_dtype=None, feature_dim=0):
+    """Write a features H5 for a slide with no tiles written.
+
+    The per-batch loops create the output file at the first non-empty batch, so
+    a slide with 0 tiles (or whose every tile failed to load) would otherwise
+    have no file at a path the callers then open. ``features`` is (0, feature_dim)
+    and ``coords`` (0, 2) with the patch H5's ``coords`` attributes, so
+    downstream code sees an empty slide instead of a missing file.
+    """
+    coords_dtype = np.int64
+    if patch_h5_path is not None:
+        with h5py.File(patch_h5_path, "r") as f:
+            if "coords" in f:
+                coords_dtype = f["coords"].dtype
+    features_dtype = feature_dtype if feature_dtype is not None else np.float32
+    asset_dict = {
+        "features": np.empty((0, feature_dim), dtype=features_dtype),
+        "coords": np.empty((0, 2), dtype=coords_dtype),
+    }
+    logger.warning(f"{output_h5_path}: no tile features were extracted; writing empty features")
+    save_hdf5(output_h5_path, asset_dict, attr_h5_path=patch_h5_path, mode="w")
+
+
 class H5DatasetProcessor(DatasetProcessor):
     """Processor for WholeSlideImageH5Dataset.
 
@@ -338,6 +361,9 @@ class H5DatasetProcessor(DatasetProcessor):
                 save_hdf5(output_h5_path, asset_dict, attr_h5_path=patch_h5_path, mode=mode)
             timings.add(batches=1, tiles_done=len(features))
             mode = "a"
+
+        if mode == "w":  # no batch written: still leave a (0-row) output
+            _write_empty_features_h5(output_h5_path, patch_h5_path, feature_dtype)
 
         # Tiles that failed to load (WholeSlideImageH5Dataset returns None for them)
         # are dropped by collate_features: say so, since the output then has fewer
@@ -849,6 +875,20 @@ def _titan_patch_size_lv0(patch_size, tile_attrs: Optional[dict] = None) -> int:
     )
 
 
+class NoTilesError(ValueError):
+    """A slide has no tile features to aggregate (0 tiles)."""
+
+
+def _require_tiles(features: np.ndarray, slide: Optional[str] = None) -> None:
+    """Raise NoTilesError if ``features`` has no rows: a slide-level embedding of 0 tiles is undefined."""
+    if len(features) == 0:
+        where = f"{slide}: " if slide else ""
+        raise NoTilesError(
+            f"{where}no tile features to aggregate (0 tiles: no tissue tiles, or every "
+            "tile failed to load)"
+        )
+
+
 def _apply_slide_aggregation(
     features: np.ndarray,
     aggregation_method: str = "identity",
@@ -899,7 +939,8 @@ def _apply_slide_aggregation(
         # No aggregation - keep all patch features
         logger.info("Using identity aggregation (no aggregation)")
         return features
-    elif aggregation_method == "mean":
+    _require_tiles(features)
+    if aggregation_method == "mean":
         # Mean pooling across patches; upcast to float32 so numpy ufuncs work reliably.
         aggregated_features = np.mean(
             features.astype(np.float32), axis=0, keepdims=True
@@ -1514,6 +1555,9 @@ def _write_patch_batches(batches, model_funs, feature_dtypes, patch_h5_path, out
         timings.add(batches=1, tiles_done=len(coords))
         mode = "a"
         n_rows += len(coords)
+    if mode == "w":  # no batch written: still leave (0-row) outputs
+        for dtype, out in zip(feature_dtypes, output_h5_paths):
+            _write_empty_features_h5(out, patch_h5_path, dtype)
 
     # Tiles that failed to load are dropped by collate_features: say so, since the
     # outputs then have fewer rows than the patch H5.
@@ -1974,6 +2018,7 @@ def aggregate_slide_features_batch(
                     )
                 ):
                     try:
+                        _require_tiles(features, slide_name)
                         if coords is None:
                             raise ValueError("TITAN_SLIDE requires coordinates")
                         patch_size = _titan_patch_size_lv0(
@@ -2026,6 +2071,7 @@ def aggregate_slide_features_batch(
                     zip(batch_features, batch_coords, batch_slide_names)
                 ):
                     try:
+                        _require_tiles(features, slide_name)
                         if coords is None:
                             raise ValueError("GIGAPATH_SLIDE requires coordinates")
 

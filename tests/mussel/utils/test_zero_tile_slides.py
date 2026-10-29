@@ -1,0 +1,154 @@
+"""Slides with no tile features (no tissue tiles, or every tile failed to load).
+
+Patch-feature extraction must still write an output H5 (empty ``features`` and
+``coords`` with the source coords attributes) at the path it returns, so
+callers that open it don't crash; aggregating 0 tiles is a clear per-slide
+error that batch aggregation records as a failed slide.
+"""
+import logging
+from pathlib import Path
+from unittest.mock import patch
+
+import h5py
+import numpy as np
+import pytest
+import torch
+from torch.utils.data import DataLoader
+from torchvision import transforms
+
+from mussel.datasets import WholeSlideImageH5Dataset
+from mussel.models import ModelType
+from mussel.utils.feature_extract import (NoTilesError, _write_patch_batches,
+                                          aggregate_slide_features,
+                                          aggregate_slide_features_batch,
+                                          process_dataset, save_features)
+from mussel.utils.ml import collate_features
+
+_TESTDATA = Path(__file__).parent.parent.parent / "testdata"
+_SLIDE = str(_TESTDATA / "948176.svs")
+_H5 = str(_TESTDATA / "948176.patch.h5")
+_PRE = transforms.Compose([transforms.Resize(16), transforms.ToTensor()])
+
+
+def _patch_h5(tmp_path, n):
+    with h5py.File(_H5) as f:
+        coords, attrs = f["coords"][:n], dict(f["coords"].attrs)
+    p = tmp_path / f"s{n}.patch.h5"
+    with h5py.File(p, "w") as f:
+        ds = f.create_dataset("coords", data=coords)
+        for k, v in attrs.items():
+            ds.attrs[k] = v
+    return str(p), attrs
+
+
+class _Broken:
+    def read_region(self, *a):
+        raise ValueError("imagecodecs: corrupt tile")
+
+
+class _FakeModel:
+    def get_preprocessing_fun(self):
+        return _PRE
+
+    def get_model_fun(self):
+        return lambda x: x.mean((2, 3))
+
+
+class _FakeFactory:
+    def get_model(self, *args, **kwargs):
+        return _FakeModel()
+
+
+def _assert_empty_output(path, attrs):
+    with h5py.File(path, "r") as f:
+        assert f["features"].shape[0] == 0
+        assert f["coords"].shape == (0, 2)
+        assert f["coords"].attrs["patch_size"] == attrs["patch_size"]
+
+
+@pytest.mark.parametrize("n_tiles", [0, 4])  # no tiles / every tile fails to load
+def test_h5_processor_writes_empty_output(tmp_path, n_tiles):
+    patch_h5, attrs = _patch_h5(tmp_path, n_tiles)
+    ds = WholeSlideImageH5Dataset(patch_h5, _SLIDE, preprocess=_PRE, use_imagenet_rgb_dist=False,
+                                  init_wsi_in_worker=False)
+    ds.wsi = _Broken()
+    loader = DataLoader(ds, batch_size=2, num_workers=0, collate_fn=collate_features)
+    out = str(tmp_path / "out.h5")
+    result = process_dataset(ds, loader, _FakeModel().get_model_fun(), output_h5_path=out,
+                             patch_h5_path=patch_h5)
+    assert result.output_path == out
+    _assert_empty_output(out, attrs)
+
+
+def test_save_features_single_step_writes_empty_h5_and_pt(tmp_path):
+    patch_h5, attrs = _patch_h5(tmp_path, 0)
+    out_h5, out_pt = str(tmp_path / "s.features.h5"), str(tmp_path / "s.features.pt")
+    with patch("mussel.utils.feature_extract.get_model_factory", return_value=_FakeFactory()):
+        save_features(slide_path=_SLIDE, patch_h5_path=patch_h5, output_h5_path=out_h5,
+                      output_pt_path=out_pt, model_type=ModelType.HOPTIMUS1, use_gpu=False,
+                      num_workers=0, batch_size=4, tile_size_check="off")
+    _assert_empty_output(out_h5, attrs)
+    assert torch.load(out_pt, weights_only=True).shape[0] == 0
+
+
+def test_write_patch_batches_writes_empty_outputs(tmp_path):
+    patch_h5, attrs = _patch_h5(tmp_path, 3)
+    outs = [str(tmp_path / "a.h5"), str(tmp_path / "b.h5")]
+    empty_batches = [(torch.empty(0), np.empty((0, 2)))]
+    fun = _FakeModel().get_model_fun()
+    _write_patch_batches(empty_batches, [fun, fun], [None, np.float16], patch_h5, outs, False)
+    for out in outs:
+        _assert_empty_output(out, attrs)
+    with h5py.File(outs[1]) as f:
+        assert f["features"].dtype == np.float16
+
+
+def _features_h5(tmp_path, name, n, dim=4):
+    p = tmp_path / f"{name}.patch_features.h5"
+    with h5py.File(p, "w") as f:
+        f.create_dataset("features", data=np.ones((n, dim) if n else (0, 0), np.float32))
+        c = f.create_dataset("coords", data=np.arange(2 * n, dtype=np.int64).reshape(n, 2))
+        c.attrs["patch_size"] = 224
+    return str(p)
+
+
+@pytest.mark.parametrize("method", ["mean", "max"])
+def test_aggregating_zero_tiles_is_a_clear_error(tmp_path, method):
+    with pytest.raises(NoTilesError, match="0 tiles"):
+        aggregate_slide_features(_features_h5(tmp_path, "empty", 0), aggregation_method=method,
+                                 output_pt_path=str(tmp_path / "x.pt"))
+
+
+def test_identity_of_zero_tiles_is_empty(tmp_path):
+    out_pt = str(tmp_path / "x.pt")
+    aggregate_slide_features(_features_h5(tmp_path, "empty", 0), aggregation_method="identity",
+                             output_pt_path=out_pt)
+    assert torch.load(out_pt, weights_only=True).shape[0] == 0
+
+
+def test_batch_mean_records_empty_slide_as_failed(tmp_path, caplog):
+    inputs = [_features_h5(tmp_path, "empty", 0), _features_h5(tmp_path, "full", 3)]
+    pts = [str(tmp_path / "empty.pt"), str(tmp_path / "full.pt")]
+    with caplog.at_level(logging.ERROR):
+        aggregate_slide_features_batch(inputs, output_pt_paths=pts, aggregation_method="mean")
+    assert not Path(pts[0]).exists()
+    assert torch.load(pts[1], weights_only=True).shape == (1, 4)
+    assert "0 tiles" in caplog.text
+
+
+class _FakeSlideModel:
+    def get_model_fun(self):
+        return lambda features, coords: features.mean(1)
+
+
+def test_batch_slide_encoder_records_empty_slide_as_failed(tmp_path, caplog):
+    inputs = [_features_h5(tmp_path, "empty", 0), _features_h5(tmp_path, "full", 3)]
+    pts = [str(tmp_path / "empty.pt"), str(tmp_path / "full.pt")]
+    with patch("mussel.utils.feature_extract._load_model", return_value=_FakeSlideModel()), \
+            caplog.at_level(logging.ERROR):
+        aggregate_slide_features_batch(inputs, output_pt_paths=pts, aggregation_method="model",
+                                       model_type=ModelType.GIGAPATH_SLIDE, use_gpu=False,
+                                       tile_size_check="off")
+    assert not Path(pts[0]).exists()
+    assert torch.load(pts[1], weights_only=True).shape == (1, 4)
+    assert "empty.patch_features: no tile features to aggregate" in caplog.text
