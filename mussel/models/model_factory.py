@@ -96,6 +96,10 @@ SLIDE_ENCODER_COMPATIBILITY = {
     # Add more slide encoder -> patch encoder mappings as they become available
 }
 
+# Slide encoders that take features of any patch encoder (ABMIL is trained on the
+# user's own features), so none is required or inferred: model_type must be given.
+PATCH_ENCODER_AGNOSTIC_SLIDE_ENCODERS = frozenset({ModelType.ABMIL_SLIDE})
+
 # Recommended tile size (px, read at MODEL_TARGET_MPP where listed) for each model
 # type: the tiles the authors cut from the slide, before the model's own resize/crop.
 # A slide encoder's entry is the tiles its patch encoder's features must come from.
@@ -167,8 +171,15 @@ def get_required_patch_encoder(slide_encoder: ModelType) -> ModelType:
         The required patch encoder model type.
 
     Raises:
-        ValueError: If the slide encoder is not recognized.
+        ValueError: If the slide encoder is not recognized, or is patch-encoder
+            agnostic (see :data:`PATCH_ENCODER_AGNOSTIC_SLIDE_ENCODERS`) and so has
+            no required patch encoder.
     """
+    if slide_encoder in PATCH_ENCODER_AGNOSTIC_SLIDE_ENCODERS:
+        raise ValueError(
+            f"Slide encoder {slide_encoder.name} works with any patch encoder, so none "
+            f"can be inferred: set model_type to the patch encoder its features come from."
+        )
     if slide_encoder not in SLIDE_ENCODER_COMPATIBILITY:
         raise ValueError(
             f"Unknown slide encoder: {slide_encoder}. "
@@ -316,11 +327,14 @@ def validate_slide_encoder_compatibility(
         slide_encoder: The slide-level encoder model type.
 
     Returns:
-        True if the slide encoder is compatible with the patch encoder.
+        True if the slide encoder is compatible with the patch encoder (always,
+        for a slide encoder in :data:`PATCH_ENCODER_AGNOSTIC_SLIDE_ENCODERS`).
 
     Raises:
         ValueError: If the slide encoder is not compatible with the patch encoder.
     """
+    if slide_encoder in PATCH_ENCODER_AGNOSTIC_SLIDE_ENCODERS:
+        return True
     if slide_encoder not in SLIDE_ENCODER_COMPATIBILITY:
         raise ValueError(
             f"Unknown slide encoder: {slide_encoder}. "
