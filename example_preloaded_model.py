@@ -59,6 +59,27 @@ def example_custom_model(coords, slide_path, attrs, custom_model):
     )
     return features, labels
 
+# Example 4: Using a pre-loaded model with a slide encoder
+# The patch encoder can't be swapped for a pre-loaded model, so model_type must
+# be passed and must match the patch encoder the slide encoder requires.
+def example_preloaded_with_slide_encoder(coords, slide_path, attrs):
+    model = get_model_factory(ModelType.GIGAPATH).get_model(
+        model_path=None,
+        use_gpu=True,
+        gpu_device_id=0
+    )
+
+    features, labels = get_features(
+        coords=coords,
+        slide_path=slide_path,
+        attrs=attrs,
+        model=model,
+        model_type=ModelType.GIGAPATH,  # Required: describes the pre-loaded model
+        use_slide_encoder=True,
+        slide_model_type=ModelType.GIGAPATH_SLIDE,
+    )
+    return features, labels
+
 if __name__ == "__main__":
     print("This is an example file demonstrating usage.")
     print("The get_features function now accepts an optional 'model' parameter.")
