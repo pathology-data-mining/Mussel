@@ -1,15 +1,34 @@
 """CLIP (QuiltNet) model using open_clip."""
 
 import logging
-from functools import partial
 from typing import Callable, List
 
 import open_clip
+import torch
+import torch.nn as nn
 
 from mussel.models.base import TorchModel
 from mussel.models.model_factory import ModelType, register_model
 
 logger = logging.getLogger(__name__)
+
+
+class _ClipImageEncoder(nn.Module):
+    """Expose an open_clip model's ``encode_image`` as ``forward``.
+
+    Patching ``model.forward`` with a bound method stores it in the instance
+    ``__dict__``; ``nn.DataParallel`` replicas copy ``__dict__``, so every
+    replica would call the original (cuda:0) module and fail with a device
+    mismatch.  Routing through a real ``forward`` resolves ``self.model`` on
+    each replica.
+    """
+
+    def __init__(self, model: nn.Module):
+        super().__init__()
+        self.model = model
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return self.model.encode_image(x)
 
 
 @register_model(ModelType.CLIP)
@@ -34,7 +53,7 @@ class ClipModel(TorchModel):
             model_obj, _, self.preprocessing = open_clip.create_model_and_transforms(
                 model_path,
             )
-            model_obj.forward = partial(model_obj.encode_image)
+            model_obj = _ClipImageEncoder(model_obj)
         super().__init__(model_path, model_obj, use_gpu, gpu_device_id)
 
     def get_preprocessing_fun(self) -> Callable:

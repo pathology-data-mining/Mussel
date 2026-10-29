@@ -235,6 +235,8 @@ class ABMILSlideModel(TorchModel):
             always required.
     """
 
+    supports_data_parallel = False  # one slide at a time; see TorchModel
+
     def __init__(
         self,
         model_path: Optional[str],
@@ -294,7 +296,7 @@ class ABMILSlideModel(TorchModel):
         Args:
             save_path: Destination ``.pt`` file path.
         """
-        model_to_save = self.obj.module if hasattr(self.obj, "module") else self.obj
+        model_to_save = self.unwrapped
         torch.save(
             {"config": self._config, "state_dict": model_to_save.state_dict()},
             save_path,

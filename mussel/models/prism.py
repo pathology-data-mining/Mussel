@@ -25,6 +25,8 @@ logger = logging.getLogger(__name__)
 
 @register_model(ModelType.PRISM_SLIDE)
 class PRISMSlideEncoderModel(TorchModel):
+    supports_data_parallel = False  # one slide at a time; see TorchModel
+
     def __init__(
         self,
         model_path,
@@ -62,7 +64,7 @@ class PRISMSlideEncoderModel(TorchModel):
         def model_fun(patch_features):
             with torch.no_grad(), torch.inference_mode():
                 patch_features = patch_features.to(self.device, non_blocking=True)
-                result = self.obj.slide_representations(patch_features)
+                result = self.unwrapped.slide_representations(patch_features)
                 return result["image_embedding"].squeeze(0).cpu()  # (1280,)
 
         return model_fun
@@ -85,6 +87,6 @@ class PRISMSlideEncoderModel(TorchModel):
                 f"PRISM_SLIDE model must be saved to a directory, not a file ({save_path})."
             )
         Path(save_path).mkdir(parents=True, exist_ok=True)
-        model_to_save = self.obj.module if hasattr(self.obj, "module") else self.obj
+        model_to_save = self.unwrapped
         model_to_save.save_pretrained(save_path)
         logger.info(f"Saved PRISM slide encoder to {save_path}")
