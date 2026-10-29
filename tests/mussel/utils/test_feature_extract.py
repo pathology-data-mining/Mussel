@@ -217,7 +217,7 @@ def test_get_features_preloaded_model_auto_sets_model_aggregation():
 
 def test_get_features_preloaded_model_validates_slide_encoder_compatibility():
     """A pre-loaded model whose model_type mismatches the slide encoder is rejected."""
-    with pytest.raises(ValueError, match="requires patch encoder"):
+    with pytest.raises(ValueError, match="pass model_type="):
         _call_get_features_with_preloaded_model(
             model_type=ModelType.CLIP,
             use_slide_encoder=True,

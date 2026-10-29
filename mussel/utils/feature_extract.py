@@ -406,7 +406,14 @@ def get_features(
     ):
         required_patch_encoder = get_required_patch_encoder(slide_model_type)
         # A pre-loaded model can't be swapped, so only validate its declared type
-        if model is None and model_type != required_patch_encoder:
+        if model is not None and model_type != required_patch_encoder:
+            raise ValueError(
+                f"Slide encoder {slide_model_type} requires patch encoder "
+                f"{required_patch_encoder}, but model_type is {model_type}. When "
+                f"passing a pre-loaded model, pass model_type={required_patch_encoder} "
+                f"matching that model."
+            )
+        if model_type != required_patch_encoder:
             logger.info(
                 f"Auto-selecting patch encoder {required_patch_encoder} "
                 f"as required by slide encoder {slide_model_type}"
