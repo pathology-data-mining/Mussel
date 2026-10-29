@@ -3,8 +3,17 @@ import torch
 import torch.nn as nn
 
 from mussel.utils.ml import (SubsetSequentialSampler, calculate_error,
-                             collate_features, collate_MIL, initialize_weights,
-                             nth)
+                             collate_features, collate_MIL, get_split_loader,
+                             initialize_weights, nth)
+
+
+def test_get_split_loader_testing_samples_ten_percent():
+    """testing=True used to call np.random.choice(np.arange(n, n // 10)), which fails."""
+    dataset = list(range(50))
+    loader = get_split_loader(dataset, testing=True)
+    ids = list(loader.sampler)
+    assert len(ids) == 5
+    assert len(set(ids)) == 5 and set(ids) <= set(range(50))
 
 
 def test_subset_sequential_sampler():

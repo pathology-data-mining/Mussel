@@ -3,7 +3,7 @@ import os
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, ClassVar, List, Optional
+from typing import Any, ClassVar, List, Optional, Tuple
 
 import hydra
 import numpy as np
@@ -269,8 +269,8 @@ class VisConfig:
     """
 
     vis_level: int = -1
-    outline = "black"
-    fill = (255, 0, 0, 80)
+    outline: str = "black"
+    fill: Tuple[int, int, int, int] = (255, 0, 0, 80)
     custom_downsample: Optional[int] = None
 
 
