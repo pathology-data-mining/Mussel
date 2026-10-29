@@ -32,8 +32,9 @@ class ExportTilesConfig:
     slide_path (str): Path to the whole slide image.
     patch_h5_path (str): Path to the HDF5 file containing tile coordinates.
     output_png_path (str): Path to save the exported tiles as .png files.
-    patch_size (int): Size of the patches to export (in pixels).
-    mpp (float): Microns per pixel of the slide.
+    patch_size (Optional[int]): Tile size in pixels at ``mpp``. If neither patch_size nor mpp
+        is set (default), tiles are exported at the size recorded in the patch H5.
+    mpp (Optional[float]): Microns per pixel of ``patch_size`` (default: from the patch H5).
     num_workers (int): Number of worker threads to use for exporting tiles.
     slide_mpp_override (float): If set, use this value (µm/px) as the slide's native MPP instead of
         reading it from slide metadata.
@@ -42,8 +43,8 @@ class ExportTilesConfig:
     slide_path: str = MISSING
     patch_h5_path: str = MISSING
     output_png_path: str = MISSING
-    patch_size: int = 256
-    mpp: float = 0.5
+    patch_size: Optional[int] = None
+    mpp: Optional[float] = None
     num_workers: int = 16
     slide_mpp_override: Optional[float] = None
 

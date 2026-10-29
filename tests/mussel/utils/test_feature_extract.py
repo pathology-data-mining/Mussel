@@ -4,9 +4,12 @@ import os
 import tempfile
 from unittest.mock import MagicMock, patch
 
+import h5py
 import ml_dtypes
 import numpy as np
 import pytest
+import torch
+from PIL import Image
 
 from mussel.cli.extract_features import ExtractFeaturesConfig
 from mussel.models import ModelType
@@ -15,6 +18,7 @@ from mussel.utils.feature_extract import (
     TileCoordProcessor,
     _parse_feature_dtype,
     get_features,
+    save_features,
 )
 
 
@@ -689,3 +693,64 @@ def test_tessellate_extract_features_config_has_embedding_precision():
     assert cfg.embedding_precision == "float32"
     assert cfg.model_kwargs == {}
     assert cfg.slide_model_kwargs == {}
+
+
+# ---------------------------------------------------------------------------
+# Patch directory mode and model_dir in save_features
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("layout", ["flat", "class_folders"])
+def test_save_features_patch_dir_without_model_preprocessing(tmp_path, layout):
+    """A model with no preprocessing (None) used to hand PIL images to default_collate."""
+    patch_dir = tmp_path / "patches"
+    image_dir = patch_dir / "class_a" if layout == "class_folders" else patch_dir
+    image_dir.mkdir(parents=True)
+    for i in range(3):
+        Image.fromarray(np.full((32, 32, 3), 40 * i, dtype=np.uint8)).save(image_dir / f"p{i}.png")
+    model = _make_mock_model(feature_dim=8)
+    out_h5 = tmp_path / "out.h5"
+
+    with patch("mussel.utils.feature_extract._load_model", return_value=model):
+        save_features(patch_h5_path=None, slide_path=None, output_h5_path=str(out_h5),
+                      patch_path=str(patch_dir), use_gpu=False, num_workers=0, batch_size=2)
+
+    batches = [c.args[0] for c in model.get_model_fun.return_value.call_args_list]
+    assert all(isinstance(b, torch.Tensor) and b.shape[1:] == (3, 32, 32) for b in batches)
+    with h5py.File(out_h5, "r") as f:
+        assert f["features"].shape == (3, 8)
+
+
+def test_save_features_resolves_model_dir_single_step(tmp_path):
+    (tmp_path / "models" / "CLIP").mkdir(parents=True)
+    with patch("mussel.utils.feature_extract._load_model", side_effect=RuntimeError("stop")) as load:
+        with pytest.raises(RuntimeError, match="stop"):
+            save_features(patch_h5_path=None, slide_path=None, output_h5_path=str(tmp_path / "o.h5"),
+                          patch_path=str(tmp_path), model_type=ModelType.CLIP, use_gpu=False,
+                          model_dir=str(tmp_path / "models"))
+    assert load.call_args.args[1] == str(tmp_path / "models" / "CLIP")
+
+
+def test_save_features_resolves_model_dir_after_patch_encoder_auto_selection(tmp_path):
+    """model_dir lookups use the patch encoder the slide encoder requires, not model_type."""
+    models = tmp_path / "models"
+    (models / "CLIP").mkdir(parents=True)
+    (models / "TITAN_SLIDE").mkdir()
+    with patch("mussel.utils.feature_extract.extract_patch_features") as extract, \
+         patch("mussel.utils.feature_extract.aggregate_slide_features") as aggregate:
+        save_features(patch_h5_path="s.patch.h5", slide_path="s.svs", output_h5_path=str(tmp_path / "o.h5"),
+                      model_type=ModelType.CLIP, slide_model_type=ModelType.TITAN_SLIDE,
+                      use_gpu=False, model_dir=str(models))
+    assert extract.call_args.kwargs["model_type"] == ModelType.CONCH1_5
+    assert extract.call_args.kwargs["model_path"] == str(models / "TITAN_SLIDE")
+    assert aggregate.call_args.kwargs["model_path"] == str(models / "TITAN_SLIDE")
+
+
+def test_save_features_explicit_model_path_wins_over_model_dir(tmp_path):
+    (tmp_path / "models" / "CLIP").mkdir(parents=True)
+    with patch("mussel.utils.feature_extract._load_model", side_effect=RuntimeError("stop")) as load:
+        with pytest.raises(RuntimeError, match="stop"):
+            save_features(patch_h5_path=None, slide_path=None, output_h5_path=str(tmp_path / "o.h5"),
+                          patch_path=str(tmp_path), model_type=ModelType.CLIP, use_gpu=False,
+                          model_path="explicit.pt", model_dir=str(tmp_path / "models"))
+    assert load.call_args.args[1] == "explicit.pt"

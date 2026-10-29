@@ -7,9 +7,47 @@ from unittest.mock import MagicMock, patch
 
 import numpy as np
 import pytest
+from PIL import Image
 
 from mussel.utils.visualization import (_rank_normalize, apply_colormap,
                                         create_overlay, visualize_heatmap)
+
+# ---------------------------------------------------------------------------
+# visualize_heatmap — slide handle lifetime (mocked slide)
+# ---------------------------------------------------------------------------
+
+
+def _mock_slide():
+    wsi = MagicMock()
+    wsi.level_downsamples = [1.0]
+    wsi.level_dimensions = [(64, 64)]
+    wsi.read_region.side_effect = lambda loc, level, size: Image.new("RGBA", size, "white")
+    return wsi
+
+
+def _heatmap(tmp_path, **kwargs):
+    return visualize_heatmap(
+        slide_path="s.svs", scores=np.array([0.2, 0.9]), coords=np.array([[0, 0], [32, 32]]),
+        patch_size_level0=32, vis_level=0, output_path=str(tmp_path / "h.png"), **kwargs,
+    )
+
+
+class TestVisualizeHeatmapClosesSlide:
+    def test_closed_after_success(self, tmp_path):
+        wsi = _mock_slide()
+        with patch("mussel.utils.visualization.openslide.open_slide", return_value=wsi):
+            _heatmap(tmp_path, num_top_patches=1)
+        assert (tmp_path / "h.png").exists()
+        wsi.close.assert_called_once()
+
+    def test_closed_after_error(self, tmp_path):
+        wsi = _mock_slide()
+        wsi.read_region.side_effect = RuntimeError("read failed")
+        with patch("mussel.utils.visualization.openslide.open_slide", return_value=wsi), \
+             pytest.raises(RuntimeError, match="read failed"):
+            _heatmap(tmp_path)
+        wsi.close.assert_called_once()
+
 
 # ---------------------------------------------------------------------------
 # _rank_normalize

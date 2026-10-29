@@ -13,6 +13,7 @@ from mussel.cli.tessellate import (
     SegConfig,
     StainSegConfig,
     TessellateConfig,
+    VisConfig,
 )
 
 # Dimensions of the test slide (85656 x 19917 at level 0)
@@ -710,3 +711,15 @@ def test_segment_tissue_artifact_removal_empty_mask_fallback(tmp_path):
     assert (
         result is not None
     ), "segment_tissue should fall back to pre-removal mask when artifact removal empties it"
+
+
+def test_vis_config_colors_are_overridable_fields():
+    """outline / fill lacked annotations, so they weren't config fields: they could not be
+    overridden and OmegaConf.to_container (the **kwargs for draw_slide_mask) dropped them."""
+    cfg = OmegaConf.structured(VisConfig)
+    assert OmegaConf.to_container(cfg) == {
+        "vis_level": -1, "outline": "black", "fill": [255, 0, 0, 80], "custom_downsample": None,
+    }
+    merged = OmegaConf.merge(cfg, OmegaConf.from_dotlist(["outline=red", "fill=[0,255,0,40]"]))
+    assert merged.outline == "red"
+    assert list(merged.fill) == [0, 255, 0, 40]

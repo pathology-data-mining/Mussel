@@ -247,7 +247,9 @@ class ABMILSlideModel(TorchModel):
                 "Pass the path to a .pt file saved with ABMILSlideModel.save()."
             )
 
-        checkpoint = torch.load(model_path, map_location="cpu", weights_only=False)
+        # The checkpoint is a plain dict of a config dict and tensors (see save()),
+        # so the restricted weights-only loader suffices and arbitrary objects are refused.
+        checkpoint = torch.load(model_path, map_location="cpu", weights_only=True)
         config = checkpoint["config"]
         state_dict = checkpoint["state_dict"]
 

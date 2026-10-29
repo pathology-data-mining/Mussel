@@ -108,7 +108,7 @@ def get_split_loader(split_dataset, training=False, testing=False, weighted=Fals
 
     if testing:
         ids = np.random.choice(
-            np.arange(len(split_dataset), int(len(split_dataset) * 0.1)), replace=False
+            np.arange(len(split_dataset)), int(len(split_dataset) * 0.1), replace=False
         )
         loader = DataLoader(
             split_dataset,
