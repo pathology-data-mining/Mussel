@@ -32,7 +32,7 @@ from mussel.models.kaiko import (KaikoViTB8Model, KaikoViTB16Model,
                                  KaikoViTL14Model, KaikoViTS8Model,
                                  KaikoViTS16Model)
 from mussel.models.lunit import LunitViTS8Model, LunitViTS16Model
-from mussel.models.madeleine import MadeleineSlideEncoderModel
+from mussel.models.madeleine import MadeleineSlideEncoderModel, _MadeleineModel
 from mussel.models.transpath import TransPathModel, _ConvStem
 from mussel.models.virchow import Virchow2Model, VirchowModel
 
@@ -433,6 +433,17 @@ class TestMadeleine:
                 nn.init.normal_(mod.weight, 1.0, 0.5)
                 nn.init.normal_(mod.bias, 0.0, 0.5)
         return ref
+
+    def test_forward_matches_upstream(self):
+        """Same weights, same input: the port's output equals upstream encode_he."""
+        ref = self._reference()
+        model = _MadeleineModel(512, 512, 4).train(False)
+        model.load_state_dict(ref.state_dict(), strict=True)
+        feats = torch.randn(2, 30, 512)
+        with torch.no_grad():
+            out, expected = model(feats), ref(feats)
+        assert out.shape == (2, 512)
+        torch.testing.assert_close(out, expected, rtol=1e-4, atol=1e-5)
 
     def test_matches_upstream_encode_he(self, tmp_path):
         ref = self._reference()
