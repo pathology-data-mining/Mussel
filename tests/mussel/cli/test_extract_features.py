@@ -431,6 +431,58 @@ def test_main_batch_passes_max_slide_patches_to_aggregation(tmp_path, max_slide_
     assert seen["max_slide_patches"] == passed
 
 
+@pytest.mark.parametrize(
+    "model_type, slide_model_type, expected_patch_encoder",
+    [
+        # model_type left at its default (CLIP): the slide encoder's patch encoder is used.
+        (None, ModelType.CHIEF_SLIDE, ModelType.CTRANSPATH),
+        (None, ModelType.MADELEINE_SLIDE, ModelType.CONCH_V1),
+        # A patch-encoder-agnostic slide encoder keeps the patch encoder given.
+        (ModelType.UNI, ModelType.ABMIL_SLIDE, ModelType.UNI),
+    ],
+)
+def test_main_batch_pairs_slide_encoder_like_single_mode(
+    tmp_path, model_type, slide_model_type, expected_patch_encoder
+):
+    """Batch mode, like save_features: slide_model_type turns identity into model aggregation
+    with the slide encoder's patch encoder."""
+    patch_h5 = tmp_path / "slide.patch.h5"
+    slide_svs = tmp_path / "slide.svs"
+    patch_h5.touch()
+    slide_svs.touch()
+    seen = {}
+
+    def _fake_aggregate(**kwargs):
+        seen.update(kwargs)
+        for path in kwargs["output_pt_paths"]:
+            torch.save(torch.zeros(768), path)
+
+    cfg = ExtractFeaturesConfig(
+        patch_h5_paths=[str(patch_h5)],
+        slide_paths=[str(slide_svs)],
+        slide_ids=["slide1"],
+        output_dir=str(tmp_path / "out"),
+        slide_model_type=slide_model_type,
+        use_gpu=False,
+        num_workers=0,
+    )
+    if model_type is not None:
+        cfg.model_type = model_type
+    with (
+        patch(
+            "mussel.cli.extract_features.extract_patch_features_batch"
+        ) as mock_extract,
+        patch(
+            "mussel.cli.extract_features.aggregate_slide_features_batch",
+            side_effect=_fake_aggregate,
+        ),
+    ):
+        mussel.cli.extract_features.main(OmegaConf.create(cfg))
+    assert mock_extract.call_args.kwargs["model_type"] == expected_patch_encoder
+    assert seen["aggregation_method"] == "model"
+    assert seen["model_type"] == slide_model_type
+
+
 def test_max_slide_patches_validation():
     from mussel.cli.extract_features import _max_slide_patches
 

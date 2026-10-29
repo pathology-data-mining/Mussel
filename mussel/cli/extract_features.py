@@ -16,18 +16,21 @@ from torch.utils.data import DataLoader
 from tqdm import tqdm
 
 from mussel.datasets import WholeSlideImageTileCoordDataset
-from mussel.models import ModelType, get_model_factory
+from mussel.models import (ModelType, get_model_factory,
+                           validate_slide_encoder_compatibility)
 from mussel.utils import (
     aggregate_slide_features_batch,
     ensure_directory_exists,
     extract_patch_features_batch,
     get_slide_ids_from_paths,
+    resolve_aggregation_method,
     resolve_remote_paths,
     save_features,
     timings,
 )
 from mussel.utils.feature_extract import (_numpy_to_torch,
-                                          extract_patch_features_batch_multi)
+                                          extract_patch_features_batch_multi,
+                                          resolve_slide_patch_encoder)
 from mussel.utils.file import save_hdf5, save_torch_tensor
 from mussel.utils.ml import collate_features
 
@@ -333,8 +336,18 @@ def _main_batch(cfg: ExtractFeaturesConfig):
         _main_batch_multi(cfg, output_dir, slide_ids)
         return
 
+    # As in single mode (save_features): a slide encoder turns "identity" into
+    # "model" and picks its patch encoder.
+    aggregation_method = resolve_aggregation_method(
+        cfg.aggregation_method, cfg.slide_model_type
+    )
+    model_type = cfg.model_type
+    if aggregation_method == "model" and cfg.slide_model_type is not None:
+        model_type = resolve_slide_patch_encoder(model_type, cfg.slide_model_type)
+        validate_slide_encoder_compatibility(model_type, cfg.slide_model_type)
+
     # Check if we need two-step processing
-    use_two_step = cfg.aggregation_method != "identity"
+    use_two_step = aggregation_method != "identity"
 
     logger.info(f"Batch extracting features for {len(cfg.slide_paths)} slides")
 
@@ -351,7 +364,7 @@ def _main_batch(cfg: ExtractFeaturesConfig):
             patch_h5_paths=cfg.patch_h5_paths,
             slide_paths=cfg.slide_paths,
             output_h5_paths=intermediate_h5_paths,
-            model_type=cfg.model_type,
+            model_type=model_type,
             model_path=cfg.model_path,
             model_dir=cfg.model_dir,
             batch_size=cfg.batch_size,
@@ -369,13 +382,13 @@ def _main_batch(cfg: ExtractFeaturesConfig):
 
         # Aggregate to slide level using batch processing
         logger.info(
-            f"Batch aggregating {len(cfg.slide_paths)} slides with aggregation_method={cfg.aggregation_method}"
+            f"Batch aggregating {len(cfg.slide_paths)} slides with aggregation_method={aggregation_method}"
         )
         aggregate_slide_features_batch(
             patch_features_h5_paths=intermediate_h5_paths,
             output_h5_paths=output_h5_paths,
             output_pt_paths=output_pt_paths,
-            aggregation_method=cfg.aggregation_method,
+            aggregation_method=aggregation_method,
             model_type=cfg.slide_model_type,
             model_path=cfg.slide_model_path,
             model_dir=cfg.model_dir,

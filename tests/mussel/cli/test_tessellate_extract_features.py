@@ -89,6 +89,182 @@ def test_main_tiles_at_the_models_size_and_mpp(overrides, expected):
     assert _tiles_chosen_by_main(**overrides) == expected
 
 
+# Slide encoders whose tiles differ from their patch encoder's: CHIEF (CTransPath, 224 px)
+# and MADELEINE (CONCH v1, 448 px) both need 256 px tiles at 1.0 µm/px.
+_SLIDE_ENCODER_TILES = [
+    (ModelType.CHIEF_SLIDE, ModelType.CTRANSPATH, (256, 1.0)),
+    (ModelType.MADELEINE_SLIDE, ModelType.CONCH_V1, (256, 1.0)),
+    (ModelType.TITAN_SLIDE, ModelType.CONCH1_5, (512, 0.5)),
+]
+
+
+@pytest.mark.parametrize("slide_model_type,patch_encoder,tiles", _SLIDE_ENCODER_TILES)
+def test_single_slide_tiles_for_the_slide_encoder(
+    slide_model_type, patch_encoder, tiles
+):
+    """_main_single keeps the slide encoder's tiles, not its patch encoder's."""
+    seen = {}
+
+    def capture(**kwargs):
+        cfg = kwargs["cfg"]
+        seen["tiles"] = (cfg.seg_config.patch_size, cfg.seg_config.mpp)
+        seen["model_type"] = kwargs["model_type"]
+        return None
+
+    cfg = OmegaConf.create(
+        TessellateExtractFeaturesConfig(
+            **_TEF_REQUIRED, seg_config=SegConfig(), slide_model_type=slide_model_type
+        )
+    )
+    with (
+        patch(
+            "mussel.cli.tessellate_extract_features.process_slide_tessellation_and_filtering",
+            side_effect=capture,
+        ),
+        patch(
+            "mussel.cli.tessellate_extract_features._build_segmentation_runtime",
+            return_value=(None, None),
+        ),
+    ):
+        main(cfg)
+    assert seen == {"tiles": tiles, "model_type": patch_encoder}
+
+
+@pytest.mark.parametrize("slide_model_type,patch_encoder,tiles", _SLIDE_ENCODER_TILES)
+def test_batch_tiles_for_the_slide_encoder(
+    tmp_path, slide_model_type, patch_encoder, tiles
+):
+    """_main_batch keeps the slide encoder's tiles, not its patch encoder's."""
+    seen = []
+
+    def capture(**kwargs):
+        cfg = kwargs["cfg"]
+        seen.append((cfg.seg_config.patch_size, cfg.seg_config.mpp))
+        return None
+
+    cfg = OmegaConf.create(
+        TessellateExtractFeaturesConfig(
+            slide_paths=["a.svs", "b.svs"],
+            output_dir=str(tmp_path),
+            seg_config=SegConfig(),
+            slide_model_type=slide_model_type,
+        )
+    )
+    with (
+        patch(
+            "mussel.cli.tessellate_extract_features.process_slide_tessellation_only",
+            side_effect=capture,
+        ),
+        patch(
+            "mussel.cli.tessellate_extract_features._build_segmentation_runtime",
+            return_value=(None, None),
+        ),
+    ):
+        main(cfg)
+    assert seen == [tiles, tiles]
+
+
+@pytest.mark.parametrize(
+    "model_type,slide_model_type,expected",
+    [
+        (
+            ModelType.CTRANSPATH,
+            ModelType.CHIEF_SLIDE,
+            {
+                (ModelType.CTRANSPATH, None): (224, 1.0),
+                (ModelType.CTRANSPATH, ModelType.CHIEF_SLIDE): (256, 1.0),
+            },
+        ),
+        (
+            ModelType.CONCH_V1,
+            ModelType.MADELEINE_SLIDE,
+            {
+                (ModelType.CONCH_V1, None): (448, 1.0),
+                (ModelType.CONCH_V1, ModelType.MADELEINE_SLIDE): (256, 1.0),
+            },
+        ),
+        # Same tile size, different MPP: two tessellations.
+        (
+            ["UNI"],
+            ["CHIEF_SLIDE"],
+            {
+                (ModelType.UNI, None): (256, 0.5),
+                (ModelType.CTRANSPATH, ModelType.CHIEF_SLIDE): (256, 1.0),
+            },
+        ),
+        # ABMIL_SLIDE takes the one patch model given.
+        (
+            ModelType.UNI,
+            ModelType.ABMIL_SLIDE,
+            {
+                (ModelType.UNI, None): (256, 0.5),
+                (ModelType.UNI, ModelType.ABMIL_SLIDE): (256, 0.5),
+            },
+        ),
+    ],
+)
+def test_multi_model_tiles_for_each_model(
+    tmp_path, model_type, slide_model_type, expected
+):
+    """Multi-model mode groups slide encoders by their own tile size and MPP."""
+    seen = {}
+
+    def capture(cfg, patch_output_dir=None):
+        seen[(cfg.model_type, cfg.slide_model_type)] = (
+            cfg.seg_config.patch_size,
+            cfg.seg_config.mpp,
+        )
+
+    cfg = OmegaConf.create(
+        TessellateExtractFeaturesConfig(
+            slide_paths=["a.svs"],
+            output_dir=str(tmp_path),
+            seg_config=SegConfig(),
+            model_type=model_type,
+            slide_model_type=slide_model_type,
+        )
+    )
+    with patch(
+        "mussel.cli.tessellate_extract_features._main_batch", side_effect=capture
+    ):
+        main(cfg)
+    assert seen == expected
+
+
+def test_single_slide_filter_fast_path_keeps_the_slide_encoder(tmp_path):
+    """With a slide encoder, filtering with its own patch encoder still runs the slide encoder."""
+    seen = {}
+
+    def capture(**kwargs):
+        seen["skip_second_extraction"] = kwargs["skip_second_extraction"]
+        seen["model_type"] = kwargs["model_type"]
+        return None
+
+    classifier = tmp_path / "classifier.pkl"
+    classifier.touch()
+    cfg = OmegaConf.create(
+        TessellateExtractFeaturesConfig(
+            **_TEF_REQUIRED,
+            seg_config=SegConfig(),
+            classifier_pkl=str(classifier),
+            prefilter_model_type=ModelType.CONCH1_5,
+            slide_model_type=ModelType.TITAN_SLIDE,
+        )
+    )
+    with (
+        patch(
+            "mussel.cli.tessellate_extract_features.process_slide_tessellation_and_filtering",
+            side_effect=capture,
+        ),
+        patch(
+            "mussel.cli.tessellate_extract_features._build_segmentation_runtime",
+            return_value=(None, None),
+        ),
+    ):
+        main(cfg)
+    assert seen == {"skip_second_extraction": False, "model_type": ModelType.CONCH1_5}
+
+
 def test_neural_segmenter_use_gpu_false_forces_cpu():
     seg_cfg = {"seg_model": "neural"}
 

@@ -23,7 +23,8 @@ from tqdm import tqdm
 # fmt: off
 from mussel.datasets import (FlatImageDataset, WholeSlideImageH5Dataset,
                              WholeSlideImageTileCoordDataset)
-from mussel.models import (SLIDE_ENCODER_COMPATIBILITY, ModelType,
+from mussel.models import (PATCH_ENCODER_AGNOSTIC_SLIDE_ENCODERS,
+                           SLIDE_ENCODER_COMPATIBILITY, ModelType,
                            check_tile_size, get_model_factory,
                            get_required_patch_encoder,
                            validate_slide_encoder_compatibility)
@@ -757,7 +758,8 @@ def resolve_aggregation_method(
     """Auto-set aggregation method based on slide model type.
 
     If slide_model_type is specified and aggregation_method is "identity",
-    automatically switches to "model" aggregation.
+    automatically switches to "model" aggregation. With "mean" or "max" the
+    slide model is not used, and a warning says so.
 
     Args:
         aggregation_method: Current aggregation method setting
@@ -780,7 +782,39 @@ def resolve_aggregation_method(
             f"slide_model_type={slide_model_type}"
         )
         return "model"
+    if slide_model_type is not None and aggregation_method in ("mean", "max"):
+        logger.warning(
+            f"aggregation_method={aggregation_method!r}: slide_model_type="
+            f"{getattr(slide_model_type, 'name', slide_model_type)} is ignored "
+            "(set aggregation_method=model to use the slide encoder)"
+        )
     return aggregation_method
+
+
+def resolve_slide_patch_encoder(model_type: Optional, slide_model_type) -> ModelType:
+    """Patch encoder to pair with a slide encoder for model aggregation.
+
+    A slide encoder tied to one patch encoder gets that encoder, whatever
+    ``model_type`` was (logged when it differs). A patch-encoder-agnostic slide
+    encoder (e.g. ABMIL_SLIDE) keeps ``model_type``, which must then be given.
+
+    Raises:
+        ValueError: If the slide encoder is unknown, or agnostic with no model_type.
+    """
+    if slide_model_type in PATCH_ENCODER_AGNOSTIC_SLIDE_ENCODERS:
+        if model_type is None:
+            raise ValueError(
+                f"Slide encoder {slide_model_type.name} works with any patch encoder: "
+                "set model_type to the patch encoder its features come from."
+            )
+        return model_type
+    required_patch_encoder = get_required_patch_encoder(slide_model_type)
+    if model_type != required_patch_encoder:
+        logger.info(
+            f"Auto-selecting patch encoder {required_patch_encoder} "
+            f"as required by slide encoder {slide_model_type}"
+        )
+    return required_patch_encoder
 
 
 def resolve_patch_encoder(model_type: Optional, slide_model_type: Optional):
@@ -1082,17 +1116,12 @@ def get_features(
 
     gpu_device_id = resolve_gpu_device_id(gpu_device_id, gpu_device_ids)
 
-    # Auto-set aggregation_method unconditionally so pre-loaded models also trigger slide encoding.
-    if (
-        use_slide_encoder
-        and slide_model_type is not None
-        and aggregation_method != "model"
-    ):
-        logger.info(
-            f"Auto-setting aggregation_method to 'model' since slide_model_type "
-            f"({slide_model_type}) is specified"
+    # "identity" becomes "model" when a slide encoder is given, whether loaded here
+    # or pre-loaded; with mean/max the slide encoder is ignored (as in save_features).
+    if use_slide_encoder:
+        aggregation_method = resolve_aggregation_method(
+            aggregation_method, slide_model_type
         )
-        aggregation_method = "model"
 
     # Validate patch/slide encoder compatibility regardless of how models are provided.
     if (
@@ -1102,13 +1131,7 @@ def get_features(
     ):
         if model is None:
             # Auto-infer required patch encoder when loading from disk.
-            required_patch_encoder = get_required_patch_encoder(slide_model_type)
-            if model_type != required_patch_encoder:
-                logger.info(
-                    f"Auto-selecting patch encoder {required_patch_encoder} "
-                    f"as required by slide encoder {slide_model_type}"
-                )
-                model_type = required_patch_encoder
+            model_type = resolve_slide_patch_encoder(model_type, slide_model_type)
         validate_slide_encoder_compatibility(model_type, slide_model_type)
 
     slide_name = Path(slide_path).stem if slide_path else ""
@@ -1462,7 +1485,9 @@ def extract_patch_features_batch(
 
 
 # Slide encoders aggregate patch features; they don't take tiles.
-_SLIDE_ENCODERS = frozenset(SLIDE_ENCODER_COMPATIBILITY) | {ModelType.ABMIL_SLIDE}
+_SLIDE_ENCODERS = (
+    frozenset(SLIDE_ENCODER_COMPATIBILITY) | PATCH_ENCODER_AGNOSTIC_SLIDE_ENCODERS
+)
 
 
 def _preprocessing_key(preprocessing, model_type) -> str:
@@ -2050,30 +2075,28 @@ def aggregate_slide_features_batch(
                         # Continue with next slide
 
             else:
-                # Other slide encoders may only need features
-                # Stack features from all slides in batch and process together
-                try:
-                    features_list = [
-                        _numpy_to_torch(f).unsqueeze(0) for f in batch_features
-                    ]
-                    features_batch = torch.cat(features_list, dim=0)
-
-                    # Process entire batch at once for maximum efficiency
-                    with timings.stage("slide_encode", model=_model_name(model_type),
-                                       slides=batch_slide_names, tiles=int(sum(len(f) for f in batch_features))):
-                        aggregated_batch_tensor = model_fun(features_batch).cpu().numpy()
-                    aggregated_batch = [
-                        aggregated_batch_tensor[i : i + 1]
-                        for i in range(len(batch_features))
-                    ]
-                    successful_slides.extend(batch_slide_names)
-                except Exception as e:
-                    logger.error(
-                        f"Failed to process batch {batch_start+1}-{batch_end}: {str(e)}"
-                    )
-                    # Mark all slides in batch as failed
-                    aggregated_batch = [None] * len(batch_features)
-                    failed_slides.extend(batch_slide_names)
+                # Other slide encoders (CHIEF, FEATHER, MADELEINE, PRISM, ABMIL) take
+                # features only. Encode one slide at a time, as aggregate_slide_features
+                # does: slides have different tile counts (no torch.cat), and these
+                # model_funs squeeze the batch dim, so a stacked batch's rows can't be
+                # split back per slide.
+                aggregated_batch = []
+                for features, slide_name in zip(batch_features, batch_slide_names):
+                    try:
+                        features_tensor = _numpy_to_torch(features).unsqueeze(0)
+                        with timings.stage(
+                            "slide_encode",
+                            model=_model_name(model_type),
+                            slide=slide_name,
+                            tiles=int(features.shape[0]),
+                        ):
+                            agg_features = model_fun(features_tensor).cpu().numpy()
+                        aggregated_batch.append(agg_features)
+                        successful_slides.append(slide_name)
+                    except Exception as e:
+                        logger.error(f"Failed to process slide {slide_name}: {str(e)}")
+                        aggregated_batch.append(None)
+                        failed_slides.append(slide_name)
 
         # Save results for each slide in batch (skip failed slides)
         for idx, i in enumerate(batch_indices):
@@ -2319,12 +2342,9 @@ def save_features(
     _parse_feature_dtype(embedding_precision)
 
     # Auto-set aggregation_method to "model" if slide_model_type is specified
-    if slide_model_type is not None and aggregation_method == "identity":
-        logger.info(
-            f"Auto-setting aggregation_method to 'model' since slide_model_type "
-            f"({slide_model_type}) is specified"
-        )
-        aggregation_method = "model"
+    aggregation_method = resolve_aggregation_method(
+        aggregation_method, slide_model_type
+    )
 
     # Infer two-step mode from aggregation_method
     use_two_step = aggregation_method != "identity"
@@ -2335,13 +2355,7 @@ def save_features(
 
         # Auto-infer patch encoder from slide encoder if using model-based aggregation
         if aggregation_method == "model" and slide_model_type is not None:
-            required_patch_encoder = get_required_patch_encoder(slide_model_type)
-            if model_type != required_patch_encoder:
-                logger.info(
-                    f"Auto-selecting patch encoder {required_patch_encoder} "
-                    f"as required by slide encoder {slide_model_type}"
-                )
-                model_type = required_patch_encoder
+            model_type = resolve_slide_patch_encoder(model_type, slide_model_type)
             # Validate compatibility
             validate_slide_encoder_compatibility(model_type, slide_model_type)
 

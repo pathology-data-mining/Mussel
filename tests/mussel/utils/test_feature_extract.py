@@ -4,17 +4,27 @@ import os
 import tempfile
 from unittest.mock import MagicMock, patch
 
+import h5py
 import ml_dtypes
 import numpy as np
 import pytest
+import torch
 
 from mussel.cli.extract_features import ExtractFeaturesConfig
-from mussel.models import ModelType
+from mussel.models import (
+    ModelType,
+    get_required_patch_encoder,
+    validate_slide_encoder_compatibility,
+)
 from mussel.utils.feature_extract import (
     H5DatasetProcessor,
     TileCoordProcessor,
     _parse_feature_dtype,
+    aggregate_slide_features,
+    aggregate_slide_features_batch,
     get_features,
+    resolve_patch_encoder,
+    save_features,
 )
 
 
@@ -689,3 +699,173 @@ def test_tessellate_extract_features_config_has_embedding_precision():
     assert cfg.embedding_precision == "float32"
     assert cfg.model_kwargs == {}
     assert cfg.slide_model_kwargs == {}
+
+
+# -- slide encoders: batch vs single path, encoder-agnostic slide models ---------
+
+
+def _squeezing_slide_model_factory():
+    """Factory for a slide model whose model_fun squeezes to (D,), like CHIEF/FEATHER/MADELEINE/PRISM/ABMIL."""
+    model = MagicMock()
+    model.get_model_fun.return_value = lambda x: (
+        x.mean(dim=1) * 2 + x.shape[1]
+    ).squeeze()
+    factory = MagicMock()
+    factory.get_model.return_value = model
+    return factory
+
+
+@pytest.mark.parametrize("n_tiles", [[5], [3, 7, 11]])
+def test_aggregate_slide_features_batch_matches_single_slide_path(tmp_path, n_tiles):
+    """Batch slide encoding saves what aggregate_slide_features saves, slide by slide.
+
+    Slides with different tile counts can't be stacked into one tensor, and a
+    squeezing model_fun's output can't be sliced back into per-slide rows.
+    """
+    rng = np.random.default_rng(0)
+    patch_h5s = []
+    for i, n in enumerate(n_tiles):
+        path = tmp_path / f"slide{i}.patch.h5"
+        with h5py.File(path, "w") as f:
+            f.create_dataset("features", data=rng.random((n, 8), dtype=np.float32))
+            f.create_dataset("coords", data=np.zeros((n, 2), dtype=np.int64))
+        patch_h5s.append(str(path))
+    batch_pts = [str(tmp_path / f"batch{i}.pt") for i in range(len(n_tiles))]
+    single_pts = [str(tmp_path / f"single{i}.pt") for i in range(len(n_tiles))]
+
+    with patch(
+        "mussel.utils.feature_extract.get_model_factory",
+        return_value=_squeezing_slide_model_factory(),
+    ):
+        aggregate_slide_features_batch(
+            patch_features_h5_paths=patch_h5s,
+            output_pt_paths=batch_pts,
+            aggregation_method="model",
+            model_type=ModelType.CHIEF_SLIDE,
+            model_path="unused",
+            use_gpu=False,
+            slide_batch_size=8,
+            tile_size_check="off",
+        )
+        for h5, pt in zip(patch_h5s, single_pts):
+            aggregate_slide_features(
+                patch_features_h5_path=h5,
+                output_pt_path=pt,
+                aggregation_method="model",
+                model_type=ModelType.CHIEF_SLIDE,
+                model_path="unused",
+                use_gpu=False,
+                tile_size_check="off",
+            )
+
+    for batch_pt, single_pt in zip(batch_pts, single_pts):
+        batch_emb = torch.load(batch_pt, weights_only=True)
+        single_emb = torch.load(single_pt, weights_only=True)
+        assert batch_emb.shape == single_emb.shape == (8,)
+        assert torch.equal(batch_emb, single_emb)
+
+
+def test_abmil_slide_needs_no_required_patch_encoder():
+    """ABMIL_SLIDE works with any patch encoder: validation passes, inference asks for model_type."""
+    assert validate_slide_encoder_compatibility(ModelType.UNI, ModelType.ABMIL_SLIDE)
+    with pytest.raises(ValueError, match="any patch encoder"):
+        get_required_patch_encoder(ModelType.ABMIL_SLIDE)
+    with pytest.raises(ValueError, match="set model_type"):
+        resolve_patch_encoder(None, ModelType.ABMIL_SLIDE)
+
+
+def test_get_features_with_abmil_slide_keeps_the_given_patch_encoder():
+    """get_features + ABMIL_SLIDE encodes tiles with model_type (no "Unknown slide encoder")."""
+    coords = np.zeros((6, 2), dtype=np.int32)
+    attrs = {
+        "patch_size": 256,
+        "patch_level": 0,
+        "mpp": 0.5,
+        "patch_size_to_resize_to_for_desired_mpp": 256,
+    }
+    loaded = []
+
+    def factory(model_type):
+        loaded.append(model_type)
+        return MagicMock(get_model=MagicMock(return_value=_make_mock_model()))
+
+    slide_model = MagicMock()
+    slide_model.get_model_fun.return_value = lambda x: x.mean(dim=1).squeeze(0)
+    with (
+        patch("mussel.utils.feature_extract.get_model_factory", side_effect=factory),
+        patch("mussel.utils.feature_extract.WholeSlideImageTileCoordDataset"),
+        patch("mussel.utils.feature_extract._make_dataloader"),
+        patch("mussel.utils.feature_extract.process_dataset") as mock_proc,
+    ):
+        mock_proc.return_value = MagicMock(
+            features=np.ones((6, 384), dtype=np.float32), labels=np.zeros(6)
+        )
+        features, _ = get_features(
+            coords,
+            "slide.svs",
+            attrs,
+            model_type=ModelType.UNI,
+            use_gpu=False,
+            use_slide_encoder=True,
+            slide_model_type=ModelType.ABMIL_SLIDE,
+            slide_model=slide_model,
+        )
+
+    assert loaded == [ModelType.UNI]
+    assert features.shape == (384,)
+
+
+def test_save_features_with_abmil_slide_keeps_the_given_patch_encoder(tmp_path):
+    with (
+        patch("mussel.utils.feature_extract.extract_patch_features") as mock_extract,
+        patch(
+            "mussel.utils.feature_extract.aggregate_slide_features"
+        ) as mock_aggregate,
+    ):
+        save_features(
+            patch_h5_path=str(tmp_path / "s.patch.h5"),
+            slide_path="s.svs",
+            output_h5_path=str(tmp_path / "s.h5"),
+            model_type=ModelType.UNI,
+            slide_model_type=ModelType.ABMIL_SLIDE,
+        )
+
+    assert mock_extract.call_args.kwargs["model_type"] == ModelType.UNI
+    assert mock_aggregate.call_args.kwargs["aggregation_method"] == "model"
+    assert mock_aggregate.call_args.kwargs["model_type"] == ModelType.ABMIL_SLIDE
+
+
+def test_get_features_mean_with_slide_model_type_stays_mean(caplog):
+    """As in save_features, only "identity" becomes "model"; mean/max ignore the slide model, with a warning."""
+    coords = np.zeros((4, 2), dtype=np.int32)
+    attrs = {
+        "patch_size": 256,
+        "patch_level": 0,
+        "mpp": 0.5,
+        "patch_size_to_resize_to_for_desired_mpp": 256,
+    }
+    with (
+        patch("mussel.utils.feature_extract.WholeSlideImageTileCoordDataset"),
+        patch("mussel.utils.feature_extract._make_dataloader"),
+        patch("mussel.utils.feature_extract.process_dataset") as mock_proc,
+        patch(
+            "mussel.utils.feature_extract._apply_slide_aggregation",
+            side_effect=lambda features, **kwargs: features,
+        ) as mock_aggregation,
+        caplog.at_level("WARNING", logger="mussel.utils.feature_extract"),
+    ):
+        mock_proc.return_value = MagicMock(
+            features=np.zeros((4, 384)), labels=np.zeros(4)
+        )
+        get_features(
+            coords,
+            "slide.svs",
+            attrs,
+            model=_make_mock_model(),
+            use_slide_encoder=True,
+            slide_model_type=ModelType.GIGAPATH_SLIDE,
+            aggregation_method="mean",
+        )
+
+    assert mock_aggregation.call_args.kwargs["aggregation_method"] == "mean"
+    assert "is ignored" in caplog.text
