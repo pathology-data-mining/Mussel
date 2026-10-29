@@ -78,12 +78,17 @@ class Conch15Model(TorchModel):
     def get_preprocessing_fun(self) -> Callable:
         """Get preprocessing transforms for CONCH v1.5.
 
+        Matches TITAN's eval transform: Resize(448) (bilinear, as upstream),
+        CenterCrop(448), ImageNet normalisation.  The crop is a no-op on square
+        tiles, so features of square tiles are unchanged by it.
+
         Returns:
             Composed transforms for CONCH v1.5 input preprocessing.
         """
         return transforms.Compose(
             [
                 transforms.Resize(448),
+                transforms.CenterCrop(448),
                 transforms.ToTensor(),
                 transforms.Normalize(mean=IMAGENET_MEAN, std=IMAGENET_STD),
             ]

@@ -3,14 +3,15 @@
 import logging
 import re
 from pathlib import Path
-from typing import List
+from typing import Callable, List
 
 import timm
 import torch
 import torch.nn as nn
 from timm.layers import Format, nchw_to
+from torchvision import transforms
 
-from mussel.models.base import TorchModel
+from mussel.models.base import IMAGENET_MEAN, IMAGENET_STD, TorchModel
 from mussel.models.model_factory import ModelType, register_model
 
 logger = logging.getLogger(__name__)
@@ -130,9 +131,27 @@ class TransPathModel(TorchModel):
         ]
         if missing:
             raise RuntimeError(f"TransPath checkpoint is missing keys: {missing}")
-        # ctranspath uses standard ImageNet normalization — preprocessing is
-        # handled by the feature-extraction pipeline (preprocessing=None → ImageNet default)
         super().__init__(model_path, model_obj, use_gpu, gpu_device_id)
+
+    def get_preprocessing_fun(self) -> Callable:
+        """Get preprocessing transforms for CTransPath.
+
+        The Swin-T backbone is built for 224 px input (fixed window attention
+        masks), so tiles must be brought to 224 regardless of the tile size.
+        Matches the TransPath / CHIEF reference code: Resize(224),
+        CenterCrop(224), ImageNet normalisation.
+
+        Returns:
+            Composed transforms for CTransPath input preprocessing.
+        """
+        return transforms.Compose(
+            [
+                transforms.Resize(224),
+                transforms.CenterCrop(224),
+                transforms.ToTensor(),
+                transforms.Normalize(mean=IMAGENET_MEAN, std=IMAGENET_STD),
+            ]
+        )
 
     @classmethod
     def _download_checkpoint(cls) -> str:

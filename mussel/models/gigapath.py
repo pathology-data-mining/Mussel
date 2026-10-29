@@ -57,14 +57,18 @@ class GigapathModel(TorchModel):
     def get_preprocessing_fun(self) -> Callable:
         """Get preprocessing transforms for Prov-GigaPath.
 
+        Matches the Prov-GigaPath model card: Resize(256, bicubic),
+        CenterCrop(224), ImageNet normalisation.
+
         Returns:
             Composed transforms for Prov-GigaPath input preprocessing.
         """
         return transforms.Compose(
             [
                 transforms.Resize(
-                    224, interpolation=transforms.InterpolationMode.BICUBIC
+                    256, interpolation=transforms.InterpolationMode.BICUBIC
                 ),
+                transforms.CenterCrop(224),
                 transforms.ToTensor(),
                 transforms.Normalize(mean=IMAGENET_MEAN, std=IMAGENET_STD),
             ]
