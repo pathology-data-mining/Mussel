@@ -52,7 +52,9 @@ _TORCH_DTYPE = {
 @dataclass
 class AbmilBenchmarkConfig:
     """
-    features_dir (str): Directory of per-slide HDF5 feature files ({slide_id}.h5).
+    features_dir (str): Directory of per-slide HDF5 feature files
+        ({slide_id}.{features_suffix}, as written by extract_features; {slide_id}.h5
+        is used for a slide that has no such file).
         Each file must contain a dataset named 'features' with shape (n_tiles, feature_dim).
     labels_parquet (str): Parquet file with columns: slide_id, <target_col>, and optionally
         a split column. Rows without a matching H5 file are silently dropped.
@@ -75,6 +77,8 @@ class AbmilBenchmarkConfig:
     dropout (float): Dropout probability within each attention head.
     gated (bool): If True, use gated ABMIL (sigmoid gating on attention).
     n_bootstrap (int): Bootstrap resamples for 95% CI on test AUROC (primary seed only).
+    features_suffix (str): Suffix of the per-slide feature files after "{slide_id}."
+        (default: "features.h5", matching extract_features' output_h5_suffix).
     """
 
     features_dir: str = MISSING
@@ -95,6 +99,7 @@ class AbmilBenchmarkConfig:
     dropout: float = 0.0
     gated: bool = False
     n_bootstrap: int = 1000
+    features_suffix: str = "features.h5"
 
 
 desc_doc = """== ${hydra.help.app_name} ==
@@ -137,14 +142,29 @@ def _load_features(h5_path: Path, cast_dtype: torch.dtype) -> torch.Tensor:
     return features.to(cast_dtype)
 
 
+def _slide_h5_path(features_dir: Path, slide_id: str, features_suffix: str) -> Path:
+    """``{slide_id}.{features_suffix}`` in ``features_dir``, else legacy ``{slide_id}.h5``."""
+    path = features_dir / f"{slide_id}.{features_suffix}"
+    return path if path.exists() else features_dir / f"{slide_id}.h5"
+
+
+def _available_slide_ids(features_dir: Path, features_suffix: str) -> set:
+    """Slide IDs with a feature file: ``{slide_id}.{features_suffix}`` or ``{slide_id}.h5``."""
+    suffix = f".{features_suffix}"
+    ids = {p.name[: -len(suffix)] for p in features_dir.glob(f"*{suffix}")}
+    return ids | {p.stem for p in features_dir.glob("*.h5")}
+
+
 class SlideDataset(Dataset):
     """Dataset of per-slide patch feature tensors loaded from HDF5 files.
 
     Args:
         slide_ids: Ordered list of slide identifiers.
         labels: Integer labels (0/1) aligned with ``slide_ids``.
-        features_dir: Directory containing ``{slide_id}.h5`` files.
+        features_dir: Directory containing ``{slide_id}.{features_suffix}`` (or
+            ``{slide_id}.h5``) files.
         cast_dtype: Torch dtype to cast features to at load time.
+        features_suffix: Feature file suffix after ``{slide_id}.``.
     """
 
     def __init__(
@@ -153,18 +173,21 @@ class SlideDataset(Dataset):
         labels: np.ndarray,
         features_dir: Path,
         cast_dtype: torch.dtype,
+        features_suffix: str = "features.h5",
     ):
         self.slide_ids = slide_ids
         self.labels = labels
         self.features_dir = features_dir
         self.cast_dtype = cast_dtype
+        self.features_suffix = features_suffix
 
     def __len__(self) -> int:
         return len(self.slide_ids)
 
     def __getitem__(self, idx: int) -> Tuple[torch.Tensor, torch.Tensor]:
         features = _load_features(
-            self.features_dir / f"{self.slide_ids[idx]}.h5", self.cast_dtype
+            _slide_h5_path(self.features_dir, self.slide_ids[idx], self.features_suffix),
+            self.cast_dtype,
         )
         label = torch.tensor(self.labels[idx], dtype=torch.float32)
         return features, label
@@ -395,6 +418,7 @@ def _run_one_seed(
             split_df["y"].values,
             features_dir,
             cast_dtype,
+            cfg.features_suffix,
         )
         num_workers = min(4, len(split_df))
         return DataLoader(
@@ -408,7 +432,7 @@ def _run_one_seed(
         )
 
     # Infer feature_dim from the first slide in the dataset.
-    first_h5 = features_dir / f"{df['slide_id'].iloc[0]}.h5"
+    first_h5 = _slide_h5_path(features_dir, df["slide_id"].iloc[0], cfg.features_suffix)
     with h5py.File(first_h5, "r") as f:
         feature_dim = f["features"].shape[1]
     logger.info("feature_dim=%d  dtype=%s  device=%s", feature_dim, cfg.dtype, device)
@@ -527,7 +551,7 @@ def main(cfg: AbmilBenchmarkConfig):
 
     # Load labels; drop slides without a corresponding H5 file.
     df = pd.read_parquet(cfg.labels_parquet, columns=_label_columns(cfg))
-    available = {p.stem for p in features_dir.glob("*.h5")}
+    available = _available_slide_ids(features_dir, cfg.features_suffix)
     before = len(df)
     df = df[df["slide_id"].isin(available)].reset_index(drop=True)
     if len(df) < before:

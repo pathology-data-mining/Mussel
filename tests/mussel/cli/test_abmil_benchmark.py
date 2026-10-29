@@ -9,6 +9,7 @@ import numpy as np
 import pandas as pd
 import pytest
 import torch
+from omegaconf import OmegaConf
 
 from mussel.cli.abmil_benchmark import (
     AbmilBenchmarkConfig,
@@ -18,6 +19,7 @@ from mussel.cli.abmil_benchmark import (
     _collate_fn,
     _load_features,
     _split_by_slide,
+    main,
 )
 
 
@@ -219,3 +221,47 @@ def test_abmil_benchmark_end_to_end(tmp_path, monkeypatch):
     assert isinstance(val_auc, float)
     assert isinstance(test_auc, float)
     assert test_probs.shape == test_labels.shape
+
+
+# ---------------------------------------------------------------------------
+# Feature file naming: extract_features writes {slide_id}.features.h5
+# ---------------------------------------------------------------------------
+
+
+def test_slide_dataset_reads_extract_features_naming(tmp_path):
+    _make_h5_features(tmp_path / "S1.features.h5", n_tiles=7, feature_dim=4)
+    ds = SlideDataset(["S1"], np.array([1]), tmp_path, cast_dtype=torch.float32)
+    features, _ = ds[0]
+    assert features.shape == (7, 4)
+
+
+def test_slide_dataset_prefers_suffix_over_legacy_name(tmp_path):
+    _make_h5_features(tmp_path / "S1.features.h5", n_tiles=7, feature_dim=4)
+    _make_h5_features(tmp_path / "S1.h5", n_tiles=3, feature_dim=4)
+    ds = SlideDataset(["S1"], np.array([1]), tmp_path, cast_dtype=torch.float32)
+    assert ds[0][0].shape == (7, 4)
+
+
+def test_abmil_benchmark_main_finds_features_h5_files(tmp_path):
+    """main() keeps slides stored as {slide_id}.features.h5 (and legacy {slide_id}.h5)."""
+    n_slides = 12
+    features_dir = tmp_path / "features"
+    features_dir.mkdir()
+    for i in range(n_slides):
+        # Mostly extract_features naming; two slides keep the legacy name.
+        name = f"slide_{i:03d}.h5" if i < 2 else f"slide_{i:03d}.features.h5"
+        _make_h5_features(features_dir / name, n_tiles=20, feature_dim=8, seed=i)
+    labels = pd.DataFrame({"slide_id": [f"slide_{i:03d}" for i in range(n_slides)],
+                           "label": [i % 2 for i in range(n_slides)]})
+    labels.to_parquet(tmp_path / "labels.parquet")
+    output_path = tmp_path / "results.json"
+
+    cfg = AbmilBenchmarkConfig(
+        features_dir=str(features_dir), labels_parquet=str(tmp_path / "labels.parquet"),
+        target_col="label", output_summary_json=str(output_path), n_seeds=1, n_epochs=1,
+        batch_size=4, head_dim=4, n_heads=1, n_bootstrap=10,
+    )
+    main(OmegaConf.structured(cfg))
+
+    summary = json.loads(output_path.read_text())
+    assert summary["n_slides"] == n_slides

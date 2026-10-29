@@ -317,3 +317,35 @@ def test_bfloat16_features_upcast_to_float32(tmp_path):
         rtol=1e-2,
         err_msg="Bfloat16→float32 values differ more than expected",
     )
+
+
+# ---------------------------------------------------------------------------
+# Tests — slide_id column (required by clustering / linear probe benchmarks)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "h5_name, slide_id, expected",
+    [
+        ("S1.features.h5", None, "S1"),
+        ("S2.h5", None, "S2"),
+        ("S1.features.h5", "custom", "custom"),
+    ],
+)
+def test_slide_id_column_always_written(tmp_path, h5_name, slide_id, expected):
+    n_tiles, tile_size = 2, 256
+    _make_h5(tmp_path / h5_name, n_tiles=n_tiles, tile_size=tile_size)
+    _make_bmp(tmp_path / "labels.bmp", width=n_tiles * tile_size, height=tile_size,
+              annotation_map={1: (0, n_tiles * tile_size)})
+    out_parquet = tmp_path / "out.parquet"
+    cfg = MergeAnnotationFeaturesConfig(
+        features_h5_path=str(tmp_path / h5_name),
+        annotation_bmp_path=str(tmp_path / "labels.bmp"),
+        output_parquet_path=str(out_parquet),
+        slide_id=slide_id,
+    )
+    main(cfg)
+
+    df = pd.read_parquet(out_parquet)
+    assert len(df) > 0
+    assert set(df["slide_id"]) == {expected}
