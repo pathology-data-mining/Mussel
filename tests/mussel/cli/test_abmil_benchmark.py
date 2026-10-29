@@ -235,11 +235,12 @@ def test_slide_dataset_reads_extract_features_naming(tmp_path):
     assert features.shape == (7, 4)
 
 
-def test_slide_dataset_prefers_suffix_over_legacy_name(tmp_path):
+def test_slide_dataset_rejects_both_suffix_and_legacy_name(tmp_path):
     _make_h5_features(tmp_path / "S1.features.h5", n_tiles=7, feature_dim=4)
     _make_h5_features(tmp_path / "S1.h5", n_tiles=3, feature_dim=4)
     ds = SlideDataset(["S1"], np.array([1]), tmp_path, cast_dtype=torch.float32)
-    assert ds[0][0].shape == (7, 4)
+    with pytest.raises(ValueError, match="features_suffix"):
+        ds[0]
 
 
 def test_abmil_benchmark_main_finds_features_h5_files(tmp_path):
@@ -265,3 +266,75 @@ def test_abmil_benchmark_main_finds_features_h5_files(tmp_path):
 
     summary = json.loads(output_path.read_text())
     assert summary["n_slides"] == n_slides
+
+
+def _run_main_on(features_dir: Path, tmp_path: Path, n_slides: int, **kwargs) -> dict:
+    labels = pd.DataFrame({"slide_id": [f"slide_{i:03d}" for i in range(n_slides)],
+                           "label": [i % 2 for i in range(n_slides)]})
+    labels.to_parquet(tmp_path / "labels.parquet")
+    output_path = tmp_path / "results.json"
+    cfg = AbmilBenchmarkConfig(
+        features_dir=str(features_dir), labels_parquet=str(tmp_path / "labels.parquet"),
+        target_col="label", output_summary_json=str(output_path), n_seeds=1, n_epochs=1,
+        batch_size=4, head_dim=4, n_heads=1, n_bootstrap=10, **kwargs,
+    )
+    main(OmegaConf.structured(cfg))
+    return json.loads(output_path.read_text())
+
+
+def _make_patch_h5(path: Path, n_tiles: int, feature_dim: int = 8, seed: int = 0):
+    """Patch-level H5 as extract_features writes it: features plus per-tile coords."""
+    _make_h5_features(path, n_tiles=n_tiles, feature_dim=feature_dim, seed=seed)
+    with h5py.File(path, "a") as f:
+        f.create_dataset("coords", data=np.zeros((n_tiles, 2), dtype=np.int64))
+
+
+def test_abmil_benchmark_main_rejects_slide_level_features(tmp_path, monkeypatch):
+    """Two-step extract_features writes 1-row slide vectors to {slide_id}.features.h5."""
+    features_dir = tmp_path / "features"
+    features_dir.mkdir()
+    for i in range(12):
+        _make_patch_h5(features_dir / f"slide_{i:03d}.patch_features.h5", n_tiles=20, seed=i)
+        _make_h5_features(features_dir / f"slide_{i:03d}.features.h5", n_tiles=1, feature_dim=8, seed=i)
+    train = []
+    monkeypatch.setattr("mussel.cli.abmil_benchmark._run_one_seed", lambda *a, **k: train.append(1))
+    with pytest.raises(ValueError, match="slide-level"):
+        _run_main_on(features_dir, tmp_path, 12)
+    assert not train  # raised before any training
+
+    monkeypatch.undo()
+    summary = _run_main_on(features_dir, tmp_path, 12, features_suffix="patch_features.h5")
+    assert summary["n_slides"] == 12
+
+
+def test_abmil_benchmark_main_accepts_one_tile_slide_with_coords(tmp_path):
+    features_dir = tmp_path / "features"
+    features_dir.mkdir()
+    for i in range(12):
+        _make_patch_h5(features_dir / f"slide_{i:03d}.features.h5", n_tiles=1 if i == 0 else 20, seed=i)
+    assert _run_main_on(features_dir, tmp_path, 12)["n_slides"] == 12
+
+
+def test_abmil_benchmark_main_rejects_both_feature_file_names(tmp_path, monkeypatch):
+    features_dir = tmp_path / "features"
+    features_dir.mkdir()
+    for i in range(12):
+        _make_patch_h5(features_dir / f"slide_{i:03d}.features.h5", n_tiles=20, seed=i)
+    _make_patch_h5(features_dir / "slide_005.h5", n_tiles=20)
+    train = []
+    monkeypatch.setattr("mussel.cli.abmil_benchmark._run_one_seed", lambda *a, **k: train.append(1))
+    with pytest.raises(ValueError, match="features_suffix"):
+        _run_main_on(features_dir, tmp_path, 12)
+    assert not train
+
+
+def test_abmil_benchmark_main_rejects_coords_feature_mismatch(tmp_path):
+    features_dir = tmp_path / "features"
+    features_dir.mkdir()
+    for i in range(12):
+        _make_patch_h5(features_dir / f"slide_{i:03d}.features.h5", n_tiles=20, seed=i)
+    with h5py.File(features_dir / "slide_003.features.h5", "a") as f:
+        del f["coords"]
+        f.create_dataset("coords", data=np.zeros((5, 2), dtype=np.int64))
+    with pytest.raises(ValueError, match="coords"):
+        _run_main_on(features_dir, tmp_path, 12)

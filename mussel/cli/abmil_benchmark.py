@@ -143,9 +143,47 @@ def _load_features(h5_path: Path, cast_dtype: torch.dtype) -> torch.Tensor:
 
 
 def _slide_h5_path(features_dir: Path, slide_id: str, features_suffix: str) -> Path:
-    """``{slide_id}.{features_suffix}`` in ``features_dir``, else legacy ``{slide_id}.h5``."""
+    """``{slide_id}.{features_suffix}`` in ``features_dir``, else legacy ``{slide_id}.h5``.
+
+    Raises:
+        ValueError: If both files exist, since either could be the intended one.
+    """
     path = features_dir / f"{slide_id}.{features_suffix}"
-    return path if path.exists() else features_dir / f"{slide_id}.h5"
+    legacy = features_dir / f"{slide_id}.h5"
+    if path != legacy and path.exists() and legacy.exists():
+        raise ValueError(
+            f"Both {path} and {legacy} exist; set features_suffix explicitly "
+            "(e.g. features_suffix=h5) to choose which feature files to use."
+        )
+    return path if path.exists() else legacy
+
+
+def _check_patch_level_h5(h5_path: Path) -> None:
+    """Raise if ``h5_path`` does not hold per-tile (patch-level) features.
+
+    Patch-level files from extract_features carry a ``coords`` dataset with one
+    row per tile. Slide-level files from two-step extraction (aggregation_method
+    mean/max/model) hold only a single ``features`` row and no ``coords``.
+    """
+    with h5py.File(h5_path, "r") as f:
+        shape = f["features"].shape
+        n_coords = len(f["coords"]) if "coords" in f else None
+    if len(shape) != 2:
+        raise ValueError(
+            f"{h5_path}: 'features' has shape {shape}; expected (n_tiles, feature_dim)."
+        )
+    if n_coords is not None and n_coords != shape[0]:
+        raise ValueError(
+            f"{h5_path}: 'features' has {shape[0]} rows but 'coords' has {n_coords}."
+        )
+    if n_coords is None and shape[0] == 1:
+        raise ValueError(
+            f"{h5_path} looks like slide-level (aggregated) features: one 'features' row "
+            "and no per-tile 'coords'. ABMIL needs patch-level features; with two-step "
+            "extract_features (aggregation_method mean/max/model) these are the "
+            "{slide_id}.patch_features.h5 files (set features_suffix=patch_features.h5) "
+            "or the intermediate_h5_path output in single-slide mode."
+        )
 
 
 def _available_slide_ids(features_dir: Path, features_suffix: str) -> set:
@@ -563,6 +601,10 @@ def main(cfg: AbmilBenchmarkConfig):
         raise RuntimeError(
             "No slides remain after filtering. Check features_dir and labels_parquet."
         )
+    # Validate every slide's feature file up front so a bad file fails before training.
+    for slide_id in df["slide_id"]:
+        h5_path = _slide_h5_path(features_dir, slide_id, cfg.features_suffix)
+        _check_patch_level_h5(h5_path)
 
     # Rename target column to 'y'.
     df = df.rename(columns={cfg.target_col: "y"})
