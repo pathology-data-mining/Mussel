@@ -26,8 +26,9 @@ from mussel.utils import (
     save_features,
     timings,
 )
-from mussel.utils.feature_extract import (_numpy_to_torch,
-                                          extract_patch_features_batch_multi)
+from mussel.utils.feature_extract import (SlideBatchError, _numpy_to_torch,
+                                          extract_patch_features_batch_multi,
+                                          raise_if_slides_failed)
 from mussel.utils.file import save_hdf5, save_torch_tensor
 from mussel.utils.ml import collate_features
 
@@ -347,46 +348,57 @@ def _main_batch(cfg: ExtractFeaturesConfig):
             str(output_dir / f"{slide_id}.patch_features.h5") for slide_id in slide_ids
         ]
 
-        extract_patch_features_batch(
-            patch_h5_paths=cfg.patch_h5_paths,
-            slide_paths=cfg.slide_paths,
-            output_h5_paths=intermediate_h5_paths,
-            model_type=cfg.model_type,
-            model_path=cfg.model_path,
-            model_dir=cfg.model_dir,
-            batch_size=cfg.batch_size,
-            use_gpu=cfg.use_gpu,
-            gpu_device_id=cfg.gpu_device_id,
-            gpu_device_ids=cfg.gpu_device_ids,
-            num_workers=cfg.num_workers,
-            pin_memory=True,
-            is_test_run=cfg.is_test_run,
-            embedding_precision=cfg.embedding_precision,
-            model_kwargs=cfg.model_kwargs,
-            tile_size_check=cfg.tile_size_check,
-            shared_loader=cfg.shared_loader,
-        )
+        # Slides that fail don't stop the others; the run fails at the end.
+        failures: Dict[str, str] = {}
+        try:
+            extract_patch_features_batch(
+                patch_h5_paths=cfg.patch_h5_paths,
+                slide_paths=cfg.slide_paths,
+                output_h5_paths=intermediate_h5_paths,
+                model_type=cfg.model_type,
+                model_path=cfg.model_path,
+                model_dir=cfg.model_dir,
+                batch_size=cfg.batch_size,
+                use_gpu=cfg.use_gpu,
+                gpu_device_id=cfg.gpu_device_id,
+                gpu_device_ids=cfg.gpu_device_ids,
+                num_workers=cfg.num_workers,
+                pin_memory=True,
+                is_test_run=cfg.is_test_run,
+                embedding_precision=cfg.embedding_precision,
+                model_kwargs=cfg.model_kwargs,
+                tile_size_check=cfg.tile_size_check,
+                shared_loader=cfg.shared_loader,
+            )
+        except SlideBatchError as e:
+            failures.update({slide_ids[i]: reason for i, reason in e.failures.items()})
+        todo = [i for i, slide_id in enumerate(slide_ids) if slide_id not in failures]
 
         # Aggregate to slide level using batch processing
         logger.info(
-            f"Batch aggregating {len(cfg.slide_paths)} slides with aggregation_method={cfg.aggregation_method}"
+            f"Batch aggregating {len(todo)} slides with aggregation_method={cfg.aggregation_method}"
         )
-        aggregate_slide_features_batch(
-            patch_features_h5_paths=intermediate_h5_paths,
-            output_h5_paths=output_h5_paths,
-            output_pt_paths=output_pt_paths,
-            aggregation_method=cfg.aggregation_method,
-            model_type=cfg.slide_model_type,
-            model_path=cfg.slide_model_path,
-            model_dir=cfg.model_dir,
-            use_gpu=cfg.use_gpu,
-            gpu_device_id=cfg.gpu_device_id,
-            gpu_device_ids=cfg.gpu_device_ids,
-            slide_batch_size=cfg.slide_batch_size,
-            slide_model_kwargs=cfg.slide_model_kwargs,
-            tile_size_check=cfg.tile_size_check,
-            max_slide_patches=max_slide_patches,
-        )
+        try:
+            if todo:
+                aggregate_slide_features_batch(
+                    patch_features_h5_paths=[intermediate_h5_paths[i] for i in todo],
+                    output_h5_paths=[output_h5_paths[i] for i in todo],
+                    output_pt_paths=[output_pt_paths[i] for i in todo],
+                    aggregation_method=cfg.aggregation_method,
+                    model_type=cfg.slide_model_type,
+                    model_path=cfg.slide_model_path,
+                    model_dir=cfg.model_dir,
+                    use_gpu=cfg.use_gpu,
+                    gpu_device_id=cfg.gpu_device_id,
+                    gpu_device_ids=cfg.gpu_device_ids,
+                    slide_batch_size=cfg.slide_batch_size,
+                    slide_model_kwargs=cfg.slide_model_kwargs,
+                    tile_size_check=cfg.tile_size_check,
+                    max_slide_patches=max_slide_patches,
+                )
+        except SlideBatchError as e:
+            failures.update({slide_ids[todo[i]]: reason for i, reason in e.failures.items()})
+        raise_if_slides_failed(failures, len(slide_ids))
 
         # Defense-in-depth: verify at least one output file was created.
         # aggregate_slide_features_batch already raises when ALL slides fail,
@@ -401,28 +413,35 @@ def _main_batch(cfg: ExtractFeaturesConfig):
             )
     else:
         # Single-step: extract directly to final output (no aggregation)
-        extract_patch_features_batch(
-            patch_h5_paths=cfg.patch_h5_paths,
-            slide_paths=cfg.slide_paths,
-            output_h5_paths=output_h5_paths,
-            model_type=cfg.model_type,
-            model_path=cfg.model_path,
-            model_dir=cfg.model_dir,
-            batch_size=cfg.batch_size,
-            use_gpu=cfg.use_gpu,
-            gpu_device_id=cfg.gpu_device_id,
-            gpu_device_ids=cfg.gpu_device_ids,
-            num_workers=cfg.num_workers,
-            pin_memory=True,
-            is_test_run=cfg.is_test_run,
-            embedding_precision=cfg.embedding_precision,
-            model_kwargs=cfg.model_kwargs,
-            tile_size_check=cfg.tile_size_check,
-            shared_loader=cfg.shared_loader,
-        )
+        failures = {}
+        try:
+            extract_patch_features_batch(
+                patch_h5_paths=cfg.patch_h5_paths,
+                slide_paths=cfg.slide_paths,
+                output_h5_paths=output_h5_paths,
+                model_type=cfg.model_type,
+                model_path=cfg.model_path,
+                model_dir=cfg.model_dir,
+                batch_size=cfg.batch_size,
+                use_gpu=cfg.use_gpu,
+                gpu_device_id=cfg.gpu_device_id,
+                gpu_device_ids=cfg.gpu_device_ids,
+                num_workers=cfg.num_workers,
+                pin_memory=True,
+                is_test_run=cfg.is_test_run,
+                embedding_precision=cfg.embedding_precision,
+                model_kwargs=cfg.model_kwargs,
+                tile_size_check=cfg.tile_size_check,
+                shared_loader=cfg.shared_loader,
+            )
+        except SlideBatchError as e:
+            # The other slides' features were written: save their .pt files, then fail.
+            failures = {slide_ids[i]: reason for i, reason in e.failures.items()}
 
         # Save as PT format for consistency
-        _write_pts(output_h5_paths, output_pt_paths)
+        if len(failures) < len(slide_ids):
+            _write_pts(output_h5_paths, output_pt_paths)
+        raise_if_slides_failed(failures, len(slide_ids))
 
     logger.info(f"Batch processing complete. Output saved to {output_dir}")
 
@@ -461,26 +480,33 @@ def _main_batch_multi(cfg: ExtractFeaturesConfig, output_dir: Path, slide_ids: L
               for m in model_types}
     for m in model_types:
         ensure_directory_exists(output_dir / m.code)
-    extract_patch_features_batch_multi(
-        patch_h5_paths=cfg.patch_h5_paths,
-        slide_paths=cfg.slide_paths,
-        output_h5_paths=out_h5,
-        model_paths={by_code[c]: p for c, p in cfg.model_paths.items()},
-        model_dir=cfg.model_dir,
-        batch_size=cfg.batch_size,
-        use_gpu=cfg.use_gpu,
-        gpu_device_id=cfg.gpu_device_id,
-        gpu_device_ids=cfg.gpu_device_ids,
-        num_workers=cfg.num_workers,
-        pin_memory=True,
-        is_test_run=cfg.is_test_run,
-        embedding_precision={m: cfg.model_precisions.get(m.code, cfg.embedding_precision) for m in model_types},
-        model_kwargs={m: cfg.model_kwargs for m in model_types} if cfg.model_kwargs else None,
-        tile_size_check=cfg.tile_size_check,
-        shared_loader=cfg.shared_loader,
-    )
-    for m in model_types:
-        _write_pts(out_h5[m], [output_dir / m.code / f"{sid}.{cfg.output_pt_suffix}" for sid in slide_ids])
+    failures: Dict[str, str] = {}
+    try:
+        extract_patch_features_batch_multi(
+            patch_h5_paths=cfg.patch_h5_paths,
+            slide_paths=cfg.slide_paths,
+            output_h5_paths=out_h5,
+            model_paths={by_code[c]: p for c, p in cfg.model_paths.items()},
+            model_dir=cfg.model_dir,
+            batch_size=cfg.batch_size,
+            use_gpu=cfg.use_gpu,
+            gpu_device_id=cfg.gpu_device_id,
+            gpu_device_ids=cfg.gpu_device_ids,
+            num_workers=cfg.num_workers,
+            pin_memory=True,
+            is_test_run=cfg.is_test_run,
+            embedding_precision={m: cfg.model_precisions.get(m.code, cfg.embedding_precision) for m in model_types},
+            model_kwargs={m: cfg.model_kwargs for m in model_types} if cfg.model_kwargs else None,
+            tile_size_check=cfg.tile_size_check,
+            shared_loader=cfg.shared_loader,
+        )
+    except SlideBatchError as e:
+        # The other slides' features were written: save their .pt files, then fail.
+        failures = {slide_ids[i]: reason for i, reason in e.failures.items()}
+    if len(failures) < len(slide_ids):
+        for m in model_types:
+            _write_pts(out_h5[m], [output_dir / m.code / f"{sid}.{cfg.output_pt_suffix}" for sid in slide_ids])
+    raise_if_slides_failed(failures, len(slide_ids))
     logger.info(f"Batch processing complete for {len(model_types)} models. Output saved to {output_dir}")
 
 

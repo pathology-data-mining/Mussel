@@ -151,11 +151,11 @@ class TestProcessFile:
         img = Image.open(str(tiff_path))
         assert img.size == (32, 32)
 
-    def test_exception_in_process_file_is_caught(self, tmp_path):
-        """process_file should not propagate exceptions (logs instead)."""
+    def test_exception_in_process_file_is_raised(self, tmp_path):
+        """process_file logs a failure and re-raises it (it used to swallow it)."""
         converter = AnyToTiffConverter(job_dir=str(tmp_path))
-        # Pass a non-existent file — will raise internally but should be caught
-        converter.process_file("/does/not/exist.png", mpp=0.5)  # should not raise
+        with pytest.raises(Exception):
+            converter.process_file("/does/not/exist.png", mpp=0.5)
 
     def test_pyvips_fast_path_used_when_available(self, tmp_path):
         """If _try_pyvips_convert returns True, _read_image is not called."""

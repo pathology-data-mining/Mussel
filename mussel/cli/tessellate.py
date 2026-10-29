@@ -813,7 +813,11 @@ def _main(cfg: TessellateConfig) -> None:
     )
     tiled = [(spec, values) for spec, values in results.items() if values]
     if not tiled:
-        return
+        # As in batch mode: no patch H5 is a failure, not an empty success.
+        raise RuntimeError(
+            f"tessellation produced no patch H5 for {cfg.slide_path} "
+            "(no tissue found, or no tiles at any requested size)"
+        )
 
     # The tissue mask overlay and thumbnail don't depend on tile size: draw them
     # once (first size's contours). Grid masks and PNG tiles are per size.

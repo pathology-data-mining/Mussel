@@ -55,7 +55,7 @@ import logging
 import multiprocessing as mp
 import os
 from pathlib import Path
-from typing import Dict, Optional
+from typing import Dict, List, Optional, Tuple
 
 import numpy as np
 import pandas as pd
@@ -114,11 +114,19 @@ def _splitext(path: str):
     return os.path.splitext(basename)
 
 
-def _process_file_worker(args) -> None:
-    """Top-level worker function for multiprocessing (must be picklable)."""
+def _process_file_worker(args) -> Tuple[str, Optional[str]]:
+    """Top-level worker function for multiprocessing (must be picklable).
+
+    Returns ``(input_file, error)``: ``error`` is ``None`` on success, else the
+    failure's message (the traceback is logged by ``process_file``).
+    """
     job_dir, bigtiff, input_file, mpp, zoom = args
-    converter = AnyToTiffConverter(job_dir=job_dir, bigtiff=bigtiff)
-    converter.process_file(input_file=input_file, mpp=mpp, zoom=zoom)
+    try:
+        converter = AnyToTiffConverter(job_dir=job_dir, bigtiff=bigtiff)
+        converter.process_file(input_file=input_file, mpp=mpp, zoom=zoom)
+    except Exception as e:
+        return input_file, f"{type(e).__name__}: {e}"
+    return input_file, None
 
 
 class AnyToTiffConverter:
@@ -146,7 +154,12 @@ class AnyToTiffConverter:
             input_file: Path to the source slide or image.
             mpp: Target microns-per-pixel.  Used as-is unless override is applied.
             zoom: Resize factor (1.0 = original size, 0.5 = half resolution).
+
+        Raises:
+            Exception: Whatever made the conversion fail (after logging it).
         """
+        if zoom <= 0:
+            raise ValueError(f"zoom must be > 0, got {zoom}.")
         try:
             embedded_mpp = self._detect_embedded_mpp(input_file)
             if embedded_mpp is not None:
@@ -171,6 +184,7 @@ class AnyToTiffConverter:
             self._save_tiff(img, stem, output_mpp)
         except Exception:
             logger.exception("Error processing %s", input_file)
+            raise
 
     def process_all(
         self,
@@ -187,6 +201,10 @@ class AnyToTiffConverter:
                 ``mpp`` (microns-per-pixel).
             downscale_by: Integer downsample factor (≥1).  ``2`` halves resolution.
             num_workers: Worker processes.  ``0`` uses all available CPUs.
+
+        Raises:
+            RuntimeError: After every file was tried, if any conversion failed
+                (the others are converted); the message lists the failed files.
         """
         if downscale_by < 1:
             raise ValueError(f"downscale_by must be ≥ 1, got {downscale_by}.")
@@ -235,17 +253,31 @@ class AnyToTiffConverter:
         if num_workers == 0:
             num_workers = mp.cpu_count()
 
+        # A file that fails doesn't stop the others; raise at the end if any failed.
+        failures: List[Tuple[str, str]] = []
         if num_workers <= 1:
             for _, _, img_path, mpp, zoom in tqdm(tasks, desc="Converting slides"):
-                self.process_file(img_path, mpp, zoom=zoom)
+                try:
+                    self.process_file(img_path, mpp, zoom=zoom)
+                except Exception as e:
+                    failures.append((img_path, f"{type(e).__name__}: {e}"))
         else:
             with mp.Pool(processes=num_workers) as pool:
-                for _ in tqdm(
+                for img_path, error in tqdm(
                     pool.imap_unordered(_process_file_worker, tasks),
                     total=len(tasks),
                     desc="Converting slides",
                 ):
-                    pass
+                    if error is not None:
+                        failures.append((img_path, error))
+
+        if failures:
+            for img_path, error in failures:
+                logger.error("Conversion failed for %s: %s", img_path, error)
+            raise RuntimeError(
+                f"Conversion failed for {len(failures)} of {len(tasks)} file(s): "
+                + "; ".join(f"{os.path.basename(p)}: {err}" for p, err in failures)
+            )
 
     # ------------------------------------------------------------------
     # Internal helpers

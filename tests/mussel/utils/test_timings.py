@@ -250,8 +250,11 @@ def test_failed_slide_encoding_is_recorded_and_the_batch_continues(fakes, tmp_pa
     out = tmp_path / "t.jsonl"
     pts = [str(tmp_path / f"{i}.pt") for i in range(2)]
     with patch.object(fe, "get_model_factory", return_value=factory), timings.recording(str(out)):
-        fe.aggregate_slide_features_batch(feats, output_pt_paths=pts, aggregation_method="model",
-                                          model_type=ModelType.TITAN_SLIDE, use_gpu=False, tile_size_check="off")
+        # The batch goes on past the failed slide, then reports it.
+        with pytest.raises(fe.SlideBatchError, match="1 of 2 slide"):
+            fe.aggregate_slide_features_batch(feats, output_pt_paths=pts, aggregation_method="model",
+                                              model_type=ModelType.TITAN_SLIDE, use_gpu=False,
+                                              tile_size_check="off")
     enc = [r for r in _records(out) if r["stage"] == "slide_encode"]
     assert [r.get("error") for r in enc] == [None, "RuntimeError"]
     assert Path(pts[0]).exists() and not Path(pts[1]).exists()

@@ -61,7 +61,9 @@ from mussel.utils.artifact_removal import (
     EXCLUDE_PENMARKS_ONLY,
     GrandQCArtifactRemover,
 )
-from mussel.utils.feature_extract import _numpy_to_torch, _parse_feature_dtype
+from mussel.utils.feature_extract import (SlideBatchError, _numpy_to_torch,
+                                          _parse_feature_dtype,
+                                          raise_if_slides_failed)
 from mussel.utils.file import WSI_EXTENSIONS, collect_wsi_paths
 
 # isort: on
@@ -111,6 +113,15 @@ def _resolve_precision(cfg: "TessellateExtractFeaturesConfig", model_type) -> st
 
 
 _safe_path_join = safe_path_join
+
+
+def _record_failed_slides(
+    error: SlideBatchError, slide_results: List[dict], failures: Dict[str, str], stage: str
+) -> List[int]:
+    """Record a batch step's failed slides in ``failures``; return the indices of the others."""
+    for i, reason in error.failures.items():
+        failures[slide_results[i]["slide_id"]] = f"{stage} failed: {reason}"
+    return [i for i in range(len(slide_results)) if i not in error.failures]
 
 
 defaults = ["_self_", {"seg_config": "default"}]
@@ -579,6 +590,8 @@ def _main_single(cfg: TessellateExtractFeaturesConfig):
 
     # Determine if filtering is enabled
     use_filtering = classifier_pkl is not None
+    # _tessellate_and_filter loads cfg.classifier_pkl: give it the resolved path.
+    cfg.classifier_pkl = classifier_pkl
 
     # Determine models for each extraction step
     model_type = cfg.model_type
@@ -683,11 +696,14 @@ def _main_single(cfg: TessellateExtractFeaturesConfig):
     )
 
     if result is None:
-        # Tessellation failed
+        # Tessellation failed (no tissue found, or a segmentation error)
         if temp_dir:
 
             shutil.rmtree(temp_dir)
-        return
+        raise RuntimeError(
+            f"Tessellation failed for {cfg.slide_path}: no tissue found or segmentation "
+            "error (see log above); no features written."
+        )
 
     # Create visualizations
     create_visualizations(
@@ -768,6 +784,8 @@ def _main_batch(
 
     # Determine if filtering is enabled
     use_filtering = classifier_pkl is not None
+    # _tessellate_and_filter loads cfg.classifier_pkl: give it the resolved path.
+    cfg.classifier_pkl = classifier_pkl
 
     # Determine models for each extraction step
     model_type = cfg.model_type
@@ -848,6 +866,9 @@ def _main_batch(
     # only once rather than once per slide.
     artifact_remover_fn, neural_segmenter = _build_segmentation_runtime(cfg)
 
+    # {slide ID: reason}. A slide that fails doesn't stop the others; the run
+    # raises at the end, so it exits non-zero.
+    failures: Dict[str, str] = {}
     slide_results = []
     for i, (slide_path, slide_id) in enumerate(zip(cfg.slide_paths, slide_ids)):
         logger.info(f"\nTessellating slide {i + 1}/{len(cfg.slide_paths)}: {slide_id}")
@@ -881,12 +902,14 @@ def _main_batch(
 
             if result is None:
                 logger.warning(f"Skipping slide {slide_id} due to tessellation failure")
+                failures[slide_id] = "tessellation failed (no tissue found or segmentation error)"
                 continue
         except Exception as e:
-            logger.error(f"Error processing slide {slide_id}: {e}")
+            logger.exception(f"Error processing slide {slide_id}: {e}")
             logger.warning(
                 f"Skipping slide {slide_id} and continuing with remaining slides"
             )
+            failures[slide_id] = f"tessellation failed: {e}"
             continue
 
         # Add output paths to result
@@ -904,6 +927,7 @@ def _main_batch(
         if temp_dir:
 
             shutil.rmtree(temp_dir)
+        raise_if_slides_failed(failures, len(slide_ids))
         return
 
     # Create output subdirectories (h5, pt, tile_h5) if they're local paths
@@ -970,9 +994,15 @@ def _main_batch(
                 is_test_run=False,
                 model_kwargs=cfg.model_kwargs,
             )
-        except Exception as e:
-            logger.error(f"Error during batch feature extraction: {e}")
-            logger.warning("Continuing with available results...")
+        except SlideBatchError as e:
+            # The other slides' patch features were written: go on with them.
+            keep = _record_failed_slides(e, slide_results, failures, "patch feature extraction")
+            slide_results = [slide_results[i] for i in keep]
+            intermediate_h5_paths = [intermediate_h5_paths[i] for i in keep]
+            if not slide_results:
+                if temp_dir:
+                    shutil.rmtree(temp_dir)
+                raise_if_slides_failed(failures, len(slide_ids))
 
         # Add intermediate paths to results and track for feature stripping
         for r, intermediate_h5_path in zip(slide_results, intermediate_h5_paths):
@@ -1140,9 +1170,10 @@ def _main_batch(
                     embedding_precision=_resolve_precision(cfg, cfg.slide_model_type),
                     slide_model_kwargs=cfg.slide_model_kwargs,
                 )
-            except Exception as e:
-                logger.error(f"Error during batch aggregation: {e}")
-                logger.warning("Continuing with available results...")
+            except SlideBatchError as e:
+                # The other slides' slide features were written.
+                keep = _record_failed_slides(e, slide_results, failures, "slide aggregation")
+                slide_results = [slide_results[i] for i in keep]
 
         # If save_features_to_h5=false, strip features from all tracked h5 files (keep coords only)
         # This must be done AFTER aggregation since aggregation needs the features
@@ -1210,21 +1241,28 @@ def _main_batch(
                 for r in slide_results
             ]
 
-        extract_patch_features_batch(
-            patch_h5_paths=patch_h5_paths,
-            slide_paths=slide_paths,
-            output_h5_paths=temp_output_h5_paths,
-            model_type=model_type,
-            model_path=model_path,
-            batch_size=get_batch_size_for_model(cfg, model_type),
-            use_gpu=cfg.use_gpu,
-            gpu_device_id=cfg.gpu_device_id,
-            gpu_device_ids=cfg.gpu_device_ids,
-            num_workers=cfg.num_workers,
-            pin_memory=True,
-            is_test_run=False,
-            model_kwargs=cfg.model_kwargs,
-        )
+        try:
+            extract_patch_features_batch(
+                patch_h5_paths=patch_h5_paths,
+                slide_paths=slide_paths,
+                output_h5_paths=temp_output_h5_paths,
+                model_type=model_type,
+                model_path=model_path,
+                batch_size=get_batch_size_for_model(cfg, model_type),
+                use_gpu=cfg.use_gpu,
+                gpu_device_id=cfg.gpu_device_id,
+                gpu_device_ids=cfg.gpu_device_ids,
+                num_workers=cfg.num_workers,
+                pin_memory=True,
+                is_test_run=False,
+                model_kwargs=cfg.model_kwargs,
+            )
+        except SlideBatchError as e:
+            # The other slides' features were written: save them, then fail at the end.
+            keep = _record_failed_slides(e, slide_results, failures, "patch feature extraction")
+            slide_results = [slide_results[i] for i in keep]
+            temp_output_h5_paths = [temp_output_h5_paths[i] for i in keep]
+            coords_h5_paths = [coords_h5_paths[i] for i in keep]
 
         # Save PT files and coords-only H5
         for i, r in enumerate(slide_results):
@@ -1294,8 +1332,9 @@ def _main_batch(
         logger.info("Cleaned up temporary files.")
 
     logger.info(f"\n=== Batch processing complete! ===")
-    logger.info(f"Processed {len(cfg.slide_paths)} slides")
+    logger.info(f"Processed {len(slide_results)} of {len(cfg.slide_paths)} slides")
     logger.info(f"Output directory: {cfg.output_dir}")
+    raise_if_slides_failed(failures, len(slide_ids))
 
 
 @resolve_remote_paths("model_dir", "classifier_pkl", auto_detect=False)
@@ -1378,6 +1417,10 @@ def _main_batch_multi_model(cfg: TessellateExtractFeaturesConfig):
         output_dir_path = Path(output_dir_str)
         ensure_directory_exists(output_dir_path)
 
+    # {model name: error}. A model that fails doesn't stop the others; the run
+    # raises at the end, so it exits non-zero.
+    model_failures: Dict[str, str] = {}
+
     # Process each patch size group
     for patch_size in sorted(models_by_patch_size.keys()):
         group = models_by_patch_size[patch_size]
@@ -1419,10 +1462,11 @@ def _main_batch_multi_model(cfg: TessellateExtractFeaturesConfig):
 
                 _main_batch(cfg_copy)
             except Exception as e:
-                logger.error(f"Error processing patch model {model.name}: {e}")
+                logger.exception(f"Error processing patch model {model.name}: {e}")
                 logger.warning(
                     f"Skipping model {model.name} and continuing with remaining models"
                 )
+                model_failures[model.name] = str(e)
 
         # Process slide-level models (with slide batching!)
         for model in group["slide"]:
@@ -1451,16 +1495,18 @@ def _main_batch_multi_model(cfg: TessellateExtractFeaturesConfig):
                 # Call regular batch processing with separate patch output directory
                 _main_batch(cfg_copy, patch_output_dir=patch_output_dir)
             except Exception as e:
-                logger.error(f"Error processing slide model {model.name}: {e}")
+                logger.exception(f"Error processing slide model {model.name}: {e}")
                 logger.warning(
                     f"Skipping model {model.name} and continuing with remaining models"
                 )
+                model_failures[model.name] = str(e)
 
     logger.info(f"\n{'=' * 80}")
     logger.info(f"Multi-model batch processing complete!")
     logger.info(f"Processed {len(cfg.slide_paths)} slides × {len(all_models)} models")
     logger.info(f"Output directory: {output_dir_str}")
     logger.info(f"{'=' * 80}")
+    raise_if_slides_failed(model_failures, len(all_models), what="model(s)")
 
 
 def _main_single_multi_model(cfg: TessellateExtractFeaturesConfig):
