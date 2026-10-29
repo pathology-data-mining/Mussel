@@ -457,6 +457,15 @@ def _main(cfg: TessellateExtractFeaturesConfig) -> None:
     elif isinstance(cfg.slide_model_type, ListConfig):
         cfg.slide_model_type = [ModelType[name] for name in cfg.slide_model_type]
 
+    # Detect multi-model mode:
+    # 1. If model_type or slide_model_type are lists
+    # 2. If BOTH model_type and slide_model_type are specified (even as single values)
+    # Check for both list and ListConfig since __post_init__ may not have run yet
+    is_model_list = isinstance(cfg.model_type, (list, ListConfig))
+    is_slide_model_list = isinstance(cfg.slide_model_type, (list, ListConfig))
+    has_both_models = cfg.model_type is not None and cfg.slide_model_type is not None
+    multi_model_mode = is_model_list or is_slide_model_list or has_both_models
+
     # Tiles at the model's recommended size and MPP unless set explicitly. A slide
     # encoder's spec wins: its features must come from the tiles it was trained on
     # (e.g. CHIEF: CTransPath features of 256 px tiles at 1.0 µm/px).
@@ -468,9 +477,9 @@ def _main(cfg: TessellateExtractFeaturesConfig) -> None:
         if cfg.model_type is not None
         else cfg.prefilter_model_type
     )
-    # Skip auto-setting when model_type is a list (multi-model mode);
-    # tiles cannot be inferred from multiple models unambiguously.
-    if isinstance(model_for_tiles, ModelType):
+    # Skip auto-setting in multi-model mode: _main_batch_multi_model picks each
+    # model's tiles itself and must still see the user's own (unset) values.
+    if isinstance(model_for_tiles, ModelType) and not multi_model_mode:
         if cfg.seg_config.patch_size == SegConfig.DEFAULT_PATCH_SIZE:
             try:
                 recommended_patch_size = get_default_patch_size(model_for_tiles)
@@ -493,15 +502,6 @@ def _main(cfg: TessellateExtractFeaturesConfig) -> None:
 
     # Detect mode based on configuration
     batch_mode = cfg.slide_paths is not None
-
-    # Detect multi-model mode:
-    # 1. If model_type or slide_model_type are lists
-    # 2. If BOTH model_type and slide_model_type are specified (even as single values)
-    # Check for both list and ListConfig since __post_init__ may not have run yet
-    is_model_list = isinstance(cfg.model_type, (list, ListConfig))
-    is_slide_model_list = isinstance(cfg.slide_model_type, (list, ListConfig))
-    has_both_models = cfg.model_type is not None and cfg.slide_model_type is not None
-    multi_model_mode = is_model_list or is_slide_model_list or has_both_models
 
     logger.debug(
         f"model_type type: {type(cfg.model_type)}, value: {cfg.model_type}, is_list: {is_model_list}"
@@ -1331,13 +1331,22 @@ def _main_batch_multi_model(cfg: TessellateExtractFeaturesConfig):
 
     # Group models by the tiles they need: (size, MPP). A slide model's tiles are
     # its own spec (e.g. CHIEF: 256 px at 1.0 µm/px), not its patch encoder's
-    # (CTransPath: 224 px). MPP comes from MODEL_TARGET_MPP where defined.
+    # (CTransPath: 224 px); a patch-encoder-agnostic one (ABMIL_SLIDE) takes its
+    # patch encoder's. MPP: the user's seg_config.mpp if set (not the default),
+    # else MODEL_TARGET_MPP where defined, else the default.
     models_by_tiles = defaultdict(lambda: {"patch": [], "slide": []})
+    user_mpp = (
+        cfg.seg_config.mpp if cfg.seg_config.mpp != SegConfig.DEFAULT_MPP else None
+    )
 
     def tiles_for(model):
-        return get_default_patch_size(model), MODEL_TARGET_MPP.get(
-            model, cfg.seg_config.mpp
-        )
+        if model in PATCH_ENCODER_AGNOSTIC_SLIDE_ENCODERS:
+            model = slide_patch_encoders[model]
+        if user_mpp is not None:
+            mpp = user_mpp
+        else:
+            mpp = MODEL_TARGET_MPP.get(model, SegConfig.DEFAULT_MPP)
+        return get_default_patch_size(model), mpp
 
     for model in patch_models:
         models_by_tiles[tiles_for(model)]["patch"].append(model)
@@ -1434,9 +1443,16 @@ def _main_batch_multi_model(cfg: TessellateExtractFeaturesConfig):
                 # Model paths will be resolved from model_dir in _main_batch
                 # No need to set model_path or slide_model_path here
 
-                # Separate output directories: patch encoder features and slide encoder features
+                # Separate output directories: patch encoder features and slide
+                # encoder features. Patch encoder outputs are shared with the
+                # standalone patch model only when the tiles are the same; else they
+                # go to <patch_encoder>_<size>px_<mpp>mpp (e.g. CTRANSPATH_256px_1mpp
+                # for CHIEF), so neither overwrites the other's tile_h5/h5/pt.
                 slide_output_dir = _safe_path_join(output_dir_str, model.name)
-                patch_output_dir = _safe_path_join(output_dir_str, patch_encoder.name)
+                patch_dir_name = patch_encoder.name
+                if (patch_size, mpp) != tiles_for(patch_encoder):
+                    patch_dir_name = f"{patch_encoder.name}_{patch_size}px_{mpp:g}mpp"
+                patch_output_dir = _safe_path_join(output_dir_str, patch_dir_name)
                 cfg_copy.output_dir = slide_output_dir
 
                 # Call regular batch processing with separate patch output directory
