@@ -1,9 +1,10 @@
 """Slides with no tile features (no tissue tiles, or every tile failed to load).
 
-Patch-feature extraction must still write an output H5 (empty ``features`` and
-``coords`` with the source coords attributes) at the path it returns, so
-callers that open it don't crash; aggregating 0 tiles is a clear per-slide
-error that batch aggregation records as a failed slide.
+Patch-feature extraction must still write an output H5 (empty ``features``
+with the model's feature dim, and ``coords`` with the source coords attributes)
+at the path it returns, so callers that open it don't crash. Aggregating one
+slide of 0 tiles is a clear NoTilesError; batch aggregation skips such slides
+with a warning ("skipped (no tiles)"), not counting them as failed.
 """
 import logging
 from pathlib import Path
@@ -16,6 +17,7 @@ import torch
 from torch.utils.data import DataLoader
 from torchvision import transforms
 
+from mussel.cli.extract_features import _write_pts
 from mussel.datasets import WholeSlideImageH5Dataset
 from mussel.models import ModelType
 from mussel.utils.feature_extract import (NoTilesError, _write_patch_batches,
@@ -129,14 +131,29 @@ def test_identity_of_zero_tiles_is_empty(tmp_path):
     assert torch.load(out_pt, weights_only=True).shape[0] == 0
 
 
-def test_batch_mean_records_empty_slide_as_failed(tmp_path, caplog):
+def _assert_skipped_not_failed(caplog, name="empty.patch_features"):
+    assert not [r for r in caplog.records if r.levelno >= logging.ERROR]
+    assert f"Skipped (no tiles): 1 slides: {name}" in caplog.text
+    assert "Failed" not in caplog.text
+
+
+@pytest.mark.parametrize("method", ["mean", "max"])
+def test_batch_mean_max_skips_empty_slide(tmp_path, caplog, method):
     inputs = [_features_h5(tmp_path, "empty", 0), _features_h5(tmp_path, "full", 3)]
     pts = [str(tmp_path / "empty.pt"), str(tmp_path / "full.pt")]
-    with caplog.at_level(logging.ERROR):
-        aggregate_slide_features_batch(inputs, output_pt_paths=pts, aggregation_method="mean")
+    with caplog.at_level(logging.WARNING):
+        aggregate_slide_features_batch(inputs, output_pt_paths=pts, aggregation_method=method)
     assert not Path(pts[0]).exists()
     assert torch.load(pts[1], weights_only=True).shape == (1, 4)
-    assert "0 tiles" in caplog.text
+    _assert_skipped_not_failed(caplog)
+
+
+def test_batch_of_only_empty_slides_is_not_a_failure(tmp_path, caplog):
+    inputs = [_features_h5(tmp_path, "empty", 0)]
+    with caplog.at_level(logging.WARNING):
+        aggregate_slide_features_batch(inputs, output_pt_paths=[str(tmp_path / "e.pt")],
+                                       aggregation_method="mean")
+    _assert_skipped_not_failed(caplog)
 
 
 class _FakeSlideModel:
@@ -144,17 +161,42 @@ class _FakeSlideModel:
         return lambda features, coords: features.mean(1)
 
 
-def test_batch_slide_encoder_records_empty_slide_as_failed(tmp_path, caplog):
+class _FakeTitanModel:
+    def get_model_fun(self):
+        return lambda features, coords, patch_size: features.mean(1)
+
+
+class _FakeGenericSlideModel:
+    def get_model_fun(self):
+        return lambda features: features.mean(1)
+
+
+@pytest.mark.parametrize("model_type, fake", [
+    (ModelType.GIGAPATH_SLIDE, _FakeSlideModel()),
+    (ModelType.TITAN_SLIDE, _FakeTitanModel()),
+    (ModelType.PRISM_SLIDE, _FakeGenericSlideModel()),  # generic (stacked batch) branch
+])
+def test_batch_slide_encoder_skips_empty_slide(tmp_path, caplog, model_type, fake):
     inputs = [_features_h5(tmp_path, "empty", 0), _features_h5(tmp_path, "full", 3)]
     pts = [str(tmp_path / "empty.pt"), str(tmp_path / "full.pt")]
-    with patch("mussel.utils.feature_extract._load_model", return_value=_FakeSlideModel()), \
-            caplog.at_level(logging.ERROR):
+    with patch("mussel.utils.feature_extract._load_model", return_value=fake), \
+            caplog.at_level(logging.WARNING):
         aggregate_slide_features_batch(inputs, output_pt_paths=pts, aggregation_method="model",
-                                       model_type=ModelType.GIGAPATH_SLIDE, use_gpu=False,
+                                       model_type=model_type, use_gpu=False,
                                        tile_size_check="off")
     assert not Path(pts[0]).exists()
     assert torch.load(pts[1], weights_only=True).shape == (1, 4)
     assert "empty.patch_features: no tile features to aggregate" in caplog.text
+    _assert_skipped_not_failed(caplog)
+
+
+def test_write_pts_all_empty_slides_is_not_a_failure(tmp_path, caplog):
+    h5s = [_features_h5(tmp_path, "a", 0), _features_h5(tmp_path, "b", 0)]
+    pts = [str(tmp_path / "a.pt"), str(tmp_path / "b.pt")]
+    with caplog.at_level(logging.WARNING):
+        _write_pts(h5s, pts)
+    assert all(torch.load(p, weights_only=True).shape[0] == 0 for p in pts)
+    assert "Skipped (no tiles): 2 slides" in caplog.text
 
 
 def test_sample_aggregation_skips_empty_slides(tmp_path, caplog):

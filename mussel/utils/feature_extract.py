@@ -896,7 +896,32 @@ def _titan_patch_size_lv0(patch_size, tile_attrs: Optional[dict] = None) -> int:
 
 
 class NoTilesError(ValueError):
-    """A slide has no tile features to aggregate (0 tiles)."""
+    """A slide has no tile features to aggregate (0 tiles).
+
+    Aggregating one slide (:func:`aggregate_slide_features` with mean, max or a
+    slide encoder) raises it; batch aggregation instead skips such a slide with
+    a warning (see :func:`is_no_tiles_error`).
+    """
+
+
+def is_no_tiles_error(exc: BaseException) -> bool:
+    """Whether a per-slide error means the slide has no tiles.
+
+    Batch callers report such slides as "skipped (no tiles)", not as failures.
+    """
+    return isinstance(exc, NoTilesError)
+
+
+def _skip_no_tiles(slide_name: str, exc: BaseException, skipped_slides: list) -> None:
+    """Record ``slide_name`` as skipped (no tiles), with a warning."""
+    logger.warning(f"Skipping slide {slide_name} (no tiles): {exc}")
+    skipped_slides.append(slide_name)
+
+
+def _log_skipped_slides(skipped_slides: list) -> None:
+    """End-of-run listing of the slides skipped for having no tiles."""
+    if skipped_slides:
+        logger.warning(f"Skipped (no tiles): {len(skipped_slides)} slides: {', '.join(skipped_slides)}")
 
 
 def _require_tiles(features: np.ndarray, slide: Optional[str] = None) -> None:
@@ -1885,6 +1910,7 @@ def aggregate_slide_features_batch(
         )
         successful_slides = []
         failed_slides = []
+        skipped_slides = []
 
         for i, patch_h5_path in enumerate(patch_features_h5_paths):
             output_h5 = output_h5_paths[i] if output_h5_paths else None
@@ -1947,6 +1973,9 @@ def aggregate_slide_features_batch(
                     successful_slides.append(slide_name)
 
             except Exception as e:
+                if is_no_tiles_error(e):
+                    _skip_no_tiles(slide_name, e, skipped_slides)
+                    continue
                 logger.error(
                     f"Failed to process slide {slide_name} (slide {i+1}/{num_slides}): {str(e)}"
                 )
@@ -1957,20 +1986,22 @@ def aggregate_slide_features_batch(
                 # Continue with next slide
                 continue
 
-        if failed_slides:
+        if failed_slides or skipped_slides:
             logger.warning(f"\n=== Batch Processing Summary ===")
             logger.warning(
                 f"Successfully processed: {len(successful_slides)}/{num_slides} slides"
             )
+            _log_skipped_slides(skipped_slides)
+        if failed_slides:
             logger.warning(f"Failed: {len(failed_slides)} slides")
             logger.warning(f"Failed slides: {', '.join(failed_slides)}")
-            if len(failed_slides) == num_slides:
+            if not successful_slides:
                 raise RuntimeError(
-                    f"All {num_slides} slide(s) failed during {aggregation_method!r} aggregation. "
+                    f"All {len(failed_slides)} slide(s) with tiles failed during {aggregation_method!r} aggregation. "
                     f"Failed: {', '.join(failed_slides)}. "
                     "Check logs above for per-slide errors."
                 )
-        else:
+        elif not skipped_slides:
             logger.info(f"\n=== All {num_slides} slides processed successfully ===")
 
         return output_h5_paths, output_pt_paths
@@ -2003,6 +2034,7 @@ def aggregate_slide_features_batch(
 
     successful_slides = []
     failed_slides = []
+    skipped_slides = []
 
     # Process slides in batches
     for batch_start in range(0, num_slides, slide_batch_size):
@@ -2087,8 +2119,11 @@ def aggregate_slide_features_batch(
                         aggregated_batch.append(agg_features)
                         successful_slides.append(slide_name)
                     except Exception as e:
-                        logger.error(f"Failed to process slide {slide_name}: {str(e)}")
                         aggregated_batch.append(None)
+                        if is_no_tiles_error(e):
+                            _skip_no_tiles(slide_name, e, skipped_slides)
+                            continue
+                        logger.error(f"Failed to process slide {slide_name}: {str(e)}")
                         failed_slides.append(slide_name)
                         # Continue with next slide
 
@@ -2121,37 +2156,50 @@ def aggregate_slide_features_batch(
                         aggregated_batch.append(agg_features)
                         successful_slides.append(slide_name)
                     except Exception as e:
+                        aggregated_batch.append(None)
+                        if is_no_tiles_error(e):
+                            _skip_no_tiles(slide_name, e, skipped_slides)
+                            continue
                         logger.error(f"Failed to process slide {slide_name}: {str(e)}")
                         logger.error(f"Traceback: {traceback.format_exc()}")
-                        aggregated_batch.append(None)
                         failed_slides.append(slide_name)
                         # Continue with next slide
 
             else:
                 # Other slide encoders may only need features
                 # Stack features from all slides in batch and process together
+                # (slides without tiles are skipped first)
+                aggregated_batch = [None] * len(batch_features)
+                to_encode = []
+                for k, (features, slide_name) in enumerate(zip(batch_features, batch_slide_names)):
+                    try:
+                        _require_tiles(features, slide_name)
+                    except NoTilesError as e:
+                        _skip_no_tiles(slide_name, e, skipped_slides)
+                        continue
+                    to_encode.append(k)
+                encode_names = [batch_slide_names[k] for k in to_encode]
                 try:
-                    features_list = [
-                        _numpy_to_torch(f).unsqueeze(0) for f in batch_features
-                    ]
-                    features_batch = torch.cat(features_list, dim=0)
+                    if to_encode:
+                        features_list = [
+                            _numpy_to_torch(batch_features[k]).unsqueeze(0) for k in to_encode
+                        ]
+                        features_batch = torch.cat(features_list, dim=0)
 
-                    # Process entire batch at once for maximum efficiency
-                    with timings.stage("slide_encode", model=_model_name(model_type),
-                                       slides=batch_slide_names, tiles=int(sum(len(f) for f in batch_features))):
-                        aggregated_batch_tensor = model_fun(features_batch).cpu().numpy()
-                    aggregated_batch = [
-                        aggregated_batch_tensor[i : i + 1]
-                        for i in range(len(batch_features))
-                    ]
-                    successful_slides.extend(batch_slide_names)
+                        # Process entire batch at once for maximum efficiency
+                        with timings.stage("slide_encode", model=_model_name(model_type), slides=encode_names,
+                                           tiles=int(sum(len(batch_features[k]) for k in to_encode))):
+                            aggregated_batch_tensor = model_fun(features_batch).cpu().numpy()
+                        for j, k in enumerate(to_encode):
+                            aggregated_batch[k] = aggregated_batch_tensor[j : j + 1]
+                        successful_slides.extend(encode_names)
                 except Exception as e:
                     logger.error(
                         f"Failed to process batch {batch_start+1}-{batch_end}: {str(e)}"
                     )
-                    # Mark all slides in batch as failed
+                    # Mark all encoded slides in batch as failed
                     aggregated_batch = [None] * len(batch_features)
-                    failed_slides.extend(batch_slide_names)
+                    failed_slides.extend(encode_names)
 
         # Save results for each slide in batch (skip failed slides)
         for idx, i in enumerate(batch_indices):
@@ -2159,7 +2207,8 @@ def aggregate_slide_features_batch(
             slide_name = batch_slide_names[idx]
 
             if aggregated_features is None:
-                logger.warning(f"Skipping save for failed slide: {slide_name}")
+                if slide_name not in skipped_slides:
+                    logger.warning(f"Skipping save for failed slide: {slide_name}")
                 continue
 
             try:
@@ -2199,16 +2248,18 @@ def aggregate_slide_features_batch(
     gc.collect()
     logger.info("Model cleaned up, memory freed")
 
-    if failed_slides:
+    if failed_slides or skipped_slides:
         logger.warning(f"\n=== Batch Processing Summary ===")
+        _log_skipped_slides(skipped_slides)
+    if failed_slides:
         logger.warning(f"Failed: {len(failed_slides)} slides")
         logger.warning(f"Failed slides: {', '.join(failed_slides)}")
-    else:
+    elif not skipped_slides:
         logger.info(f"\n=== All {num_slides} slides processed successfully ===")
 
-    if failed_slides and len(failed_slides) == num_slides:
+    if failed_slides and not successful_slides:
         raise RuntimeError(
-            f"All {num_slides} slide(s) failed during 'model' aggregation "
+            f"All {len(failed_slides)} slide(s) with tiles failed during 'model' aggregation "
             f"(model={model_type}). Failed: {', '.join(failed_slides)}. "
             "Check logs above for per-slide errors (e.g. CUDA out of memory)."
         )
@@ -2264,6 +2315,11 @@ def aggregate_slide_features(
 
     Returns:
         Tuple of (output_h5_path, output_pt_path) if saving, otherwise features tensor.
+
+    Raises:
+        NoTilesError: If the slide has no tiles and ``aggregation_method`` is not
+            ``"identity"`` (identity gives empty features). Batch aggregation
+            (:func:`aggregate_slide_features_batch`) skips such slides instead.
     """
     logger.info("Step 2: Aggregating patch features to slide level")
     tile_attrs = _read_coords_attrs(patch_features_h5_path)
