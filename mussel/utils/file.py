@@ -843,9 +843,11 @@ def download_model_path(model_path, cache_dir=None, ssl_verify=True):
         logger.info(f"Using cached model from {local_path}")
         return local_path
 
-    # Download remote model
-    download_path = f"{local_path}.partial-{os.getpid()}"
-    _remove_path(download_path)  # leftover from a killed run with a recycled pid
+    # Download into a private temp dir in the same directory (so the final rename
+    # is atomic). mkdtemp names are unique even across hosts/containers sharing
+    # the cache, unlike pids, so concurrent jobs never touch each other's partials.
+    download_dir = tempfile.mkdtemp(dir=models_cache_dir, prefix=f".{cache_key}.partial-")
+    download_path = os.path.join(download_dir, cache_key)
     logger.info(f"Downloading remote model {model_path} to {local_path}")
     try:
         # For Azure Files paths (azfiles://), use Azure Files SDK
@@ -924,19 +926,20 @@ def download_model_path(model_path, cache_dir=None, ssl_verify=True):
                 logger.info(f"Downloading file {model_path}")
                 fs.get(model_path, download_path)
 
-        try:
-            os.replace(download_path, local_path)
-        except OSError:
-            # A concurrent download finished first: keep its copy.
-            if not os.path.exists(local_path):
-                raise
-            _remove_path(download_path)
+        # If a concurrent download finished first, keep its copy and discard ours.
+        if not os.path.exists(local_path):
+            try:
+                os.replace(download_path, local_path)
+            except OSError:
+                if not os.path.exists(local_path):
+                    raise
         logger.info(f"Download complete: {local_path}")
         return local_path
     except Exception as e:
-        _remove_path(download_path)
         logger.error(f"Failed to download model from {model_path}: {e}")
         raise
+    finally:
+        _remove_path(download_dir)
 
 
 def _remove_path(path: str) -> None:

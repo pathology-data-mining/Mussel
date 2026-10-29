@@ -119,6 +119,37 @@ def test_download_model_path_failure_leaves_no_cache_entry(memfs, tmp_path, monk
     assert os.listdir(models_dir) == [os.path.basename(local)]
 
 
+def test_download_model_path_concurrent_same_pid_do_not_interfere(memfs, tmp_path, monkeypatch):
+    """Jobs on different hosts/containers sharing a cache can have the same pid.
+
+    Job A is mid-download when job B (same pid) downloads the same model; B must
+    not delete or write into A's partial, and A must not clobber B's finished copy.
+    """
+    payload = b"0123456789" * 10
+    memfs.pipe("memory://models/enc/weights.pt", payload)
+    monkeypatch.setattr(file_mod.os, "getpid", lambda: 1)
+    cache = tmp_path / "cache"
+    real_get = memfs.get
+    dsts = []
+
+    def interleaved_get(src, dst, **kwargs):
+        dsts.append(dst)
+        if len(dsts) > 1:  # job B: plain download
+            return real_get(src, dst, **kwargs)
+        with open(dst, "wb") as f:  # job A: first half ...
+            f.write(payload[:50])
+        download_model_path("memory://models/enc/weights.pt", cache_dir=str(cache))  # job B
+        with open(dst, "ab") as f:  # ... then the rest
+            f.write(payload[50:])
+
+    monkeypatch.setattr(memfs, "get", interleaved_get)
+    local = download_model_path("memory://models/enc/weights.pt", cache_dir=str(cache))
+    with open(local, "rb") as f:
+        assert f.read() == payload
+    assert dsts[0] != dsts[1]
+    assert os.listdir(cache / "remote_models") == [os.path.basename(local)]
+
+
 def test_download_model_path_directory_lands_atomically(memfs, tmp_path):
     memfs.pipe("memory://models/dir/config.json", b"{}")
     memfs.pipe("memory://models/dir/model.bin", b"bin")
