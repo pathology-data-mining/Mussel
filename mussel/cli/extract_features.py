@@ -28,7 +28,8 @@ from mussel.utils import (
 )
 from mussel.utils.feature_extract import (_numpy_to_torch,
                                           extract_patch_features_batch_multi)
-from mussel.utils.file import save_hdf5, save_torch_tensor
+from mussel.utils.file import (check_unique_slide_ids, save_hdf5,
+                               save_torch_tensor)
 from mussel.utils.ml import collate_features
 
 logger = logging.getLogger(__name__)
@@ -305,8 +306,9 @@ def _main_batch(cfg: ExtractFeaturesConfig):
     output_dir = Path(cfg.output_dir)
     ensure_directory_exists(output_dir)
 
-    # Generate slide IDs if not provided
-    slide_ids = get_slide_ids_from_paths(cfg.slide_paths, cfg.slide_ids)
+    # Generate slide IDs if not provided; outputs are named by slide ID, so
+    # duplicates (/a/S1.svs and /b/S1.svs) would overwrite each other.
+    slide_ids = check_unique_slide_ids(get_slide_ids_from_paths(cfg.slide_paths, cfg.slide_ids))
 
     # Validate input lengths
     if not (len(cfg.patch_h5_paths) == len(cfg.slide_paths)):
@@ -428,18 +430,23 @@ def _main_batch(cfg: ExtractFeaturesConfig):
 
 
 def _write_pts(h5_paths, pt_paths) -> None:
-    """Save each features .h5 as a .pt; a slide whose extraction wrote nothing (e.g. no tiles) is skipped.
+    """Save each features .h5 as a .pt; a slide whose extraction wrote nothing is skipped.
 
-    Raises if no slide wrote features, as the two-step path does when every .pt is missing.
+    A slide without tiles has an empty features .h5 and gets an empty .pt.
+    Raises if no slide has features, as the two-step path does when every .pt is missing.
     """
     missing = 0
     for h5_path, pt_path in zip(h5_paths, pt_paths):
         if not os.path.isfile(h5_path):
-            logger.warning(f"No features written to {h5_path} (slide without tiles?); skipping its .pt")
+            logger.warning(f"No features written to {h5_path}; skipping its .pt")
             missing += 1
             continue
         with h5py.File(h5_path, "r") as f:
-            torch.save(_numpy_to_torch(f["features"][:]), pt_path)
+            features = f["features"][:]
+        if len(features) == 0:
+            logger.warning(f"{h5_path} has no features (slide without tiles?); its .pt is empty")
+            missing += 1
+        torch.save(_numpy_to_torch(features), pt_path)
     if h5_paths and missing == len(h5_paths):
         raise RuntimeError(f"extract_features produced no output files: none of the {len(h5_paths)} slides "
                            "wrote features (all without tiles, or all failed). Check logs above.")
