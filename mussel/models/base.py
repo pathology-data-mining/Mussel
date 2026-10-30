@@ -288,6 +288,8 @@ class _TimmHfHubBase(TorchModel):
     """
 
     _default_model_type: "ModelType"
+    # Extra keyword arguments for ``timm.create_model`` (e.g. dynamic_img_size).
+    _create_model_kwargs: dict = {}
 
     def __init__(
         self,
@@ -299,7 +301,12 @@ class _TimmHfHubBase(TorchModel):
             model_path = self._default_model_type.path
         model_obj = None
         if model_path.startswith("hf-hub:"):
-            model_obj = timm.create_model(model_path, pretrained=True, num_classes=0)
+            model_obj = timm.create_model(
+                model_path,
+                pretrained=True,
+                num_classes=0,
+                **self._create_model_kwargs,
+            )
         super().__init__(model_path, model_obj, use_gpu, gpu_device_id)
 
     def get_preprocessing_fun(self) -> Callable:
