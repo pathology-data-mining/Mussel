@@ -26,10 +26,11 @@ Only tiffslide is a hard dependency.  CuCIM and OME-Zarr are used only when
 installed and explicitly requested or auto-detected.
 """
 
+import json
 import logging
 import os
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
 import tiffslide
@@ -157,6 +158,63 @@ class _SlideBase:
 # CuCIM wrapper — presents tiffslide-compatible API
 # ---------------------------------------------------------------------------
 
+_MICROMETER_UNITS = frozenset({"micrometer", "micrometers", "micron", "microns", "um", "µm", "μm"})
+
+
+def _flatten_metadata(metadata: Dict[str, Any], prefix: str = "") -> Dict[str, Any]:
+    """Flatten nested metadata to ``vendor.key`` names (``{"aperio": {"MPP": x}}`` -> ``aperio.MPP``)."""
+    flat: Dict[str, Any] = {}
+    for key, value in metadata.items():
+        name = f"{prefix}{key}"
+        if isinstance(value, dict):
+            flat.update(_flatten_metadata(value, prefix=f"{name}."))
+        else:
+            flat[name] = value
+    return flat
+
+
+def _cucim_properties(metadata: Any) -> Dict[str, Any]:
+    """tiffslide-style properties from ``CuImage.metadata``.
+
+    cuCIM nests vendor metadata by vendor (``{"aperio": {"MPP": ...}, "cucim":
+    {"spacing": [...], "spacing_units": [...], "dims": "YXC"}}``), so the
+    ``aperio.MPP`` / ``tiffslide.mpp-x`` lookups in
+    :func:`mussel.utils.segment.get_slide_mpp` missed it and fell back to the
+    default MPP. The metadata is flattened to ``vendor.key`` names, and cuCIM's
+    pixel spacing, when in micrometres, is exposed as ``tiffslide.mpp-x`` /
+    ``tiffslide.mpp-y``.
+    """
+    if not metadata:
+        return {}
+    if isinstance(metadata, str):
+        try:
+            metadata = json.loads(metadata)
+        except ValueError:
+            return {}
+    if not isinstance(metadata, dict):
+        metadata = dict(metadata)
+    props = _flatten_metadata(metadata)
+
+    cucim_meta = metadata.get("cucim")
+    if isinstance(cucim_meta, dict):
+        spacing = cucim_meta.get("spacing") or []
+        units = cucim_meta.get("spacing_units") or []
+        dims = str(cucim_meta.get("dims") or "YXC").upper()
+        for axis, key in (("X", "tiffslide.mpp-x"), ("Y", "tiffslide.mpp-y")):
+            i = dims.find(axis)
+            if key in props or i < 0 or i >= len(spacing) or i >= len(units):
+                continue
+            if str(units[i]).strip().lower() not in _MICROMETER_UNITS:
+                continue
+            try:
+                value = float(spacing[i])
+            except (TypeError, ValueError):
+                continue
+            if value > 0:
+                props[key] = value
+    return props
+
+
 
 class CuCIMSlide(_SlideBase):
     """Thin wrapper around ``cucim.CuImage`` with tiffslide-compatible API."""
@@ -168,8 +226,8 @@ class CuCIMSlide(_SlideBase):
             (int(w), int(h)) for w, h in res["level_dimensions"]
         ]
         self.level_downsamples: list = [float(d) for d in res["level_downsamples"]]
-        # Build a properties-like dict from metadata
-        self.properties: dict = dict(cuimage.metadata) if cuimage.metadata else {}
+        # Build a tiffslide-like flat properties dict from cuCIM's nested metadata
+        self.properties: dict = _cucim_properties(cuimage.metadata)
 
     def read_region(self, location, level: int, size) -> Any:
         """Return a PIL Image for the requested region.
@@ -203,36 +261,84 @@ class CuCIMSlide(_SlideBase):
 class OmeZarrSlide(_SlideBase):
     """Thin wrapper around an OME-Zarr store with tiffslide-compatible API.
 
-    Supports OME-Zarr v0.4 multiscale arrays stored as a single series.
+    Supports OME-Zarr multiscale arrays stored as a single series.
     The first ``multiscales`` entry is used.
+
+    The y / x / channel axes come from the ``multiscales[0].axes`` metadata
+    (NGFF v0.3 names or v0.4 ``{"name": ...}`` dicts) when present, so
+    ``(T, C, Z, Y, X)`` and channel-last arrays are read correctly. Without axes
+    metadata the layout is guessed from the shape: 2-D ``(Y, X)``; 3-D
+    ``(C, Y, X)`` when the first dimension is <= 4, else ``(Y, X, C)``; 4-D
+    ``(T, C, Y, X)``; 5-D ``(T, C, Z, Y, X)``. Other axes (T, Z) are read at index 0.
     """
 
     def __init__(self, store: Any) -> None:
         self._store = store
-        self._arrays, self._downsamples = self._parse_multiscales(store)
+        self._axes_names = self._axes_from_metadata(store)
+        self._arrays, self._downsamples = self._parse_multiscales(store, self._axes_names)
+        self._axes: List[Tuple[int, int, Optional[int]]] = [
+            self._resolve_axes(arr, self._axes_names) for arr in self._arrays
+        ]
         self.level_dimensions: list = [
-            (int(arr.shape[-1]), int(arr.shape[-2])) for arr in self._arrays
+            (int(arr.shape[xi]), int(arr.shape[yi]))
+            for arr, (yi, xi, _) in zip(self._arrays, self._axes)
         ]
         self.level_downsamples: list = self._downsamples
         self.properties: dict = dict(store.attrs) if hasattr(store, "attrs") else {}
 
     @staticmethod
-    def _parse_multiscales(store):
+    def _axes_from_metadata(store) -> Optional[List[str]]:
+        """Lower-cased axis names from ``multiscales[0].axes``, or None if absent."""
+        try:
+            attrs = dict(store.attrs)
+            axes = attrs.get("multiscales", [{}])[0].get("axes")
+        except Exception:
+            return None
+        if not axes:
+            return None
+        names = []
+        for ax in axes:
+            name = ax.get("name") if isinstance(ax, dict) else ax
+            if not isinstance(name, str):
+                return None
+            names.append(name.lower())
+        return names
+
+    @staticmethod
+    def _resolve_axes(arr, axes_names: Optional[List[str]]) -> Tuple[int, int, Optional[int]]:
+        """(y, x, channel-or-None) axis indices of ``arr``."""
+        ndim = len(arr.shape)
+        if axes_names is not None and len(axes_names) == ndim and "y" in axes_names and "x" in axes_names:
+            c = axes_names.index("c") if "c" in axes_names else None
+            return axes_names.index("y"), axes_names.index("x"), c
+        # Heuristic fallback for stores without (usable) axes metadata.
+        if ndim == 2:
+            return 0, 1, None
+        if ndim == 3:
+            if arr.shape[0] <= 4:
+                return 1, 2, 0  # (C, Y, X)
+            return 0, 1, 2  # (Y, X, C)
+        if ndim == 4:
+            return 2, 3, 1  # (T, C, Y, X)
+        # NGFF order (T, C, Z, Y, X) for 5-D; generally (..., C, ..., Y, X).
+        return ndim - 2, ndim - 1, ndim - 4 if ndim >= 5 else None
+
+    @classmethod
+    def _parse_multiscales(cls, store, axes_names: Optional[List[str]] = None):
         """Extract sorted pyramid arrays and their downsamples."""
         attrs = dict(store.attrs)
         multiscales = attrs.get("multiscales", [{}])[0]
         datasets = multiscales.get("datasets", [])
 
         arrays, downsamples = [], []
-        base_shape = None
+        base_h = None
         for ds in datasets:
             path = ds.get("path", "0")
             arr = store[path]
-            if base_shape is None:
-                base_shape = arr.shape
-            h0, w0 = base_shape[-2], base_shape[-1]
-            h, w = arr.shape[-2], arr.shape[-1]
-            downsamples.append(float(h0) / float(h) if h > 0 else 1.0)
+            h = arr.shape[cls._resolve_axes(arr, axes_names)[0]]
+            if base_h is None:
+                base_h = h
+            downsamples.append(float(base_h) / float(h) if h > 0 else 1.0)
             arrays.append(arr)
 
         if not arrays:
@@ -240,17 +346,20 @@ class OmeZarrSlide(_SlideBase):
             for key in sorted(store.keys(), key=lambda k: int(k) if k.isdigit() else 0):
                 arr = store[key]
                 if arr.ndim >= 2:
-                    if base_shape is None:
-                        base_shape = arr.shape
-                    h0, w0 = base_shape[-2], base_shape[-1]
-                    h = arr.shape[-2]
-                    downsamples.append(float(h0) / float(h) if h > 0 else 1.0)
+                    h = arr.shape[cls._resolve_axes(arr, axes_names)[0]]
+                    if base_h is None:
+                        base_h = h
+                    downsamples.append(float(base_h) / float(h) if h > 0 else 1.0)
                     arrays.append(arr)
 
         return arrays, downsamples
 
     def read_region(self, location, level: int, size) -> Any:
-        """Return a PIL Image for the requested region."""
+        """Return an RGB PIL Image for the requested region.
+
+        Like tiffslide, the image is always ``size``: area outside the slide is
+        padded with zeros.
+        """
         x, y = int(location[0]), int(location[1])
         w, h = int(size[0]), int(size[1])
 
@@ -260,25 +369,37 @@ class OmeZarrSlide(_SlideBase):
         yl = int(round(y / ds))
 
         arr = self._arrays[level]
-        # Shape: (... C, H, W) or (... H, W, C) — handle both.
-        ndim = arr.ndim
-        if ndim == 4:
-            # Assume (T, C, H, W) — take first timepoint, all channels.
-            region = np.asarray(arr[0, :, yl : yl + h, xl : xl + w])
-            region = np.transpose(region, (1, 2, 0))  # (H, W, C)
-        elif ndim == 3:
-            # Could be (C, H, W) or (H, W, C)
-            if arr.shape[0] <= 4:
-                region = np.asarray(arr[:, yl : yl + h, xl : xl + w])
-                region = np.transpose(region, (1, 2, 0))
-            else:
-                region = np.asarray(arr[yl : yl + h, xl : xl + w, :])
-        else:
-            region = np.asarray(arr[yl : yl + h, xl : xl + w])
+        yi, xi, ci = self._axes[level]
+        height, width = int(arr.shape[yi]), int(arr.shape[xi])
+        y0, y1 = max(yl, 0), min(yl + h, height)
+        x0, x1 = max(xl, 0), min(xl + w, width)
 
-        region = (
-            region[:, :, :3].astype(np.uint8)
-            if region.ndim == 3
-            else region.astype(np.uint8)
-        )
-        return PILImage.fromarray(region, mode="RGB")
+        out = np.zeros((h, w, 3), dtype=np.uint8)
+        if y1 <= y0 or x1 <= x0:
+            return PILImage.fromarray(out)
+
+        index: list = []
+        for axis in range(len(arr.shape)):
+            if axis == yi:
+                index.append(slice(y0, y1))
+            elif axis == xi:
+                index.append(slice(x0, x1))
+            elif axis == ci:
+                index.append(slice(None))
+            else:
+                index.append(0)  # first timepoint / z-plane
+        region = np.asarray(arr[tuple(index)])
+        # Remaining axes keep their relative order; move them to (Y, X[, C]).
+        kept = [a for a in (yi, xi, ci) if a is not None]
+        order = sorted(kept)
+        region = np.transpose(region, [order.index(a) for a in kept])
+        if region.ndim == 2:
+            region = region[:, :, None]
+        n_channels = region.shape[2]
+        if n_channels >= 3:
+            region = region[:, :, :3]
+        else:
+            region = np.repeat(region[:, :, :1], 3, axis=2)
+
+        out[y0 - yl : y1 - yl, x0 - xl : x1 - xl] = region.astype(np.uint8)
+        return PILImage.fromarray(out)  # (H, W, 3) uint8 -> RGB

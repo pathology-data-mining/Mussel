@@ -9,6 +9,13 @@ TITAN embeddings were made this way from its 224 px tiles.
 
 The output is a patch HDF5 with the source's coords attributes (updated where they
 change), so it reads like a tessellate output.
+
+Border cells (frozen contract): a cell is kept whenever it contains a source tile
+centre, even if it extends past the slide's right or bottom edge -- there is no
+level-dimension check, and the out-of-slide part of such a tile is read as
+padding. This is deliberate: it is exactly the reef v2 TITAN 512 px grid, on which
+REEF v2's production TITAN embeddings and a released stain classifier were
+built. Do not clip or drop border cells without recomputing those embeddings.
 """
 from __future__ import annotations
 
@@ -56,6 +63,11 @@ def derive_grid(coords, source_patch_size: int, patch_size: int, mpp: float, sli
         slide_mpp: The slide's native resolution (µm/px).
 
     Output coords are level-0, unique and sorted by (x, y).
+
+    Cells crossing the slide border are kept (no level-dimension check; the
+    area outside the slide is read as padding). This matches the reef v2 TITAN
+    512 px grid and must not change without recomputing the REEF v2 TITAN
+    embeddings and the stain classifier built on them (see the module docstring).
     """
     native = get_native_size(patch_size, mpp, slide_mpp)
     if native <= 0:

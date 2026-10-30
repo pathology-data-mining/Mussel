@@ -56,8 +56,12 @@ class WholeSlideImageH5Dataset(Dataset):
             self.scaled_patch_size = int(
                 f["coords"].attrs["patch_size_to_resize_to_for_desired_mpp"]
             )
+            # `is not None`: an empty selection means no tiles (not all of them),
+            # and numpy index arrays have no truth value.
             self.length = (
-                len(limit_to_indices) if limit_to_indices else len(f["coords"])
+                len(limit_to_indices)
+                if limit_to_indices is not None
+                else len(f["coords"])
             )
 
         if preprocess is not None:
@@ -102,7 +106,7 @@ class WholeSlideImageH5Dataset(Dataset):
         Returns:
             Tuple of (transformed image tensor, coordinates).
         """
-        if self.limit_to_indices:
+        if self.limit_to_indices is not None:
             idx = self.limit_to_indices[idx_]
         else:
             idx = idx_
@@ -116,22 +120,26 @@ class WholeSlideImageH5Dataset(Dataset):
             )
         with h5py.File(self.h5_path, "r") as hdf5_file:
             coord = hdf5_file["coords"][idx]
-            try:
-                img = self.wsi.read_region(
-                    coord, self.patch_level, (self.patch_size, self.patch_size)
-                ).convert("RGB")
-                img = self.roi_transforms(img).unsqueeze(0)
-                return img, coord
-            except Exception as e:
-                # Handle JPEG decoding errors (e.g., unsupported JPEG markers in NDPI files)
-                # Return None to indicate this tile should be skipped
-                if "Jpeg8Error" in str(type(e).__name__) or "imagecodecs" in str(e):
-                    logger.warning(
-                        f"Skipping corrupted tile at {coord} due to JPEG decode error: {e}"
-                    )
-                else:
-                    logger.error(f"Error reading tile at {coord}: {e}")
-                return None, coord
+        # Only the read / decode is guarded: an unreadable tile (e.g. an
+        # unsupported JPEG marker in an NDPI file) is skipped (None), while
+        # preprocessing errors and MemoryError propagate instead of silently
+        # dropping every tile.
+        try:
+            img = self.wsi.read_region(
+                coord, self.patch_level, (self.patch_size, self.patch_size)
+            ).convert("RGB")
+        except MemoryError:
+            raise
+        except Exception as e:
+            if "Jpeg8Error" in str(type(e).__name__) or "imagecodecs" in str(e):
+                logger.warning(
+                    f"Skipping corrupted tile at {coord} due to JPEG decode error: {e}"
+                )
+            else:
+                logger.error(f"Error reading tile at {coord}: {e}")
+            return None, coord
+        img = self.roi_transforms(img).unsqueeze(0)
+        return img, coord
 
     def worker_init(self, *args):
         """

@@ -19,10 +19,9 @@ from hydra.core.config_store import ConfigStore
 from omegaconf import MISSING
 
 logger = logging.getLogger(__name__)
-from torch.utils.data import DataLoader
+from torch.utils.data import DataLoader, Dataset
 
 from mussel.datasets.h5 import WholeSlideImageH5Dataset
-from mussel.utils.ml import collate_features
 
 
 @dataclass
@@ -87,6 +86,7 @@ def main(cfg: CacheTilesConfig):
         limit_to_indices=indices if cfg.limit_to_class else None,
         init_wsi_in_worker=cfg.num_workers > 0,
     )
+    tiles = _IndexedTiles(dataset, indices if cfg.limit_to_class else None)
     kwargs = {
         "num_workers": cfg.num_workers,
         "pin_memory": True,
@@ -94,24 +94,36 @@ def main(cfg: CacheTilesConfig):
         "prefetch_factor": 2 if cfg.num_workers > 0 else None,
     }
     loader = DataLoader(
-        dataset=dataset,
+        dataset=tiles,
         batch_size=cfg.batch_size,
         **kwargs,
-        collate_fn=collate_features,
-        worker_init_fn=dataset.worker_init,
+        collate_fn=_collate_indexed_tiles,
+        worker_init_fn=tiles.worker_init,
         shuffle=False,
     )
     with torch.no_grad():
-        batch_list = []
-        for count, (batch, coords) in enumerate(loader):
+        batch_list, cached_indices = [], []
+        for count, (batch, batch_indices) in enumerate(loader):
             if count % 100 == 0:
                 logger.info(
                     "batch {}/{}, {} files processed".format(
-                        count, len(loader), count * 32
+                        count, len(loader), count * cfg.batch_size
                     )
                 )
-            batch_list.append(batch)
-        all_tiles = torch.cat(batch_list, dim=0)
+            if len(batch_indices):
+                batch_list.append(batch)
+                cached_indices.extend(batch_indices)
+        if batch_list:
+            all_tiles = torch.cat(batch_list, dim=0)
+        else:
+            size = dataset.scaled_patch_size
+            all_tiles = torch.empty((0, 3, size, size))
+    n_failed = len(tiles) - len(cached_indices)
+    if n_failed:
+        logger.warning(
+            f"{n_failed} of {len(tiles)} tiles failed to load and were not cached; "
+            "the indices file lists the cached tiles only"
+        )
     time_elapsed = time.time() - time_start
     logger.info(
         "\ncaching tiles for {} took {} s".format(cfg.output_pt_path, time_elapsed)
@@ -119,13 +131,40 @@ def main(cfg: CacheTilesConfig):
     logger.info(f"all_tiles shape: {all_tiles.shape}")
     torch.save(all_tiles, cfg.output_pt_path)
     logger.info(f"saved to {cfg.output_pt_path}")
-    # save indices as json
+    # Save the patch-H5 indices of the cached tiles, row-aligned with the .pt.
     if cfg.output_indices_json_path:
         with open(cfg.output_indices_json_path, "w") as f:
-            if cfg.limit_to_class:
-                json.dump(indices, f)
-            else:
-                json.dump(list(range(len(dataset))), f)
+            json.dump(cached_indices, f)
+
+
+class _IndexedTiles(Dataset):
+    """Yields ``(tile, patch-H5 index)`` so the indices file matches the cached rows.
+
+    Tiles that fail to load are dropped at collation, so the rows of the cached
+    tensor are not simply ``indices`` / ``range(len(dataset))``.
+    """
+
+    def __init__(self, dataset: WholeSlideImageH5Dataset, indices: Optional[List[int]]):
+        self.dataset = dataset
+        self.indices = list(indices) if indices is not None else None
+
+    def __len__(self):
+        return len(self.dataset)
+
+    def __getitem__(self, i):
+        img, _ = self.dataset[i]
+        return img, int(self.indices[i]) if self.indices is not None else i
+
+    def worker_init(self, *args):
+        self.dataset.worker_init(*args)
+
+
+def _collate_indexed_tiles(batch):
+    """Concatenate the tiles that loaded; return them with their patch-H5 indices."""
+    batch = [item for item in batch if item[0] is not None]
+    if not batch:
+        return torch.empty(0), []
+    return torch.cat([item[0] for item in batch], dim=0), [item[1] for item in batch]
 
 
 if __name__ == "__main__":

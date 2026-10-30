@@ -52,7 +52,11 @@ class WholeSlideImageTileCoordDataset(Dataset):
         self.patch_level = attrs["patch_level"]
         self.scaled_patch_size = int(attrs["patch_size_to_resize_to_for_desired_mpp"])
 
-        self.length = len(limit_to_indices) if limit_to_indices else len(coords)
+        # `is not None`: an empty selection means no tiles (not all of them),
+        # and numpy index arrays have no truth value.
+        self.length = (
+            len(limit_to_indices) if limit_to_indices is not None else len(coords)
+        )
 
         if preprocess is not None:
             assert (
@@ -89,7 +93,7 @@ class WholeSlideImageTileCoordDataset(Dataset):
         Returns:
             Tuple of (transformed image tensor, coordinates).
         """
-        if self.limit_to_indices:
+        if self.limit_to_indices is not None:
             idx = self.limit_to_indices[idx_]
         else:
             idx = idx_
@@ -102,15 +106,17 @@ class WholeSlideImageTileCoordDataset(Dataset):
                 "worker_init() in each DataLoader worker before reading tiles"
             )
         coord = self.coords[idx]
+        # Only the read / decode is guarded: an unreadable tile (e.g. an
+        # unsupported JPEG marker in an NDPI file) is skipped (None), while
+        # preprocessing errors and MemoryError propagate instead of silently
+        # dropping every tile.
         try:
             img = self.wsi.read_region(
                 coord, self.patch_level, (self.patch_size, self.patch_size)
             ).convert("RGB")
-            img = self.roi_transforms(img).unsqueeze(0)
-            return img, coord
+        except MemoryError:
+            raise
         except Exception as e:
-            # Handle JPEG decoding errors (e.g., unsupported JPEG markers in NDPI files)
-            # Return None to indicate this tile should be skipped
             if "Jpeg8Error" in str(type(e).__name__) or "imagecodecs" in str(e):
                 logger.warning(
                     f"Skipping corrupted tile at {coord} due to JPEG decode error: {e}"
@@ -118,6 +124,8 @@ class WholeSlideImageTileCoordDataset(Dataset):
             else:
                 logger.error(f"Error reading tile at {coord}: {e}")
             return None, coord
+        img = self.roi_transforms(img).unsqueeze(0)
+        return img, coord
 
     def worker_init(self, *args):
         """

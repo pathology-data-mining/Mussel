@@ -62,7 +62,8 @@ from mussel.utils.artifact_removal import (
     GrandQCArtifactRemover,
 )
 from mussel.utils.feature_extract import _numpy_to_torch, _parse_feature_dtype
-from mussel.utils.file import WSI_EXTENSIONS, collect_wsi_paths
+from mussel.utils.file import (WSI_EXTENSIONS, check_unique_slide_ids,
+                               collect_wsi_paths)
 
 # isort: on
 
@@ -715,13 +716,7 @@ def _batch_slide_ids(cfg: TessellateExtractFeaturesConfig) -> List[str]:
     overwrite another slide's tiles and features.
     """
     slide_ids = cfg.slide_ids if cfg.slide_ids is not None else get_slide_ids_from_paths(cfg.slide_paths)
-    duplicates = sorted({s for s in slide_ids if list(slide_ids).count(s) > 1})
-    if duplicates:
-        raise ValueError(
-            f"slide IDs must be unique in a batch; duplicated: {duplicates}. Slide IDs default "
-            "to the file name without extension: pass slide_ids for slides with the same name."
-        )
-    return list(slide_ids)
+    return check_unique_slide_ids(slide_ids)
 
 
 def _main_batch(

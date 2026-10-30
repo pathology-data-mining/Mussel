@@ -1,6 +1,7 @@
 import logging
 import os
 import pickle
+import shutil
 import tempfile
 import warnings
 from contextlib import ExitStack
@@ -90,11 +91,20 @@ def collect_wsi_paths(
 
 
 def _is_remote_path(path):
-    """Check if a path is a remote path (starts with az://, azblob://, s3://, etc.)."""
+    """Check if a path is a remote path (starts with az://, azblob://, azfiles://, s3://, etc.)."""
     if not isinstance(path, str):
         return False
     return path.startswith(
-        ("az://", "azblob://", "abfs://", "s3://", "gs://", "http://", "https://")
+        (
+            "az://",
+            "azblob://",
+            "azfiles://",
+            "abfs://",
+            "s3://",
+            "gs://",
+            "http://",
+            "https://",
+        )
     )
 
 
@@ -186,6 +196,23 @@ def get_slide_ids_from_paths(
         ['custom']
     """
     return slide_ids if slide_ids else [Path(sp).stem for sp in slide_paths]
+
+
+def check_unique_slide_ids(slide_ids: List[str]) -> List[str]:
+    """Raise ValueError if a batch's slide IDs are not unique; return them as a list.
+
+    Batch outputs and intermediate files are named by slide ID: a duplicate
+    (e.g. ``/a/S1.svs`` and ``/b/S1.svs``) would overwrite another slide's
+    tiles and features.
+    """
+    slide_ids = list(slide_ids)
+    duplicates = sorted({s for s in slide_ids if slide_ids.count(s) > 1})
+    if duplicates:
+        raise ValueError(
+            f"slide IDs must be unique in a batch; duplicated: {duplicates}. Slide IDs default "
+            "to the file name without extension: pass slide_ids for slides with the same name."
+        )
+    return slide_ids
 
 
 def ensure_directory_exists(path, is_file_path: bool = False):
@@ -367,7 +394,9 @@ def save_hdf5(
     """Save data to an HDF5 file with optional attributes.
 
     Supports both local and remote paths (az://, s3://, etc.).
-    For remote paths, the file is written locally first and then uploaded.
+    For remote paths, the file is written locally first and then uploaded (once
+    per call). In append mode an existing remote file is downloaded first, so
+    repeated calls accumulate rows as they do for a local file.
 
     Optimizations applied:
     - Larger chunk sizes (min 128 rows) for better I/O performance
@@ -402,6 +431,16 @@ def save_hdf5(
             Path(output_path).unlink(missing_ok=True)
 
     try:
+        if is_remote:
+            fs = _get_fsspec_filesystem(output_path, ssl_verify)
+            if "a" in mode and fs.exists(output_path):
+                # Append: start from the existing remote file, not an empty temp
+                # file, so earlier batches survive the upload below.
+                fs.get(output_path, local_path)
+            else:
+                # h5py must create the file itself (an empty placeholder is not HDF5).
+                Path(local_path).unlink(missing_ok=True)
+
         with ExitStack() as stack:
             file = stack.enter_context(h5py.File(actual_path, mode))
             if attr_h5_path is not None:
@@ -416,8 +455,10 @@ def save_hdf5(
                     # This reduces metadata overhead and improves I/O performance
                     # For batches of 128, this means 1 chunk per batch instead of 128 chunks
                     chunk_rows = max(128, data_shape[0])  # At least 128 rows per chunk
-                    chunk_shape = (chunk_rows,) + data_shape[1:]
-                    maxshape = (None,) + data_shape[1:]
+                    # Zero-width dims (e.g. the (0, 0) features of a slide with no
+                    # tiles) need a chunk dim >= 1, so they are left unlimited.
+                    chunk_shape = (chunk_rows,) + tuple(max(1, d) for d in data_shape[1:])
+                    maxshape = (None,) + tuple(None if d == 0 else d for d in data_shape[1:])
 
                     # Auto-detect if this is patch tokens (3D with many tokens)
                     # ViT models return (batch, num_tokens, embed_dim) - e.g., (64, 257, 1280)
@@ -464,7 +505,6 @@ def save_hdf5(
 
         # Upload to remote if needed
         if is_remote:
-            fs = _get_fsspec_filesystem(output_path, ssl_verify)
             fs.put(local_path, output_path)
     finally:
         # Clean up temporary file if used
@@ -796,12 +836,18 @@ def download_model_path(model_path, cache_dir=None, ssl_verify=True):
     cache_key = path_parts.replace("/", "_").replace("\\", "_")
     local_path = os.path.join(models_cache_dir, cache_key)
 
-    # Check if already cached
+    # Check if already cached. Downloads land in a temporary sibling and are
+    # renamed into place only once complete, so an existing path is a complete
+    # copy (a failed download leaves nothing to be mistaken for a cache hit).
     if os.path.exists(local_path):
         logger.info(f"Using cached model from {local_path}")
         return local_path
 
-    # Download remote model
+    # Download into a private temp dir in the same directory (so the final rename
+    # is atomic). mkdtemp names are unique even across hosts/containers sharing
+    # the cache, unlike pids, so concurrent jobs never touch each other's partials.
+    download_dir = tempfile.mkdtemp(dir=models_cache_dir, prefix=f".{cache_key}.partial-")
+    download_path = os.path.join(download_dir, cache_key)
     logger.info(f"Downloading remote model {model_path} to {local_path}")
     try:
         # For Azure Files paths (azfiles://), use Azure Files SDK
@@ -817,17 +863,17 @@ def download_model_path(model_path, cache_dir=None, ssl_verify=True):
             # Azure Files paths ending with / are directories
             if model_path.endswith("/") or not prefix:
                 # Directory download
-                os.makedirs(local_path, exist_ok=True)
-                _download_azure_files_directory(share_name, prefix, local_path)
+                os.makedirs(download_path, exist_ok=True)
+                _download_azure_files_directory(share_name, prefix, download_path)
             else:
                 # Single file download - check if path contains subdirectories
                 if "/" in prefix:
                     # Path like "models/subdir/file.pth" - treat as directory structure
-                    os.makedirs(local_path, exist_ok=True)
-                    _download_azure_files_directory(share_name, prefix, local_path)
+                    os.makedirs(download_path, exist_ok=True)
+                    _download_azure_files_directory(share_name, prefix, download_path)
                 else:
                     # Path like "model.pth" - single file in share root
-                    _download_azure_files_file(share_name, prefix, local_path)
+                    _download_azure_files_file(share_name, prefix, download_path)
         # For Azure Blob paths, use direct Azure SDK (more reliable than fsspec)
         elif (
             model_path.startswith(("az://", "azblob://", "abfs://"))
@@ -852,15 +898,17 @@ def download_model_path(model_path, cache_dir=None, ssl_verify=True):
 
             # Azure paths ending with / are directories
             if model_path.endswith("/"):
-                os.makedirs(local_path, exist_ok=True)
-                _download_azure_directory_with_sdk(container_name, prefix, local_path)
+                os.makedirs(download_path, exist_ok=True)
+                _download_azure_directory_with_sdk(
+                    container_name, prefix, download_path
+                )
             else:
                 # Single file - fall back to fsspec
                 logger.warning(
                     f"Single file download from Azure via SDK not implemented, using fsspec"
                 )
                 fs = _get_fsspec_filesystem(model_path, ssl_verify)
-                fs.get(model_path, local_path)
+                fs.get(model_path, download_path)
         else:
             # Use fsspec for non-Azure or if Azure SDK unavailable
             fs = _get_fsspec_filesystem(model_path, ssl_verify)
@@ -872,17 +920,44 @@ def download_model_path(model_path, cache_dir=None, ssl_verify=True):
             if is_directory:
                 # Download directory recursively
                 logger.info(f"Downloading directory {model_path} recursively")
-                fs.get(model_path.rstrip("/") + "/", local_path, recursive=True)
+                fs.get(model_path.rstrip("/") + "/", download_path, recursive=True)
             else:
                 # Download single file
                 logger.info(f"Downloading file {model_path}")
-                fs.get(model_path, local_path)
+                fs.get(model_path, download_path)
 
+        # If a concurrent download finished first, keep its copy and discard ours.
+        if not os.path.exists(local_path):
+            try:
+                os.replace(download_path, local_path)
+            except OSError:
+                if not os.path.exists(local_path):
+                    raise
         logger.info(f"Download complete: {local_path}")
         return local_path
     except Exception as e:
         logger.error(f"Failed to download model from {model_path}: {e}")
         raise
+    finally:
+        _remove_path(download_dir)
+
+
+def _remove_path(path: str) -> None:
+    """Remove a file or directory tree if it exists."""
+    if os.path.isdir(path) and not os.path.islink(path):
+        shutil.rmtree(path, ignore_errors=True)
+    elif os.path.lexists(path):
+        os.unlink(path)
+
+
+# Config attributes that name outputs (written, never read) and so must not be
+# auto-resolved by resolve_remote_paths, besides any name starting with "output_".
+OUTPUT_PATH_ATTRS = frozenset({"intermediate_h5_path", "timings_path", "model_save_path"})
+
+
+def _is_output_attr(attr: str) -> bool:
+    """Whether a config attribute names an output path (see resolve_remote_paths)."""
+    return attr.startswith("output_") or attr in OUTPUT_PATH_ATTRS
 
 
 def resolve_remote_paths(*attrs, auto_detect=True, suffixes=None, ssl_verify=True):
@@ -901,6 +976,13 @@ def resolve_remote_paths(*attrs, auto_detect=True, suffixes=None, ssl_verify=Tru
         suffixes: List of suffixes to detect (e.g., ['_path', '_dir', '_pkl']).
                  If None, uses default: ['_path', '_dir', '_pkl', '_file']
         ssl_verify: Whether to verify SSL certificates for remote operations.
+
+    Auto-detection skips output attributes -- names starting with ``output_``
+    and those in :data:`OUTPUT_PATH_ATTRS` (``intermediate_h5_path``,
+    ``timings_path``, ``model_save_path``): resolving them would download a
+    stale previous output and redirect new writes into the local cache instead
+    of the remote destination. Name an attribute explicitly in ``*attrs`` to
+    resolve it anyway.
 
     Usage:
         # Auto-detect all path-like attributes
@@ -933,6 +1015,9 @@ def resolve_remote_paths(*attrs, auto_detect=True, suffixes=None, ssl_verify=Tru
                 for attr in dir(cfg):
                     # Skip private/magic attributes
                     if attr.startswith("_"):
+                        continue
+                    # Outputs are written, not read: never download or redirect them
+                    if _is_output_attr(attr):
                         continue
                     # Check if attribute ends with common path suffixes
                     if any(attr.endswith(suffix) for suffix in suffixes):

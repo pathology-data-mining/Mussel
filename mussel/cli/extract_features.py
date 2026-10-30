@@ -28,7 +28,8 @@ from mussel.utils import (
 )
 from mussel.utils.feature_extract import (_numpy_to_torch,
                                           extract_patch_features_batch_multi)
-from mussel.utils.file import save_hdf5, save_torch_tensor
+from mussel.utils.file import (check_unique_slide_ids, save_hdf5,
+                               save_torch_tensor)
 from mussel.utils.ml import collate_features
 
 logger = logging.getLogger(__name__)
@@ -305,8 +306,9 @@ def _main_batch(cfg: ExtractFeaturesConfig):
     output_dir = Path(cfg.output_dir)
     ensure_directory_exists(output_dir)
 
-    # Generate slide IDs if not provided
-    slide_ids = get_slide_ids_from_paths(cfg.slide_paths, cfg.slide_ids)
+    # Generate slide IDs if not provided; outputs are named by slide ID, so
+    # duplicates (/a/S1.svs and /b/S1.svs) would overwrite each other.
+    slide_ids = check_unique_slide_ids(get_slide_ids_from_paths(cfg.slide_paths, cfg.slide_ids))
 
     # Validate input lengths
     if not (len(cfg.patch_h5_paths) == len(cfg.slide_paths)):
@@ -390,9 +392,11 @@ def _main_batch(cfg: ExtractFeaturesConfig):
 
         # Defense-in-depth: verify at least one output file was created.
         # aggregate_slide_features_batch already raises when ALL slides fail,
-        # but guard here too in case of unexpected silent failures.
-        missing = [p for p in output_pt_paths if not os.path.isfile(p)]
-        if output_pt_paths and len(missing) == len(output_pt_paths):
+        # but guard here too in case of unexpected silent failures. Slides
+        # without tiles are skipped (no .pt), not failures.
+        produced = [p for p in output_pt_paths if os.path.isfile(p)]
+        no_tiles = [h5 for h5 in intermediate_h5_paths if _has_no_tiles(h5)]
+        if output_pt_paths and not produced and len(no_tiles) < len(output_pt_paths):
             raise RuntimeError(
                 f"extract_features produced no output files: all {len(output_pt_paths)} "
                 ".features.pt files are missing after slide-level aggregation. "
@@ -427,22 +431,39 @@ def _main_batch(cfg: ExtractFeaturesConfig):
     logger.info(f"Batch processing complete. Output saved to {output_dir}")
 
 
-def _write_pts(h5_paths, pt_paths) -> None:
-    """Save each features .h5 as a .pt; a slide whose extraction wrote nothing (e.g. no tiles) is skipped.
+def _has_no_tiles(h5_path) -> bool:
+    """Whether a features .h5 exists and has no rows (a slide without tiles)."""
+    if not os.path.isfile(h5_path):
+        return False
+    with h5py.File(h5_path, "r") as f:
+        return len(f["features"]) == 0
 
-    Raises if no slide wrote features, as the two-step path does when every .pt is missing.
+
+def _write_pts(h5_paths, pt_paths) -> None:
+    """Save each features .h5 as a .pt; a slide whose extraction wrote nothing is skipped.
+
+    A slide without tiles has an empty features .h5 and gets an empty .pt; it
+    is reported as skipped (no tiles), not as a failure. Raises if no slide
+    wrote features (all failed or without tiles): every slide without tiles is
+    more likely a wrong mpp or slide list than empty slides.
     """
-    missing = 0
+    missing, no_tiles = 0, []
     for h5_path, pt_path in zip(h5_paths, pt_paths):
         if not os.path.isfile(h5_path):
-            logger.warning(f"No features written to {h5_path} (slide without tiles?); skipping its .pt")
+            logger.warning(f"No features written to {h5_path}; skipping its .pt")
             missing += 1
             continue
         with h5py.File(h5_path, "r") as f:
-            torch.save(_numpy_to_torch(f["features"][:]), pt_path)
-    if h5_paths and missing == len(h5_paths):
+            features = f["features"][:]
+        if len(features) == 0:
+            logger.warning(f"{h5_path} has no features (slide without tiles); its .pt is empty")
+            no_tiles.append(Path(h5_path).name)
+        torch.save(_numpy_to_torch(features), pt_path)
+    if no_tiles:
+        logger.warning(f"Skipped (no tiles): {len(no_tiles)} slides: {', '.join(no_tiles)}")
+    if h5_paths and missing + len(no_tiles) == len(h5_paths):
         raise RuntimeError(f"extract_features produced no output files: none of the {len(h5_paths)} slides "
-                           "wrote features (all without tiles, or all failed). Check logs above.")
+                           "wrote features (all failed or without tiles). Check logs above.")
 
 
 def _main_batch_multi(cfg: ExtractFeaturesConfig, output_dir: Path, slide_ids: List[str]):
