@@ -1,7 +1,6 @@
 import bisect
 import collections
 import gc
-import itertools
 import logging
 import os
 import traceback
@@ -9,7 +8,7 @@ import zlib
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Callable, List, Optional, Union
+from typing import Any, Callable, Dict, List, Optional, Sequence, Union
 
 import h5py
 import ml_dtypes
@@ -155,6 +154,115 @@ class FeatureExtractionResult:
     labels: Optional[np.ndarray] = None
     coords: Optional[np.ndarray] = None
     output_path: Optional[str] = None
+
+
+class SlideBatchError(RuntimeError):
+    """Some slides of a batch failed; the others were processed and their outputs written.
+
+    Raised by the batch functions after every slide has been tried, so one bad
+    slide doesn't stop the rest.
+
+    Attributes:
+        failures: ``{slide index in the batch: reason}``.
+        outputs: What the function returns on success, with ``None`` in place of
+            each failed (or skipped) slide's outputs.
+        skipped: ``{slide index in the batch: reason}`` of the slides skipped for
+            having no tiles (see :func:`no_tiles_reason`): not failures.
+    """
+
+    def __init__(self, stage: str, failures: Dict[int, str], names: Sequence[str], outputs: Any = None,
+                 skipped: Optional[Dict[int, str]] = None):
+        self.failures = dict(sorted(failures.items()))
+        self.outputs = outputs
+        self.skipped = dict(skipped or {})
+        listed = "; ".join(f"{names[i]}: {reason}" for i, reason in self.failures.items())
+        if len(self.failures) == len(names):
+            head = f"All {len(names)} slide(s) failed during {stage}"
+        else:
+            head = f"{len(self.failures)} of {len(names)} slide(s) failed during {stage}"
+        super().__init__(f"{head}. Failed: {listed}. Check logs above for per-slide errors.")
+
+
+def no_tiles_reason(features_h5_path, extracted: bool = False,
+                    error: Optional[BaseException] = None) -> Optional[str]:
+    """Why a slide is to be skipped for having no tiles, or ``None`` if it isn't.
+
+    A slide without tiles (none found, or none of them readable) is a property of
+    the slide, not a pipeline error: batch runs skip it with a warning, and it
+    doesn't make them fail. This is the one place that decides what counts as such.
+
+    Args:
+        features_h5_path: The slide's patch features H5: one with no rows means no tiles.
+        extracted: The H5 is patch extraction's output, and extraction recorded no
+            failure for the slide: then a missing H5 also means no tiles (extraction
+            writes nothing for a slide without tiles). Otherwise a missing H5 is a failure.
+        error: The error the slide failed with, if any. No error raised today
+            means "no tiles" by itself; one that does is to be recognised here.
+    """
+    if not os.path.isfile(features_h5_path):
+        return "no tiles (patch feature extraction wrote no features)" if extracted else None
+    try:
+        with h5py.File(features_h5_path, "r") as f:
+            n_rows = len(f["coords"]) if "coords" in f else len(f["features"])
+    except Exception:
+        return None  # an unreadable H5 is a failure
+    return "no tiles" if n_rows == 0 else None
+
+
+def skip_slides_without_tiles(features_h5_paths, names: Sequence[str], extracted: bool = False) -> Dict[int, str]:
+    """``{index: reason}`` of the slides without tiles (see :func:`no_tiles_reason`); each is logged as a warning."""
+    skipped = {}
+    for i, path in enumerate(features_h5_paths):
+        reason = no_tiles_reason(path, extracted=extracted)
+        if reason:
+            logger.warning(f"Skipping slide {names[i]}: {reason}")
+            skipped[i] = reason
+    return skipped
+
+
+def raise_if_slides_failed(failures: Dict[str, str], total: int, what: str = "slide(s)",
+                           skipped: Optional[Dict[str, str]] = None) -> None:
+    """End a CLI run that went on past failed slides: log them and raise, so it exits non-zero.
+
+    Slides skipped for having no tiles are logged as warnings, but don't raise, unless
+    every slide was skipped: that is more likely a wrong mpp or slide list than empty slides.
+
+    Args:
+        failures: ``{slide ID (or model name): reason}``; nothing is raised if empty.
+        total: How many were processed in all.
+        what: What ``failures`` counts, for the message.
+        skipped: ``{slide ID: reason}`` of the slides skipped for having no tiles.
+    """
+    if skipped:
+        logger.warning(f"=== {len(skipped)} of {total} {what} skipped (no tiles) ===")
+        for name, reason in skipped.items():
+            logger.warning(f"  {name}: {reason}")
+    if not failures:
+        if skipped and len(skipped) >= total:
+            raise RuntimeError(
+                f"none of the {total} {what} had tiles, so no output files were written: "
+                "check the slides and the tiling settings (e.g. mpp, patch_size)"
+            )
+        return
+    logger.error(f"=== {len(failures)} of {total} {what} failed ===")
+    for name, reason in failures.items():
+        logger.error(f"  {name}: {reason}")
+    listed = "; ".join(f"{name}: {reason}" for name, reason in failures.items())
+    raise RuntimeError(
+        f"{len(failures)} of {total} {what} failed (the others' outputs were written): {listed}"
+    )
+
+
+def _remove_partial_outputs(paths) -> None:
+    """Delete what a failed slide wrote, so a truncated file is not taken for a result."""
+    for path in paths:
+        if path is None:
+            continue
+        try:
+            if os.path.isfile(path):
+                os.remove(path)
+        except OSError as e:
+            logger.warning(f"Could not remove partial output {path}: {e}")
 
 
 class DatasetProcessor(ABC):
@@ -1429,6 +1537,10 @@ def extract_patch_features_batch(
 
     Returns:
         List of paths to output HDF5 files containing patch-level features.
+
+    Raises:
+        SlideBatchError: After every slide was tried, if any failed. Its
+            ``outputs`` is the list of output paths with ``None`` for each failed slide.
     """
     if not patch_h5_paths:
         return []
@@ -1440,24 +1552,28 @@ def extract_patch_features_batch(
             f"output_h5_paths={len(output_h5_paths)}"
         )
     logger.info(f"Batch extracting patch-level features for {len(patch_h5_paths)} slides")
-    extract_patch_features_batch_multi(
-        patch_h5_paths,
-        slide_paths,
-        {model_type: list(output_h5_paths)},
-        model_paths={model_type: model_path} if model_path else None,
-        model_dir=model_dir,
-        batch_size=batch_size,
-        use_gpu=use_gpu,
-        gpu_device_id=gpu_device_id,
-        gpu_device_ids=gpu_device_ids,
-        num_workers=num_workers,
-        pin_memory=pin_memory,
-        is_test_run=is_test_run,
-        embedding_precision=embedding_precision,
-        model_kwargs={model_type: model_kwargs} if model_kwargs else None,
-        tile_size_check=tile_size_check,
-        shared_loader=shared_loader,
-    )
+    try:
+        extract_patch_features_batch_multi(
+            patch_h5_paths,
+            slide_paths,
+            {model_type: list(output_h5_paths)},
+            model_paths={model_type: model_path} if model_path else None,
+            model_dir=model_dir,
+            batch_size=batch_size,
+            use_gpu=use_gpu,
+            gpu_device_id=gpu_device_id,
+            gpu_device_ids=gpu_device_ids,
+            num_workers=num_workers,
+            pin_memory=pin_memory,
+            is_test_run=is_test_run,
+            embedding_precision=embedding_precision,
+            model_kwargs={model_type: model_kwargs} if model_kwargs else None,
+            tile_size_check=tile_size_check,
+            shared_loader=shared_loader,
+        )
+    except SlideBatchError as e:
+        e.outputs = e.outputs[model_type]
+        raise
     return output_h5_paths
 
 
@@ -1527,6 +1643,47 @@ def _write_patch_batches(batches, model_funs, feature_dtypes, patch_h5_path, out
             )
 
 
+class _SlideBatches:
+    """The next ``n`` batches of a shared DataLoader iterator: one slide's batches.
+
+    A batch that raises still counts as taken (the DataLoader has moved past
+    it), unlike ``itertools.islice``, which stops at the error and would leave
+    the rest of this slide's batches to be read as the next slide's.
+    """
+
+    def __init__(self, batches, n: int):
+        self._batches, self._left = batches, n
+
+    def __iter__(self):
+        return self
+
+    def __next__(self):
+        if self._left <= 0:
+            raise StopIteration
+        self._left -= 1
+        return next(self._batches)
+
+    def drain(self) -> None:
+        """Skip this slide's unread batches, so the next slide starts at its own."""
+        while self._left > 0:
+            try:
+                next(self)
+            except StopIteration:
+                return
+            except Exception:
+                pass  # a failing batch of the failed slide; it is skipped like the rest
+
+
+class _FailedSlide:
+    """A slide whose dataset could not be built: iterating it raises the error."""
+
+    def __init__(self, error: Exception):
+        self.error = error
+
+    def __iter__(self):
+        raise self.error
+
+
 def _per_slide_batches(patch_h5_paths, slide_paths, preprocessing, batch_size, num_workers,
                        pin_memory, is_test_run, shared_loader):
     """Each slide's batches in turn: yields one iterable of batches per slide.
@@ -1536,6 +1693,9 @@ def _per_slide_batches(patch_h5_paths, slide_paths, preprocessing, batch_size, n
     keeps one slide open per worker; in test runs only the 3 batches per slide
     that are used are read. Otherwise each slide gets its own DataLoader, built
     when its turn comes, so one slide is open at a time.
+
+    A slide whose patch H5 can't be read is yielded as an iterable that raises
+    its error, so the caller can record it and go on with the other slides.
     """
     def dataset(patch_h5_path, slide_path, open_in_worker):
         return WholeSlideImageH5Dataset(
@@ -1544,17 +1704,15 @@ def _per_slide_batches(patch_h5_paths, slide_paths, preprocessing, batch_size, n
         )
 
     if shared_loader and num_workers > 0:
-        # A patch H5 that can't be read raises at its slide, as with per-slide
-        # loaders: the slides before it are still yielded.
-        datasets, dataset_error = [], None
-        for h5, slide in zip(patch_h5_paths, slide_paths):
+        datasets, dataset_errors = [], {}
+        for i, (h5, slide) in enumerate(zip(patch_h5_paths, slide_paths)):
             try:
                 datasets.append(dataset(h5, slide, True))
             except Exception as e:
-                dataset_error = e
-                break
+                dataset_errors[i] = e
         batches = None
         try:
+            per_slide = iter([])
             if datasets:
                 sampler = _PerSlideBatches([len(ds) for ds in datasets], batch_size, 3 if is_test_run else None)
                 batches = iter(DataLoader(
@@ -1562,11 +1720,15 @@ def _per_slide_batches(patch_h5_paths, slide_paths, preprocessing, batch_size, n
                     pin_memory=pin_memory, collate_fn=collate_features, prefetch_factor=4,
                     multiprocessing_context="spawn",
                 ))
-                for n_batches in sampler.per_slide():
-                    yield itertools.islice(batches, n_batches)
+                per_slide = iter(sampler.per_slide())
+            for i in range(len(patch_h5_paths)):
+                if i in dataset_errors:
+                    yield _FailedSlide(dataset_errors[i])
+                else:
+                    yield _SlideBatches(batches, next(per_slide))
         finally:
             # Stop the worker pool now. On an error (here or in the caller) the traceback
-            # keeps this frame, and the yielded islices, alive, so the pool would otherwise
+            # keeps this frame, and the yielded iterables, alive, so the pool would otherwise
             # linger until garbage collection with its workers still running.
             # _shutdown_workers is PyTorch's private (idempotent) teardown; if it is ever
             # renamed this degrades to the old behaviour, garbage collection.
@@ -1574,11 +1736,13 @@ def _per_slide_batches(patch_h5_paths, slide_paths, preprocessing, batch_size, n
             if shutdown is not None:
                 shutdown()
             batches = None
-        if dataset_error is not None:
-            raise dataset_error
         return
     for h5, slide in zip(patch_h5_paths, slide_paths):
-        ds = dataset(h5, slide, num_workers > 0)
+        try:
+            ds = dataset(h5, slide, num_workers > 0)
+        except Exception as e:
+            yield _FailedSlide(e)
+            continue
         yield _make_dataloader(
             ds, batch_size=batch_size, num_workers=num_workers, pin_memory=pin_memory,
             collate_fn=collate_features, worker_init_fn=ds.worker_init if num_workers > 0 else None,
@@ -1640,6 +1804,13 @@ def extract_patch_features_batch_multi(
 
     Returns:
         ``output_h5_paths``.
+
+    Raises:
+        SlideBatchError: After every slide was tried, if any slide failed for any
+            model (a slide that fails doesn't stop the others; what it wrote is
+            removed). Its ``outputs`` is ``output_h5_paths`` with ``None`` for each
+            failed slide's outputs. Errors that are not a slide's own (bad
+            arguments, a model that fails to load) are raised as they are.
     """
     model_types = list(output_h5_paths)
     num_slides = len(patch_h5_paths)
@@ -1651,10 +1822,20 @@ def extract_patch_features_batch_multi(
                          "and aggregate with aggregation_method=model")
     if len(slide_paths) != num_slides or any(len(v) != num_slides for v in output_h5_paths.values()):
         raise ValueError("patch_h5_paths, slide_paths and every model's output_h5_paths must have one entry per slide")
-    for model_type in model_types:
-        for patch_h5_path in patch_h5_paths:
-            check_tile_size(model_type, _read_coords_attrs(patch_h5_path), tile_size_check,
-                            context=Path(patch_h5_path).name)
+    # {slide index: reasons}, and the models each slide failed for.
+    failures: Dict[int, List[str]] = {}
+    failed_models: Dict[int, set] = {}
+    for i, patch_h5_path in enumerate(patch_h5_paths):
+        try:
+            tile_attrs = _read_coords_attrs(patch_h5_path)
+        except Exception as e:
+            logger.error(f"Cannot read patch H5 {patch_h5_path} (slide {slide_paths[i]}): {e}")
+            failures[i] = [f"cannot read patch H5: {e}"]
+            failed_models[i] = set(model_types)
+            continue
+        for model_type in model_types:
+            check_tile_size(model_type, tile_attrs, tile_size_check, context=Path(patch_h5_path).name)
+    todo = [i for i in range(num_slides) if i not in failures]
     precisions = embedding_precision if isinstance(embedding_precision, dict) else {
         m: embedding_precision for m in model_types}
     gpu_device_id = resolve_gpu_device_id(gpu_device_id, gpu_device_ids)
@@ -1666,54 +1847,84 @@ def extract_patch_features_batch_multi(
         logger.info(f"Loading model {model_type} (once for all slides)" + (f" from {model_path}" if model_path else ""))
         return _load_model(model_type, model_path, use_gpu, gpu_device_id, (model_kwargs or {}).get(model_type))
 
-    # Group by identical preprocessing, keeping only the first group's models loaded.
     loaded, groups, first_key = {}, {}, None
-    for model_type in model_types:
-        model = load(model_type)
-        preprocessing = model.get_preprocessing_fun()
-        key = _preprocessing_key(preprocessing, model_type)
-        groups.setdefault(key, []).append(model_type)
-        first_key = first_key or key
-        if key == first_key:
-            loaded[model_type] = model
-        # Only `loaded` may hold a model (preprocessing can be a bound method of it),
-        # so releasing a group frees its models.
-        model = preprocessing = None
-        if key != first_key:
+    funs = preprocessing = per_slide = None
+    try:
+        # Group by identical preprocessing, keeping only the first group's models loaded.
+        for model_type in model_types if todo else []:
+            model = load(model_type)
+            preprocessing = model.get_preprocessing_fun()
+            key = _preprocessing_key(preprocessing, model_type)
+            groups.setdefault(key, []).append(model_type)
+            first_key = first_key or key
+            if key == first_key:
+                loaded[model_type] = model
+            # Only `loaded` may hold a model (preprocessing can be a bound method of it),
+            # so releasing a group frees its models.
+            model = preprocessing = None
+            if key != first_key:
+                _free_gpu_memory(use_gpu)
+        if groups:
+            logger.info(f"{len(model_types)} patch models in {len(groups)} pass(es) over the tiles: "
+                        + "; ".join(",".join(m.name for m in ms) for ms in groups.values()))
+
+        for group in groups.values():
+            for m in group:
+                if m not in loaded:
+                    loaded[m] = load(m)
+            names = ",".join(m.name for m in group)
+            preprocessing = loaded[group[0]].get_preprocessing_fun()
+            funs = [loaded[m].get_model_fun() for m in group]
+            dtypes = [_parse_feature_dtype(precisions.get(m, "float32")) for m in group]
+            per_slide = _per_slide_batches([patch_h5_paths[i] for i in todo], [slide_paths[i] for i in todo],
+                                           preprocessing, batch_size, num_workers, pin_memory, is_test_run,
+                                           shared_loader)
+            try:
+                for i, slide_batches in zip(todo, per_slide):
+                    logger.info(f"Processing slide {i+1}/{num_slides} for {names}: {slide_paths[i]}")
+                    outputs = [output_h5_paths[m][i] for m in group]
+                    try:
+                        n_tiles = None
+                        if timings.enabled():
+                            with h5py.File(patch_h5_paths[i], "r") as f:
+                                n_tiles = len(f["coords"])
+                        with timings.stage("patch_features", model=",".join(_model_name(m) for m in group),
+                                           slide=slide_paths[i], slide_index=i, tiles=n_tiles):
+                            _write_patch_batches(slide_batches, funs, dtypes, patch_h5_paths[i], outputs,
+                                                 is_test_run)
+                        logger.info(f"Patch-level features saved to {', '.join(outputs)}")
+                    except Exception as e:
+                        logger.exception(f"Patch feature extraction failed for slide {slide_paths[i]} ({names}); "
+                                         "continuing with the other slides")
+                        failures.setdefault(i, []).append(f"{names}: {e}" if len(groups) > 1 else str(e))
+                        failed_models.setdefault(i, set()).update(group)
+                        drain = getattr(slide_batches, "drain", None)
+                        if drain is not None:
+                            drain()
+                        _remove_partial_outputs(outputs)
+            finally:
+                per_slide.close()  # shuts this group's worker pool down
+            # Free this group's models before the next group's are loaded.
+            funs = per_slide = preprocessing = None
+            for m in group:
+                loaded.pop(m, None)
             _free_gpu_memory(use_gpu)
-    logger.info(f"{len(model_types)} patch models in {len(groups)} pass(es) over the tiles: "
-                + "; ".join(",".join(m.name for m in ms) for ms in groups.values()))
+    finally:
+        # Release the models also when one fails to load or a group's pass raises.
+        funs = per_slide = preprocessing = None
+        if loaded:
+            loaded.clear()
+            _free_gpu_memory(use_gpu)
 
-    for group in groups.values():
-        for m in group:
-            if m not in loaded:
-                loaded[m] = load(m)
-        preprocessing = loaded[group[0]].get_preprocessing_fun()
-        funs = [loaded[m].get_model_fun() for m in group]
-        dtypes = [_parse_feature_dtype(precisions.get(m, "float32")) for m in group]
-        per_slide = _per_slide_batches(patch_h5_paths, slide_paths, preprocessing, batch_size, num_workers,
-                                       pin_memory, is_test_run, shared_loader)
-        try:
-            for i, slide_batches in enumerate(per_slide):
-                logger.info(f"Processing slide {i+1}/{num_slides} for {','.join(m.name for m in group)}: "
-                            f"{slide_paths[i]}")
-                outputs = [output_h5_paths[m][i] for m in group]
-                n_tiles = None
-                if timings.enabled():
-                    with h5py.File(patch_h5_paths[i], "r") as f:
-                        n_tiles = len(f["coords"])
-                with timings.stage("patch_features", model=",".join(_model_name(m) for m in group),
-                                   slide=slide_paths[i], slide_index=i, tiles=n_tiles):
-                    _write_patch_batches(slide_batches, funs, dtypes, patch_h5_paths[i], outputs, is_test_run)
-                logger.info(f"Patch-level features saved to {', '.join(outputs)}")
-        finally:
-            per_slide.close()  # shuts this group's worker pool down
-        # Free this group's models before the next group's are loaded.
-        del funs, per_slide, preprocessing
-        for m in group:
-            loaded.pop(m, None)
-        _free_gpu_memory(use_gpu)
-
+    if failures:
+        outputs_left = {
+            m: [None if m in failed_models.get(i, ()) else p for i, p in enumerate(paths)]
+            for m, paths in output_h5_paths.items()
+        }
+        error = SlideBatchError("patch feature extraction", {i: "; ".join(r) for i, r in failures.items()},
+                                [str(p) for p in slide_paths], outputs_left)
+        logger.error(str(error))
+        raise error
     logger.info(f"Multi-model batch extraction complete for {num_slides} slides")
     return output_h5_paths
 
@@ -1746,6 +1957,7 @@ def aggregate_slide_features_batch(
     embedding_precision="float32",
     slide_model_kwargs=None,
     tile_size_check="warn",
+    skipped=None,
 ):
     """Aggregate patch-level features to slide-level for multiple slides (Step 2: Batch Slide Encoding).
 
@@ -1785,21 +1997,62 @@ def aggregate_slide_features_batch(
         tile_size_check: What to do when the slide encoder's tiles don't match its
             recommended tile size / MPP (see :func:`mussel.models.check_tile_size`):
             ``"warn"`` (default), ``"error"`` or ``"off"``. Only for ``aggregation_method="model"``.
+        skipped: Optional dict, filled with ``{slide index: reason}`` for each slide
+            skipped for having no tiles (see :func:`no_tiles_reason`): such a slide
+            is logged as a warning, gets no output, and is not a failure.
 
     Returns:
-        Tuple of (output_h5_paths, output_pt_paths) if saving.
+        Tuple of (output_h5_paths, output_pt_paths) if saving, with ``None`` for
+        each skipped slide if any.
+
+    Raises:
+        SlideBatchError: After every slide was tried, if any failed (an unreadable
+            input, an encoder error, a failed save): the other slides' outputs are
+            written, and what a failed slide wrote is removed. Its ``outputs`` is
+            ``(output_h5_paths, output_pt_paths)`` with ``None`` for each failed or
+            skipped slide; its ``skipped`` lists the skipped slides.
     """
     logger.info(
         f"Step 2: Batch aggregating patch features to slide level for {len(patch_features_h5_paths)} slides"
     )
 
     num_slides = len(patch_features_h5_paths)
+    slide_names = [Path(p).stem for p in patch_features_h5_paths]
+    failures: Dict[int, str] = {}  # {slide index: reason}
+    if skipped is None:
+        skipped = {}
+    skipped.update(skip_slides_without_tiles(patch_features_h5_paths, slide_names))
 
     # Check every slide's tiles before loading the slide encoder, so "error" fails fast.
     if aggregation_method == "model" and model_type is not None:
-        for h5_path in patch_features_h5_paths:
-            check_tile_size(model_type, _read_coords_attrs(h5_path), tile_size_check,
-                            context=Path(h5_path).name)
+        for i, h5_path in enumerate(patch_features_h5_paths):
+            if i in skipped:
+                continue
+            try:
+                tile_attrs = _read_coords_attrs(h5_path)
+            except Exception as e:
+                logger.error(f"Cannot read patch features {h5_path}: {e}")
+                failures[i] = f"cannot read patch features: {e}"
+                continue
+            check_tile_size(model_type, tile_attrs, tile_size_check, context=Path(h5_path).name)
+
+    def finish(stage: str):
+        """Raise SlideBatchError listing ``failures``, if any; else return the outputs."""
+        if skipped:
+            logger.warning(f"Skipped {len(skipped)} slide(s) without tiles: "
+                           + ", ".join(slide_names[i] for i in sorted(skipped)))
+        if not failures and not skipped:
+            return output_h5_paths, output_pt_paths
+        for i in failures:
+            _remove_partial_outputs([output_h5_paths[i] if output_h5_paths else None,
+                                     output_pt_paths[i] if output_pt_paths else None])
+        left = tuple(
+            [None if i in failures or i in skipped else p for i, p in enumerate(paths)] if paths else paths
+            for paths in (output_h5_paths, output_pt_paths)
+        )
+        if not failures:
+            return left
+        raise SlideBatchError(stage, failures, slide_names, left, skipped)
 
     # For non-model aggregation methods, process each slide directly
     # without loading a model
@@ -1814,6 +2067,8 @@ def aggregate_slide_features_batch(
             output_h5 = output_h5_paths[i] if output_h5_paths else None
             output_pt = output_pt_paths[i] if output_pt_paths else None
             slide_name = Path(patch_h5_path).stem
+            if i in skipped:
+                continue
 
             try:
                 with h5py.File(patch_h5_path, "r") as file:
@@ -1871,6 +2126,11 @@ def aggregate_slide_features_batch(
                     successful_slides.append(slide_name)
 
             except Exception as e:
+                reason = no_tiles_reason(patch_h5_path, error=e)
+                if reason:
+                    logger.warning(f"Skipping slide {slide_name}: {reason}")
+                    skipped[i] = reason
+                    continue
                 logger.error(
                     f"Failed to process slide {slide_name} (slide {i+1}/{num_slides}): {str(e)}"
                 )
@@ -1878,6 +2138,7 @@ def aggregate_slide_features_batch(
                 if output_h5:
                     logger.error(f"  Output (not created): {output_h5}")
                 failed_slides.append(slide_name)
+                failures[i] = str(e)
                 # Continue with next slide
                 continue
 
@@ -1888,16 +2149,10 @@ def aggregate_slide_features_batch(
             )
             logger.warning(f"Failed: {len(failed_slides)} slides")
             logger.warning(f"Failed slides: {', '.join(failed_slides)}")
-            if len(failed_slides) == num_slides:
-                raise RuntimeError(
-                    f"All {num_slides} slide(s) failed during {aggregation_method!r} aggregation. "
-                    f"Failed: {', '.join(failed_slides)}. "
-                    "Check logs above for per-slide errors."
-                )
         else:
-            logger.info(f"\n=== All {num_slides} slides processed successfully ===")
+            logger.info(f"\n=== All {num_slides - len(skipped)} slides with tiles processed successfully ===")
 
-        return output_h5_paths, output_pt_paths
+        return finish(f"{aggregation_method!r} aggregation")
 
     # Model-based aggregation with batching
     logger.info(f"Using batch processing with slide_batch_size={slide_batch_size}")
@@ -1928,215 +2183,223 @@ def aggregate_slide_features_batch(
     successful_slides = []
     failed_slides = []
 
-    # Process slides in batches
-    for batch_start in range(0, num_slides, slide_batch_size):
-        batch_end = min(batch_start + slide_batch_size, num_slides)
-        batch_indices = range(batch_start, batch_end)
+    try:
+        # Process slides in batches
+        for batch_start in range(0, num_slides, slide_batch_size):
+            batch_end = min(batch_start + slide_batch_size, num_slides)
+            batch_indices = range(batch_start, batch_end)
 
-        logger.info(f"Processing slides {batch_start+1}-{batch_end} of {num_slides}")
+            logger.info(f"Processing slides {batch_start+1}-{batch_end} of {num_slides}")
 
-        # Load features and metadata for current batch
-        batch_features = []
-        batch_coords = []
-        batch_patch_sizes = []
-        batch_tile_attrs = []
-        batch_slide_names = []
+            # Load features and metadata for current batch
+            batch_features = []
+            batch_coords = []
+            batch_patch_sizes = []
+            batch_tile_attrs = []
+            batch_slide_names = []
 
-        for i in batch_indices:
-            with h5py.File(patch_features_h5_paths[i], "r") as file:
-                features = file["features"][:]
-                coords = file["coords"][:] if "coords" in file else None
+            loaded_indices = []
+            for i in batch_indices:
+                if i in failures or i in skipped:
+                    continue  # its input could not be read above, or it has no tiles
+                try:
+                    with h5py.File(patch_features_h5_paths[i], "r") as file:
+                        features = file["features"][:]
+                        coords = file["coords"][:] if "coords" in file else None
 
-                tile_attrs = dict(file["coords"].attrs) if "coords" in file else {}
-                patch_size = tile_attrs.get("patch_size")
-
+                        tile_attrs = dict(file["coords"].attrs) if "coords" in file else {}
+                        patch_size = tile_attrs.get("patch_size")
+                except Exception as e:
+                    logger.error(f"Cannot load patch features {patch_features_h5_paths[i]}: {e}")
+                    failures[i] = f"cannot load patch features: {e}"
+                    continue
+                loaded_indices.append(i)
                 batch_features.append(features)
                 batch_coords.append(coords)
                 batch_patch_sizes.append(patch_size)
                 batch_tile_attrs.append(tile_attrs)
                 batch_slide_names.append(Path(patch_features_h5_paths[i]).stem)
-
-        # Process batch based on model type requirements
-        with torch.no_grad():
-            if model_type == ModelType.TITAN_SLIDE:
-                # TITAN requires features, coords, and patch_size per slide
-                # Note: We process slides sequentially here because TITAN_SLIDE expects
-                # variable-length sequences per slide. The main performance benefit comes
-                # from loading the model once rather than N times.
-                # Future optimization: Implement true batching with padding if model supports it
-                aggregated_batch = []
-                for slide_idx, (features, coords, patch_size, slide_name) in enumerate(
-                    zip(
-                        batch_features,
-                        batch_coords,
-                        batch_patch_sizes,
-                        batch_slide_names,
-                    )
-                ):
-                    try:
-                        if coords is None:
-                            raise ValueError("TITAN_SLIDE requires coordinates")
-                        patch_size = _titan_patch_size_lv0(
-                            patch_size, batch_tile_attrs[slide_idx]
-                        )
-
-                        # Subsample patches if slide exceeds max_slide_patches.
-                        # TITAN's alibi attention is O(N²) — large slides (>~8k patches)
-                        # will OOM on most GPUs without subsampling.
-                        if (
-                            max_slide_patches is not None
-                            and features.shape[0] > max_slide_patches
-                        ):
-                            logger.warning(
-                                f"Slide {slide_name} has {features.shape[0]} patches, "
-                                f"subsampling to {max_slide_patches} for TITAN_SLIDE "
-                                f"(O(N²) attention limit)."
-                            )
-                            indices = slide_subsample_indices(
-                                features.shape[0], max_slide_patches, slide_name
-                            )
-                            features = features[indices]
-                            coords = coords[indices]
-
-                        features_tensor = _numpy_to_torch(features).unsqueeze(0)
-                        coords_tensor = torch.from_numpy(coords).long().unsqueeze(0)
-                        with timings.stage("slide_encode", model=_model_name(model_type),
-                                           slide=slide_name, tiles=int(features.shape[0])):
-                            agg_features = (
-                                model_fun(features_tensor, coords_tensor, patch_size)
-                                .cpu()
-                                .numpy()
-                            )
-                        aggregated_batch.append(agg_features)
-                        successful_slides.append(slide_name)
-                    except Exception as e:
-                        logger.error(f"Failed to process slide {slide_name}: {str(e)}")
-                        aggregated_batch.append(None)
-                        failed_slides.append(slide_name)
-                        # Continue with next slide
-
-            elif model_type == ModelType.GIGAPATH_SLIDE:
-                # GIGAPATH requires features and coords per slide
-                # Note: We process slides sequentially here because GIGAPATH_SLIDE expects
-                # variable-length sequences per slide. The main performance benefit comes
-                # from loading the model once rather than N times.
-                # Future optimization: Implement true batching with padding if model supports it
-                aggregated_batch = []
-                for slide_idx, (features, coords, slide_name) in enumerate(
-                    zip(batch_features, batch_coords, batch_slide_names)
-                ):
-                    try:
-                        if coords is None:
-                            raise ValueError("GIGAPATH_SLIDE requires coordinates")
-
-                        features_tensor = _numpy_to_torch(features).unsqueeze(
-                            0
-                        )  # (1, N, D)
-                        coords_tensor = torch.from_numpy(coords).unsqueeze(
-                            0
-                        )  # (1, N, 2)
-                        with timings.stage("slide_encode", model=_model_name(model_type),
-                                           slide=slide_name, tiles=int(features.shape[0])):
-                            agg_features = (
-                                model_fun(features_tensor, coords_tensor).cpu().numpy()
-                            )
-                        aggregated_batch.append(agg_features)
-                        successful_slides.append(slide_name)
-                    except Exception as e:
-                        logger.error(f"Failed to process slide {slide_name}: {str(e)}")
-                        logger.error(f"Traceback: {traceback.format_exc()}")
-                        aggregated_batch.append(None)
-                        failed_slides.append(slide_name)
-                        # Continue with next slide
-
-            else:
-                # Other slide encoders may only need features
-                # Stack features from all slides in batch and process together
-                try:
-                    features_list = [
-                        _numpy_to_torch(f).unsqueeze(0) for f in batch_features
-                    ]
-                    features_batch = torch.cat(features_list, dim=0)
-
-                    # Process entire batch at once for maximum efficiency
-                    with timings.stage("slide_encode", model=_model_name(model_type),
-                                       slides=batch_slide_names, tiles=int(sum(len(f) for f in batch_features))):
-                        aggregated_batch_tensor = model_fun(features_batch).cpu().numpy()
-                    aggregated_batch = [
-                        aggregated_batch_tensor[i : i + 1]
-                        for i in range(len(batch_features))
-                    ]
-                    successful_slides.extend(batch_slide_names)
-                except Exception as e:
-                    logger.error(
-                        f"Failed to process batch {batch_start+1}-{batch_end}: {str(e)}"
-                    )
-                    # Mark all slides in batch as failed
-                    aggregated_batch = [None] * len(batch_features)
-                    failed_slides.extend(batch_slide_names)
-
-        # Save results for each slide in batch (skip failed slides)
-        for idx, i in enumerate(batch_indices):
-            aggregated_features = aggregated_batch[idx]
-            slide_name = batch_slide_names[idx]
-
-            if aggregated_features is None:
-                logger.warning(f"Skipping save for failed slide: {slide_name}")
+            batch_indices = loaded_indices
+            if not batch_indices:
                 continue
 
-            try:
-                feature_dtype = _parse_feature_dtype(embedding_precision)
-                features_to_save = (
-                    aggregated_features.astype(feature_dtype)
-                    if feature_dtype is not None
-                    else aggregated_features
-                )
+            # Process batch based on model type requirements
+            with torch.no_grad():
+                if model_type == ModelType.TITAN_SLIDE:
+                    # TITAN requires features, coords, and patch_size per slide
+                    # Note: We process slides sequentially here because TITAN_SLIDE expects
+                    # variable-length sequences per slide. The main performance benefit comes
+                    # from loading the model once rather than N times.
+                    # Future optimization: Implement true batching with padding if model supports it
+                    aggregated_batch = []
+                    for slide_idx, (features, coords, patch_size, slide_name) in enumerate(
+                        zip(
+                            batch_features,
+                            batch_coords,
+                            batch_patch_sizes,
+                            batch_slide_names,
+                        )
+                    ):
+                        try:
+                            if coords is None:
+                                raise ValueError("TITAN_SLIDE requires coordinates")
+                            patch_size = _titan_patch_size_lv0(
+                                patch_size, batch_tile_attrs[slide_idx]
+                            )
 
-                # Save to HDF5 if requested
-                if output_h5_paths and output_h5_paths[i] is not None:
-                    asset_dict = {"features": features_to_save}
-                    save_hdf5(
-                        output_h5_paths[i], asset_dict, attr_h5_path=None, mode="w"
+                            # Subsample patches if slide exceeds max_slide_patches.
+                            # TITAN's alibi attention is O(N²) — large slides (>~8k patches)
+                            # will OOM on most GPUs without subsampling.
+                            if (
+                                max_slide_patches is not None
+                                and features.shape[0] > max_slide_patches
+                            ):
+                                logger.warning(
+                                    f"Slide {slide_name} has {features.shape[0]} patches, "
+                                    f"subsampling to {max_slide_patches} for TITAN_SLIDE "
+                                    f"(O(N²) attention limit)."
+                                )
+                                indices = slide_subsample_indices(
+                                    features.shape[0], max_slide_patches, slide_name
+                                )
+                                features = features[indices]
+                                coords = coords[indices]
+
+                            features_tensor = _numpy_to_torch(features).unsqueeze(0)
+                            coords_tensor = torch.from_numpy(coords).long().unsqueeze(0)
+                            with timings.stage("slide_encode", model=_model_name(model_type),
+                                               slide=slide_name, tiles=int(features.shape[0])):
+                                agg_features = (
+                                    model_fun(features_tensor, coords_tensor, patch_size)
+                                    .cpu()
+                                    .numpy()
+                                )
+                            aggregated_batch.append(agg_features)
+                            successful_slides.append(slide_name)
+                        except Exception as e:
+                            logger.error(f"Failed to process slide {slide_name}: {str(e)}")
+                            aggregated_batch.append(None)
+                            failed_slides.append(slide_name)
+                            # Continue with next slide
+
+                elif model_type == ModelType.GIGAPATH_SLIDE:
+                    # GIGAPATH requires features and coords per slide
+                    # Note: We process slides sequentially here because GIGAPATH_SLIDE expects
+                    # variable-length sequences per slide. The main performance benefit comes
+                    # from loading the model once rather than N times.
+                    # Future optimization: Implement true batching with padding if model supports it
+                    aggregated_batch = []
+                    for slide_idx, (features, coords, slide_name) in enumerate(
+                        zip(batch_features, batch_coords, batch_slide_names)
+                    ):
+                        try:
+                            if coords is None:
+                                raise ValueError("GIGAPATH_SLIDE requires coordinates")
+
+                            features_tensor = _numpy_to_torch(features).unsqueeze(
+                                0
+                            )  # (1, N, D)
+                            coords_tensor = torch.from_numpy(coords).unsqueeze(
+                                0
+                            )  # (1, N, 2)
+                            with timings.stage("slide_encode", model=_model_name(model_type),
+                                               slide=slide_name, tiles=int(features.shape[0])):
+                                agg_features = (
+                                    model_fun(features_tensor, coords_tensor).cpu().numpy()
+                                )
+                            aggregated_batch.append(agg_features)
+                            successful_slides.append(slide_name)
+                        except Exception as e:
+                            logger.error(f"Failed to process slide {slide_name}: {str(e)}")
+                            logger.error(f"Traceback: {traceback.format_exc()}")
+                            aggregated_batch.append(None)
+                            failed_slides.append(slide_name)
+                            # Continue with next slide
+
+                else:
+                    # Other slide encoders may only need features
+                    # Stack features from all slides in batch and process together
+                    try:
+                        features_list = [
+                            _numpy_to_torch(f).unsqueeze(0) for f in batch_features
+                        ]
+                        features_batch = torch.cat(features_list, dim=0)
+
+                        # Process entire batch at once for maximum efficiency
+                        with timings.stage("slide_encode", model=_model_name(model_type),
+                                           slides=batch_slide_names, tiles=int(sum(len(f) for f in batch_features))):
+                            aggregated_batch_tensor = model_fun(features_batch).cpu().numpy()
+                        aggregated_batch = [
+                            aggregated_batch_tensor[i : i + 1]
+                            for i in range(len(batch_features))
+                        ]
+                        successful_slides.extend(batch_slide_names)
+                    except Exception as e:
+                        logger.error(
+                            f"Failed to process batch {batch_start+1}-{batch_end}: {str(e)}"
+                        )
+                        # Mark all slides in batch as failed
+                        aggregated_batch = [None] * len(batch_features)
+                        failed_slides.extend(batch_slide_names)
+
+            # Save results for each slide in batch (skip failed slides)
+            for idx, i in enumerate(batch_indices):
+                aggregated_features = aggregated_batch[idx]
+                slide_name = batch_slide_names[idx]
+
+                if aggregated_features is None:
+                    logger.warning(f"Skipping save for failed slide: {slide_name}")
+                    failures.setdefault(i, "slide encoding failed (see the error logged above)")
+                    continue
+
+                try:
+                    feature_dtype = _parse_feature_dtype(embedding_precision)
+                    features_to_save = (
+                        aggregated_features.astype(feature_dtype)
+                        if feature_dtype is not None
+                        else aggregated_features
                     )
 
-                # Save to PyTorch if requested
-                if output_pt_paths and output_pt_paths[i] is not None:
-                    features_tensor = _numpy_to_torch(features_to_save)
-                    save_torch_tensor(output_pt_paths[i], features_tensor)
-            except Exception as e:
-                logger.error(f"Failed to save results for slide {slide_name}: {str(e)}")
-                # Remove from successful list if present
-                try:
-                    successful_slides.remove(slide_name)
-                except ValueError:
-                    pass  # Slide wasn't in successful list
-                if slide_name not in failed_slides:
-                    failed_slides.append(slide_name)
+                    # Save to HDF5 if requested
+                    if output_h5_paths and output_h5_paths[i] is not None:
+                        asset_dict = {"features": features_to_save}
+                        save_hdf5(
+                            output_h5_paths[i], asset_dict, attr_h5_path=None, mode="w"
+                        )
 
-    # Clean up model to free GPU/CPU memory
-    del model
-    del model_fun
-    if use_gpu and torch.cuda.is_available():
-        torch.cuda.empty_cache()
-    gc.collect()
-    logger.info("Model cleaned up, memory freed")
+                    # Save to PyTorch if requested
+                    if output_pt_paths and output_pt_paths[i] is not None:
+                        features_tensor = _numpy_to_torch(features_to_save)
+                        save_torch_tensor(output_pt_paths[i], features_tensor)
+                except Exception as e:
+                    logger.error(f"Failed to save results for slide {slide_name}: {str(e)}")
+                    # Remove from successful list if present
+                    try:
+                        successful_slides.remove(slide_name)
+                    except ValueError:
+                        pass  # Slide wasn't in successful list
+                    if slide_name not in failed_slides:
+                        failed_slides.append(slide_name)
+                    failures[i] = f"saving failed: {e}"
+    finally:
+        # Free the model, also when a batch raises, so a caller that goes on
+        # (e.g. with the next model) gets the GPU memory back.
+        model = model_fun = None
+        if use_gpu and torch.cuda.is_available():
+            torch.cuda.empty_cache()
+        gc.collect()
+        logger.info("Model cleaned up, memory freed")
 
-    if failed_slides:
+    if failures:
         logger.warning(f"\n=== Batch Processing Summary ===")
-        logger.warning(f"Failed: {len(failed_slides)} slides")
-        logger.warning(f"Failed slides: {', '.join(failed_slides)}")
+        logger.warning(f"Failed: {len(failures)} slides")
+        logger.warning(f"Failed slides: {', '.join(slide_names[i] for i in sorted(failures))}")
     else:
-        logger.info(f"\n=== All {num_slides} slides processed successfully ===")
+        logger.info(f"\n=== All {num_slides - len(skipped)} slides with tiles processed successfully ===")
 
-    if failed_slides and len(failed_slides) == num_slides:
-        raise RuntimeError(
-            f"All {num_slides} slide(s) failed during 'model' aggregation "
-            f"(model={model_type}). Failed: {', '.join(failed_slides)}. "
-            "Check logs above for per-slide errors (e.g. CUDA out of memory)."
-        )
-
+    outputs = finish(f"'model' aggregation (model={model_type})")
     logger.info(f"Batch aggregation complete")
-    return output_h5_paths, output_pt_paths
+    return outputs
 
 
 @timed

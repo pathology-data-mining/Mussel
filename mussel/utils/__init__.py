@@ -19,6 +19,7 @@ _FEATURE_EXTRACT_EXPORTS = {
     "FeatureExtractionResult",
     "H5DatasetProcessor",
     "ImageFolderProcessor",
+    "SlideBatchError",
     "TileCoordProcessor",
     "aggregate_sample_features",
     "aggregate_slide_features",
@@ -31,10 +32,13 @@ _FEATURE_EXTRACT_EXPORTS = {
     "get_dataset_processor",
     "get_features",
     "get_model_path_from_dir",
+    "no_tiles_reason",
     "process_dataset",
+    "raise_if_slides_failed",
     "resolve_aggregation_method",
     "resolve_patch_encoder",
     "save_features",
+    "skip_slides_without_tiles",
     "subsample_tiles",
 }
 

@@ -139,22 +139,26 @@ def test_slide_without_tiles_keeps_later_slides_aligned(fakes, tmp_path, shared_
 
 
 @pytest.mark.parametrize("shared_loader", [True, False])
-def test_unopenable_slide_fails_at_that_slide(fakes, tmp_path, shared_loader):
-    """A slide that can't be opened raises while it is processed; earlier slides are written."""
+def test_unopenable_slide_fails_only_that_slide(fakes, tmp_path, shared_loader):
+    """A slide that can't be opened fails; the slides before and after it are written."""
     a, _, c = _tiles(fakes, tmp_path)
     slides = [fakes.slide, str(tmp_path / "missing.svs"), fakes.slide]
     # The slide's own error, not e.g. a DataLoader worker that died.
-    with pytest.raises(Exception, match="missing.svs"):
+    with pytest.raises(fe.SlideBatchError, match="missing.svs") as info:
         _run(fakes, tmp_path, [a, c, a], f"u{shared_loader}", slides=slides, shared_loader=shared_loader)
-    assert [Path(tmp_path / f"u{shared_loader}_{i}.h5").exists() for i in range(3)] == [True, False, False]
+    assert list(info.value.failures) == [1]
+    assert [Path(tmp_path / f"u{shared_loader}_{i}.h5").exists() for i in range(3)] == [True, False, True]
+    np.testing.assert_array_equal(fakes.read(tmp_path / f"u{shared_loader}_2.h5")[1], h5py.File(a)["coords"][:])
 
 
 @pytest.mark.parametrize("shared_loader", [True, False])
-def test_unreadable_patch_h5_fails_at_that_slide(fakes, tmp_path, shared_loader):
-    """A patch H5 that can't be read raises at its slide; earlier slides are written."""
+def test_unreadable_patch_h5_fails_only_that_slide(fakes, tmp_path, shared_loader):
+    """A patch H5 that can't be read fails its slide; the slides before and after it are written."""
     a, _, c = _tiles(fakes, tmp_path)
     # The patch H5's own error, not e.g. a DataLoader worker that died.
-    with pytest.raises(OSError, match="missing.patch.h5"):
+    with pytest.raises(fe.SlideBatchError, match="missing.patch.h5") as info:
         _run(fakes, tmp_path, [a, str(tmp_path / "missing.patch.h5"), c], f"h{shared_loader}",
              shared_loader=shared_loader)
-    assert [Path(tmp_path / f"h{shared_loader}_{i}.h5").exists() for i in range(3)] == [True, False, False]
+    assert list(info.value.failures) == [1]
+    assert [Path(tmp_path / f"h{shared_loader}_{i}.h5").exists() for i in range(3)] == [True, False, True]
+    np.testing.assert_array_equal(fakes.read(tmp_path / f"h{shared_loader}_2.h5")[1], h5py.File(c)["coords"][:])
