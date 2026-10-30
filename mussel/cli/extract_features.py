@@ -444,8 +444,8 @@ def _write_pts(h5_paths, pt_paths) -> None:
 
     A slide without tiles has an empty features .h5 and gets an empty .pt; it
     is reported as skipped (no tiles), not as a failure. Raises if no slide
-    wrote features and at least one failed, as the two-step path does when
-    every .pt is missing.
+    wrote features (all failed or without tiles): every slide without tiles is
+    more likely a wrong mpp or slide list than empty slides.
     """
     missing, no_tiles = 0, []
     for h5_path, pt_path in zip(h5_paths, pt_paths):
@@ -461,7 +461,7 @@ def _write_pts(h5_paths, pt_paths) -> None:
         torch.save(_numpy_to_torch(features), pt_path)
     if no_tiles:
         logger.warning(f"Skipped (no tiles): {len(no_tiles)} slides: {', '.join(no_tiles)}")
-    if missing and missing + len(no_tiles) == len(h5_paths):
+    if h5_paths and missing + len(no_tiles) == len(h5_paths):
         raise RuntimeError(f"extract_features produced no output files: none of the {len(h5_paths)} slides "
                            "wrote features (all failed or without tiles). Check logs above.")
 

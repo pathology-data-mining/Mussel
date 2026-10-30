@@ -148,12 +148,22 @@ def test_batch_mean_max_skips_empty_slide(tmp_path, caplog, method):
     _assert_skipped_not_failed(caplog)
 
 
-def test_batch_of_only_empty_slides_is_not_a_failure(tmp_path, caplog):
+def test_batch_of_only_empty_slides_raises(tmp_path, caplog):
+    """No slide with tiles is more likely a wrong mpp or slide list than empty slides."""
     inputs = [_features_h5(tmp_path, "empty", 0)]
-    with caplog.at_level(logging.WARNING):
+    with caplog.at_level(logging.WARNING), pytest.raises(RuntimeError, match="none of the 1 slide.*had tiles"):
         aggregate_slide_features_batch(inputs, output_pt_paths=[str(tmp_path / "e.pt")],
                                        aggregation_method="mean")
-    _assert_skipped_not_failed(caplog)
+    assert "Skipped (no tiles): 1 slides: empty.patch_features" in caplog.text
+
+
+def test_batch_slide_encoder_of_only_empty_slides_raises(tmp_path):
+    inputs = [_features_h5(tmp_path, "empty", 0)]
+    with patch("mussel.utils.feature_extract._load_model", return_value=_FakeTitanModel()), \
+            pytest.raises(RuntimeError, match="none of the 1 slide.*had tiles"):
+        aggregate_slide_features_batch(inputs, output_pt_paths=[str(tmp_path / "e.pt")],
+                                       aggregation_method="model", model_type=ModelType.TITAN_SLIDE,
+                                       use_gpu=False, tile_size_check="off")
 
 
 class _FakeSlideModel:
@@ -190,10 +200,11 @@ def test_batch_slide_encoder_skips_empty_slide(tmp_path, caplog, model_type, fak
     _assert_skipped_not_failed(caplog)
 
 
-def test_write_pts_all_empty_slides_is_not_a_failure(tmp_path, caplog):
+def test_write_pts_all_empty_slides_raises(tmp_path, caplog):
+    """Each empty slide still gets its empty .pt, then the run fails: no slide had tiles."""
     h5s = [_features_h5(tmp_path, "a", 0), _features_h5(tmp_path, "b", 0)]
     pts = [str(tmp_path / "a.pt"), str(tmp_path / "b.pt")]
-    with caplog.at_level(logging.WARNING):
+    with caplog.at_level(logging.WARNING), pytest.raises(RuntimeError, match="no output files"):
         _write_pts(h5s, pts)
     assert all(torch.load(p, weights_only=True).shape[0] == 0 for p in pts)
     assert "Skipped (no tiles): 2 slides" in caplog.text

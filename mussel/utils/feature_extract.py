@@ -924,6 +924,18 @@ def _log_skipped_slides(skipped_slides: list) -> None:
         logger.warning(f"Skipped (no tiles): {len(skipped_slides)} slides: {', '.join(skipped_slides)}")
 
 
+def _raise_if_no_slide_had_tiles(skipped_slides: list, num_slides: int) -> None:
+    """Raise if every slide was skipped for having no tiles.
+
+    That is more likely a wrong mpp or slide list than a batch of empty slides.
+    """
+    if skipped_slides and len(skipped_slides) >= num_slides:
+        raise RuntimeError(
+            f"none of the {num_slides} slide(s) had tiles, so no output files were written: "
+            "check the slides and the tiling settings (e.g. mpp, patch_size)"
+        )
+
+
 def _require_tiles(features: np.ndarray, slide: Optional[str] = None) -> None:
     """Raise NoTilesError if ``features`` has no rows: a slide-level embedding of 0 tiles is undefined."""
     if len(features) == 0:
@@ -2003,6 +2015,7 @@ def aggregate_slide_features_batch(
                 )
         elif not skipped_slides:
             logger.info(f"\n=== All {num_slides} slides processed successfully ===")
+        _raise_if_no_slide_had_tiles(skipped_slides, num_slides)
 
         return output_h5_paths, output_pt_paths
 
@@ -2263,6 +2276,7 @@ def aggregate_slide_features_batch(
             f"(model={model_type}). Failed: {', '.join(failed_slides)}. "
             "Check logs above for per-slide errors (e.g. CUDA out of memory)."
         )
+    _raise_if_no_slide_had_tiles(skipped_slides, num_slides)
 
     logger.info(f"Batch aggregation complete")
     return output_h5_paths, output_pt_paths
