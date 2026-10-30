@@ -172,6 +172,18 @@ def test_tef_batch_slide_without_tiles_is_skipped_not_failed(tmp_path, caplog, a
     assert any("1 of 2 slide(s) skipped (no tiles)" in m for m in warnings)
 
 
+@pytest.mark.parametrize("aggregation_method", ["identity", "mean"])
+def test_tef_batch_where_no_slide_has_tiles_raises(tmp_path, aggregation_method):
+    """Every slide without tiles is more likely a wrong mpp or slide list than empty biopsies."""
+    cfg = _batch_cfg(tmp_path, slide_ids=("empty1", "empty2"), aggregation_method=aggregation_method)
+
+    def extract(patch_h5_paths, slide_paths, output_h5_paths, **kwargs):
+        pass  # no slide has tiles: nothing written
+
+    with pytest.raises(RuntimeError, match="none of the 2 slide.*had tiles"):
+        _run(cfg, extract=extract, aggregate=fe.aggregate_slide_features_batch)
+
+
 def test_tef_multi_model_failure_runs_the_other_models_then_raises(tmp_path):
     cfg = _batch_cfg(tmp_path, model_type=["RESNET50", "CLIP"])
     seen = []

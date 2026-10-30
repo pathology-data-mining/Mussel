@@ -224,7 +224,8 @@ def raise_if_slides_failed(failures: Dict[str, str], total: int, what: str = "sl
                            skipped: Optional[Dict[str, str]] = None) -> None:
     """End a CLI run that went on past failed slides: log them and raise, so it exits non-zero.
 
-    Slides skipped for having no tiles are logged as warnings, but don't raise.
+    Slides skipped for having no tiles are logged as warnings, but don't raise, unless
+    every slide was skipped: that is more likely a wrong mpp or slide list than empty slides.
 
     Args:
         failures: ``{slide ID (or model name): reason}``; nothing is raised if empty.
@@ -237,6 +238,11 @@ def raise_if_slides_failed(failures: Dict[str, str], total: int, what: str = "sl
         for name, reason in skipped.items():
             logger.warning(f"  {name}: {reason}")
     if not failures:
+        if skipped and len(skipped) >= total:
+            raise RuntimeError(
+                f"none of the {total} {what} had tiles, so no output files were written: "
+                "check the slides and the tiling settings (e.g. mpp, patch_size)"
+            )
         return
     logger.error(f"=== {len(failures)} of {total} {what} failed ===")
     for name, reason in failures.items():
