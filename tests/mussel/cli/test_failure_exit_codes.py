@@ -300,6 +300,16 @@ def test_tessellate_batch_slide_without_tissue_is_skipped_not_failed(tmp_path, c
     assert "1 of 2 slide(s) skipped (no tiles)" in warnings
 
 
+def test_tessellate_batch_skipped_slide_leaves_no_stale_patch_h5(tmp_path):
+    """A re-run into the same output_dir must not leave an earlier run's H5 for a slide it skips."""
+    (tmp_path / "out").mkdir()
+    stale = tmp_path / "out" / "bad.patch.h5"
+    with h5py.File(stale, "w") as f:
+        f.create_dataset("coords", data=_COORDS)
+    _tessellate_batch(tmp_path, no_tissue={"bad"})
+    assert not stale.exists()
+
+
 def test_tessellate_batch_where_no_slide_has_tissue_raises(tmp_path):
     with pytest.raises(RuntimeError, match="none of the 2 slide.*had tiles"):
         _tessellate_batch(tmp_path, no_tissue={"bad", "good"})

@@ -710,6 +710,14 @@ def _run_batch(
     def size_paths(template: str) -> list[tuple[TileSpec, str]]:
         return [(spec, _path_for_spec(template, spec, specs)) for spec in specs]
 
+    def remove_outputs(template: str) -> None:
+        # So a re-run into the same directory leaves no earlier run's H5 for this slide.
+        for _, path in size_paths(template):
+            try:
+                Path(path).unlink(missing_ok=True)
+            except Exception:
+                pass
+
     for _, _, template in items:
         size_paths(template)  # validate placeholders before any work
     logger.info("Batch tessellating %d slide(s)", len(items))
@@ -730,6 +738,7 @@ def _run_batch(
             if all(values is None for values in results.values()):
                 # segment_tissue_multi returns None only for no tissue (errors raise).
                 _skip_no_tiles(skipped, slide_id, slide_id, f"{slide_id}: no tissue found by segmentation")
+                remove_outputs(output_h5_path)
                 continue
             written = [
                 spec for spec, path in size_paths(output_h5_path)
@@ -743,11 +752,7 @@ def _run_batch(
                 logger.warning("%s: no tiles for tile set(s) (size, mpp) %s", slide_id, missing)
         except Exception as exc:
             failures.append((slide_id, slide_path, output_h5_path, str(exc)))
-            for _, path in size_paths(output_h5_path):
-                try:
-                    Path(path).unlink(missing_ok=True)
-                except Exception:
-                    pass
+            remove_outputs(output_h5_path)
             logger.exception("Failed to tessellate %s", slide_id)
             if not cfg.continue_on_error:
                 break
