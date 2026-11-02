@@ -114,7 +114,7 @@ class TestExportTiles:
         """All coords with tissue patches should produce one PNG each."""
         h5, slide, out = self._setup(tmp_path)
         with (
-            patch("mussel.utils.tile_export.tiffslide.TiffSlide", return_value=_mock_wsi(_TISSUE)),
+            patch("mussel.utils.tile_export.open_slide", return_value=_mock_wsi(_TISSUE)),
             patch("mussel.utils.tile_export.get_slide_mpp", return_value=0.5),
         ):
             export_tiles(h5, slide, out, mpp=0.5, num_workers=1)
@@ -132,7 +132,7 @@ class TestExportTiles:
         mock_wsi = MagicMock()
         mock_wsi.read_region.side_effect = side_effects
         with (
-            patch("mussel.utils.tile_export.tiffslide.TiffSlide", return_value=mock_wsi),
+            patch("mussel.utils.tile_export.open_slide", return_value=mock_wsi),
             patch("mussel.utils.tile_export.get_slide_mpp", return_value=0.5),
         ):
             export_tiles(h5, slide, out, mpp=0.5, num_workers=1)
@@ -142,7 +142,7 @@ class TestExportTiles:
         """An empty H5 manifest should complete without error and produce no PNGs."""
         h5, slide, out = self._setup(tmp_path, coords=[])
         with (
-            patch("mussel.utils.tile_export.tiffslide.TiffSlide", return_value=_mock_wsi(_TISSUE)),
+            patch("mussel.utils.tile_export.open_slide", return_value=_mock_wsi(_TISSUE)),
             patch("mussel.utils.tile_export.get_slide_mpp", return_value=0.5),
             patch("mussel.utils.tile_export.export_tile") as mock_et,
         ):
@@ -155,7 +155,7 @@ class TestExportTiles:
         h5, slide, out = self._setup(tmp_path)
         mock_wsi = _mock_wsi(_TISSUE)
         with (
-            patch("mussel.utils.tile_export.tiffslide.TiffSlide", return_value=mock_wsi),
+            patch("mussel.utils.tile_export.open_slide", return_value=mock_wsi),
             patch("mussel.utils.tile_export.get_slide_mpp", return_value=0.5) as mock_mpp,
         ):
             export_tiles(h5, slide, out, mpp=0.5, num_workers=1, slide_mpp_override=0.25)
@@ -165,7 +165,7 @@ class TestExportTiles:
         """mpp=0.5 with slide_mpp=0.25 → native_patch_size = 256 * (0.5/0.25) = 512."""
         h5, slide, out = self._setup(tmp_path)
         with (
-            patch("mussel.utils.tile_export.tiffslide.TiffSlide", return_value=_mock_wsi(_TISSUE)),
+            patch("mussel.utils.tile_export.open_slide", return_value=_mock_wsi(_TISSUE)),
             patch("mussel.utils.tile_export.get_slide_mpp", return_value=0.25),
             patch("mussel.utils.tile_export.export_tile") as mock_et,
         ):
@@ -177,7 +177,7 @@ class TestExportTiles:
         """Requesting mpp finer than the slide's native resolution raises AssertionError."""
         h5, slide, out = self._setup(tmp_path)
         with (
-            patch("mussel.utils.tile_export.tiffslide.TiffSlide", return_value=_mock_wsi(_TISSUE)),
+            patch("mussel.utils.tile_export.open_slide", return_value=_mock_wsi(_TISSUE)),
             patch("mussel.utils.tile_export.get_slide_mpp", return_value=0.5),
             pytest.raises(AssertionError),
         ):
@@ -280,3 +280,77 @@ class TestExportTilesCLI:
         with patch("mussel.cli.export_tiles.export_tiles") as mock_et:
             export_tiles_module.main(cfg)
         assert mock_et.call_args.kwargs["num_workers"] == 16
+
+
+# ---------------------------------------------------------------------------
+# Tile size from the patch H5 + slide handle lifetime
+# ---------------------------------------------------------------------------
+
+
+def _make_tessellated_h5(path: str, coords, patch_size: int, patch_level: int = 0) -> str:
+    """Patch H5 with the coords attributes tessellate writes."""
+    with h5py.File(path, "w") as f:
+        ds = f.create_dataset("coords", data=np.array(coords, dtype=np.int64))
+        ds.attrs["patch_size"] = patch_size
+        ds.attrs["patch_level"] = patch_level
+        ds.attrs["patch_size_to_resize_to_for_desired_mpp"] = 224
+        ds.attrs["mpp"] = 0.5
+    return path
+
+
+class TestExportTilesSizeFromH5:
+    def test_config_defaults_defer_to_h5(self):
+        cfg = ExportTilesConfig(slide_path="s.svs", patch_h5_path="p.h5", output_png_path="o")
+        assert cfg.patch_size is None and cfg.mpp is None
+
+    def test_default_uses_recorded_level0_tile_size(self, tmp_path):
+        """No patch_size/mpp: export the level-0 size tessellate recorded (not 256 @ 0.5)."""
+        h5 = _make_tessellated_h5(str(tmp_path / "p.h5"), [[0, 0], [300, 0]], patch_size=300)
+        with (
+            patch("mussel.utils.tile_export.open_slide", return_value=_mock_wsi(_TISSUE)),
+            patch("mussel.utils.tile_export.get_slide_mpp", return_value=0.25),
+            patch("mussel.utils.tile_export.export_tile") as mock_et,
+        ):
+            export_tiles(h5, "s.svs", str(tmp_path), num_workers=1)
+        assert {c.kwargs["patch_size"] for c in mock_et.call_args_list} == {300}
+
+    def test_default_scales_patch_level_to_level0(self, tmp_path):
+        h5 = _make_tessellated_h5(str(tmp_path / "p.h5"), [[0, 0]], patch_size=128, patch_level=1)
+        mock_wsi = _mock_wsi(_TISSUE)
+        mock_wsi.level_downsamples = [1.0, 4.0]
+        with (
+            patch("mussel.utils.tile_export.open_slide", return_value=mock_wsi),
+            patch("mussel.utils.tile_export.export_tile") as mock_et,
+        ):
+            export_tiles(h5, "s.svs", str(tmp_path), num_workers=1)
+        assert mock_et.call_args.kwargs["patch_size"] == 512
+
+    def test_explicit_mpp_uses_h5_target_size(self, tmp_path):
+        """Only mpp given: patch_size comes from the H5's target size (224), not 256."""
+        h5 = _make_tessellated_h5(str(tmp_path / "p.h5"), [[0, 0]], patch_size=300)
+        with (
+            patch("mussel.utils.tile_export.open_slide", return_value=_mock_wsi(_TISSUE)),
+            patch("mussel.utils.tile_export.get_slide_mpp", return_value=0.25),
+            patch("mussel.utils.tile_export.export_tile") as mock_et,
+        ):
+            export_tiles(h5, "s.svs", str(tmp_path), mpp=0.5, num_workers=1)
+        assert mock_et.call_args.kwargs["patch_size"] == 448
+
+    def test_slide_opened_via_wsi_backend_and_closed(self, tmp_path):
+        h5 = _make_tessellated_h5(str(tmp_path / "p.h5"), [[0, 0]], patch_size=32)
+        mock_wsi = _mock_wsi(_TISSUE)
+        with patch("mussel.utils.tile_export.open_slide", return_value=mock_wsi) as mock_open:
+            export_tiles(h5, "s.svs", str(tmp_path), num_workers=1)
+        mock_open.assert_called_once_with("s.svs")
+        mock_wsi.close.assert_called_once()
+
+    def test_slide_closed_when_export_fails(self, tmp_path):
+        h5 = _make_tessellated_h5(str(tmp_path / "p.h5"), [[0, 0]], patch_size=32)
+        mock_wsi = _mock_wsi(_TISSUE)
+        with (
+            patch("mussel.utils.tile_export.open_slide", return_value=mock_wsi),
+            patch("mussel.utils.tile_export.export_tile", side_effect=OSError("disk full")),
+            pytest.raises(OSError, match="disk full"),
+        ):
+            export_tiles(h5, "s.svs", str(tmp_path), num_workers=1)
+        mock_wsi.close.assert_called_once()

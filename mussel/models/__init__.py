@@ -4,6 +4,7 @@ from . import (abmil, chief, clip, conch, conch_v1, feather, genbio, gigapath,
                midnight, musk, openmidnight, optimus, phikon, prism, resnet,
                transpath, uni, virchow)
 from .model_factory import (MODEL_PATCH_SIZES, MODEL_TARGET_MPP,
+                            PATCH_ENCODER_AGNOSTIC_SLIDE_ENCODERS,
                             SLIDE_ENCODER_COMPATIBILITY, ModelFactory,
                             ModelType, check_tile_size, get_default_patch_size,
                             get_model_factory, get_required_patch_encoder,

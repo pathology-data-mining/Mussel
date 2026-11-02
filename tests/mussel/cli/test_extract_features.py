@@ -438,6 +438,66 @@ def test_main_batch_passes_max_slide_patches_to_aggregation(tmp_path, max_slide_
     assert seen["max_slide_patches"] == passed
 
 
+@pytest.mark.parametrize(
+    "model_type, slide_model_type, expected_patch_encoder",
+    [
+        # model_type left at its default (CLIP): the slide encoder's patch encoder is used.
+        (None, ModelType.CHIEF_SLIDE, ModelType.CTRANSPATH),
+        (None, ModelType.MADELEINE_SLIDE, ModelType.CONCH_V1),
+        # A patch-encoder-agnostic slide encoder keeps the patch encoder given.
+        (ModelType.UNI, ModelType.ABMIL_SLIDE, ModelType.UNI),
+    ],
+)
+def test_main_batch_pairs_slide_encoder_like_single_mode(
+    tmp_path, model_type, slide_model_type, expected_patch_encoder
+):
+    """Batch mode, like save_features: slide_model_type turns identity into model aggregation
+    with the slide encoder's patch encoder."""
+    patch_h5 = tmp_path / "slide.patch.h5"
+    slide_svs = tmp_path / "slide.svs"
+    patch_h5.touch()
+    slide_svs.touch()
+    seen = {}
+
+    def _fake_aggregate(**kwargs):
+        seen.update(kwargs)
+        for path in kwargs["output_pt_paths"]:
+            torch.save(torch.zeros(768), path)
+
+    def _fake_extract(**kwargs):
+        # A slide extraction writes no features for counts as one without tiles.
+        for path in kwargs["output_h5_paths"]:
+            with h5py.File(path, "w") as f:
+                f.create_dataset("features", data=np.zeros((1, 8), np.float32))
+                f.create_dataset("coords", data=np.zeros((1, 2), np.int64))
+
+    cfg = ExtractFeaturesConfig(
+        patch_h5_paths=[str(patch_h5)],
+        slide_paths=[str(slide_svs)],
+        slide_ids=["slide1"],
+        output_dir=str(tmp_path / "out"),
+        slide_model_type=slide_model_type,
+        use_gpu=False,
+        num_workers=0,
+    )
+    if model_type is not None:
+        cfg.model_type = model_type
+    with (
+        patch(
+            "mussel.cli.extract_features.extract_patch_features_batch",
+            side_effect=_fake_extract,
+        ) as mock_extract,
+        patch(
+            "mussel.cli.extract_features.aggregate_slide_features_batch",
+            side_effect=_fake_aggregate,
+        ),
+    ):
+        mussel.cli.extract_features.main(OmegaConf.create(cfg))
+    assert mock_extract.call_args.kwargs["model_type"] == expected_patch_encoder
+    assert seen["aggregation_method"] == "model"
+    assert seen["model_type"] == slide_model_type
+
+
 def test_max_slide_patches_validation():
     from mussel.cli.extract_features import _max_slide_patches
 
@@ -459,3 +519,64 @@ def test_max_slide_patches_is_refused_in_single_slide_mode(tmp_path):
     )
     with pytest.raises(ValueError, match="batch mode"):
         mussel.cli.extract_features.main(OmegaConf.create(cfg))
+
+
+# ---------------------------------------------------------------------------
+# Patch directory mode, batch-only / single-only options, model_dir, help text
+# ---------------------------------------------------------------------------
+
+
+def test_patch_directory_mode_needs_only_outputs(tmp_path):
+    """patch_path mode runs without patch_h5_path / slide_path (it has neither)."""
+    cfg = ExtractFeaturesConfig(
+        patch_path=str(tmp_path / "patches"), output_h5_path=str(tmp_path / "o.h5"), use_gpu=False
+    )
+    with patch("mussel.cli.extract_features.save_features") as mock_save:
+        mussel.cli.extract_features.main(OmegaConf.create(cfg))
+    kwargs = mock_save.call_args.kwargs
+    assert kwargs["patch_path"] == str(tmp_path / "patches")
+    assert kwargs["patch_h5_path"] is None and kwargs["slide_path"] is None
+
+
+def test_patch_directory_mode_still_requires_output(tmp_path):
+    cfg = ExtractFeaturesConfig(patch_path=str(tmp_path / "patches"), use_gpu=False)
+    with patch("mussel.cli.extract_features.save_features") as mock_save, \
+         pytest.raises(ValueError, match="output_h5_path"):
+        mussel.cli.extract_features.main(OmegaConf.create(cfg))
+    mock_save.assert_not_called()
+
+
+@pytest.mark.parametrize("option", ["patch_path", "model_save_path"])
+def test_batch_mode_rejects_single_mode_options(tmp_path, option):
+    """Batch mode used to ignore patch_path / model_save_path silently."""
+    patch_h5 = tmp_path / "slide.patch.h5"
+    slide_svs = tmp_path / "slide.svs"
+    patch_h5.touch()
+    slide_svs.touch()
+    cfg = OmegaConf.create(ExtractFeaturesConfig(
+        patch_h5_paths=[str(patch_h5)], slide_paths=[str(slide_svs)], slide_ids=["slide1"],
+        output_dir=str(tmp_path / "out"), use_gpu=False, num_workers=0,
+    ))
+    cfg[option] = str(tmp_path / "x")
+    with patch("mussel.cli.extract_features.extract_patch_features_batch") as mock_extract, \
+         pytest.raises(ValueError, match=option):
+        mussel.cli.extract_features.main(cfg)
+    mock_extract.assert_not_called()
+
+
+def test_single_mode_forwards_model_dir(tmp_path):
+    cfg = ExtractFeaturesConfig(
+        patch_h5_path=str(tmp_path / "s.patch.h5"), slide_path=str(tmp_path / "s.svs"),
+        output_h5_path=str(tmp_path / "s.features.h5"), model_dir=str(tmp_path / "models"),
+        use_gpu=False,
+    )
+    with patch("mussel.cli.extract_features.save_features") as mock_save:
+        mussel.cli.extract_features.main(OmegaConf.create(cfg))
+    assert mock_save.call_args.kwargs["model_dir"] == str(tmp_path / "models")
+
+
+def test_help_text_has_no_unknown_sample_mode():
+    """The help documented a sample_batch_csv_path mode that has no config field."""
+    assert "sample_batch_csv_path" not in mussel.cli.extract_features.desc_doc
+    assert "sample_batch_csv_path" not in ExtractFeaturesConfig.__dataclass_fields__
+    assert "aggregate_sample_features" in mussel.cli.extract_features.desc_doc

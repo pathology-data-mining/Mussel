@@ -16,12 +16,14 @@ from torch.utils.data import DataLoader
 from tqdm import tqdm
 
 from mussel.datasets import WholeSlideImageTileCoordDataset
-from mussel.models import ModelType, get_model_factory
+from mussel.models import (ModelType, get_model_factory,
+                           validate_slide_encoder_compatibility)
 from mussel.utils import (
     aggregate_slide_features_batch,
     ensure_directory_exists,
     extract_patch_features_batch,
     get_slide_ids_from_paths,
+    resolve_aggregation_method,
     resolve_remote_paths,
     save_features,
     timings,
@@ -29,8 +31,10 @@ from mussel.utils import (
 from mussel.utils.feature_extract import (SlideBatchError, _numpy_to_torch,
                                           extract_patch_features_batch_multi,
                                           raise_if_slides_failed,
+                                          resolve_slide_patch_encoder,
                                           skip_slides_without_tiles)
-from mussel.utils.file import save_hdf5, save_torch_tensor
+from mussel.utils.file import (check_unique_slide_ids, save_hdf5,
+                               save_torch_tensor)
 from mussel.utils.ml import collate_features
 
 logger = logging.getLogger(__name__)
@@ -179,7 +183,7 @@ Extract features (embeddings) from whole slide images (WSI) or patch directories
 pathology foundation model. The embeddings are written to PyTorch tensor file (.pt)
 and HDF5 (.h5) files.
 
-Four Input Modes:
+Three Input Modes:
 
 1. Single Slide Mode:
    Process one slide from patch coordinates in HDF5 file
@@ -194,16 +198,12 @@ Four Input Modes:
 
 3. Patch Directory Mode:
    Process pre-extracted patch images from a directory
-   Args: patch_path=<dir> output_h5_path=<path> output_pt_path=<path> slide_path=None patch_h5_path=None
+   Args: patch_path=<dir> output_h5_path=<path> [output_pt_path=<path>]
    Output: Single H5 and PT file containing features for ALL patches in directory
    Note: Supports S3 paths (s3://bucket/prefix/)
 
-4. Multi-Slide (Sample) Mode:
-   Process multiple slides per sample with optional subsampling
-   Args: sample_batch_csv_path=<csv> output_dir=<dir> [sample_id=<id>] [max_tiles_per_sample=<n>]
-   CSV format: sample_id,slide_path,patch_h5_path
-   Output: One H5/PT per sample with concatenated features and slide_idx tracking
-   Note: Supports {sample_id} placeholder in output paths
+For sample-level (multi-slide) features, extract per-slide features with this command,
+then combine them with the aggregate_sample_features command.
 
 Aggregation Methods (automatically selected based on aggregation_method):
    - identity: Keep all patch features - single-step mode (default, no aggregation)
@@ -256,8 +256,12 @@ def _max_slide_patches(cfg: ExtractFeaturesConfig) -> Optional[int]:
 
 @resolve_remote_paths()
 def _main_single(cfg: ExtractFeaturesConfig):
-    """Process a single slide."""
-    if (
+    """Process a single slide, or a patch directory when patch_path is set."""
+    if cfg.patch_path is not None:
+        # Patch Directory Mode: tiles come from image files, no slide or coordinates.
+        if cfg.output_h5_path is None:
+            raise ValueError("Patch directory mode (patch_path) requires output_h5_path to be specified")
+    elif (
         cfg.patch_h5_path is None
         or cfg.slide_path is None
         or cfg.output_h5_path is None
@@ -273,6 +277,7 @@ def _main_single(cfg: ExtractFeaturesConfig):
         gpu_device_id=cfg.gpu_device_id,
         model_type=cfg.model_type,
         model_path=cfg.model_path,
+        model_dir=cfg.model_dir,
         use_gpu=cfg.use_gpu,
         output_h5_path=cfg.output_h5_path,
         output_pt_path=cfg.output_pt_path,
@@ -301,14 +306,21 @@ def _main_batch(cfg: ExtractFeaturesConfig):
         raise ValueError(
             "Batch mode requires patch_h5_paths, slide_paths, and output_dir to be specified"
         )
+    unsupported = [name for name in ("patch_path", "model_save_path") if getattr(cfg, name, None) is not None]
+    if unsupported:
+        raise ValueError(
+            f"{', '.join(unsupported)} is not supported in batch mode (slide_paths); "
+            "use single-slide mode instead"
+        )
     max_slide_patches = _max_slide_patches(cfg)
 
     # Create output directory
     output_dir = Path(cfg.output_dir)
     ensure_directory_exists(output_dir)
 
-    # Generate slide IDs if not provided
-    slide_ids = get_slide_ids_from_paths(cfg.slide_paths, cfg.slide_ids)
+    # Generate slide IDs if not provided; outputs are named by slide ID, so
+    # duplicates (/a/S1.svs and /b/S1.svs) would overwrite each other.
+    slide_ids = check_unique_slide_ids(get_slide_ids_from_paths(cfg.slide_paths, cfg.slide_ids))
 
     # Validate input lengths
     if not (len(cfg.patch_h5_paths) == len(cfg.slide_paths)):
@@ -335,8 +347,18 @@ def _main_batch(cfg: ExtractFeaturesConfig):
         _main_batch_multi(cfg, output_dir, slide_ids)
         return
 
+    # As in single mode (save_features): a slide encoder turns "identity" into
+    # "model" and picks its patch encoder.
+    aggregation_method = resolve_aggregation_method(
+        cfg.aggregation_method, cfg.slide_model_type
+    )
+    model_type = cfg.model_type
+    if aggregation_method == "model" and cfg.slide_model_type is not None:
+        model_type = resolve_slide_patch_encoder(model_type, cfg.slide_model_type)
+        validate_slide_encoder_compatibility(model_type, cfg.slide_model_type)
+
     # Check if we need two-step processing
-    use_two_step = cfg.aggregation_method != "identity"
+    use_two_step = aggregation_method != "identity"
 
     logger.info(f"Batch extracting features for {len(cfg.slide_paths)} slides")
 
@@ -358,7 +380,7 @@ def _main_batch(cfg: ExtractFeaturesConfig):
                 patch_h5_paths=cfg.patch_h5_paths,
                 slide_paths=cfg.slide_paths,
                 output_h5_paths=intermediate_h5_paths,
-                model_type=cfg.model_type,
+                model_type=model_type,
                 model_path=cfg.model_path,
                 model_dir=cfg.model_dir,
                 batch_size=cfg.batch_size,
@@ -383,7 +405,7 @@ def _main_batch(cfg: ExtractFeaturesConfig):
 
         # Aggregate to slide level using batch processing
         logger.info(
-            f"Batch aggregating {len(todo)} slides with aggregation_method={cfg.aggregation_method}"
+            f"Batch aggregating {len(todo)} slides with aggregation_method={aggregation_method}"
         )
         agg_skipped: Dict[int, str] = {}
         try:
@@ -392,7 +414,7 @@ def _main_batch(cfg: ExtractFeaturesConfig):
                     patch_features_h5_paths=[intermediate_h5_paths[i] for i in todo],
                     output_h5_paths=[output_h5_paths[i] for i in todo],
                     output_pt_paths=[output_pt_paths[i] for i in todo],
-                    aggregation_method=cfg.aggregation_method,
+                    aggregation_method=aggregation_method,
                     model_type=cfg.slide_model_type,
                     model_path=cfg.slide_model_path,
                     model_dir=cfg.model_dir,
@@ -412,9 +434,10 @@ def _main_batch(cfg: ExtractFeaturesConfig):
 
         # Defense-in-depth: verify at least one output file was created.
         # aggregate_slide_features_batch already raises when ALL slides fail,
-        # but guard here too in case of unexpected silent failures.
-        missing = [p for p in output_pt_paths if not os.path.isfile(p)]
-        if output_pt_paths and len(missing) == len(output_pt_paths):
+        # but guard here too in case of unexpected silent failures. Slides
+        # without tiles are skipped (no .pt), not failures.
+        expected = [p for p, slide_id in zip(output_pt_paths, slide_ids) if slide_id not in skipped]
+        if expected and not any(os.path.isfile(p) for p in expected):
             raise RuntimeError(
                 f"extract_features produced no output files: all {len(output_pt_paths)} "
                 ".features.pt files are missing after slide-level aggregation. "
@@ -461,14 +484,17 @@ def _main_batch(cfg: ExtractFeaturesConfig):
 def _write_pts(h5_paths, pt_paths, names) -> Dict[str, str]:
     """Save each features .h5 of a successful extraction as a .pt.
 
-    Returns ``{name: reason}`` of the slides skipped for having no tiles
-    (extraction wrote nothing for them): they get no .pt, and are logged as warnings.
+    Returns ``{name: reason}`` of the slides skipped for having no tiles, logged
+    as warnings: not failures. Such a slide's empty features .h5 gets an empty
+    .pt (so the .h5 and .pt outputs match); a slide extraction wrote no .h5 for
+    gets no .pt.
     """
     skipped = skip_slides_without_tiles(h5_paths, names, extracted=True)
-    for i, (h5_path, pt_path) in enumerate(zip(h5_paths, pt_paths)):
-        if i not in skipped:
-            with h5py.File(h5_path, "r") as f:
-                torch.save(_numpy_to_torch(f["features"][:]), pt_path)
+    for h5_path, pt_path in zip(h5_paths, pt_paths):
+        if not os.path.isfile(h5_path):
+            continue
+        with h5py.File(h5_path, "r") as f:
+            torch.save(_numpy_to_torch(f["features"][:]), pt_path)
     return {names[i]: reason for i, reason in skipped.items()}
 
 
@@ -476,7 +502,7 @@ def _raise_if_no_features(h5_paths) -> None:
     """Raise if no slide wrote features, as the two-step path does when every .pt is missing."""
     if h5_paths and not any(os.path.isfile(p) for p in h5_paths):
         raise RuntimeError(f"extract_features produced no output files: none of the {len(h5_paths)} slides "
-                           "wrote features (all without tiles, or all failed). Check logs above.")
+                           "wrote features (all failed or without tiles). Check logs above.")
 
 
 def _main_batch_multi(cfg: ExtractFeaturesConfig, output_dir: Path, slide_ids: List[str]):

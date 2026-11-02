@@ -33,6 +33,7 @@ import torch
 
 from mussel.models.base import TorchModel
 from mussel.models.model_factory import ModelType, register_model
+from mussel.utils.gpu import first_gpu_device_id
 
 logger = logging.getLogger(__name__)
 
@@ -71,7 +72,14 @@ class GenBioPathFMModel(TorchModel):
         if model_path is None:
             model_path = ModelType.GENBIO_PATHFM.path
 
-        device_str = "cuda" if use_gpu else "cpu"
+        # Load straight onto the requested GPU (not bare "cuda" == cuda:0) so a
+        # 1.1B-parameter load does not land on — and possibly OOM — GPU 0 of a
+        # shared node when another device was asked for.
+        device_id = first_gpu_device_id(gpu_device_id) if use_gpu else None
+        if device_id is not None:
+            device_str = f"cuda:{device_id}"
+        else:
+            device_str = "cuda" if use_gpu else "cpu"
         model_obj = self._load_genbio(model_path, device_str)
         super().__init__(model_path, model_obj, use_gpu, gpu_device_id)
 
@@ -158,7 +166,7 @@ class GenBioPathFMModel(TorchModel):
 
     def get_preprocessing_fun(self) -> Callable:
         """Pathology-normalised 224×224 transforms from GenBio_PathFM_Inference."""
-        return self.obj.transform
+        return self.unwrapped.transform
 
     def _forward(self, x: torch.Tensor) -> torch.Tensor:
         # GenBio uses .view() internally which requires contiguous memory;

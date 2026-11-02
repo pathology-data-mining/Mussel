@@ -47,6 +47,19 @@ def test_the_whole_bounding_box_is_covered(step, patch):
     assert _TISSUE.difference(unary_union(grid)).area == 0
 
 
+def test_tiles_that_only_touch_the_tissue_are_dropped():
+    """A tile sharing just an edge or a corner with the tissue holds no tissue."""
+    # Two lattice-aligned squares meeting at the corner (224, 224): tiles (224, 0) and
+    # (0, 224) lie in the bounding box but touch the tissue only along edges.
+    tissue = unary_union([box(0, 0, 224, 224), box(224, 224, 448, 448)])
+    assert _origins(partition(tissue, 224, 224)) == {(0, 0), (224, 224)}
+
+
+def test_tiles_with_any_tissue_area_are_kept():
+    tissue = box(0, 0, 225, 224)  # one pixel column into the next tile
+    assert _origins(partition(tissue, 224, 224)) == {(0, 0), (224, 0)}
+
+
 def test_rectangle_edges():
     tissue = box(0, 0, 1000, 450)
     grid = grid_bounds(tissue, 224, 224)

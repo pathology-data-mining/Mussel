@@ -130,10 +130,11 @@ def _tiles(fakes, tmp_path):
 
 @pytest.mark.parametrize("shared_loader", [True, False])
 def test_slide_without_tiles_keeps_later_slides_aligned(fakes, tmp_path, shared_loader):
-    """A zero-tile slide gets no output, and the next slide still gets its own tiles."""
+    """A zero-tile slide gets an empty output, and the next slide still gets its own tiles."""
     a, empty, c = _tiles(fakes, tmp_path)
     outs = _run(fakes, tmp_path, [a, empty, c], f"z{shared_loader}", shared_loader=shared_loader)
-    assert not Path(outs[1]).exists()
+    with h5py.File(outs[1], "r") as f:
+        assert len(f["features"]) == 0 and f["coords"].shape == (0, 2)
     for out, src in ((outs[0], a), (outs[2], c)):
         np.testing.assert_array_equal(fakes.read(out)[1], h5py.File(src)["coords"][:])
 

@@ -209,7 +209,11 @@ def test_extract_features_cli_skips_a_slide_without_tiles(fakes, tmp_path, caplo
             patch.object(fe, "_load_model", side_effect=_slide_encoder_or(fe._load_model)):
         cli._main_batch(cfg)  # no raise: the run exits 0
     assert (tmp_path / "out" / "G.features.pt").exists()
-    assert not (tmp_path / "out" / "Z.features.pt").exists()
+    if aggregation_method == "identity":
+        # Its (0, D) features H5 is the output; the .pt matches it.
+        assert torch.load(tmp_path / "out" / "Z.features.pt", weights_only=True).shape[0] == 0
+    else:
+        assert not (tmp_path / "out" / "Z.features.pt").exists()
     warnings = _warnings(caplog)
     assert any("1 of 2 slide(s) skipped (no tiles)" in m for m in warnings)
     assert any("Z" in m and "no tiles" in m for m in warnings)

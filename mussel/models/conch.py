@@ -78,12 +78,17 @@ class Conch15Model(TorchModel):
     def get_preprocessing_fun(self) -> Callable:
         """Get preprocessing transforms for CONCH v1.5.
 
+        Matches TITAN's eval transform: Resize(448) (bilinear, as upstream),
+        CenterCrop(448), ImageNet normalisation.  The crop is a no-op on square
+        tiles, so features of square tiles are unchanged by it.
+
         Returns:
             Composed transforms for CONCH v1.5 input preprocessing.
         """
         return transforms.Compose(
             [
                 transforms.Resize(448),
+                transforms.CenterCrop(448),
                 transforms.ToTensor(),
                 transforms.Normalize(mean=IMAGENET_MEAN, std=IMAGENET_STD),
             ]
@@ -252,6 +257,8 @@ def _titan_forward_features_efficient(self, x, coords=None, mask=None, bg_mask=N
 
 @register_model(ModelType.TITAN_SLIDE)
 class TitanSlideEncoderModel(TorchModel):
+    supports_data_parallel = False  # one slide at a time; see TorchModel
+
     def __init__(
         self,
         model_path,
@@ -329,7 +336,7 @@ class TitanSlideEncoderModel(TorchModel):
         """
         # Apply monkey-patches to the vision encoder
         if getattr(self, "_patch_oom", True):
-            vision_enc = self.obj.vision_encoder
+            vision_enc = self.unwrapped.vision_encoder
             vision_enc.get_alibi = types.MethodType(_titan_get_alibi_gpu, vision_enc)
             vision_enc.forward_features = types.MethodType(_titan_forward_features_efficient, vision_enc)
             logger.debug(
@@ -363,7 +370,7 @@ class TitanSlideEncoderModel(TorchModel):
                 patch_features = patch_features.to(self.device, non_blocking=True)
                 coords = coords.to(self.device, non_blocking=True)
                 return (
-                    self.obj.encode_slide_from_patch_features(
+                    self.unwrapped.encode_slide_from_patch_features(
                         patch_features, coords, patch_size
                     )
                     .squeeze()
@@ -407,8 +414,7 @@ class TitanSlideEncoderModel(TorchModel):
         save_dir = Path(save_path).parent
         save_dir.mkdir(parents=True, exist_ok=True)
 
-        # Get the base model (unwrap DataParallel if needed)
-        model_to_save = self.obj.module if hasattr(self.obj, "module") else self.obj
+        model_to_save = self.unwrapped
 
         # Save using HuggingFace's save_pretrained method
         try:

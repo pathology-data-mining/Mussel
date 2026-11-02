@@ -3,6 +3,8 @@
 import logging
 from typing import Callable, List
 
+from torchvision import transforms
+
 from mussel.models.base import Model
 from mussel.models.model_factory import ModelType, register_model
 
@@ -55,7 +57,8 @@ class GooglePathModel(Model):
 
         def model_fun(x) -> Callable:
             """Preprocess and run inference for GooglePath model."""
-            tensor = tf.cast(x, tf.float32) / 255.0
+            # x is already in [0, 1] (see get_preprocessing_fun), as the model expects.
+            tensor = tf.cast(x, tf.float32)
             tensor = tf.transpose(tensor, [0, 2, 3, 1])
             tensor = tf.image.resize(
                 tensor, size=(224, 224), method=tf.image.ResizeMethod.BICUBIC
@@ -63,6 +66,25 @@ class GooglePathModel(Model):
             return self.obj(tensor)
 
         return model_fun
+
+    def get_preprocessing_fun(self) -> Callable:
+        """Get preprocessing transforms for GooglePath.
+
+        Path Foundation takes 224x224 RGB images scaled to [0, 1] with no
+        mean/std normalisation (https://huggingface.co/google/path-foundation).
+        Without this, the dataset's default ImageNet Normalize would apply.
+
+        Returns:
+            Resize to 224 (bicubic) and ToTensor, with no Normalize.
+        """
+        return transforms.Compose(
+            [
+                transforms.Resize(
+                    224, interpolation=transforms.InterpolationMode.BICUBIC
+                ),
+                transforms.ToTensor(),
+            ]
+        )
 
     def save(self, save_path: str):
         """Save GooglePath model (not implemented).

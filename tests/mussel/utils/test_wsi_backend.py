@@ -218,3 +218,117 @@ class TestOmeZarrSlide:
             with pytest.raises(Exception):
                 # Even with zarr installed an empty dir raises at zarr.open
                 open_slide(zarr_path)
+
+
+# ---------------------------------------------------------------------------
+# CuCIM metadata -> tiffslide-style properties
+# ---------------------------------------------------------------------------
+
+
+def _cucim_slide(metadata):
+    from mussel.utils.wsi_backend import CuCIMSlide
+
+    img = MagicMock()
+    img.resolutions = {"level_dimensions": [(1000, 800)], "level_downsamples": [1.0]}
+    img.metadata = metadata
+    return CuCIMSlide(img)
+
+
+class TestCuCIMProperties:
+    def test_nested_vendor_metadata_is_flattened(self):
+        from mussel.utils.segment import get_slide_mpp
+
+        slide = _cucim_slide({"aperio": {"MPP": "0.2525", "AppMag": "40"}, "cucim": {"dims": "YXC"}})
+        assert slide.properties["aperio.MPP"] == "0.2525"
+        assert slide.properties["aperio.AppMag"] == "40"
+        assert get_slide_mpp(slide) == pytest.approx(0.2525)
+
+    def test_cucim_micrometre_spacing_becomes_tiffslide_mpp(self):
+        from mussel.utils.segment import get_slide_mpp
+
+        slide = _cucim_slide({"cucim": {"dims": "YXC", "spacing": [0.26, 0.25, 1.0],
+                                        "spacing_units": ["micrometer", "micrometer", "color"]}})
+        assert slide.properties["tiffslide.mpp-x"] == pytest.approx(0.25)
+        assert slide.properties["tiffslide.mpp-y"] == pytest.approx(0.26)
+        assert get_slide_mpp(slide) == pytest.approx(0.25)
+
+    def test_non_micrometre_spacing_is_ignored(self):
+        slide = _cucim_slide({"cucim": {"dims": "YXC", "spacing": [1.0, 1.0, 1.0],
+                                        "spacing_units": ["", "", "color"]}})
+        assert "tiffslide.mpp-x" not in slide.properties
+
+    def test_json_string_and_empty_metadata(self):
+        assert _cucim_slide('{"aperio": {"MPP": "0.5"}}').properties["aperio.MPP"] == "0.5"
+        assert _cucim_slide(None).properties == {}
+
+
+# ---------------------------------------------------------------------------
+# OmeZarrSlide axes and padding (real in-memory zarr arrays)
+# ---------------------------------------------------------------------------
+
+
+def _zarr_store(arrays, axes=None):
+    zarr = pytest.importorskip("zarr")
+    root = zarr.group(store=zarr.storage.MemoryStore())
+    for i, data in enumerate(arrays):
+        root.create_dataset(str(i), data=data, shape=data.shape, dtype=data.dtype)
+    ms = {"datasets": [{"path": str(i)} for i in range(len(arrays))]}
+    if axes is not None:
+        ms["axes"] = axes
+    root.attrs["multiscales"] = [ms]
+    return root
+
+
+def _rgb(h, w):
+    rng = np.random.default_rng(0)
+    return rng.integers(0, 255, size=(h, w, 3), dtype=np.uint8)
+
+
+class TestOmeZarrAxes:
+    def test_channel_last_dimensions_and_read(self):
+        rgb = _rgb(40, 60)  # (Y, X, C) with no axes metadata
+        slide = OmeZarrSlide(_zarr_store([rgb]))
+        assert slide.level_dimensions[0] == (60, 40)
+        region = np.asarray(slide.read_region((10, 5), 0, (8, 6)))
+        np.testing.assert_array_equal(region, rgb[5:11, 10:18])
+
+    def test_channel_last_with_axes_metadata(self):
+        rgb = _rgb(3, 50)  # tiny height: the shape heuristic alone would take Y for C
+        axes = [{"name": "y", "type": "space"}, {"name": "x", "type": "space"},
+                {"name": "c", "type": "channel"}]
+        slide = OmeZarrSlide(_zarr_store([rgb], axes))
+        assert slide.level_dimensions[0] == (50, 3)
+        np.testing.assert_array_equal(np.asarray(slide.read_region((4, 0), 0, (5, 3))), rgb[:, 4:9])
+
+    @pytest.mark.parametrize("with_axes", [True, False])
+    def test_ngff_5d_tczyx(self, with_axes):
+        rgb = _rgb(32, 48)
+        tczyx = np.zeros((1, 3, 2, 32, 48), dtype=np.uint8)
+        tczyx[0, :, 0] = np.transpose(rgb, (2, 0, 1))
+        tczyx[0, :, 1] = 7  # second z-plane: must not be read
+        half = np.ascontiguousarray(tczyx[:, :, :, ::2, ::2])
+        axes = ["t", "c", "z", "y", "x"] if with_axes else None
+        slide = OmeZarrSlide(_zarr_store([tczyx, half], axes))
+        assert slide.level_dimensions == [(48, 32), (24, 16)]
+        assert slide.level_downsamples == [pytest.approx(1.0), pytest.approx(2.0)]
+        region = np.asarray(slide.read_region((6, 4), 0, (10, 12)))
+        np.testing.assert_array_equal(region, rgb[4:16, 6:16])
+
+    def test_reads_are_padded_at_the_edge(self):
+        rgb = _rgb(20, 30)
+        chw = np.ascontiguousarray(np.transpose(rgb, (2, 0, 1)))  # (C, Y, X)
+        slide = OmeZarrSlide(_zarr_store([chw]))
+        img = slide.read_region((25, 15), 0, (10, 10))
+        assert img.size == (10, 10)
+        region = np.asarray(img)
+        np.testing.assert_array_equal(region[:5, :5], rgb[15:20, 25:30])
+        assert not region[5:].any() and not region[:, 5:].any()
+        # Entirely outside the slide: all padding, still the requested size.
+        assert np.asarray(slide.read_region((100, 100), 0, (4, 4))).shape == (4, 4, 3)
+
+    def test_grayscale_2d_is_rgb(self):
+        gray = np.arange(100, dtype=np.uint8).reshape(10, 10)
+        slide = OmeZarrSlide(_zarr_store([gray], ["y", "x"]))
+        region = np.asarray(slide.read_region((0, 0), 0, (3, 2)))
+        assert region.shape == (2, 3, 3)
+        np.testing.assert_array_equal(region[..., 1], gray[:2, :3])
