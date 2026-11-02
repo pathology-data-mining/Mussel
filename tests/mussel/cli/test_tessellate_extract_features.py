@@ -77,16 +77,304 @@ def _tiles_chosen_by_main(seg_config=None, **overrides):
     [
         (dict(model_type=ModelType.HOPTIMUS1), (224, 0.5)),
         (dict(model_type=ModelType.GPFM), (512, 0.25)),
-        # A slide encoder's tiles win over its patch encoder's (CTransPath alone: 224 px, no target MPP).
-        (dict(model_type=ModelType.CTRANSPATH, slide_model_type=ModelType.CHIEF_SLIDE), (256, 1.0)),
-        (dict(model_type=ModelType.CONCH_V1, slide_model_type=ModelType.MADELEINE_SLIDE), (256, 1.0)),
-        (dict(model_type=ModelType.CONCH1_5, slide_model_type=ModelType.TITAN_SLIDE), (512, 0.5)),
+        # Multi-model mode (both given): left unset for the per-model grouping, which
+        # must not mistake a slide encoder's MPP for the user's.
+        (dict(model_type=ModelType.CTRANSPATH, slide_model_type=ModelType.CHIEF_SLIDE), (256, 0.5)),
+        (dict(model_type=ModelType.CONCH1_5, slide_model_type=ModelType.TITAN_SLIDE), (256, 0.5)),
         # Values other than the defaults are kept (an explicit 256 px / 0.5 µm/px looks like the default).
         (dict(model_type=ModelType.GPFM, seg_config=SegConfig(patch_size=384, mpp=0.75)), (384, 0.75)),
     ],
 )
 def test_main_tiles_at_the_models_size_and_mpp(overrides, expected):
     assert _tiles_chosen_by_main(**overrides) == expected
+
+
+# Slide encoders whose tiles differ from their patch encoder's: CHIEF (CTransPath, 224 px)
+# and MADELEINE (CONCH v1, 448 px) both need 256 px tiles at 1.0 µm/px.
+_SLIDE_ENCODER_TILES = [
+    (ModelType.CHIEF_SLIDE, ModelType.CTRANSPATH, (256, 1.0)),
+    (ModelType.MADELEINE_SLIDE, ModelType.CONCH_V1, (256, 1.0)),
+    (ModelType.TITAN_SLIDE, ModelType.CONCH1_5, (512, 0.5)),
+]
+
+
+@pytest.mark.parametrize("slide_model_type,patch_encoder,tiles", _SLIDE_ENCODER_TILES)
+def test_single_slide_tiles_for_the_slide_encoder(
+    slide_model_type, patch_encoder, tiles
+):
+    """_main_single keeps the slide encoder's tiles, not its patch encoder's."""
+    seen = {}
+
+    def capture(**kwargs):
+        cfg = kwargs["cfg"]
+        seen["tiles"] = (cfg.seg_config.patch_size, cfg.seg_config.mpp)
+        seen["model_type"] = kwargs["model_type"]
+        return None
+
+    cfg = OmegaConf.create(
+        TessellateExtractFeaturesConfig(
+            **_TEF_REQUIRED, seg_config=SegConfig(), slide_model_type=slide_model_type
+        )
+    )
+    with (
+        patch(
+            "mussel.cli.tessellate_extract_features.process_slide_tessellation_and_filtering",
+            side_effect=capture,
+        ),
+        patch(
+            "mussel.cli.tessellate_extract_features._build_segmentation_runtime",
+            return_value=(None, None),
+        ),
+    ):
+        main(cfg)
+    assert seen == {"tiles": tiles, "model_type": patch_encoder}
+
+
+@pytest.mark.parametrize("slide_model_type,patch_encoder,tiles", _SLIDE_ENCODER_TILES)
+def test_batch_tiles_for_the_slide_encoder(
+    tmp_path, slide_model_type, patch_encoder, tiles
+):
+    """_main_batch keeps the slide encoder's tiles, not its patch encoder's."""
+    seen = []
+
+    def capture(**kwargs):
+        cfg = kwargs["cfg"]
+        seen.append((cfg.seg_config.patch_size, cfg.seg_config.mpp))
+        return None
+
+    cfg = OmegaConf.create(
+        TessellateExtractFeaturesConfig(
+            slide_paths=["a.svs", "b.svs"],
+            output_dir=str(tmp_path),
+            seg_config=SegConfig(),
+            slide_model_type=slide_model_type,
+        )
+    )
+    with (
+        patch(
+            "mussel.cli.tessellate_extract_features.process_slide_tessellation_only",
+            side_effect=capture,
+        ),
+        patch(
+            "mussel.cli.tessellate_extract_features._build_segmentation_runtime",
+            return_value=(None, None),
+        ),
+    ):
+        main(cfg)
+    assert seen == [tiles, tiles]
+
+
+@pytest.mark.parametrize(
+    "model_type,slide_model_type,expected",
+    [
+        (
+            ModelType.CTRANSPATH,
+            ModelType.CHIEF_SLIDE,
+            {
+                (ModelType.CTRANSPATH, None): (224, 0.5),
+                (ModelType.CTRANSPATH, ModelType.CHIEF_SLIDE): (256, 1.0),
+            },
+        ),
+        (
+            ModelType.CONCH_V1,
+            ModelType.MADELEINE_SLIDE,
+            {
+                (ModelType.CONCH_V1, None): (448, 0.5),
+                (ModelType.CONCH_V1, ModelType.MADELEINE_SLIDE): (256, 1.0),
+            },
+        ),
+        # Same tile size, different MPP: two tessellations.
+        (
+            ["UNI"],
+            ["CHIEF_SLIDE"],
+            {
+                (ModelType.UNI, None): (256, 0.5),
+                (ModelType.CTRANSPATH, ModelType.CHIEF_SLIDE): (256, 1.0),
+            },
+        ),
+        # ABMIL_SLIDE takes the one patch model given, and its tiles.
+        (
+            ModelType.UNI,
+            ModelType.ABMIL_SLIDE,
+            {
+                (ModelType.UNI, None): (256, 0.5),
+                (ModelType.UNI, ModelType.ABMIL_SLIDE): (256, 0.5),
+            },
+        ),
+        (
+            ModelType.CONCH1_5,
+            ModelType.ABMIL_SLIDE,
+            {
+                (ModelType.CONCH1_5, None): (512, 0.5),
+                (ModelType.CONCH1_5, ModelType.ABMIL_SLIDE): (512, 0.5),
+            },
+        ),
+        # A patch model without a target MPP gets the default, not the slide encoder's.
+        (
+            ModelType.VIRCHOW2,
+            ModelType.MADELEINE_SLIDE,
+            {
+                (ModelType.VIRCHOW2, None): (224, 0.5),
+                (ModelType.CONCH_V1, ModelType.MADELEINE_SLIDE): (256, 1.0),
+            },
+        ),
+    ],
+)
+def test_multi_model_tiles_for_each_model(
+    tmp_path, model_type, slide_model_type, expected
+):
+    """Multi-model mode groups slide encoders by their own tile size and MPP."""
+    seen = _run_multi_model(tmp_path, model_type, slide_model_type)
+    assert {k: v["tiles"] for k, v in seen.items()} == expected
+
+
+@pytest.mark.parametrize(
+    "model_type,slide_model_type,mpp,expected",
+    [
+        (
+            ModelType.CTRANSPATH,
+            ModelType.CHIEF_SLIDE,
+            0.75,
+            {
+                (ModelType.CTRANSPATH, None): (224, 0.75),
+                (ModelType.CTRANSPATH, ModelType.CHIEF_SLIDE): (256, 0.75),
+            },
+        ),
+        (
+            ["CONCH1_5", "VIRCHOW2"],
+            ["TITAN_SLIDE"],
+            0.25,
+            {
+                (ModelType.CONCH1_5, None): (512, 0.25),
+                (ModelType.VIRCHOW2, None): (224, 0.25),
+                (ModelType.CONCH1_5, ModelType.TITAN_SLIDE): (512, 0.25),
+            },
+        ),
+    ],
+)
+def test_multi_model_keeps_explicit_mpp(
+    tmp_path, model_type, slide_model_type, mpp, expected
+):
+    """An explicit seg_config.mpp is used for every model, target MPP or not."""
+    seen = _run_multi_model(tmp_path, model_type, slide_model_type, SegConfig(mpp=mpp))
+    assert {k: v["tiles"] for k, v in seen.items()} == expected
+
+
+def _run_multi_model(tmp_path, model_type, slide_model_type, seg_config=None):
+    """Tiles and output dirs main() hands _main_batch per (model, slide model)."""
+    seen = {}
+
+    def capture(cfg, patch_output_dir=None):
+        seen[(cfg.model_type, cfg.slide_model_type)] = {
+            "tiles": (cfg.seg_config.patch_size, cfg.seg_config.mpp),
+            "output_dir": os.path.relpath(cfg.output_dir, tmp_path),
+            "patch_output_dir": patch_output_dir
+            and os.path.relpath(patch_output_dir, tmp_path),
+        }
+
+    cfg = OmegaConf.create(
+        TessellateExtractFeaturesConfig(
+            slide_paths=["a.svs"],
+            output_dir=str(tmp_path),
+            seg_config=seg_config or SegConfig(),
+            model_type=model_type,
+            slide_model_type=slide_model_type,
+        )
+    )
+    with patch(
+        "mussel.cli.tessellate_extract_features._main_batch", side_effect=capture
+    ):
+        main(cfg)
+    return seen
+
+
+@pytest.mark.parametrize(
+    "model_type,slide_model_type,expected",
+    [
+        # Other tiles than the patch model's: patch encoder outputs get their own dir.
+        (
+            ModelType.CTRANSPATH,
+            ModelType.CHIEF_SLIDE,
+            {
+                (ModelType.CTRANSPATH, None): ("CTRANSPATH", None),
+                (ModelType.CTRANSPATH, ModelType.CHIEF_SLIDE): (
+                    "CHIEF_SLIDE",
+                    "CTRANSPATH_256px_1mpp",
+                ),
+            },
+        ),
+        (
+            ModelType.CONCH_V1,
+            ModelType.MADELEINE_SLIDE,
+            {
+                (ModelType.CONCH_V1, None): ("CONCH_V1", None),
+                (ModelType.CONCH_V1, ModelType.MADELEINE_SLIDE): (
+                    "MADELEINE_SLIDE",
+                    "CONCH_V1_256px_1mpp",
+                ),
+            },
+        ),
+        # Same tiles: the patch encoder's outputs are shared, as before.
+        (
+            ModelType.CONCH1_5,
+            ModelType.TITAN_SLIDE,
+            {
+                (ModelType.CONCH1_5, None): ("CONCH1_5", None),
+                (ModelType.CONCH1_5, ModelType.TITAN_SLIDE): ("TITAN_SLIDE", "CONCH1_5"),
+            },
+        ),
+        (
+            ModelType.CONCH1_5,
+            ModelType.ABMIL_SLIDE,
+            {
+                (ModelType.CONCH1_5, None): ("CONCH1_5", None),
+                (ModelType.CONCH1_5, ModelType.ABMIL_SLIDE): ("ABMIL_SLIDE", "CONCH1_5"),
+            },
+        ),
+    ],
+)
+def test_multi_model_patch_outputs_do_not_collide(
+    tmp_path, model_type, slide_model_type, expected
+):
+    """A slide encoder's patch features of other tiles don't overwrite the patch model's."""
+    seen = _run_multi_model(tmp_path, model_type, slide_model_type)
+    assert {
+        k: (v["output_dir"], v["patch_output_dir"]) for k, v in seen.items()
+    } == expected
+
+
+def test_single_slide_filter_fast_path_keeps_the_slide_encoder(tmp_path):
+    """With a slide encoder, filtering with its own patch encoder still runs the slide encoder."""
+    seen = {}
+
+    def capture(**kwargs):
+        seen["skip_second_extraction"] = kwargs["skip_second_extraction"]
+        seen["model_type"] = kwargs["model_type"]
+        return None
+
+    classifier = tmp_path / "classifier.pkl"
+    classifier.touch()
+    cfg = OmegaConf.create(
+        TessellateExtractFeaturesConfig(
+            **_TEF_REQUIRED,
+            seg_config=SegConfig(),
+            classifier_pkl=str(classifier),
+            prefilter_model_type=ModelType.CONCH1_5,
+            slide_model_type=ModelType.TITAN_SLIDE,
+        )
+    )
+    with (
+        patch(
+            "mussel.cli.tessellate_extract_features.process_slide_tessellation_and_filtering",
+            side_effect=capture,
+        ),
+        patch(
+            "mussel.cli.tessellate_extract_features._build_segmentation_runtime",
+            return_value=(None, None),
+        ),
+    ):
+        main(cfg)
+    assert seen == {"skip_second_extraction": False, "model_type": ModelType.CONCH1_5}
 
 
 def test_neural_segmenter_use_gpu_false_forces_cpu():
