@@ -101,6 +101,8 @@ class _MadeleineModel(nn.Module):
 
 @register_model(ModelType.MADELEINE_SLIDE)
 class MadeleineSlideEncoderModel(TorchModel):
+    supports_data_parallel = False  # one slide at a time; see TorchModel
+
     def __init__(
         self,
         model_path,

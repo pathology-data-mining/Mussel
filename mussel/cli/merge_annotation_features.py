@@ -1,5 +1,6 @@
 import logging
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Optional
 
 import h5py
@@ -23,7 +24,9 @@ class MergeAnnotationFeaturesConfig:
     features_h5_path (str): Path to the HDF5 file containing tile features.
     annotation_bmp_path (str): Path to the BMP file containing annotations.
     output_parquet_path (str): Path to save the merged results in Parquet format.
-    slide_id (Optional[str]): Optional slide identifier to include in the output.
+    slide_id (Optional[str]): Slide identifier written to the output's slide_id column.
+        Defaults to the features file name without ".h5" / ".features.h5"
+        (e.g. "S1.features.h5" -> "S1").
     class_mapping_yaml_path (Optional[str]): Optional path to a YAML file for class mapping.
     """
 
@@ -120,6 +123,15 @@ def _raster_merge(coords, features_arr, img_arr, tile_size, class_mapping):
     return pd.concat(dfs, ignore_index=True)
 
 
+def _default_slide_id(features_h5_path: str) -> str:
+    """Slide ID from a features file name: strip ``.h5`` and then ``.features``."""
+    name = Path(features_h5_path).name
+    for suffix in (".h5", ".features"):
+        if name.endswith(suffix):
+            name = name[: -len(suffix)]
+    return name
+
+
 @hydra.main(
     version_base=None, config_path=".", config_name="merge_annotation_features_config"
 )
@@ -153,8 +165,10 @@ def main(cfg: MergeAnnotationFeaturesConfig):
     if result.empty:
         return
 
-    if cfg.slide_id is not None:
-        result["slide_id"] = cfg.slide_id
+    # clustering_benchmark and linear_probe_benchmark require a slide_id column.
+    result["slide_id"] = (
+        cfg.slide_id if cfg.slide_id is not None else _default_slide_id(cfg.features_h5_path)
+    )
 
     logger.info("Writing %d rows to %s", len(result), cfg.output_parquet_path)
     result.to_parquet(cfg.output_parquet_path)
