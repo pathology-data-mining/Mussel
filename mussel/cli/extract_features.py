@@ -28,9 +28,11 @@ from mussel.utils import (
     save_features,
     timings,
 )
-from mussel.utils.feature_extract import (_numpy_to_torch,
+from mussel.utils.feature_extract import (SlideBatchError, _numpy_to_torch,
                                           extract_patch_features_batch_multi,
-                                          resolve_slide_patch_encoder)
+                                          raise_if_slides_failed,
+                                          resolve_slide_patch_encoder,
+                                          skip_slides_without_tiles)
 from mussel.utils.file import (check_unique_slide_ids, save_hdf5,
                                save_torch_tensor)
 from mussel.utils.ml import collate_features
@@ -369,54 +371,73 @@ def _main_batch(cfg: ExtractFeaturesConfig):
             str(output_dir / f"{slide_id}.patch_features.h5") for slide_id in slide_ids
         ]
 
-        extract_patch_features_batch(
-            patch_h5_paths=cfg.patch_h5_paths,
-            slide_paths=cfg.slide_paths,
-            output_h5_paths=intermediate_h5_paths,
-            model_type=model_type,
-            model_path=cfg.model_path,
-            model_dir=cfg.model_dir,
-            batch_size=cfg.batch_size,
-            use_gpu=cfg.use_gpu,
-            gpu_device_id=cfg.gpu_device_id,
-            gpu_device_ids=cfg.gpu_device_ids,
-            num_workers=cfg.num_workers,
-            pin_memory=True,
-            is_test_run=cfg.is_test_run,
-            embedding_precision=cfg.embedding_precision,
-            model_kwargs=cfg.model_kwargs,
-            tile_size_check=cfg.tile_size_check,
-            shared_loader=cfg.shared_loader,
-        )
+        # Slides that fail don't stop the others; the run fails at the end.
+        # Slides without tiles are skipped with a warning; they don't fail the run.
+        failures: Dict[str, str] = {}
+        skipped: Dict[str, str] = {}
+        try:
+            extract_patch_features_batch(
+                patch_h5_paths=cfg.patch_h5_paths,
+                slide_paths=cfg.slide_paths,
+                output_h5_paths=intermediate_h5_paths,
+                model_type=model_type,
+                model_path=cfg.model_path,
+                model_dir=cfg.model_dir,
+                batch_size=cfg.batch_size,
+                use_gpu=cfg.use_gpu,
+                gpu_device_id=cfg.gpu_device_id,
+                gpu_device_ids=cfg.gpu_device_ids,
+                num_workers=cfg.num_workers,
+                pin_memory=True,
+                is_test_run=cfg.is_test_run,
+                embedding_precision=cfg.embedding_precision,
+                model_kwargs=cfg.model_kwargs,
+                tile_size_check=cfg.tile_size_check,
+                shared_loader=cfg.shared_loader,
+            )
+        except SlideBatchError as e:
+            failures.update({slide_ids[i]: reason for i, reason in e.failures.items()})
+        todo = [i for i, slide_id in enumerate(slide_ids) if slide_id not in failures]
+        no_tiles = skip_slides_without_tiles([intermediate_h5_paths[i] for i in todo],
+                                             [slide_ids[i] for i in todo], extracted=True)
+        skipped.update({slide_ids[todo[j]]: reason for j, reason in no_tiles.items()})
+        todo = [i for i in todo if slide_ids[i] not in skipped]
 
         # Aggregate to slide level using batch processing
         logger.info(
-            f"Batch aggregating {len(cfg.slide_paths)} slides with aggregation_method={aggregation_method}"
+            f"Batch aggregating {len(todo)} slides with aggregation_method={aggregation_method}"
         )
-        aggregate_slide_features_batch(
-            patch_features_h5_paths=intermediate_h5_paths,
-            output_h5_paths=output_h5_paths,
-            output_pt_paths=output_pt_paths,
-            aggregation_method=aggregation_method,
-            model_type=cfg.slide_model_type,
-            model_path=cfg.slide_model_path,
-            model_dir=cfg.model_dir,
-            use_gpu=cfg.use_gpu,
-            gpu_device_id=cfg.gpu_device_id,
-            gpu_device_ids=cfg.gpu_device_ids,
-            slide_batch_size=cfg.slide_batch_size,
-            slide_model_kwargs=cfg.slide_model_kwargs,
-            tile_size_check=cfg.tile_size_check,
-            max_slide_patches=max_slide_patches,
-        )
+        agg_skipped: Dict[int, str] = {}
+        try:
+            if todo:
+                aggregate_slide_features_batch(
+                    patch_features_h5_paths=[intermediate_h5_paths[i] for i in todo],
+                    output_h5_paths=[output_h5_paths[i] for i in todo],
+                    output_pt_paths=[output_pt_paths[i] for i in todo],
+                    aggregation_method=aggregation_method,
+                    model_type=cfg.slide_model_type,
+                    model_path=cfg.slide_model_path,
+                    model_dir=cfg.model_dir,
+                    use_gpu=cfg.use_gpu,
+                    gpu_device_id=cfg.gpu_device_id,
+                    gpu_device_ids=cfg.gpu_device_ids,
+                    slide_batch_size=cfg.slide_batch_size,
+                    slide_model_kwargs=cfg.slide_model_kwargs,
+                    tile_size_check=cfg.tile_size_check,
+                    max_slide_patches=max_slide_patches,
+                    skipped=agg_skipped,
+                )
+        except SlideBatchError as e:
+            failures.update({slide_ids[todo[i]]: reason for i, reason in e.failures.items()})
+        skipped.update({slide_ids[todo[i]]: reason for i, reason in agg_skipped.items()})
+        raise_if_slides_failed(failures, len(slide_ids), skipped=skipped)
 
         # Defense-in-depth: verify at least one output file was created.
         # aggregate_slide_features_batch already raises when ALL slides fail,
         # but guard here too in case of unexpected silent failures. Slides
         # without tiles are skipped (no .pt), not failures.
-        produced = [p for p in output_pt_paths if os.path.isfile(p)]
-        no_tiles = [h5 for h5 in intermediate_h5_paths if _has_no_tiles(h5)]
-        if output_pt_paths and not produced and len(no_tiles) < len(output_pt_paths):
+        expected = [p for p, slide_id in zip(output_pt_paths, slide_ids) if slide_id not in skipped]
+        if expected and not any(os.path.isfile(p) for p in expected):
             raise RuntimeError(
                 f"extract_features produced no output files: all {len(output_pt_paths)} "
                 ".features.pt files are missing after slide-level aggregation. "
@@ -425,63 +446,61 @@ def _main_batch(cfg: ExtractFeaturesConfig):
             )
     else:
         # Single-step: extract directly to final output (no aggregation)
-        extract_patch_features_batch(
-            patch_h5_paths=cfg.patch_h5_paths,
-            slide_paths=cfg.slide_paths,
-            output_h5_paths=output_h5_paths,
-            model_type=cfg.model_type,
-            model_path=cfg.model_path,
-            model_dir=cfg.model_dir,
-            batch_size=cfg.batch_size,
-            use_gpu=cfg.use_gpu,
-            gpu_device_id=cfg.gpu_device_id,
-            gpu_device_ids=cfg.gpu_device_ids,
-            num_workers=cfg.num_workers,
-            pin_memory=True,
-            is_test_run=cfg.is_test_run,
-            embedding_precision=cfg.embedding_precision,
-            model_kwargs=cfg.model_kwargs,
-            tile_size_check=cfg.tile_size_check,
-            shared_loader=cfg.shared_loader,
-        )
+        failures = {}
+        try:
+            extract_patch_features_batch(
+                patch_h5_paths=cfg.patch_h5_paths,
+                slide_paths=cfg.slide_paths,
+                output_h5_paths=output_h5_paths,
+                model_type=cfg.model_type,
+                model_path=cfg.model_path,
+                model_dir=cfg.model_dir,
+                batch_size=cfg.batch_size,
+                use_gpu=cfg.use_gpu,
+                gpu_device_id=cfg.gpu_device_id,
+                gpu_device_ids=cfg.gpu_device_ids,
+                num_workers=cfg.num_workers,
+                pin_memory=True,
+                is_test_run=cfg.is_test_run,
+                embedding_precision=cfg.embedding_precision,
+                model_kwargs=cfg.model_kwargs,
+                tile_size_check=cfg.tile_size_check,
+                shared_loader=cfg.shared_loader,
+            )
+        except SlideBatchError as e:
+            # The other slides' features were written: save their .pt files, then fail.
+            failures = {slide_ids[i]: reason for i, reason in e.failures.items()}
 
         # Save as PT format for consistency
-        _write_pts(output_h5_paths, output_pt_paths)
+        ok = [i for i, slide_id in enumerate(slide_ids) if slide_id not in failures]
+        skipped = _write_pts([output_h5_paths[i] for i in ok], [output_pt_paths[i] for i in ok],
+                             [slide_ids[i] for i in ok])
+        raise_if_slides_failed(failures, len(slide_ids), skipped=skipped)
+        _raise_if_no_features(output_h5_paths)
 
     logger.info(f"Batch processing complete. Output saved to {output_dir}")
 
 
-def _has_no_tiles(h5_path) -> bool:
-    """Whether a features .h5 exists and has no rows (a slide without tiles)."""
-    if not os.path.isfile(h5_path):
-        return False
-    with h5py.File(h5_path, "r") as f:
-        return len(f["features"]) == 0
+def _write_pts(h5_paths, pt_paths, names) -> Dict[str, str]:
+    """Save each features .h5 of a successful extraction as a .pt.
 
-
-def _write_pts(h5_paths, pt_paths) -> None:
-    """Save each features .h5 as a .pt; a slide whose extraction wrote nothing is skipped.
-
-    A slide without tiles has an empty features .h5 and gets an empty .pt; it
-    is reported as skipped (no tiles), not as a failure. Raises if no slide
-    wrote features (all failed or without tiles): every slide without tiles is
-    more likely a wrong mpp or slide list than empty slides.
+    Returns ``{name: reason}`` of the slides skipped for having no tiles, logged
+    as warnings: not failures. Such a slide's empty features .h5 gets an empty
+    .pt (so the .h5 and .pt outputs match); a slide extraction wrote no .h5 for
+    gets no .pt.
     """
-    missing, no_tiles = 0, []
+    skipped = skip_slides_without_tiles(h5_paths, names, extracted=True)
     for h5_path, pt_path in zip(h5_paths, pt_paths):
         if not os.path.isfile(h5_path):
-            logger.warning(f"No features written to {h5_path}; skipping its .pt")
-            missing += 1
             continue
         with h5py.File(h5_path, "r") as f:
-            features = f["features"][:]
-        if len(features) == 0:
-            logger.warning(f"{h5_path} has no features (slide without tiles); its .pt is empty")
-            no_tiles.append(Path(h5_path).name)
-        torch.save(_numpy_to_torch(features), pt_path)
-    if no_tiles:
-        logger.warning(f"Skipped (no tiles): {len(no_tiles)} slides: {', '.join(no_tiles)}")
-    if h5_paths and missing + len(no_tiles) == len(h5_paths):
+            torch.save(_numpy_to_torch(f["features"][:]), pt_path)
+    return {names[i]: reason for i, reason in skipped.items()}
+
+
+def _raise_if_no_features(h5_paths) -> None:
+    """Raise if no slide wrote features, as the two-step path does when every .pt is missing."""
+    if h5_paths and not any(os.path.isfile(p) for p in h5_paths):
         raise RuntimeError(f"extract_features produced no output files: none of the {len(h5_paths)} slides "
                            "wrote features (all failed or without tiles). Check logs above.")
 
@@ -502,26 +521,43 @@ def _main_batch_multi(cfg: ExtractFeaturesConfig, output_dir: Path, slide_ids: L
               for m in model_types}
     for m in model_types:
         ensure_directory_exists(output_dir / m.code)
-    extract_patch_features_batch_multi(
-        patch_h5_paths=cfg.patch_h5_paths,
-        slide_paths=cfg.slide_paths,
-        output_h5_paths=out_h5,
-        model_paths={by_code[c]: p for c, p in cfg.model_paths.items()},
-        model_dir=cfg.model_dir,
-        batch_size=cfg.batch_size,
-        use_gpu=cfg.use_gpu,
-        gpu_device_id=cfg.gpu_device_id,
-        gpu_device_ids=cfg.gpu_device_ids,
-        num_workers=cfg.num_workers,
-        pin_memory=True,
-        is_test_run=cfg.is_test_run,
-        embedding_precision={m: cfg.model_precisions.get(m.code, cfg.embedding_precision) for m in model_types},
-        model_kwargs={m: cfg.model_kwargs for m in model_types} if cfg.model_kwargs else None,
-        tile_size_check=cfg.tile_size_check,
-        shared_loader=cfg.shared_loader,
-    )
+    # {model: output H5 paths, None for each slide the model failed}: a slide one
+    # model failed for still gets the other models' .pt files.
+    done = out_h5
+    reasons: Dict[int, str] = {}
+    try:
+        extract_patch_features_batch_multi(
+            patch_h5_paths=cfg.patch_h5_paths,
+            slide_paths=cfg.slide_paths,
+            output_h5_paths=out_h5,
+            model_paths={by_code[c]: p for c, p in cfg.model_paths.items()},
+            model_dir=cfg.model_dir,
+            batch_size=cfg.batch_size,
+            use_gpu=cfg.use_gpu,
+            gpu_device_id=cfg.gpu_device_id,
+            gpu_device_ids=cfg.gpu_device_ids,
+            num_workers=cfg.num_workers,
+            pin_memory=True,
+            is_test_run=cfg.is_test_run,
+            embedding_precision={m: cfg.model_precisions.get(m.code, cfg.embedding_precision) for m in model_types},
+            model_kwargs={m: cfg.model_kwargs for m in model_types} if cfg.model_kwargs else None,
+            tile_size_check=cfg.tile_size_check,
+            shared_loader=cfg.shared_loader,
+        )
+    except SlideBatchError as e:
+        # The other (slide, model) features were written: save their .pt files, then fail.
+        done, reasons = e.outputs, e.failures
+    failures: Dict[str, str] = {}
+    skipped: Dict[str, str] = {}
     for m in model_types:
-        _write_pts(out_h5[m], [output_dir / m.code / f"{sid}.{cfg.output_pt_suffix}" for sid in slide_ids])
+        ok = [i for i, p in enumerate(done[m]) if p is not None]
+        failures.update({f"{slide_ids[i]} ({m.code})": reasons[i] for i in range(len(slide_ids)) if i not in ok})
+        skipped.update(_write_pts([out_h5[m][i] for i in ok],
+                                  [output_dir / m.code / f"{slide_ids[i]}.{cfg.output_pt_suffix}" for i in ok],
+                                  [f"{slide_ids[i]} ({m.code})" for i in ok]))
+    raise_if_slides_failed(failures, len(slide_ids) * len(model_types), what="(slide, model) pair(s)",
+                           skipped=skipped)
+    _raise_if_no_features([p for m in model_types for p in out_h5[m]])
     logger.info(f"Batch processing complete for {len(model_types)} models. Output saved to {output_dir}")
 
 

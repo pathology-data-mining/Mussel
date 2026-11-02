@@ -24,7 +24,8 @@ from mussel.utils.feature_extract import (NoTilesError, _write_patch_batches,
                                           aggregate_sample_features,
                                           aggregate_slide_features,
                                           aggregate_slide_features_batch,
-                                          process_dataset, save_features)
+                                          process_dataset, raise_if_slides_failed,
+                                          save_features)
 from mussel.utils.ml import collate_features
 
 _TESTDATA = Path(__file__).parent.parent.parent / "testdata"
@@ -196,7 +197,7 @@ def test_batch_slide_encoder_skips_empty_slide(tmp_path, caplog, model_type, fak
                                        tile_size_check="off")
     assert not Path(pts[0]).exists()
     assert torch.load(pts[1], weights_only=True).shape == (1, 4)
-    assert "empty.patch_features: no tile features to aggregate" in caplog.text
+    assert "Skipping slide empty.patch_features (no tiles)" in caplog.text
     _assert_skipped_not_failed(caplog)
 
 
@@ -205,9 +206,11 @@ def test_write_pts_all_empty_slides_raises(tmp_path, caplog):
     h5s = [_features_h5(tmp_path, "a", 0), _features_h5(tmp_path, "b", 0)]
     pts = [str(tmp_path / "a.pt"), str(tmp_path / "b.pt")]
     with caplog.at_level(logging.WARNING), pytest.raises(RuntimeError, match="no output files"):
-        _write_pts(h5s, pts)
+        skipped = _write_pts(h5s, pts, ["a", "b"])
+        assert sorted(skipped) == ["a", "b"]
+        raise_if_slides_failed({}, len(h5s), skipped=skipped)
     assert all(torch.load(p, weights_only=True).shape[0] == 0 for p in pts)
-    assert "Skipped (no tiles): 2 slides" in caplog.text
+    assert "2 of 2 slide(s) skipped (no tiles)" in caplog.text
 
 
 def test_sample_aggregation_skips_empty_slides(tmp_path, caplog):

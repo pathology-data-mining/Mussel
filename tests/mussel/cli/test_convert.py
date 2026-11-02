@@ -104,7 +104,7 @@ class TestConvertCLISingleFile:
             convert_module.main(cfg)
 
         MockConverter.assert_called_once_with(job_dir=str(out_dir), bigtiff=False)
-        mock_instance.process_file.assert_called_once_with(png, mpp=0.25)
+        mock_instance.process_file.assert_called_once_with(png, mpp=0.25, zoom=1.0)
         mock_instance.process_all.assert_not_called()
 
     def test_single_file_bigtiff_forwarded(self, tmp_path):
@@ -513,15 +513,16 @@ class TestProcessFileBehavior:
     def _make_converter(self, tmp_path):
         return AnyToTiffConverter(job_dir=str(tmp_path / "out"))
 
-    def test_exception_is_caught_not_raised(self, tmp_path):
-        """process_file swallows all exceptions; callers should never see them."""
+    def test_exception_is_logged_and_raised(self, tmp_path, caplog):
+        """process_file logs a failure and re-raises it, so the command exits non-zero."""
         png = _make_png(tmp_path, name="err.png")
         c = self._make_converter(tmp_path)
         with patch.object(c, "_detect_embedded_mpp", return_value=None), \
              patch.object(c, "_try_pyvips_convert", return_value=False), \
              patch.object(c, "_read_image", side_effect=RuntimeError("disk error")):
-            # Must not raise
-            c.process_file(png, mpp=0.5)
+            with pytest.raises(RuntimeError, match="disk error"):
+                c.process_file(png, mpp=0.5)
+        assert "Error processing" in caplog.text
 
     def test_czi_skips_pyvips_fast_path(self, tmp_path):
         """_try_pyvips_convert returns False immediately for .czi files."""

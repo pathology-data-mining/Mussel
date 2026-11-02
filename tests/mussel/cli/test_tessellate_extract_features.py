@@ -126,7 +126,9 @@ def test_single_slide_tiles_for_the_slide_encoder(
             return_value=(None, None),
         ),
     ):
-        main(cfg)
+        # The capture stops after tessellation (no tiles): the run then fails.
+        with pytest.raises(RuntimeError, match="Tessellation failed"):
+            main(cfg)
     assert seen == {"tiles": tiles, "model_type": patch_encoder}
 
 
@@ -160,7 +162,9 @@ def test_batch_tiles_for_the_slide_encoder(
             return_value=(None, None),
         ),
     ):
-        main(cfg)
+        # The capture stops after tessellation (no tiles): the run then fails.
+        with pytest.raises(RuntimeError, match="2 of 2 slide.*tessellation failed"):
+            main(cfg)
     assert seen == [tiles, tiles]
 
 
@@ -373,7 +377,9 @@ def test_single_slide_filter_fast_path_keeps_the_slide_encoder(tmp_path):
             return_value=(None, None),
         ),
     ):
-        main(cfg)
+        # The capture stops after tessellation (no tiles): the run then fails.
+        with pytest.raises(RuntimeError, match="Tessellation failed"):
+            main(cfg)
     assert seen == {"skip_second_extraction": False, "model_type": ModelType.CONCH1_5}
 
 

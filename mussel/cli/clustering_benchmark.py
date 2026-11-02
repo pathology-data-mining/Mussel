@@ -227,15 +227,25 @@ def _slide_level_metrics(
 
 def _fit_predict(algo_name: str, X: np.ndarray, cfg: ClusteringBenchmarkConfig) -> np.ndarray:
     """Fit a clustering algorithm and return integer cluster labels."""
+    _check_algorithms([algo_name])
     if algo_name == "kmeans":
         model = KMeans(n_clusters=cfg.n_clusters, random_state=cfg.random_state, n_init=10)
     elif algo_name == "hierarchical":
         model = AgglomerativeClustering(n_clusters=cfg.n_clusters)
-    elif algo_name == "dbscan":
+    else:  # dbscan
         model = DBSCAN(eps=cfg.dbscan_eps, min_samples=cfg.dbscan_min_samples)
-    else:
-        raise ValueError(f"Unknown algorithm '{algo_name}'. Supported: kmeans, hierarchical, dbscan.")
     return model.fit_predict(X)
+
+
+_ALGORITHMS = ("kmeans", "hierarchical", "dbscan")
+
+
+def _check_algorithms(algo_names) -> None:
+    """Raise ValueError naming any algorithm that is not supported."""
+    unknown = [a for a in algo_names if a not in _ALGORITHMS]
+    if unknown:
+        label = f"'{unknown[0]}'" if len(unknown) == 1 else str(unknown)
+        raise ValueError(f"Unknown algorithm {label}. Supported: {', '.join(_ALGORITHMS)}.")
 
 
 # ── Plot helpers ───────────────────────────────────────────────────────────────
@@ -311,6 +321,8 @@ def main(cfg: ClusteringBenchmarkConfig):
     """Benchmark clustering algorithms on extracted WSI tile features."""
     import pyarrow.parquet as pq
 
+    _check_algorithms(cfg.algorithms)  # before any work
+
     _schema_names = pq.read_schema(cfg.features_annotation_parquet_path).names
     _cols = [c for c in _schema_names if c != "geometry"]
     df = pd.read_parquet(cfg.features_annotation_parquet_path, columns=_cols)
@@ -364,13 +376,15 @@ def main(cfg: ClusteringBenchmarkConfig):
 
     # Per-algorithm labels stored for UMAP coloring
     labels_by_algo: dict = {}
+    failed: dict = {}  # {algorithm: error}
 
     for algo in algo_names:
         logger.info("── %s " + "─" * 50, algo)
         try:
             labels = _fit_predict(algo, X_scaled, cfg)
         except Exception as exc:
-            logger.error("Algorithm '%s' failed: %s", algo, exc)
+            logger.exception("Algorithm '%s' failed: %s", algo, exc)
+            failed[algo] = f"{type(exc).__name__}: {exc}"
             continue
 
         labels_by_algo[algo] = labels
@@ -383,6 +397,14 @@ def main(cfg: ClusteringBenchmarkConfig):
         row.update(tile_m)
         row.update(slide_m)
         rows.append(row)
+
+    if not labels_by_algo:
+        raise RuntimeError(
+            "No clustering algorithm succeeded: "
+            + "; ".join(f"{a}: {err}" for a, err in failed.items())
+        )
+    if failed:
+        logger.warning("Algorithms that failed (left out of the outputs): %s", ", ".join(failed))
 
     # ── Save tabular outputs ───────────────────────────────────────────────────
     metrics_df = pd.DataFrame(rows)

@@ -232,9 +232,10 @@ def test_cli_slide_without_tiles_does_not_abort_the_batch(fakes, tmp_path, multi
         cli._main_batch(OmegaConf.to_object(cfg))
     out = tmp_path / "out" / ("hoptimus1" if multi else "")
     assert (out / "A.features.pt").exists() and (out / "C.features.pt").exists()
-    # The zero-tile slide gets an empty features H5 and .pt, not a missing file.
+    # The zero-tile slide gets an empty features H5 and .pt, not a missing file,
+    # and is reported as skipped (no tiles), not as a failure.
     assert torch.load(out / "E.features.pt", weights_only=True).shape[0] == 0
-    assert "has no features" in caplog.text
+    assert "skipped (no tiles)" in caplog.text
 
 
 @pytest.mark.parametrize("multi", [True, False])
@@ -251,13 +252,15 @@ def test_cli_fails_when_no_slide_has_tiles(fakes, tmp_path, multi, caplog):
             cli._main_batch(OmegaConf.to_object(cfg))
     out = tmp_path / "out" / ("hoptimus1" if multi else "")
     assert torch.load(out / "E1.features.pt", weights_only=True).shape[0] == 0
-    assert "Skipped (no tiles): 2 slides" in caplog.text
+    what = "4 of 4 (slide, model) pair(s)" if multi else "2 of 2 slide(s)"
+    assert f"{what} skipped (no tiles)" in caplog.text
 
 
 def test_cli_model_types_passes_shared_loader(fakes, tmp_path):
     cfg = OmegaConf.structured(cli.ExtractFeaturesConfig(
         patch_h5_paths=[fakes.h5], slide_paths=[fakes.slide], slide_ids=["A"], output_dir=str(tmp_path / "out"),
         model_types=[ModelType.HOPTIMUS1, ModelType.OPTIMUS], shared_loader=False, use_gpu=False))
-    with patch.object(cli, "extract_patch_features_batch_multi") as run, patch.object(cli, "_write_pts"):
+    with patch.object(cli, "extract_patch_features_batch_multi") as run, patch.object(cli, "_write_pts"), \
+            patch.object(cli, "_raise_if_no_features"):
         cli._main_batch(OmegaConf.to_object(cfg))
     assert run.call_args.kwargs["shared_loader"] is False

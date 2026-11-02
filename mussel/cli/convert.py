@@ -105,6 +105,8 @@ def main(cfg: ConvertConfig) -> None:
         # With downscaling (40x → 20x)
         convert input_path=./wsis output_dir=./tiffs mpp_csv=mpp.csv downscale_by=2
     """
+    if cfg.downscale_by < 1:
+        raise ValueError(f"downscale_by must be ≥ 1, got {cfg.downscale_by}.")
     converter = AnyToTiffConverter(job_dir=cfg.output_dir, bigtiff=cfg.bigtiff)
 
     if os.path.isfile(cfg.input_path):
@@ -113,7 +115,10 @@ def main(cfg: ConvertConfig) -> None:
                 "mpp is required for single-file conversion. "
                 "Pass mpp=<value> or use a directory + mpp_csv for batch mode."
             )
-        converter.process_file(cfg.input_path, mpp=cfg.mpp)
+        # Raises if the conversion fails, so the command exits non-zero.
+        converter.process_file(
+            cfg.input_path, mpp=cfg.mpp, zoom=1.0 / cfg.downscale_by
+        )
     elif os.path.isdir(cfg.input_path):
         if cfg.mpp_csv is None:
             raise ValueError(

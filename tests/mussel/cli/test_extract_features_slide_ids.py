@@ -43,7 +43,8 @@ def test_explicit_slide_ids_disambiguate(tmp_path):
         output_dir=str(tmp_path / "out"), model_type=ModelType.CONCH1_5, use_gpu=False, num_workers=0,
     )
     with patch("mussel.cli.extract_features.extract_patch_features_batch") as extract, \
-            patch("mussel.cli.extract_features._write_pts"):
+            patch("mussel.cli.extract_features._write_pts", return_value={}), \
+            patch("mussel.cli.extract_features._raise_if_no_features"):
         mussel.cli.extract_features.main(OmegaConf.create(cfg))
     outputs = extract.call_args.kwargs["output_h5_paths"]
     assert [p.split("/")[-1] for p in outputs] == ["a_S1.features.h5", "b_S1.features.h5"]
