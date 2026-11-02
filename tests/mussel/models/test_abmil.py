@@ -1,7 +1,7 @@
 """Tests for ABMIL slide encoder (mussel/models/abmil.py)."""
 
 import tempfile
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from unittest.mock import patch
 
 import pytest
@@ -169,6 +169,24 @@ class TestABMILSlideModel:
         assert torch.allclose(
             out1, out2, atol=1e-5
         ), "Reloaded model should be identical"
+
+    def test_saved_checkpoint_is_weights_only_loadable(self, tmp_path):
+        """save() writes only a config dict and tensors, so the safe loader reads it."""
+        model = ABMILSlideModel(model_path=_make_checkpoint(tmp_path), use_gpu=False)
+        save_path = tmp_path / "abmil_saved.pt"
+        model.save(str(save_path))
+        checkpoint = torch.load(save_path, map_location="cpu", weights_only=True)
+        assert set(checkpoint) == {"config", "state_dict"}
+
+    def test_refuses_checkpoint_with_arbitrary_objects(self, tmp_path):
+        """A checkpoint carrying a non-tensor, non-primitive object is not loaded."""
+        config = {"feature_dim": 64, "head_dim": 32, "n_heads": 2, "dropout": 0.0,
+                  "gated": False, "source": PurePosixPath("elsewhere")}
+        encoder = _ABMILSlideEncoder(**{k: v for k, v in config.items() if k != "source"})
+        ckpt_path = tmp_path / "abmil_untrusted.pt"
+        torch.save({"config": config, "state_dict": encoder.state_dict()}, ckpt_path)
+        with pytest.raises(Exception, match="Weights only load failed"):
+            ABMILSlideModel(model_path=str(ckpt_path), use_gpu=False)
 
     def test_get_model_fun_inference(self, tmp_path):
         """get_model_fun() returns a callable that produces [D] output (batch dim squeezed)."""

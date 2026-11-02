@@ -453,6 +453,38 @@ class TestDrawSlideMask:
                 # But WSI should still be closed
                 mock_wsi.close.assert_called_once()
 
+    @staticmethod
+    def _draw(**kwargs):
+        import shapely
+        from PIL import Image as PILImage
+
+        from mussel.utils.segment import draw_slide_mask
+
+        mock_wsi = MagicMock()
+        mock_wsi.level_dimensions = [(1000, 800)]
+        mock_wsi.read_region.return_value = PILImage.new("RGBA", (1000, 800), "white")
+        with (
+            patch("mussel.utils.segment._wsi_open_slide", return_value=mock_wsi),
+            patch("mussel.utils.segment._assert_level_downsamples", return_value=[(1.0, 1.0)]),
+        ):
+            return draw_slide_mask("/fake/path.svs", shapely.geometry.box(0, 0, 100, 100),
+                                   vis_level=0, **kwargs)
+
+    def test_max_size_applies_after_custom_downsample(self):
+        """max_size was compared with the pre-downsample size and upscaled the image."""
+        img = self._draw(custom_downsample=4, max_size=500)
+        assert img.size == (250, 200)
+
+    def test_max_size_still_shrinks_downsampled_image(self):
+        img = self._draw(custom_downsample=2, max_size=250)
+        assert img.size == (250, 200)
+
+    def test_colors_from_a_config_list(self):
+        """OmegaConf.to_container yields lists; PIL needs tuples."""
+        img = self._draw(outline=[0, 0, 0], fill=[255, 0, 0, 80])
+        r, g, b = img.convert("RGB").getpixel((50, 50))
+        assert r > g and r > b
+
 
 def test_segment_tissue_closes_wsi_on_early_return_dimension_error():
     """Test that segment_tissue closes WSI when returning early due to large dimensions."""

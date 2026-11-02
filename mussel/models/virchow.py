@@ -5,7 +5,6 @@ from typing import Callable, List
 
 import timm
 import torch
-import torch.nn as nn
 from timm.layers import SwiGLUPacked
 
 from mussel.models.base import TorchModel, _timm_preprocessing
@@ -75,7 +74,7 @@ class VirchowModel(TorchModel):
         Virchow2 has 4 register tokens, so its card averages ``output[:, 5:]``;
         Virchow has none and averages ``output[:, 1:]``.
         """
-        model = self.obj.module if isinstance(self.obj, nn.DataParallel) else self.obj
+        model = self.unwrapped
         num_reg = getattr(model, "num_reg_tokens", None)
         if not isinstance(num_reg, int):
             num_reg = self._num_register_tokens

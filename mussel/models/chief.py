@@ -87,6 +87,8 @@ class _CHIEFSlideModel(nn.Module):
 
 @register_model(ModelType.CHIEF_SLIDE)
 class CHIEFSlideEncoderModel(TorchModel):
+    supports_data_parallel = False  # one slide at a time; see TorchModel
+
     _GDRIVE_FOLDER_ID = "1uRv9A1HuTW5m_pJoyMzdN31bE1i-tDaV"
     _CHECKPOINT_FILENAME = "CHIEF_pretraining.pth"
 
