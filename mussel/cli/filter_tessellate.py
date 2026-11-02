@@ -23,6 +23,7 @@ from mussel.cli.tessellate_extract_features_common import _build_grid_polygons
 from mussel.models import ModelType, get_default_patch_size
 from mussel.utils import (filter_features, load_classifier,
                           load_features_from_h5, save_features, save_hdf5)
+from mussel.utils.feature_extract import NoTilesError
 from mussel.utils.segment import (draw_slide_mask, save_patches_png,
                                   segment_tissue)
 
@@ -210,11 +211,10 @@ def _main(cfg: FilterTessellateConfig, temp_dir, base_path):
         if callable(release):
             release()
 
-    if values:
-        polygon, grid, coords, _ = values
-    else:
-        logger.error("Tessellation failed")
-        return
+    if not values:
+        # segment_tissue returns None only for no tissue (errors raise): fail, saying so.
+        raise NoTilesError(f"{cfg.slide_id or cfg.slide_path}: no tissue found by segmentation")
+    polygon, grid, coords, _ = values
 
     logger.info(f"Tessellation complete. Found {len(coords)} tiles.")
 

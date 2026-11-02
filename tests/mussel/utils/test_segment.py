@@ -487,18 +487,16 @@ class TestDrawSlideMask:
 
 
 def test_segment_tissue_closes_wsi_on_early_return_dimension_error():
-    """Test that segment_tissue closes WSI when returning early due to large dimensions."""
+    """A level too large to segment is an error, not "no tissue" (None): it raises, and closes the WSI."""
     mock_wsi = MagicMock()
     mock_wsi.level_dimensions = [(10**7, 10**7)]  # Triggers width * height > 1e12
 
     with patch("mussel.utils.segment.tiffslide.open_slide", return_value=mock_wsi):
         from mussel.utils.segment import segment_tissue
 
-        result = segment_tissue("/fake/path.svs", seg_level=0)
+        with pytest.raises(ValueError, match="too large"):
+            segment_tissue("/fake/path.svs", seg_level=0)
 
-        # Should return None due to dimension error
-        assert result is None
-        # But WSI should still be closed
         mock_wsi.close.assert_called_once()
 
 

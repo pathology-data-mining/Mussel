@@ -11,6 +11,7 @@ from omegaconf import OmegaConf
 from mussel.cli.filter_tessellate import FilterTessellateConfig, main
 from mussel.cli.tessellate import NeuralSegConfig, SegConfig, StainSegConfig
 from mussel.models import ModelType
+from mussel.utils.feature_extract import NoTilesError
 
 _FILTER_TESSELLATE_REQUIRED = dict(
     slide_path="test.svs",
@@ -87,7 +88,9 @@ def test_filter_tessellate_forwards_reusable_neural_segmenter(tmp_path):
     ):
         from mussel.cli.filter_tessellate import _main
 
-        _main(cfg, str(tmp_path), tmp_path)
+        # segment_tissue finds no tissue (None): the run fails, saying so.
+        with pytest.raises(NoTilesError, match="no tissue found"):
+            _main(cfg, str(tmp_path), tmp_path)
 
     build_segmenter.assert_called_once()
     assert build_segmenter.call_args.kwargs["neural_config"]["batch_size"] == 32

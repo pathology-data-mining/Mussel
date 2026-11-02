@@ -62,8 +62,11 @@ from mussel.utils.artifact_removal import (
     EXCLUDE_PENMARKS_ONLY,
     GrandQCArtifactRemover,
 )
-from mussel.utils.feature_extract import (SlideBatchError, _numpy_to_torch,
+from mussel.utils.feature_extract import (NoTilesError, SlideBatchError,
+                                          _numpy_to_torch,
                                           _parse_feature_dtype,
+                                          _skip_no_tiles,
+                                          no_tiles_reason,
                                           raise_if_slides_failed,
                                           skip_slides_without_tiles)
 from mussel.utils.file import (WSI_EXTENSIONS, check_unique_slide_ids,
@@ -680,36 +683,41 @@ def _main_single(cfg: TessellateExtractFeaturesConfig):
 
     artifact_remover_fn, neural_segmenter = _build_segmentation_runtime(cfg)
 
-    # Process the slide using shared logic
-    result = process_slide_tessellation_and_filtering(
-        slide_path=cfg.slide_path,
-        slide_id=cfg.slide_id,
-        output_h5_path=cfg.output_h5_path,
-        output_pt_path=cfg.output_pt_path,
-        cfg=cfg,
-        temp_dir=temp_dir,
-        base_path=base_path,
-        use_filtering=use_filtering,
-        prefilter_model_type=cfg.prefilter_model_type,
-        prefilter_model_path=prefilter_model_path,
-        model_type=model_type,
-        model_path=model_path,
-        skip_second_extraction=skip_second_extraction,
-        output_mask_path=cfg.output_mask_path,
-        two_step_mode=False,  # Single-slide mode doesn't use two-step
-        slide_model_path=slide_model_path,
-        artifact_remover_fn=artifact_remover_fn,
-        neural_segmenter=neural_segmenter,
-    )
-
+    # Process the slide using shared logic. No tissue (NoTilesError) is this run's
+    # only slide having no tiles: it fails, as a batch where no slide has tiles does.
+    try:
+        result = process_slide_tessellation_and_filtering(
+            slide_path=cfg.slide_path,
+            slide_id=cfg.slide_id,
+            output_h5_path=cfg.output_h5_path,
+            output_pt_path=cfg.output_pt_path,
+            cfg=cfg,
+            temp_dir=temp_dir,
+            base_path=base_path,
+            use_filtering=use_filtering,
+            prefilter_model_type=cfg.prefilter_model_type,
+            prefilter_model_path=prefilter_model_path,
+            model_type=model_type,
+            model_path=model_path,
+            skip_second_extraction=skip_second_extraction,
+            output_mask_path=cfg.output_mask_path,
+            two_step_mode=False,  # Single-slide mode doesn't use two-step
+            slide_model_path=slide_model_path,
+            artifact_remover_fn=artifact_remover_fn,
+            neural_segmenter=neural_segmenter,
+        )
+    except NoTilesError:
+        if temp_dir:
+            shutil.rmtree(temp_dir)
+        raise
     if result is None:
-        # Tessellation failed (no tissue found, or a segmentation error)
+        # No tissue raises NoTilesError and errors raise: no result is unexpected.
         if temp_dir:
 
             shutil.rmtree(temp_dir)
         raise RuntimeError(
-            f"Tessellation failed for {cfg.slide_path}: no tissue found or segmentation "
-            "error (see log above); no features written."
+            f"Tessellation failed for {cfg.slide_path}: tessellation returned no result "
+            "(see log above); no features written."
         )
 
     # Create visualizations
@@ -890,9 +898,13 @@ def _main_batch(
 
             if result is None:
                 logger.warning(f"Skipping slide {slide_id} due to tessellation failure")
-                failures[slide_id] = "tessellation failed (no tissue found or segmentation error)"
+                failures[slide_id] = "tessellation failed (tessellation returned no result)"
                 continue
         except Exception as e:
+            reason = no_tiles_reason(None, error=e)
+            if reason:  # no tissue: skipped (a property of the slide), not a failure
+                _skip_no_tiles(skipped, slide_id, slide_id, reason)
+                continue
             logger.exception(f"Error processing slide {slide_id}: {e}")
             logger.warning(
                 f"Skipping slide {slide_id} and continuing with remaining slides"
@@ -915,7 +927,7 @@ def _main_batch(
         if temp_dir:
 
             shutil.rmtree(temp_dir)
-        raise_if_slides_failed(failures, len(slide_ids))
+        raise_if_slides_failed(failures, len(slide_ids), skipped=skipped)
         return
 
     # Create output subdirectories (h5, pt, tile_h5) if they're local paths

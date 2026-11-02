@@ -35,10 +35,13 @@ _PATCH_FEATURES = np.random.rand(3, 8).astype(np.float32)
 _SLIDE_FEATURES = np.random.rand(1, 8).astype(np.float32)
 
 
-def _segment_tissue(failing=()):
-    """segment_tissue mock: no tissue (None) for slide IDs in ``failing``, else three tiles."""
+def _segment_tissue(failing=(), erroring=()):
+    """segment_tissue mock: no tissue (None) for slide IDs in ``failing``, a segmentation
+    error for those in ``erroring``, else three tiles."""
 
     def fake(slide_path, slide_id, output_h5_path, **kwargs):
+        if slide_id in erroring:
+            raise RuntimeError("corrupt slide")
         if slide_id in failing:
             return None
         os.makedirs(os.path.dirname(output_h5_path), exist_ok=True)
@@ -94,18 +97,39 @@ def _run(cfg, segment=None, extract=_extract, aggregate=_aggregate):
 
 
 def test_tef_single_slide_without_tissue_raises(tmp_path):
+    """One slide without tissue is a batch where no slide has tiles: it raises, saying so."""
     cfg = OmegaConf.create(TessellateExtractFeaturesConfig(
         slide_path=str(tmp_path / "bad.svs"), slide_id="bad", output_dir=str(tmp_path / "out"),
         prefilter_model_type=ModelType.RESNET50, seg_config=SegConfig(), use_gpu=False,
     ))
-    with pytest.raises(RuntimeError, match="Tessellation failed"):
+    with pytest.raises(fe.NoTilesError, match="bad: no tissue found"):
         _run(cfg, segment=_segment_tissue(failing={"bad"}))
+
+
+@pytest.mark.parametrize("aggregation_method", ["identity", "mean"])
+def test_tef_batch_slide_without_tissue_is_skipped_not_failed(tmp_path, caplog, aggregation_method):
+    """No tissue is a property of the slide, like no tiles: skipped with a warning, the run exits 0."""
+    cfg = _batch_cfg(tmp_path, aggregation_method=aggregation_method)
+    _run(cfg, segment=_segment_tissue(failing={"bad"}), aggregate=fe.aggregate_slide_features_batch)
+    out = tmp_path / "out"
+    assert (out / "pt" / "good.features.pt").exists()
+    assert not (out / "pt" / "bad.features.pt").exists()
+    warnings = "\n".join(r.getMessage() for r in caplog.records if r.levelname == "WARNING")
+    assert "bad: no tissue found" in warnings
+    assert "1 of 2 slide(s) skipped (no tiles)" in warnings
+
+
+def test_tef_batch_where_no_slide_has_tissue_raises(tmp_path):
+    cfg = _batch_cfg(tmp_path)
+    with pytest.raises(RuntimeError, match="none of the 2 slide.*had tiles"):
+        _run(cfg, segment=_segment_tissue(failing={"bad", "good"}))
 
 
 def test_tef_batch_tessellation_failure_processes_the_others_then_raises(tmp_path):
+    """A segmentation error (not "no tissue") is still a failure."""
     cfg = _batch_cfg(tmp_path)
-    with pytest.raises(RuntimeError, match="1 of 2 slide.*bad: tessellation failed") as info:
-        _run(cfg, segment=_segment_tissue(failing={"bad"}))
+    with pytest.raises(RuntimeError, match="1 of 2 slide.*bad: tessellation failed: corrupt slide") as info:
+        _run(cfg, segment=_segment_tissue(erroring={"bad"}))
     assert "good" not in str(info.value)
     out = tmp_path / "out"
     assert (out / "pt" / "good.features.pt").exists()
@@ -115,8 +139,8 @@ def test_tef_batch_tessellation_failure_processes_the_others_then_raises(tmp_pat
 
 def test_tef_batch_all_tessellations_fail_raises(tmp_path):
     cfg = _batch_cfg(tmp_path)
-    with pytest.raises(RuntimeError, match="2 of 2 slide"):
-        _run(cfg, segment=_segment_tissue(failing={"bad", "good"}))
+    with pytest.raises(RuntimeError, match="2 of 2 slide.*tessellation failed: corrupt slide"):
+        _run(cfg, segment=_segment_tissue(erroring={"bad", "good"}))
 
 
 def test_tef_batch_extraction_error_raises(tmp_path):
@@ -232,9 +256,59 @@ def test_tessellate_single_slide_without_tissue_raises(tmp_path):
     cfg = OmegaConf.structured(TessellateConfig(slide_path=str(tmp_path / "s.svs"), output_h5_path=str(out),
                                                    seg_config=SegConfig()))
     with patch.object(tessellate_module, "_run_tessellation", return_value={(224, 0.5): None}):
-        with pytest.raises(RuntimeError, match="no patch H5"):
+        with pytest.raises(fe.NoTilesError, match="no tissue found"):
             tessellate_module._main(cfg)
     assert not out.exists()
+
+
+def _tessellate_batch(tmp_path, no_tissue=(), erroring=(), **overrides):
+    """Run tessellate in batch mode over slides "bad" and "good" with _run_tessellation mocked."""
+    cfg = OmegaConf.structured(TessellateConfig(
+        slide_paths=[str(tmp_path / "bad.svs"), str(tmp_path / "good.svs")], slide_ids=["bad", "good"],
+        output_dir=str(tmp_path / "out"), seg_config=SegConfig(), **overrides))
+    seg_cfg = OmegaConf.to_container(cfg.seg_config, resolve=True)
+    specs = tessellate_module._tile_specs(seg_cfg)
+
+    def fake(slide_path, slide_id, output_h5_path, seg_cfg, **kwargs):
+        if slide_id in erroring:
+            raise RuntimeError("corrupt slide")
+        if slide_id in no_tissue:
+            return {spec: None for spec in specs}
+        for spec in specs:
+            path = tessellate_module._path_for_spec(output_h5_path, spec, specs)
+            with h5py.File(path, "w") as f:
+                f.create_dataset("coords", data=_COORDS)
+        return {spec: (MagicMock(), MagicMock(), _COORDS) for spec in specs}
+
+    with (
+        patch.object(tessellate_module, "_build_artifact_remover", return_value=None),
+        patch.object(tessellate_module, "_build_neural_segmenter", return_value=None),
+        patch.object(tessellate_module, "_load_segmentation_models_now"),
+        patch.object(tessellate_module, "_run_tessellation", side_effect=fake),
+    ):
+        tessellate_module._run_batch(cfg, seg_cfg)
+    return tmp_path / "out"
+
+
+def test_tessellate_batch_slide_without_tissue_is_skipped_not_failed(tmp_path, caplog):
+    """Even without continue_on_error, a slide without tissue doesn't stop or fail the batch."""
+    out = _tessellate_batch(tmp_path, no_tissue={"bad"})
+    assert (out / "good.patch.h5").exists()
+    assert not (out / "bad.patch.h5").exists()
+    warnings = "\n".join(r.getMessage() for r in caplog.records if r.levelname == "WARNING")
+    assert "bad: no tissue found" in warnings
+    assert "1 of 2 slide(s) skipped (no tiles)" in warnings
+
+
+def test_tessellate_batch_where_no_slide_has_tissue_raises(tmp_path):
+    with pytest.raises(RuntimeError, match="none of the 2 slide.*had tiles"):
+        _tessellate_batch(tmp_path, no_tissue={"bad", "good"})
+
+
+def test_tessellate_batch_segmentation_error_still_fails(tmp_path):
+    """A segmentation error (not "no tissue") is still a failure."""
+    with pytest.raises(RuntimeError, match="Tessellation failed for 1 of 2"):
+        _tessellate_batch(tmp_path, erroring={"bad"})
 
 
 # ── convert ───────────────────────────────────────────────────────────────────

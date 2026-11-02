@@ -1005,7 +1005,9 @@ def segment_tissue(
                 - name: Slide identifier
                 - (and other segmentation parameters)
 
-        Returns None if no tissue contours are found or if slide dimensions are too large.
+        Returns None only if no tissue is found (no tissue contours, or bounded
+        neural sampling found no tissue-rich tiles): batch callers skip such
+        slides. Errors, e.g. a segmentation level too large to segment, raise.
     """
     results = segment_tissue_multi(
         slide_path=slide_path,
@@ -1235,12 +1237,11 @@ def segment_tissue_multi(
         logger.info(f"Using level {seg_level} for segmentation")
         width, height = wsi.level_dimensions[seg_level]
         if width * height > 1e12:
-            logger.error(
-                "level_dim {} x {} is likely too large for successful segmentation, aborting".format(
-                    width, height
-                )
+            # An error, not "no tissue" (None): callers skip slides without tissue.
+            raise ValueError(
+                f"segmentation level {seg_level} of {slide_path} is {width} x {height}, "
+                "too large for successful segmentation"
             )
-            return {_key(spec): None for spec in specs}
 
         if seg_model == "neural" and selection_mode != "bounded_neural":
             seg_level_ds = level_downsamples[seg_level][0]
