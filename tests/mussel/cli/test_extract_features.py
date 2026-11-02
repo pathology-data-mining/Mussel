@@ -452,3 +452,64 @@ def test_max_slide_patches_is_refused_in_single_slide_mode(tmp_path):
     )
     with pytest.raises(ValueError, match="batch mode"):
         mussel.cli.extract_features.main(OmegaConf.create(cfg))
+
+
+# ---------------------------------------------------------------------------
+# Patch directory mode, batch-only / single-only options, model_dir, help text
+# ---------------------------------------------------------------------------
+
+
+def test_patch_directory_mode_needs_only_outputs(tmp_path):
+    """patch_path mode runs without patch_h5_path / slide_path (it has neither)."""
+    cfg = ExtractFeaturesConfig(
+        patch_path=str(tmp_path / "patches"), output_h5_path=str(tmp_path / "o.h5"), use_gpu=False
+    )
+    with patch("mussel.cli.extract_features.save_features") as mock_save:
+        mussel.cli.extract_features.main(OmegaConf.create(cfg))
+    kwargs = mock_save.call_args.kwargs
+    assert kwargs["patch_path"] == str(tmp_path / "patches")
+    assert kwargs["patch_h5_path"] is None and kwargs["slide_path"] is None
+
+
+def test_patch_directory_mode_still_requires_output(tmp_path):
+    cfg = ExtractFeaturesConfig(patch_path=str(tmp_path / "patches"), use_gpu=False)
+    with patch("mussel.cli.extract_features.save_features") as mock_save, \
+         pytest.raises(ValueError, match="output_h5_path"):
+        mussel.cli.extract_features.main(OmegaConf.create(cfg))
+    mock_save.assert_not_called()
+
+
+@pytest.mark.parametrize("option", ["patch_path", "model_save_path"])
+def test_batch_mode_rejects_single_mode_options(tmp_path, option):
+    """Batch mode used to ignore patch_path / model_save_path silently."""
+    patch_h5 = tmp_path / "slide.patch.h5"
+    slide_svs = tmp_path / "slide.svs"
+    patch_h5.touch()
+    slide_svs.touch()
+    cfg = OmegaConf.create(ExtractFeaturesConfig(
+        patch_h5_paths=[str(patch_h5)], slide_paths=[str(slide_svs)], slide_ids=["slide1"],
+        output_dir=str(tmp_path / "out"), use_gpu=False, num_workers=0,
+    ))
+    cfg[option] = str(tmp_path / "x")
+    with patch("mussel.cli.extract_features.extract_patch_features_batch") as mock_extract, \
+         pytest.raises(ValueError, match=option):
+        mussel.cli.extract_features.main(cfg)
+    mock_extract.assert_not_called()
+
+
+def test_single_mode_forwards_model_dir(tmp_path):
+    cfg = ExtractFeaturesConfig(
+        patch_h5_path=str(tmp_path / "s.patch.h5"), slide_path=str(tmp_path / "s.svs"),
+        output_h5_path=str(tmp_path / "s.features.h5"), model_dir=str(tmp_path / "models"),
+        use_gpu=False,
+    )
+    with patch("mussel.cli.extract_features.save_features") as mock_save:
+        mussel.cli.extract_features.main(OmegaConf.create(cfg))
+    assert mock_save.call_args.kwargs["model_dir"] == str(tmp_path / "models")
+
+
+def test_help_text_has_no_unknown_sample_mode():
+    """The help documented a sample_batch_csv_path mode that has no config field."""
+    assert "sample_batch_csv_path" not in mussel.cli.extract_features.desc_doc
+    assert "sample_batch_csv_path" not in ExtractFeaturesConfig.__dataclass_fields__
+    assert "aggregate_sample_features" in mussel.cli.extract_features.desc_doc

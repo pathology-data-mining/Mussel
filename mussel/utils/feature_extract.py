@@ -23,6 +23,7 @@ from tqdm import tqdm
 # fmt: off
 from mussel.datasets import (FlatImageDataset, WholeSlideImageH5Dataset,
                              WholeSlideImageTileCoordDataset)
+from mussel.datasets.utils import eval_transforms
 from mussel.models import (SLIDE_ENCODER_COMPATIBILITY, ModelType,
                            check_tile_size, get_model_factory,
                            get_required_patch_encoder,
@@ -100,6 +101,24 @@ def _parse_feature_dtype(embedding_precision: str) -> Optional[np.dtype]:
         f"Unsupported embedding_precision={embedding_precision!r}. "
         f"Valid options: {_VALID_PRECISIONS}"
     )
+
+
+def _patch_dir_dataset(patch_path: str, preprocessing: Optional[Callable]):
+    """Dataset over a directory of pre-extracted patch images (Patch Directory Mode).
+
+    Uses ImageFolder when the directory has class subfolders, else FlatImageDataset.
+    A model without its own preprocessing gets the same ImageNet-normalised tensor
+    transform the slide datasets use (without one the datasets yield PIL images,
+    which the default collate cannot batch). The images are used at their stored
+    size: unlike a patch H5 there is no target tile size to resize to.
+    """
+    transform = preprocessing if preprocessing is not None else eval_transforms(use_imagenet_rgb_dist=True)
+    try:
+        return ImageFolder(root=patch_path, transform=transform)
+    except FileNotFoundError:
+        # No class folders found, use flat directory structure
+        logger.info(f"No class folders found in {patch_path}, using flat directory structure")
+        return FlatImageDataset(root=patch_path, transform=transform)
 
 
 def _make_dataloader(
@@ -1248,22 +1267,7 @@ def extract_patch_features(
     preprocessing = model.get_preprocessing_fun()
 
     if patch_path:
-        # Try ImageFolder first (for class-based structure)
-        # Fall back to FlatImageDataset if no class folders found
-        try:
-            dataset = ImageFolder(
-                root=patch_path,
-                transform=preprocessing,
-            )
-        except FileNotFoundError:
-            # No class folders found, use flat directory structure
-            logger.info(
-                f"No class folders found in {patch_path}, using flat directory structure"
-            )
-            dataset = FlatImageDataset(
-                root=patch_path,
-                transform=preprocessing,
-            )
+        dataset = _patch_dir_dataset(patch_path, preprocessing)
 
         loader = _make_dataloader(
             dataset=dataset,
@@ -2273,6 +2277,7 @@ def save_features(
     model_kwargs: Optional[dict] = None,
     slide_model_kwargs: Optional[dict] = None,
     tile_size_check: str = "warn",
+    model_dir: Optional[str] = None,
 ) -> tuple[str, Optional[str]]:
     """Extract features from whole slide image and save to HDF5 and PyTorch formats.
 
@@ -2314,6 +2319,8 @@ def save_features(
             storage size; "bfloat16" uses brain-float format.
             Note: when aggregation_method="model", reduced precision affects the patch
             features fed into the slide encoder, which may impact inference quality.
+        model_dir: Optional directory of pre-downloaded models; supplies model_path /
+            slide_model_path when they are None (see :func:`get_model_path_from_dir`).
     """
     # Validate embedding_precision up-front so any ValueError surfaces before other logic.
     _parse_feature_dtype(embedding_precision)
@@ -2344,6 +2351,10 @@ def save_features(
                 model_type = required_patch_encoder
             # Validate compatibility
             validate_slide_encoder_compatibility(model_type, slide_model_type)
+
+        # Look weights up in model_dir only now that the patch encoder is settled.
+        model_path = model_path or get_model_path_from_dir(model_dir, model_type)
+        slide_model_path = slide_model_path or get_model_path_from_dir(model_dir, slide_model_type)
 
         # Determine intermediate path
         if intermediate_h5_path is None:
@@ -2396,6 +2407,7 @@ def save_features(
 
         feature_dtype = _parse_feature_dtype(embedding_precision)
 
+        model_path = model_path or get_model_path_from_dir(model_dir, model_type)
         model = _load_model(model_type, model_path, use_gpu, gpu_device_id, model_kwargs)
         if model_save_path is not None:
             Path(model_save_path).parent.mkdir(parents=True, exist_ok=True)
@@ -2404,22 +2416,7 @@ def save_features(
         preprocessing = model.get_preprocessing_fun()
 
         if patch_path:
-            # Try ImageFolder first (for class-based structure)
-            # Fall back to FlatImageDataset if no class folders found
-            try:
-                dataset = ImageFolder(
-                    root=patch_path,
-                    transform=preprocessing,
-                )
-            except FileNotFoundError:
-                # No class folders found, use flat directory structure
-                logger.info(
-                    f"No class folders found in {patch_path}, using flat directory structure"
-                )
-                dataset = FlatImageDataset(
-                    root=patch_path,
-                    transform=preprocessing,
-                )
+            dataset = _patch_dir_dataset(patch_path, preprocessing)
 
             loader = _make_dataloader(
                 dataset=dataset,

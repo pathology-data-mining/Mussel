@@ -155,62 +155,65 @@ def visualize_heatmap(
         Absolute path to the saved heatmap image.
     """
     wsi = openslide.open_slide(slide_path)
+    try:
 
-    if normalize:
-        scores = _rank_normalize(scores)
+        if normalize:
+            scores = _rank_normalize(scores)
 
-    if vis_mag is not None:
-        try:
-            vis_level = get_level_for_magnification(
-                wsi, vis_mag, fallback_level=vis_level
-            )
-        except Exception as exc:
-            logger.warning(
-                "Could not determine vis_level from vis_mag=%d (%s); "
-                "falling back to vis_level=%d.",
-                vis_mag,
-                exc,
-                vis_level,
-            )
-    downsample = wsi.level_downsamples[vis_level]
+        if vis_mag is not None:
+            try:
+                vis_level = get_level_for_magnification(
+                    wsi, vis_mag, fallback_level=vis_level
+                )
+            except Exception as exc:
+                logger.warning(
+                    "Could not determine vis_level from vis_mag=%d (%s); "
+                    "falling back to vis_level=%d.",
+                    vis_mag,
+                    exc,
+                    vis_level,
+                )
+        downsample = wsi.level_downsamples[vis_level]
 
-    scale = np.array([1.0 / downsample, 1.0 / downsample])
-    region_size = tuple(
-        (np.array(wsi.level_dimensions[0]) * scale).astype(int)
-    )  # (W, H)
+        scale = np.array([1.0 / downsample, 1.0 / downsample])
+        region_size = tuple(
+            (np.array(wsi.level_dimensions[0]) * scale).astype(int)
+        )  # (W, H)
 
-    overlay = create_overlay(scores, coords, patch_size_level0, scale, region_size)
-    overlay_colored = apply_colormap(overlay, cmap)
+        overlay = create_overlay(scores, coords, patch_size_level0, scale, region_size)
+        overlay_colored = apply_colormap(overlay, cmap)
 
-    if overlay_only:
-        blended_img = overlay_colored
-    else:
-        img = wsi.read_region(
-            (0, 0), vis_level, wsi.level_dimensions[vis_level]
-        ).convert("RGB")
-        img = img.resize(region_size, resample=Image.Resampling.BICUBIC)
-        img_arr = np.array(img)
-        blended_img = cv2.addWeighted(img_arr, 0.6, overlay_colored, 0.4, 0)
+        if overlay_only:
+            blended_img = overlay_colored
+        else:
+            img = wsi.read_region(
+                (0, 0), vis_level, wsi.level_dimensions[vis_level]
+            ).convert("RGB")
+            img = img.resize(region_size, resample=Image.Resampling.BICUBIC)
+            img_arr = np.array(img)
+            blended_img = cv2.addWeighted(img_arr, 0.6, overlay_colored, 0.4, 0)
 
-    os.makedirs(os.path.dirname(os.path.abspath(output_path)), exist_ok=True)
-    heatmap_path = output_path
-    Image.fromarray(blended_img).save(heatmap_path)
-    logger.info("Saved heatmap to %s", heatmap_path)
+        os.makedirs(os.path.dirname(os.path.abspath(output_path)), exist_ok=True)
+        heatmap_path = output_path
+        Image.fromarray(blended_img).save(heatmap_path)
+        logger.info("Saved heatmap to %s", heatmap_path)
 
-    if num_top_patches > 0:
-        if output_patch_dir is None:
-            output_patch_dir = os.path.join(
-                os.path.dirname(os.path.abspath(output_path)), "topk_patches"
-            )
-        os.makedirs(output_patch_dir, exist_ok=True)
-        topk_indices = np.argsort(scores)[-num_top_patches:]
-        for rank, idx in enumerate(topk_indices):
-            x, y = int(coords[idx][0]), int(coords[idx][1])
-            patch = wsi.read_region((x, y), 0, (patch_size_level0, patch_size_level0))
-            patch_path = os.path.join(
-                output_patch_dir, f"top_{rank}_score_{scores[idx]:.4f}.png"
-            )
-            patch.save(patch_path)
-        logger.info("Saved %d top patches to %s", num_top_patches, output_patch_dir)
+        if num_top_patches > 0:
+            if output_patch_dir is None:
+                output_patch_dir = os.path.join(
+                    os.path.dirname(os.path.abspath(output_path)), "topk_patches"
+                )
+            os.makedirs(output_patch_dir, exist_ok=True)
+            topk_indices = np.argsort(scores)[-num_top_patches:]
+            for rank, idx in enumerate(topk_indices):
+                x, y = int(coords[idx][0]), int(coords[idx][1])
+                patch = wsi.read_region((x, y), 0, (patch_size_level0, patch_size_level0))
+                patch_path = os.path.join(
+                    output_patch_dir, f"top_{rank}_score_{scores[idx]:.4f}.png"
+                )
+                patch.save(patch_path)
+            logger.info("Saved %d top patches to %s", num_top_patches, output_patch_dir)
 
-    return heatmap_path
+        return heatmap_path
+    finally:
+        wsi.close()

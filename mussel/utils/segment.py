@@ -421,9 +421,17 @@ def grid_bounds(geometry: shapely.Geometry, step_size: int, patch_size: int,
 
 def partition(geometry: shapely.Geometry, step_size: int, patch_size: int,
               slide_size: Optional[tuple] = None):
-    """Tiles of the slide-origin lattice (see :func:`grid_bounds`) that intersect ``geometry``."""
+    """Tiles of the slide-origin lattice (see :func:`grid_bounds`) that overlap ``geometry``.
+
+    A tile must share a positive area with ``geometry``: one that only touches it
+    along an edge or at a corner holds no tissue and is left out. (Intersecting but
+    not touching means the interiors meet, which for polygons is a positive area.)
+    """
     prepared_geom = prep(geometry)
-    return [g for g in grid_bounds(geometry, step_size, patch_size, slide_size) if prepared_geom.intersects(g)]
+    return [
+        g for g in grid_bounds(geometry, step_size, patch_size, slide_size)
+        if prepared_geom.intersects(g) and not prepared_geom.touches(g)
+    ]
 
 
 def scale_contour_dim(contours, scale):
@@ -1656,6 +1664,9 @@ def draw_slide_mask(
     """
     Draw slide mask with polygon contours or list of grid polygons
     """
+    # A config's colors arrive as lists (OmegaConf.to_container); PIL wants tuples.
+    outline = tuple(outline) if isinstance(outline, list) else outline
+    fill = tuple(fill) if isinstance(fill, list) else fill
     wsi = _wsi_open_slide(slide_path)
 
     try:
@@ -1705,6 +1716,8 @@ def draw_slide_mask(
                     int(image_height / custom_downsample),
                 )
             )
+            # max_size applies to the downsampled image (else it could upscale it).
+            image_width, image_height = img.size
 
         if max_size is not None and (image_width > max_size or image_height > max_size):
             resize_factor = (

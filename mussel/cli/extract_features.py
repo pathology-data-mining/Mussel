@@ -177,7 +177,7 @@ Extract features (embeddings) from whole slide images (WSI) or patch directories
 pathology foundation model. The embeddings are written to PyTorch tensor file (.pt)
 and HDF5 (.h5) files.
 
-Four Input Modes:
+Three Input Modes:
 
 1. Single Slide Mode:
    Process one slide from patch coordinates in HDF5 file
@@ -192,16 +192,12 @@ Four Input Modes:
 
 3. Patch Directory Mode:
    Process pre-extracted patch images from a directory
-   Args: patch_path=<dir> output_h5_path=<path> output_pt_path=<path> slide_path=None patch_h5_path=None
+   Args: patch_path=<dir> output_h5_path=<path> [output_pt_path=<path>]
    Output: Single H5 and PT file containing features for ALL patches in directory
    Note: Supports S3 paths (s3://bucket/prefix/)
 
-4. Multi-Slide (Sample) Mode:
-   Process multiple slides per sample with optional subsampling
-   Args: sample_batch_csv_path=<csv> output_dir=<dir> [sample_id=<id>] [max_tiles_per_sample=<n>]
-   CSV format: sample_id,slide_path,patch_h5_path
-   Output: One H5/PT per sample with concatenated features and slide_idx tracking
-   Note: Supports {sample_id} placeholder in output paths
+For sample-level (multi-slide) features, extract per-slide features with this command,
+then combine them with the aggregate_sample_features command.
 
 Aggregation Methods (automatically selected based on aggregation_method):
    - identity: Keep all patch features - single-step mode (default, no aggregation)
@@ -254,8 +250,12 @@ def _max_slide_patches(cfg: ExtractFeaturesConfig) -> Optional[int]:
 
 @resolve_remote_paths()
 def _main_single(cfg: ExtractFeaturesConfig):
-    """Process a single slide."""
-    if (
+    """Process a single slide, or a patch directory when patch_path is set."""
+    if cfg.patch_path is not None:
+        # Patch Directory Mode: tiles come from image files, no slide or coordinates.
+        if cfg.output_h5_path is None:
+            raise ValueError("Patch directory mode (patch_path) requires output_h5_path to be specified")
+    elif (
         cfg.patch_h5_path is None
         or cfg.slide_path is None
         or cfg.output_h5_path is None
@@ -271,6 +271,7 @@ def _main_single(cfg: ExtractFeaturesConfig):
         gpu_device_id=cfg.gpu_device_id,
         model_type=cfg.model_type,
         model_path=cfg.model_path,
+        model_dir=cfg.model_dir,
         use_gpu=cfg.use_gpu,
         output_h5_path=cfg.output_h5_path,
         output_pt_path=cfg.output_pt_path,
@@ -298,6 +299,12 @@ def _main_batch(cfg: ExtractFeaturesConfig):
     if cfg.patch_h5_paths is None or cfg.slide_paths is None or cfg.output_dir is None:
         raise ValueError(
             "Batch mode requires patch_h5_paths, slide_paths, and output_dir to be specified"
+        )
+    unsupported = [name for name in ("patch_path", "model_save_path") if getattr(cfg, name, None) is not None]
+    if unsupported:
+        raise ValueError(
+            f"{', '.join(unsupported)} is not supported in batch mode (slide_paths); "
+            "use single-slide mode instead"
         )
     max_slide_patches = _max_slide_patches(cfg)
 
