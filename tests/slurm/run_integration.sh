@@ -16,7 +16,9 @@
 #SBATCH --partition=hpc
 #SBATCH --gres=gpu:1
 #SBATCH --cpus-per-task=4
-#SBATCH --mem=32G
+# Task 38 (pen-mark removal on a large S3 slide) peaks at ~31.7 GB and was
+# OOM-killed at 32G; an array shares one --mem, so every task gets 48G.
+#SBATCH --mem=48G
 #SBATCH --time=0:45:00
 #SBATCH --array=0-62
 #SBATCH --output=/gpfs/cdsi_ess/home/limr/logs/slurm/test_integration_%A_%a.out
