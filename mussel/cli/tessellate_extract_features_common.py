@@ -26,6 +26,7 @@ from mussel.utils import (
 )
 from mussel.utils import timings
 from mussel.utils.artifact_removal import GrandQCArtifactRemover
+from mussel.utils.feature_extract import NoTilesError
 from mussel.utils.segment import draw_slide_mask, save_patches_png, segment_tissue
 
 # isort: on
@@ -122,11 +123,11 @@ def _tessellate_and_filter(
         )
         if record is not None:
             record["tiles"] = {f"{tile_set['patch_size']}px_{tile_set['mpp']:g}mpp": len(values[2]) if values else 0}
-    if values:
-        polygon, grid, coords, _ = values
-    else:
-        logger.error(f"Tessellation failed for {slide_path}")
-        return None
+    if not values:
+        # segment_tissue returns None only for no tissue (errors raise): the slide
+        # has no tiles, which batch runs skip (no_tiles_reason) and single runs raise.
+        raise NoTilesError(f"{slide_id or slide_path}: no tissue found by segmentation")
+    polygon, grid, coords, _ = values
 
     logger.info(f"Tessellation complete. Found {len(coords)} tiles.")
 

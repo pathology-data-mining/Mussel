@@ -17,6 +17,8 @@ from omegaconf import MISSING, OmegaConf
 logger = logging.getLogger(__name__)
 
 from mussel.utils import timings
+from mussel.utils.feature_extract import (NoTilesError, _raise_if_no_slide_had_tiles,
+                                          _skip_no_tiles)
 from mussel.utils.artifact_removal import (
     EXCLUDE_ALL_ARTIFACTS,
     EXCLUDE_PENMARKS_ONLY,
@@ -701,11 +703,20 @@ def _run_batch(
         neural_segmenter = _build_neural_segmenter(seg_cfg, neural_config=neural_config)
         _load_segmentation_models_now(artifact_remover_fn, neural_segmenter)
     failures: list[tuple[str, str, str, str]] = []
+    skipped: dict[str, str] = {}  # slides without tissue: a property of the slide, not a failure
     items = _resolve_batch_outputs(cfg)
     specs = _tile_specs(seg_cfg)
 
     def size_paths(template: str) -> list[tuple[TileSpec, str]]:
         return [(spec, _path_for_spec(template, spec, specs)) for spec in specs]
+
+    def remove_outputs(template: str) -> None:
+        # So a re-run into the same directory leaves no earlier run's H5 for this slide.
+        for _, path in size_paths(template):
+            try:
+                Path(path).unlink(missing_ok=True)
+            except Exception:
+                pass
 
     for _, _, template in items:
         size_paths(template)  # validate placeholders before any work
@@ -724,6 +735,11 @@ def _run_batch(
                 artifact_remover_fn=artifact_remover_fn,
                 neural_segmenter=neural_segmenter,
             )
+            if all(values is None for values in results.values()):
+                # segment_tissue_multi returns None only for no tissue (errors raise).
+                _skip_no_tiles(skipped, slide_id, slide_id, f"{slide_id}: no tissue found by segmentation")
+                remove_outputs(output_h5_path)
+                continue
             written = [
                 spec for spec, path in size_paths(output_h5_path)
                 if results.get(spec) is not None and Path(path).exists()
@@ -736,11 +752,7 @@ def _run_batch(
                 logger.warning("%s: no tiles for tile set(s) (size, mpp) %s", slide_id, missing)
         except Exception as exc:
             failures.append((slide_id, slide_path, output_h5_path, str(exc)))
-            for _, path in size_paths(output_h5_path):
-                try:
-                    Path(path).unlink(missing_ok=True)
-                except Exception:
-                    pass
+            remove_outputs(output_h5_path)
             logger.exception("Failed to tessellate %s", slide_id)
             if not cfg.continue_on_error:
                 break
@@ -753,7 +765,13 @@ def _run_batch(
             for slide_id, slide_path, output_h5_path, error in failures:
                 f.write(f"{slide_id}\t{slide_path}\t{output_h5_path}\t{error}\n")
 
-    all_slides_failed = failures and len(failures) == len(items)
+    if skipped:
+        logger.warning(f"=== {len(skipped)} of {len(items)} slide(s) skipped (no tiles) ===")
+        for slide_id, reason in skipped.items():
+            logger.warning(f"  {slide_id}: {reason}")
+    if not failures:
+        _raise_if_no_slide_had_tiles(len(skipped), len(items))
+    all_slides_failed = failures and len(failures) + len(skipped) == len(items)
     if failures and (not cfg.continue_on_error or all_slides_failed):
         raise RuntimeError(
             f"Tessellation failed for {len(failures)} of {len(items)} slide(s)."
@@ -813,10 +831,10 @@ def _main(cfg: TessellateConfig) -> None:
     )
     tiled = [(spec, values) for spec, values in results.items() if values]
     if not tiled:
-        # As in batch mode: no patch H5 is a failure, not an empty success.
-        raise RuntimeError(
-            f"tessellation produced no patch H5 for {cfg.slide_path} "
-            "(no tissue found, or no tiles at any requested size)"
+        # segment_tissue_multi returns None only for no tissue (errors raise). This
+        # run's only slide has no tiles: it fails, as a batch where no slide has tiles does.
+        raise NoTilesError(
+            f"{cfg.slide_id or cfg.slide_path}: no tissue found by segmentation; no patch H5 written"
         )
 
     # The tissue mask overlay and thumbnail don't depend on tile size: draw them
