@@ -27,6 +27,8 @@ logger = logging.getLogger(__name__)
 
 @register_model(ModelType.FEATHER_SLIDE)
 class FeatherSlideEncoderModel(TorchModel):
+    supports_data_parallel = False  # one slide at a time; see TorchModel
+
     def __init__(
         self,
         model_path,
@@ -61,7 +63,7 @@ class FeatherSlideEncoderModel(TorchModel):
         def model_fun(patch_features):
             with torch.no_grad(), torch.inference_mode():
                 patch_features = patch_features.to(self.device, non_blocking=True)
-                h, _ = self.obj.forward_features(patch_features, return_attention=False)
+                h, _ = self.unwrapped.forward_features(patch_features, return_attention=False)
                 return h.squeeze().cpu()
 
         return model_fun
@@ -84,6 +86,6 @@ class FeatherSlideEncoderModel(TorchModel):
                 f"FEATHER_SLIDE model must be saved to a directory, not a file ({save_path})."
             )
         Path(save_path).mkdir(parents=True, exist_ok=True)
-        model_to_save = self.obj.module if hasattr(self.obj, "module") else self.obj
+        model_to_save = self.unwrapped
         model_to_save.save_pretrained(save_path)
         logger.info(f"Saved Feather slide encoder to {save_path}")

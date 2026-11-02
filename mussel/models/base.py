@@ -84,17 +84,31 @@ def get_best_attn_implementation():
     return "eager"
 
 
+def _unwrap_data_parallel(model_obj):
+    """Return the module wrapped by ``nn.DataParallel``, or *model_obj* itself.
+
+    ``nn.DataParallel`` only forwards ``forward()``; attributes and methods of
+    the underlying model (``pretrained_cfg``, ``transform``, ``encode_*`` …)
+    must be accessed on the wrapped module.
+    """
+    if isinstance(model_obj, nn.DataParallel):
+        return model_obj.module
+    return model_obj
+
+
 def _timm_preprocessing(model_obj: nn.Module) -> Callable:
     """Get preprocessing transforms from a timm model's pretrained config.
 
     Used by models that don't need custom preprocessing (UNI, UNI2, Virchow, Virchow2).
 
     Args:
-        model_obj: A timm model with a pretrained_cfg attribute.
+        model_obj: A timm model with a pretrained_cfg attribute.  An
+            ``nn.DataParallel`` wrapper is unwrapped automatically.
 
     Returns:
         Callable preprocessing transform.
     """
+    model_obj = _unwrap_data_parallel(model_obj)
     return create_transform(
         **resolve_data_config(model_obj.pretrained_cfg, model=model_obj)
     )
@@ -115,6 +129,16 @@ class Model:
             gpu_device_id: GPU device ID or list of IDs for multi-GPU (default: None).
         """
         self.obj = model_obj
+
+    @property
+    def unwrapped(self):
+        """The underlying model, without any ``nn.DataParallel`` wrapper.
+
+        ``self.obj`` may be an ``nn.DataParallel`` wrapper on multi-GPU runs;
+        use ``self.unwrapped`` for anything other than the forward call
+        (attribute access, auxiliary methods, saving).
+        """
+        return _unwrap_data_parallel(self.obj)
 
     def get_model_fun(self) -> Callable:
         """Get a callable function for model inference.
@@ -142,6 +166,12 @@ class Model:
 
 
 class TorchModel(Model):
+    #: Whether the model may be wrapped in ``nn.DataParallel`` when several GPU
+    #: ids are given.  Slide encoders process one slide at a time (batch size
+    #: 1), so DataParallel cannot split the work and only adds overhead; they
+    #: set this to ``False`` and run on the first requested GPU.
+    supports_data_parallel: bool = True
+
     def __init__(
         self,
         model_path,
@@ -192,8 +222,17 @@ class TorchModel(Model):
             else torch.device(device_type)
         )
 
-        if isinstance(gpu_device_id, list) and len(gpu_device_id) > 1:
-            self.obj = nn.DataParallel(self.obj, device_ids=gpu_device_id)
+        if use_gpu and isinstance(gpu_device_id, list) and len(gpu_device_id) > 1:
+            if self.supports_data_parallel:
+                self.obj = nn.DataParallel(self.obj, device_ids=gpu_device_id)
+            else:
+                logger.info(
+                    "%s does not support nn.DataParallel; running on %s only "
+                    "(requested GPUs: %s)",
+                    type(self).__name__,
+                    self.device,
+                    gpu_device_id,
+                )
 
         # Apply performance optimizations
         if use_gpu:
@@ -270,7 +309,7 @@ class TorchModel(Model):
             save_path: Path to save the model.
         """
         with open(save_path, "wb") as f:
-            pickle.dump(self.obj, f)
+            pickle.dump(self.unwrapped, f)
 
 
 class _TimmHfHubBase(TorchModel):
@@ -303,4 +342,4 @@ class _TimmHfHubBase(TorchModel):
         super().__init__(model_path, model_obj, use_gpu, gpu_device_id)
 
     def get_preprocessing_fun(self) -> Callable:
-        return _timm_preprocessing(self.obj)
+        return _timm_preprocessing(self.unwrapped)
