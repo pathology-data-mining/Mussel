@@ -21,7 +21,7 @@ import mussel.models  # noqa: F401  # triggers all @register_model decorators
 from mussel.models.abmil import ABMILSlideModel
 from mussel.models.base import TorchModel, _TimmHfHubBase
 from mussel.models.chief import CHIEFSlideEncoderModel
-from mussel.models.clip import ClipModel
+from mussel.models.clip import ClipModel, _ClipImageEncoder
 from mussel.models.conch import TitanSlideEncoderModel
 from mussel.models.feather import FeatherSlideEncoderModel
 from mussel.models.genbio import GenBioPathFMModel
@@ -298,6 +298,29 @@ class TestClipDataParallel:
         with torch.no_grad():
             expected = fake.encode_image(x) * 2.0
             assert torch.allclose(replica(x), expected)
+
+    def test_saved_model_reloads_as_wrapper_with_preprocessing(self, tmp_path):
+        m, fake, _ = self._make_clip()
+        path = tmp_path / "clip.pkl"
+        m.save(str(path))
+        m2 = ClipModel(str(path), use_gpu=False)
+        assert isinstance(m2.unwrapped, _ClipImageEncoder)
+        assert callable(m2.get_preprocessing_fun())
+        x = torch.randn(2, 4)
+        with torch.no_grad():
+            assert torch.equal(m2.obj(x), fake.encode_image(x))
+
+    def test_legacy_bare_model_file_is_wrapped(self, tmp_path):
+        fake = _FakeClip()
+        path = tmp_path / "clip_legacy.pkl"
+        with open(path, "wb") as f:
+            pickle.dump(fake, f)
+        m = ClipModel(str(path), use_gpu=False)
+        assert isinstance(m.unwrapped, _ClipImageEncoder)
+        assert "forward" not in m.obj.__dict__
+        x = torch.randn(2, 4)
+        with torch.no_grad():
+            assert torch.equal(m.obj(x), fake.encode_image(x))
 
 
 # ---------------------------------------------------------------------------

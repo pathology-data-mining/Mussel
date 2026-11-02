@@ -12,7 +12,8 @@ be loaded via ``timm.create_model('hf-hub:...')``.  Instead we:
   2. Build a standard timm ViT-B/16 trunk at 448px (keys match exactly after
      stripping the ``visual.trunk.`` prefix).
   3. Build a custom attention-pool head matching the ``visual.attn_pool_contrast``
-     sub-module in the checkpoint to produce 512-dim output.
+     sub-module in the checkpoint to produce 512-dim output, followed by the
+     ``visual.ln_contrast`` LayerNorm (as upstream ``forward_no_head`` does).
 
 Reference: https://huggingface.co/MahmoodLab/CONCH
 
@@ -74,7 +75,11 @@ class _ConchAttentionPool(nn.Module):
 
 
 class _ConchVisualEncoder(nn.Module):
-    """CONCH v1.0 visual encoder: ViT-B/16 trunk + attention pool → 512-dim."""
+    """CONCH v1.0 visual encoder: ViT-B/16 trunk + attention pool + LN → 512-dim.
+
+    Mirrors upstream ``VisualModel.forward_no_head`` (what ``encode_image(...,
+    proj_contrast=False)`` returns): ``ln_contrast(attn_pool_contrast(x)[:, 0])``.
+    """
 
     def __init__(self) -> None:
         super().__init__()
@@ -85,10 +90,12 @@ class _ConchVisualEncoder(nn.Module):
             img_size=448,
         )
         self.attn_pool_contrast = _ConchAttentionPool(768, 512)
+        self.ln_contrast = nn.LayerNorm(512)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         features = self.trunk.forward_features(x)  # [B, 785, 768]
-        return self.attn_pool_contrast(features)  # [B, 512]
+        pooled = self.attn_pool_contrast(features)  # [B, 512]
+        return self.ln_contrast(pooled)  # [B, 512]
 
 
 @register_model(ModelType.CONCH_V1)
@@ -147,14 +154,23 @@ class ConchV1Model(TorchModel):
         }
         model.attn_pool_contrast.load_state_dict(pool_sd, strict=True)
 
+        ln_sd = {
+            k[len("visual.ln_contrast.") :]: v
+            for k, v in checkpoint.items()
+            if k.startswith("visual.ln_contrast.")
+        }
+        model.ln_contrast.load_state_dict(ln_sd, strict=True)
+
         model.eval()
         return model
 
     def get_preprocessing_fun(self) -> Callable:
-        """448×448 resize + ImageNet normalisation."""
+        """448×448 bicubic resize + center crop + ImageNet normalisation."""
         return transforms.Compose(
             [
-                transforms.Resize(448),
+                transforms.Resize(
+                    448, interpolation=transforms.InterpolationMode.BICUBIC
+                ),
                 transforms.CenterCrop(448),
                 transforms.ToTensor(),
                 transforms.Normalize(mean=IMAGENET_MEAN, std=IMAGENET_STD),
